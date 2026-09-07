@@ -38,12 +38,24 @@ sections of `README.md`, `MANUAL.md` and `QUICK_DICT.md`. Name each as swept.
       spec directory rather than leaving it empty — the inbound half of that
       deletion. Enumerate everything that MENTIONS it first, by name and by
       path, and fix each.
-      UNTRACED, settle it before acting: `openspec archive` is what writes
-      spec updates, so it may recreate this directory from the delta rather
-      than honour its absence. Try deleting first and archiving second; if the
-      archive recreates it or still aborts, archive first with `--skip-specs`
-      and delete after, and record which order actually worked. Do not guess
-      between the two — the failure reads as a tooling bug either way.
+      TRACED 2026-09-07 against copies of this tree; do exactly this, in this
+      order:
+        1. Delete `openspec/changes/frogg3rs-omni-audit-repairs/specs/pair-ar-vcv-time-range/`
+           — the delta itself. A delta that removes a spec's requirements one
+           at a time is the wrong shape when the whole spec is going; archive
+           rebuilds the spec FROM the delta and validates the rebuilt result,
+           so the delta is what produces the empty spec.
+        2. Delete `openspec/specs/pair-ar-vcv-time-range/`.
+        3. `openspec archive frogg3rs-omni-audit-repairs -y`. Observed:
+           `Totals: + 3, ~ 3, - 1`, "Specs updated successfully", archived.
+      Two things NOT to do, both tested and rejected:
+        - Deleting only the live spec and archiving does NOT work — it aborts
+          with the same error, because the rebuild comes from the delta and
+          does not care whether the directory exists on disk.
+        - `--skip-specs` DOES archive, and is a trap: it skips ALL spec
+          updates, so this change's other six spec writes (including creating
+          `frogg3rs-firmware-verification`) are silently discarded. It looks
+          like success and loses work.
 - [ ] 0.3 `README.md:67` — "Because every **Crispy** knob is randomized by
       **Randomize All**, this is functionally the same outcome" is FALSE
       today: Randomize All excludes every Crispy
