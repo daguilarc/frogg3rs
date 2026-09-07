@@ -6,7 +6,7 @@
 // source before porting.
 //
 // Ported from:
-//   - src/core/FroggersEngine.hpp:254-256   pitch 20 Hz-20 kHz exp map
+//   - 08b5fd3:src/core/FroggersEngine.hpp:439-441   pitch 20 Hz-20 kHz exp map
 //   - 08b5fd3:src/core/FroggersEngine.hpp:135-137   x_pmLfoMinHz/MaxHz/Depth
 //   - 08b5fd3:src/core/FroggersEngine.hpp:147-148,150-165  PmDepthScale smoothstep
 //   - 08b5fd3:src/core/FroggersEngine.hpp:706-712   StepIndependentPmLfo
@@ -16,7 +16,7 @@
 //   - 08b5fd3:src/core/VcoWaveEval.hpp:7-23         EvalWaveMorph sine->saw->square
 //
 // NOT ported (deliberately): the legacy `else` branch at
-// FroggersEngine.hpp:519-521, which uses XCPL cross-coupling between VCOs.
+// 08b5fd3:src/core/FroggersEngine.hpp:746-755, which uses XCPL cross-coupling
 // This struct has zero cross-VCO terms by construction -- it holds no
 // reference to any other Vco instance, so "porting only the independent-PM
 // branch" and "zero cross-VCO terms" are the same guarantee expressed one
@@ -114,16 +114,18 @@ struct Vco
     // is allowed to get, never to silence it. A cycle within a few
     // seconds reads as motion; one that takes tens of seconds reads as
     // drift.
-    // What the ear hears from phase modulation is the pitch deviation,
-    // and that scales with the LFO rate: the offset is kPmLfoDepth cycles
-    // of sine, so the peak deviation is 2 pi x kPmLfoDepth x rate, 0.94
-    // Hz per Hz of rate. At 0.3 Hz that was 0.28 Hz, two cents on a 200 Hz
-    // carrier, so the knob's bottom end did nothing audible however far
-    // the depth knobs were turned. 2 Hz gives 1.9 Hz of deviation, sixteen
-    // cents at 200 Hz: a slow vibrato, plainly heard.
+    // What the ear hears from phase modulation is the pitch deviation, the
+    // slope of the phase offset: 2 pi x (offset amplitude) x rate Hz, which
+    // carries no carrier term -- the same Hz of deviation on every VCO, and
+    // so more cents on a low carrier than on a high one. StepPmLfo scales
+    // the LFO by kPmLfoMaxHz / rate, which holds that slope constant: the
+    // phase swing grows as the rate falls, and the peak deviation is
+    // 2 pi x kPmLfoDepth x kPmLfoMaxHz = 18.8 Hz at full depth at every
+    // position of the rate knob. The rate knob sets only how fast the
+    // wobble runs, the depth knobs only how far it goes.
     static constexpr float kPmLfoMinHz = 2.0f;  // 0.5 s/cycle at the floor.
     static constexpr float kPmLfoMaxHz = 20.0f;
-    static constexpr float kPmLfoDepth = 0.15f;
+    static constexpr float kPmLfoDepth = 0.15f;  // cycles of phase swing at kPmLfoMaxHz; more below it
 
     // 08b5fd3:src/core/FroggersEngine.hpp:147-148 (x_pmLfoFloor/x_pmLfoRampWidth).
     static constexpr float kPmLfoFloor = 0.02f;
@@ -131,7 +133,7 @@ struct Vco
 
     // pitchKnob01 in [0,1] maps exponentially across [kPitchMinHz,
     // kPitchMaxHz] (PitchToPhaseIncrement below). kPitchMinHz matches the
-    // firmware reference's floor exactly (FroggersEngine.hpp:254-256, 20 Hz);
+    // firmware reference's floor exactly (08b5fd3:src/core/FroggersEngine.hpp:439-441, 20 Hz);
     // kPitchMaxHz does not: the reference's ceiling is 20000 Hz, the
     // textbook audibility limit -- a display-axis number, not an
     // oscillator-pitch one, that spent roughly the knob's top third on a
@@ -177,7 +179,7 @@ struct Vco
     // once the enumeration went hierarchical.
     float overCeilingSeconds = 0.0f;
 
-    // FroggersEngine.hpp:254-256 -- one VCO's pitch knob (0..1) mapped
+    // 08b5fd3:src/core/FroggersEngine.hpp:439-441 -- one VCO's pitch knob (0..1) mapped
     // exponentially across kPitchMinHz-kPitchMaxHz, expressed as a phase
     // increment (cycles/sample: freq/sampleRate) so Process() only
     // adds-and-wraps.
@@ -211,7 +213,8 @@ struct Vco
     }
 
     // 08b5fd3:src/core/FroggersEngine.hpp:706-712 (StepIndependentPmLfo) -- advances this
-    // VCO's own PM LFO by one sample; returns its PRE-advance sine value.
+    // VCO's own PM LFO by one sample; returns its PRE-advance sine value,
+    // scaled so the pitch deviation it produces does not fall with the rate.
     // The RATE argument is the shared PM-rate knob (Audio slot 12, one knob
     // feeding all three VCOs' StepPmLfo calls), decoupled from the per-VCO
     // PM depth knob that drives only PmDepthScale -- pmRateKnob01 maps
@@ -219,7 +222,9 @@ struct Vco
     float StepPmLfo(float pmRateKnob01, float sampleRate)
     {
         const float hz = ExpMapCompute(kPmLfoMinHz, kPmLfoMaxHz, pmRateKnob01);
-        const float lfoValue = Sine01(pmLfoPhase);
+        // Scaled so the pitch deviation does not fall with the rate (see
+        // kPmLfoMinHz above): unity at the top of the knob, ten at the floor.
+        const float lfoValue = Sine01(pmLfoPhase) * (kPmLfoMaxHz / hz);
         pmLfoPhase = WrapPhase(pmLfoPhase + hz / sampleRate);
         return lfoValue;
     }
@@ -257,23 +262,18 @@ struct Vco
 
         carrierPhase = WrapPhase(carrierPhase + phaseIncrement);
 
-        // This struct does not write to the scope itself. It used to, and
-        // that was a shipped bug: writing the raw sample straight to the
-        // reserved scope channel here happened BEFORE the ASR gate
-        // (dsp::MixOscVoices/VcoAdsrState::apply, VoiceEnvelope.hpp) had any
-        // chance to run, since MixOscVoices is only called by the caller
-        // AFTER all three Vco::Process() calls return (FroggersAppCore.hpp's
-        // RouteAudioSample()). The scope visibly animated before Play was
-        // ever pressed -- reported as "i haven't clicked play at all yet,
-        // and the VCO oscilloscope still shows waves moving" -- because this
-        // raw, pre-gate `output` is nonzero regardless of gate state. The
-        // write now happens at the CALL SITE, after MixOscVoices applies
-        // the gate, using the
-        // same per-VCO ScopeWriterHolder members FroggersAppCore already
-        // owns directly (see RouteAudioSample()); `scopeWriterHolder_`/
-        // `SetScopeWriterHolder()` here stay only for `PopulateUIState()`
-        // below, which merely tells the UI which ScopeWriter/channel to
-        // poll, not when to write a sample.
+        // This struct does not write to the scope. The `output` returned
+        // here is pre-gate: it is nonzero whatever the ASR gate is doing,
+        // because the gate (dsp::MixOscVoices/VcoAdsrState::apply,
+        // VoiceEnvelope.hpp) runs at the caller, only after all three
+        // Vco::Process() calls have returned (FroggersAppCore.hpp's
+        // RouteAudioSample()). Writing it to the scope from here would show
+        // motion with the transport stopped, so the scope write lives at
+        // that call site instead, after the gate, using the per-VCO
+        // ScopeWriterHolder members FroggersAppCore owns directly.
+        // `scopeWriterHolder_`/`SetScopeWriterHolder()` here serve only
+        // `PopulateUIState()` below, which tells the UI which
+        // ScopeWriter/channel to poll, not when to write a sample.
         return output;
     }
 

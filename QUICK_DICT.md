@@ -16,7 +16,7 @@ Six banks — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 
 ## Audio
 
-- **VCO1 / VCO2 / VCO3** (slots 0–2) — Pitch, 20 Hz–20 kHz exponential; defaults 110/220/330 Hz.
+- **VCO1 / VCO2 / VCO3** (slots 0–2) — Pitch, 20 Hz–5 kHz exponential; defaults 110/220/330 Hz.
 - **Shape 1 / 2 / 3** (slots 3–5) — Per-VCO waveform morph, sine → saw → square.
 - **Phase mod 1 / 2 / 3** (slots 6–8) — Per-VCO phase-mod depth from that VCO's own internal LFO; no cross-VCO coupling.
 - **Ring mod 1 / 2 / 3** (slots 9–11) — Per-VCO ring mod against its own internal carrier (20 Hz–5 kHz); true zero at the floor.

@@ -355,7 +355,7 @@ three-way balance. Cross-oscillator routing lives in the modulation view, where 
 output is a source (Modulation assignment, above).
 
 **VCO1 / VCO2 / VCO3** (`VCO1`/`VCO2`/`VCO3`, slots 0–2) — each VCO's pitch, mapped exponentially from
-20 Hz to 20 kHz. Default values land on 110 Hz, 220 Hz, and 330 Hz respectively, so a freshly launched app
+20 Hz to 5 kHz. Default values land on 110 Hz, 220 Hz, and 330 Hz respectively, so a freshly launched app
 already makes an audible chord with no knobs touched.
 
 **Shape 1 / 2 / 3** (`Shp1`/`Shp2`/`Shp3`, slots 3–5) — each VCO's own waveform morph: sine at the
@@ -364,8 +364,9 @@ Independent per VCO.
 
 **Phase mod 1 / 2 / 3** (`PM1`/`PM2`/`PM3`, slots 6–8) — each VCO's own phase-modulation depth, driven
 by that VCO's own internal sine LFO (no cross-VCO modulation). Below a small floor near 0 it's silent;
-above it, it grows from a subtle vibrato into an increasingly warbly, FM-like wobble at full depth. All
-three VCOs' LFOs share one rate (see PM rate, slot 12).
+above it, it grows from a subtle vibrato into an increasingly warbly, FM-like wobble at full depth. The
+size of the wobble is set here and does not change with the rate. All three VCOs' LFOs share one rate
+(see PM rate, slot 12).
 
 **Ring mod 1 / 2 / 3** (`RM1`/`RM2`/`RM3`, slots 9–11) — each VCO ring-modulates against its *own*
 internal carrier oscillator (20 Hz–5 kHz), never another VCO's signal. Has a genuine zero at the very
@@ -373,9 +374,9 @@ bottom of its travel — below a small floor, ring mod is completely off, not ju
 more of the metallic ring-modulated product as it's raised, fully replacing the dry tone at maximum.
 Defaults to 0, so ring mod is off on a fresh app.
 
-**PM rate** (`PMrt`, slot 12) — one shared knob (2 Hz–20 Hz) setting the phase-mod LFO rate for all
-three VCOs at once. Depth and rate are independent: this sets the rate for all three, and each VCO's
-own Phase mod knob sets its depth.
+**PM rate** (`PMrt`, slot 12) — one shared knob (2 Hz–20 Hz) setting how fast the phase-mod wobble runs
+for all three VCOs at once. Depth and rate are independent: this sets the speed for all three, and each
+VCO's own Phase mod knob sets how far its pitch swings.
 
 **VCO balance** (`VBal`, slot 13) — a single tilt sweeping mix emphasis from VCO1 (bottom of travel)
 through an even three-way split (center, the default) to VCO3 (top of travel). By construction, every
