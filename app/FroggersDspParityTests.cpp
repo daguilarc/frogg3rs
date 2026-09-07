@@ -1353,6 +1353,30 @@ TEST_CASE(random_sh_rows_slew_as_the_table_says) {
     }
 }
 
+TEST_CASE(random_sh_locked_deja_vu_replays_the_bag_as_a_fixed_loop) {
+    // Exactly 0.5 is the locked regime of the mechanism: no slot is ever
+    // overwritten and the index walks by one, so the output repeats with
+    // the bag's period. No source sits exactly there (source 5 is 0.51),
+    // so the lane is constructed directly.
+    dsp::RandomShLane lane(0x5001u, /*dejaVuKnob=*/0.5f, dsp::lanes::kFastCutoff, /*spread=*/0.5f, /*quantizeLevels=*/0);
+    const DejaVuProfile profile = ProfileDejaVu(lane, 64);
+    REQUIRE_TRUE(profile.ticksWithAFreshValue == 0);
+    REQUIRE_TRUE(profile.ticksWithAJump == 0);
+    for (int warmup = 0; warmup < 3 * 8; ++warmup) {  // settle the fast slew through three full loops
+        lane.Increment();
+        lane.Process();
+    }
+    std::array<float, dsp::RandomShLane::kNumSlots> loop{};
+    for (auto& value : loop) {
+        lane.Increment();
+        value = lane.Process();
+    }
+    for (const float value : loop) {  // the next loop replays the last one
+        lane.Increment();
+        REQUIRE_NEAR(lane.Process(), value, 1e-4);
+    }
+}
+
 TEST_CASE(random_sh_reseed_redraws_the_bag_and_the_same_seed_reproduces_it) {
     dsp::RandomShLane lane = dsp::lanes::MakeSource4(0x4001u);
     dsp::RandomShLane::UiState state;

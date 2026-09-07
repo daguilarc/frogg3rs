@@ -128,8 +128,26 @@ out.
 | VCO3 Audio | VCO1 EF | VCO2 EF | VCO3 EF |
 | Noise | External Audio | External Audio EF | **[Back]** |
 
-The six Random S&H sources are sample-and-hold / LFO-style random lanes. The VCO Audio sources are
-each oscillator's raw signal at audio rate. The EF sources are each oscillator's slow envelope
+The six Random S&H sources are random values ordered so that each one lands on an extreme value less
+often than the one before it:
+
+- **Random S&H 1** takes a fresh value three times per quarter note, nearly always at the top or bottom
+  of its range (about one step in sixteen rests at the centre), and moves to it instantly.
+- **Random S&H 2** steps twice per quarter note, taking a fresh value on half its steps and repeating a
+  held one on the rest; values favour the extremes and snap to five levels; each step smooths over
+  about 5 ms.
+- **Random S&H 3** steps once per quarter note through eight held values in random order, snapped to
+  eight levels; each step smooths over about 20 ms.
+- **Random S&H 4** steps once per two quarter notes through a four-bar phrase of eight held values,
+  skipping to a random one on half its steps; values are unsnapped and lean slightly outward; each step
+  smooths over about 100 ms.
+- **Random S&H 5** steps once per four quarter notes through an eight-bar phrase in order, with a stray
+  jump about once in fifty steps; values hug the centre; each step smooths over about 200 ms.
+- **Random S&H 6** glides to a new value near the centre once every sixteen quarter notes, holding
+  still for two thirds of that time and gliding for the rest.
+
+Randomize All redraws the held values of the five stepped sources, and every launch starts them from a
+different set. The VCO Audio sources are each oscillator's raw signal at audio rate. The EF sources are each oscillator's slow envelope
 follower. Noise is broadband.
 
 External Audio and External Audio EF carry signal once an external input is connected — see Audio and

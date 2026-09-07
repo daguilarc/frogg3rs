@@ -123,6 +123,9 @@ TEST_CASE(per_source_rate_ratios_over_eight_quarter_notes) {
     REQUIRE_TRUE(fx.slate.RandomShLaneTickCountForTest(2) == 8);   // source 3: quarter note (x1).
     REQUIRE_TRUE(fx.slate.RandomShLaneTickCountForTest(3) == 4);   // source 4: once per two quarter notes.
     REQUIRE_TRUE(fx.slate.RandomShLaneTickCountForTest(4) == 2);   // source 5: once per four quarter notes.
+    for (std::size_t lane = 0; lane + 1 < 5; ++lane) {  // the period axis is monotone in the source number
+        REQUIRE_TRUE(fx.slate.RandomShLaneTickCountForTest(lane) > fx.slate.RandomShLaneTickCountForTest(lane + 1));
+    }
 }
 
 // A missing clock plan (std::nullopt every sample) must never advance any
