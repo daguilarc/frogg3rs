@@ -43,8 +43,9 @@
 // `TransportQuarterNotesAt()` helper (the same clock-read helper the ASR gate
 // uses, reused here rather than re-derived) and passes
 // that same `std::optional<double>` into `Step()`, which runs each of the
-// five sources' own `synth::Phasor2Tick` (multiplier 1/2/3/1, source #5
-// pre-scaling `time` by 1/4 with multiplier 1 -- the rate table below)
+// five sources' own `synth::Phasor2Tick` (multiplier 3/2/1 for sources
+// 1-3; sources 4 and 5 pre-scale `time` by 1/2 and 1/4 with multiplier 1
+// -- the rate table below)
 // and calls `Increment()` on a tick. Source #6 is NOT tick-driven:
 // `PrepareBlockClock()`, called once per block from
 // `FroggersApp::ProcessBlock` BEFORE the per-sample loop, recomputes its
@@ -375,9 +376,10 @@ public:
         // reusing that one value here, rather than re-deriving the
         // null-check/guard/Try-call sequence a second time. `Phasor2Tick::Input` rejects
         // `multiplier <= 0` (DspPhasor2Tick.hpp:17-22), so rate
-        // MULTIPLICATIONS use `multiplier` (sources 1/4 = 1, source 2 = 2,
-        // source 3 = 3) and the one rate DIVISION (source 5, once per bar =
-        // 4 quarter notes) pre-scales `time` by 1/4 with multiplier = 1.
+        // MULTIPLICATIONS use `multiplier` (source 1 = 3, source 2 = 2,
+        // source 3 = 1) and the two rate DIVISIONS (source 4 once per two
+        // quarter notes, source 5 once per four) pre-scale `time` with
+        // multiplier = 1.
         StepClockDrivenLanes(transportQuarterNotes);
         for (std::size_t i = 0; i < kFroggersNumRandomShLanes; ++i) {
             randomShLaneOutputs_[i] = randomShLanes_[i].Process();
@@ -389,7 +391,13 @@ public:
         // tempo-proportional rather than tick-driven -- NOT
         // phase-locked to the quarter-note grid.
         gangedRandomLfo6_.Process(currentGangedLfoInput_);
-        randomSh6Output_ = gangedRandomLfo6_.Output(0);
+        // The glide's output goes through the lanes' distribution shape at
+        // kSource6Spread: Sheaf draws the targets uniformly and its input
+        // carries no spread, so shaping the output bends the whole path
+        // toward the centre slightly rather than only its endpoints (an
+        // approximation, stated), and the source-6 visualizer draws the
+        // unshaped path.
+        randomSh6Output_ = dsp::ShapeSpread(gangedRandomLfo6_.Output(0), kSource6Spread);
 
         // VCO audio (slots 6-8): each VCO stepped from only its own knobs.
         // This modulation-preview slate has no
@@ -505,6 +513,11 @@ public:
     // by formula rather than statistically waiting for real LFO rounds to
     // complete (which involves random normal draws and would be slow/flaky).
     const synth::GangedRandomLfoInput& CurrentGangedLfoInputForTest() const { return currentGangedLfoInput_; }
+    // The five lanes' and source 6's current outputs, as registered with the
+    // modulator group, so a test can measure them per sample.
+    float RandomShLaneOutputForTest(std::size_t laneIx) const { return randomShLaneOutputs_[laneIx]; }
+    float RandomSh6OutputForTest() const { return randomSh6Output_; }
+    std::uint32_t RandomShLaneTickCountForTest(std::size_t laneIx) const { return randomShLanes_[laneIx].TickCount(); }
 
 private:
     // One shared per-sample tick call, so a test suite can
@@ -523,16 +536,18 @@ private:
         };
 
         const double quarterNotes = transportQuarterNotes.value_or(0.0);
-        // The rate table: #1 quarter note (x1), #2 eighth (x2),
-        // #3 eighth triplet (x3), #4 quarter note (x1, free-running
-        // character differs via the lane's own construction), #5
-        // once per bar (QN/4, x1 -- a DIVISION, so `time` is pre-scaled
-        // rather than using `multiplier`, per Phasor2Tick's own
-        // `multiplier <= 0` rejection, DspPhasor2Tick.hpp:17-22).
-        tickLane(tick1_, randomShLanes_[0], quarterNotes, 1);
+        // The rate table: #1 eighth triplet (x3), #2 eighth (x2), #3
+        // quarter note (x1), #4 once per two quarter notes, #5 once per four
+        // (the DIVISIONS pre-scale `time` rather than using `multiplier`,
+        // per Phasor2Tick's own `multiplier <= 0` rejection,
+        // DspPhasor2Tick.hpp:17-22). The period is the one axis of each
+        // source's character set here; the rest are in RandomShLane.hpp's
+        // factories, and the ordering is the same one: source 1 the
+        // fastest, source 5 the slowest.
+        tickLane(tick1_, randomShLanes_[0], quarterNotes, 3);
         tickLane(tick2_, randomShLanes_[1], quarterNotes, 2);
-        tickLane(tick3_, randomShLanes_[2], quarterNotes, 3);
-        tickLane(tick4_, randomShLanes_[3], quarterNotes, 1);
+        tickLane(tick3_, randomShLanes_[2], quarterNotes, 1);
+        tickLane(tick4_, randomShLanes_[3], quarterNotes / 2.0, 1);
         tickLane(tick5_, randomShLanes_[4], quarterNotes / 4.0, 1);
     }
 
@@ -643,6 +658,9 @@ private:
     static constexpr std::array<const char*, kFroggersNumRandomShLanes> kRandomShShortNames{
         "RndSH1", "RndSH2", "RndSH3", "RndSH4", "RndSH5",
     };
+    // Source 6 hugs the centre: the lanes' distribution shape applied to
+    // the glide's output (see Step()).
+    static constexpr float kSource6Spread = 0.25f;
     // Distinct per-lane seeds: each RGen is per-instance, so
     // distinct seeds are what actually gives five independent streams.
     static constexpr std::array<uint32_t, kFroggersNumRandomShLanes> kRandomShSeeds{

@@ -90,59 +90,57 @@ private:
 };
 
 // ----------------------------------------------------------------------
-// One Random S&H lane: the generalized-to-width-1 Marbles bag/deja-vu core
-// (src/core/Marbles.hpp:67-96 Increment, :115-121 Process), plus
-// construction-time-only "character" (no m_page->GetParam() coupling of
-// any kind -- no source-level controls).
+// The distribution shape every lane, and source 6, apply to a uniform draw.
+// Three fixed points: spread 0.5 returns the draw unchanged (uniform),
+// spread 1 sends every draw to 0 or 1 (bimodal), spread 0 sends every draw
+// to 0.5. Below 0.5 the centred draw v = 2u - 1 is pulled toward the
+// centre by |v|^k with k = 1/(2 spread) > 1; above 0.5 it is pushed toward
+// the extremes with k = 2(1 - spread) < 1. No spread bounds the output away
+// from 0 and 1: an extreme draw stays extreme at every spread, only how
+// often a draw lands near an extreme changes.
+inline float ShapeSpread(float u01, float spread)
+{
+    if (spread <= 0.0f)
+    {
+        return 0.5f;
+    }
+    const float v = 2.0f * u01 - 1.0f;
+    const float k = spread <= 0.5f ? 1.0f / (2.0f * spread) : 2.0f * (1.0f - spread);
+    const float magnitude = std::pow(std::fabs(v), k);
+    return std::clamp(0.5f + std::copysign(magnitude, v) * 0.5f, 0.0f, 1.0f);
+}
+
+// ----------------------------------------------------------------------
+// One Random S&H lane: the Marbles bag/deja-vu core (src/core/Marbles.hpp:67-96
+// Increment, :115-121 Process) at a width of one, with its character fixed
+// at construction; there are no source-level controls.
 //
-// Character constants determine each lane's fixed character as follows:
-//   - bagSize      -> the loop length (locked-loop sources use 8; the
-//                      free-running sources' size is irrelevant to their
-//                      output since they regenerate every step -- see
-//                      dejaVuKnob below -- but must still be in [1,8]).
-//   - dejaVuKnob    -> selects the firmware Increment()'s two regimes:
-//                      0.5 exactly takes the "else" (generative) branch
-//                      with a computed regen chance of 2*(0.5-0.5) = 0, so
-//                      the index only ever steps through the bag -- i.e. a
-//                      genuinely LOCKED loop of the construction-time
-//                      random values (sources #1/#2/#3). 0.0 takes the
-//                      same branch with regen chance 2*(0.5-0) = 1, so
-//                      every step regenerates -- i.e. fully FREE-RUNNING
-//                      (sources #4/#5).
-//   - stepChance    -> was Marbles.hpp's single shared m_probability
-//                      (:19), now a per-lane construction constant.
-//                      No source currently uses a "sometimes skip the
-//                      step" character (its differentiation is all in
-//                      Loop/Range/slew), so all five are constructed at
-//                      1.0 (always step) below -- the structural
-//                      capability is per-lane even though no source
-//                      currently uses a non-1.0 value.
-//   - filterCutoff  -> the OPLowPassFilter slew (Marbles.hpp:115-121),
-//                      per-lane instead of Marbles.hpp's shared-by-neither-
-//                      channel-but-still-two m_filter[2].
-//   - spread, bias  -> NEW DSP, NOT ported from Marbles.hpp (Marbles.hpp
-//                      reads neither and implements no range narrowing or
-//                      centring). Narrows/re-centers the
-//                      output around 0.5; used only by source #3.
-//   - quantizeLevels-> ALSO new DSP, not in Marbles.hpp, but required to
-//                      realize source #4's explicit "~5 quantised levels"
-//                      character (this is the weakest choice here, most
-//                      likely to be overruled on hearing; status
-//                      provisional until validated by ear). 0/1 disables
-//                      quantization.
+// The bag holds eight values drawn from the lane's own RGen. Each tick
+// `Increment()` moves the read index and, by `dejaVuKnob`, decides whether
+// the bag changes:
+//   - 0.0 to 0.5: the index walks forward by one and the slot it lands on
+//     is overwritten with a fresh draw with probability 2(0.5 - knob), so 0
+//     takes a fresh value every tick and exactly 0.5 replays the eight
+//     values as a locked phrase.
+//   - above 0.5: no slot is ever overwritten; the index jumps to a random
+//     slot with probability 2(knob - 0.5), otherwise walks forward by one,
+//     so 1.0 reads a random slot every tick.
+// `Process()` reads the current slot through ShapeSpread at the lane's
+// `spread`, snaps it to `quantizeLevels` (0 or 1 disables snapping), and
+// slews it with a one-pole low-pass at `filterCutoffCyclesPerSample`. The
+// shape runs before the quantizer so a near-bimodal lane snapped to three
+// levels rests at the centre level only on the few draws that land there;
+// quantizing first would put a third of the draws on the centre level and
+// the shape would leave them there. A locked bag's stored values are
+// shaped and snapped on every read, the same as fresh ones.
 struct RandomShLane
 {
     static constexpr size_t kNumSlots = 8;  // src/core/Marbles.hpp:12 (x_numMarbles)
 
-    // The five X-style sources' visualizer draws "the
-    // remembered loop as a waveform with a playhead at the current index" --
-    // Sheaf has nothing for this (a bag/deja-vu loop has no equivalent in
-    // DspRandomLfo), so this is new state, not a
-    // ported shape. Atomics only (no synth:: dependency at all here, unlike
-    // the UIState additions in Vco.hpp/FilterFx.hpp) -- the
-    // actual synth::ui::Visualizer subclass that reads this lives in the
-    // app tier (app/FroggersRandomShVisualizer.hpp), keeping this DSP file's
-    // Sheaf-dependency surface at zero.
+    // Published for the lane's visualizer (app/FroggersRandomShVisualizer.hpp):
+    // the raw bag and the read index, pre shape/quantize/slew, the same
+    // convention Sheaf's own PopulateUIState methods use. Atomics only, so
+    // this DSP file's Sheaf-dependency surface stays at zero.
     struct UiState
     {
         std::atomic<std::size_t> currentIndex{0};
@@ -151,54 +149,51 @@ struct RandomShLane
     };
 
     RandomShLane(uint32_t seed,
-                 size_t bagSize,
                  float dejaVuKnob,
-                 float stepChance,
                  float filterCutoffCyclesPerSample,
-                 float spread = 1.0f,
-                 float bias = 0.0f,
-                 int quantizeLevels = 0)
+                 float spread,
+                 int quantizeLevels)
         : rgen_(seed)
-        , size_(std::min(bagSize, kNumSlots) < 1 ? 1 : std::min(bagSize, kNumSlots))
         , dejaVuKnob_(dejaVuKnob)
-        , probability_(stepChance)
         , spread_(spread)
-        , bias_(bias)
         , quantizeLevels_(quantizeLevels)
     {
-        // Marbles.hpp:98-113 (constructor loop): every slot starts as an
-        // independent draw from this lane's own RGen.
+        Reseed(seed);
+        filter_.SetAlphaFromNatFreq(filterCutoffCyclesPerSample);
+    }
+
+    // Rebuilds the generator from `seed` and refills every slot from it.
+    // The read index and the slew filter are left alone, so a reseed while
+    // the lane is playing glides from the current output instead of
+    // clicking.
+    void Reseed(uint32_t seed)
+    {
+        rgen_ = RGen(seed);
         for (size_t i = 0; i < kNumSlots; ++i)
         {
             slots_[i] = rgen_.UniGenRange(0.0f, 1.0f);
         }
-        filter_.SetAlphaFromNatFreq(filterCutoffCyclesPerSample);
     }
 
-    // Marbles.hpp:67-96 (Increment), generalized from the two-channel
-    // `for (i < 2)` loop to this lane's own scalars. Deja-vu branch at
+    // Marbles.hpp:67-96 (Increment) at width one; the deja-vu branch is
     // Marbles.hpp:76 (`if (0.5 < m_dejaVuKnob[i])`).
     void Increment()
     {
-        if (probability_ < rgen_.UniGen())
-        {
-            return;
-        }
-
+        ++tickCount_;
         if (0.5f < dejaVuKnob_)
         {
             if (rgen_.UniGen() < 2.0f * (dejaVuKnob_ - 0.5f))
             {
-                index_ = rgen_.RangeGen(size_);
+                index_ = rgen_.RangeGen(kNumSlots);
             }
             else
             {
-                index_ = (index_ + 1) % size_;
+                index_ = (index_ + 1) % kNumSlots;
             }
         }
         else
         {
-            index_ = (index_ + 1) % size_;
+            index_ = (index_ + 1) % kNumSlots;
             if (rgen_.UniGen() < 2.0f * (0.5f - dejaVuKnob_))
             {
                 slots_[index_] = rgen_.UniGenRange(0.0f, 1.0f);
@@ -206,32 +201,26 @@ struct RandomShLane
         }
     }
 
-    // Marbles.hpp:115-121 (Process): read the current slot through the
-    // slew filter. quantize/spread/bias (new DSP, see struct comment) are
-    // applied to the raw slot value before filtering, in that order, so a
-    // locked loop's construction-time-only values are also quantized /
-    // narrowed -- not just values that happen to regenerate later.
+    // Ticks received since construction; a reseed does not reset it.
+    uint32_t TickCount() const { return tickCount_; }
+
+    // Marbles.hpp:115-121 (Process): the current slot, shaped, snapped,
+    // slewed.
     float Process()
     {
-        float raw = slots_[index_];
+        float value = ShapeSpread(slots_[index_], spread_);
         if (quantizeLevels_ > 1)
         {
             const float steps = static_cast<float>(quantizeLevels_ - 1);
-            raw = std::round(raw * steps) / steps;
+            value = std::round(value * steps) / steps;
         }
-        const float narrowed = std::clamp(0.5f + (raw - 0.5f) * spread_ + bias_, 0.0f, 1.0f);
-        return filter_.Process(narrowed);
+        return filter_.Process(value);
     }
 
-    // Publishes the
-    // lane's current index and its full bag of held values (raw slot
-    // contents, i.e. pre quantize/spread/bias/filter -- the same convention
-    // Sheaf's own PopulateUIState methods use, publishing the state a
-    // visualizer needs rather than a processed sample).
     void PopulateUiState(UiState& state) const
     {
         state.currentIndex.store(index_, std::memory_order_relaxed);
-        state.size.store(size_, std::memory_order_relaxed);
+        state.size.store(kNumSlots, std::memory_order_relaxed);
         for (size_t i = 0; i < kNumSlots; ++i)
         {
             state.slots[i].store(slots_[i], std::memory_order_relaxed);
@@ -240,69 +229,78 @@ struct RandomShLane
 
 private:
     RGen rgen_;
-    size_t size_;
     size_t index_ = 0;
     float dejaVuKnob_;
-    float probability_;
     float spread_;
-    float bias_;
     int quantizeLevels_;
+    uint32_t tickCount_ = 0;
     float slots_[kNumSlots];
     OnePoleLowPass filter_;
 };
 
 // ----------------------------------------------------------------------
-// Five fixed characters, one per Random S&H source (rate/loop wiring
-// happens elsewhere -- NOT here; these factories fix only the
-// bag/deja-vu/slew/spread/quantize constants).
+// Five fixed characters, one per Random S&H source. The tick period is the
+// slate's (FroggersModulation.hpp's rate table); deja vu, spread,
+// quantization and slew are fixed here. Every axis is monotone from source
+// 1 to source 5: the period lengthens, fresh values and jumps get rarer,
+// the spread moves from the extremes toward the centre, the level grid
+// coarsens toward source 1 and disappears from source 4 on, and the slew
+// lengthens.
 namespace lanes {
 
-// Locked-loop sources (#1/#2/#3) and the stepped-jump source (#4) want no
-// audible glide between held values; the free-running "slow deliberate
-// moves" source (#5) wants an explicit slew. Both cutoffs are implementer
-// defaults, still to be validated by ear ("validate the
-// table by ear"), the same convention FroggersEngine.hpp uses for
-// x_pmLfoDepth ("implementer default... flagged for operator tuning").
-inline constexpr float kFastCutoff = 0.45f;   // cycles/sample -- near-instant
-inline constexpr float kSlowCutoff = 0.002f;  // cycles/sample -- audible glide
+// Slew is the one-pole low-pass on the held value, named by its time
+// constant at the reference sample rate: cutoff = 1 / (2 pi tau fs), the
+// inverse of OnePoleLowPass::SetAlphaFromNatFreq. A lane is built before
+// the slate learns its sample rate, so at 96 kHz every time constant is
+// half of its name.
+inline constexpr float kSlewReferenceSampleRate = 48000.0f;
+constexpr float SlewCutoff(float tauSeconds)
+{
+    return 1.0f / (6.28318530717958647692f * tauSeconds * kSlewReferenceSampleRate);
+}
+inline constexpr float kFastCutoff = 0.45f;  // cycles/sample: a third of a sample, near-instant
+inline constexpr float kSlew5ms = SlewCutoff(0.005f);
+inline constexpr float kSlew20ms = SlewCutoff(0.02f);
+inline constexpr float kSlew100ms = SlewCutoff(0.1f);
+inline constexpr float kSlew200ms = SlewCutoff(0.2f);
 
-// #1: quarter-note rate, loop 8 => 2-bar period, full range,
-// locked loop ("long phrase, quarter pulse").
+// #1: three ticks per quarter note; a fresh value on every tick; nearly
+// every value lands at an extreme (spread 0.95), snapped to three levels
+// so about one tick in sixteen rests at the centre; no slew.
 inline RandomShLane MakeSource1(uint32_t seed)
 {
-    return RandomShLane(seed, /*bagSize=*/8, /*dejaVuKnob=*/0.5f, /*stepChance=*/1.0f, kFastCutoff);
+    return RandomShLane(seed, /*dejaVuKnob=*/0.0f, kFastCutoff, /*spread=*/0.95f, /*quantizeLevels=*/3);
 }
 
-// #2: eighth-note rate, loop 8 => 1-bar period, full range,
-// locked loop ("eighth pulse, one-bar phrase").
+// #2: two ticks per quarter note; a fresh value on half the ticks; values
+// favour the extremes (spread 0.85), snapped to five levels; 5 ms slew.
 inline RandomShLane MakeSource2(uint32_t seed)
 {
-    return RandomShLane(seed, 8, 0.5f, 1.0f, kFastCutoff);
+    return RandomShLane(seed, 0.25f, kSlew5ms, 0.85f, 5);
 }
 
-// #3: eighth-triplet rate, loop 8 => 2/3-bar period, NARROW
-// CENTRED range, locked loop ("polyrhythmic triplet shimmer"). spread=0.3
-// is an implementer default (loop/rate are confident; the exact spread
-// value is not) -- still to be validated by ear alongside the cutoffs
-// above.
+// #3: one tick per quarter note; eight held values read at a random slot
+// on every tick; values lean to the extremes (spread 0.7), snapped to
+// eight levels; 20 ms slew.
 inline RandomShLane MakeSource3(uint32_t seed)
 {
-    return RandomShLane(seed, 8, 0.5f, 1.0f, kFastCutoff, /*spread=*/0.3f, /*bias=*/0.0f);
+    return RandomShLane(seed, 1.0f, kSlew20ms, 0.7f, 8);
 }
 
-// #4: quarter-note rate, free-running, full range, ~5
-// quantised levels ("unpredictable stepped jumps") -- the least-confident
-// choice among these five, most likely to be overruled on hearing.
+// #4: one tick per two quarter notes, a four-bar phrase of eight held
+// values whose read position jumps on half the ticks; values lean slightly
+// to the extremes (spread 0.6), unsnapped; 100 ms slew.
 inline RandomShLane MakeSource4(uint32_t seed)
 {
-    return RandomShLane(seed, 8, /*dejaVuKnob=*/0.0f, 1.0f, kFastCutoff, 1.0f, 0.0f, /*quantizeLevels=*/5);
+    return RandomShLane(seed, 0.75f, kSlew100ms, 0.6f, 0);
 }
 
-// #5: 1-bar rate, free-running, full range, slewed ("slow
-// deliberate moves").
+// #5: one tick per four quarter notes, an eight-bar phrase read in order
+// with one jump every fifty ticks; values hug the centre (spread 0.4),
+// unsnapped; 200 ms slew.
 inline RandomShLane MakeSource5(uint32_t seed)
 {
-    return RandomShLane(seed, 8, 0.0f, 1.0f, kSlowCutoff);
+    return RandomShLane(seed, 0.51f, kSlew200ms, 0.4f, 0);
 }
 
 }  // namespace lanes

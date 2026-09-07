@@ -94,54 +94,34 @@ struct Fixture {
 };
 
 // -----------------------------------------------------------------------
-// Over N quarter notes each source advances exactly N x its
-// own rate multiple (#1, #4 -> N; #2 -> 2N; #3 -> 3N; #5 -> N/4). Since
-// every one of the five lanes is constructed with stepChance=1.0 (all five
-// are constructed at 1.0, always step) and RandomShLane::
-// Increment() advances `index_` by EXACTLY 1 (mod 8), deterministically,
-// regardless of dejaVuKnob (see RandomShLane.hpp's own Increment() -- both
-// the 0.5 and 0.0 configurations take the unconditional
-// `index_ = (index_+1) % size_` branch), counting index-changed events is
-// an exact proxy for counting ticks. N=8 quarter notes makes every
-// expected count an integer (8, 16, 24, 8, 2).
+// Over N quarter notes each source ticks exactly N x its own rate (#1 ->
+// 3N, #2 -> 2N, #3 -> N, #4 -> N/2, #5 -> N/4), counted by the lane's own
+// tick counter: three of the five read a random slot on a jump, one time
+// in eight the slot it is already on, so an index change is not a tick.
+// N=8 quarter notes makes every expected count an integer (24, 16, 8, 4, 2).
 // -----------------------------------------------------------------------
-TEST_CASE(per_source_rate_ratios_match_design_d8a_over_eight_quarter_notes) {
+TEST_CASE(per_source_rate_ratios_over_eight_quarter_notes) {
     Fixture fx;
     constexpr FroggersModulationSlate::VcoDrive kSilent{0.5f, 0.5f, 0.0f};
 
     constexpr double kTotalQuarterNotes = 8.0;
-    constexpr int kStepsPerQuarterNote = 300;  // fine enough that source #3 (x3) never double-ticks in one Step().
+    constexpr int kStepsPerQuarterNote = 300;  // fine enough that source #1 (x3) never double-ticks in one Step().
     constexpr int kTotalSteps = static_cast<int>(kTotalQuarterNotes) * kStepsPerQuarterNote;
 
     // First call primes every Phasor2Tick (Phasor2Tick::Process's own "first
     // call primes, does not tick" semantics) -- matches how a real transport
     // would first commit a clock plan before any tick can fire.
     fx.slate.Step(kSilent, kSilent, kSilent, 0.0);
-    fx.slate.PublishUiState();
-    std::array<std::size_t, 5> lastIndex{};
-    for (std::size_t lane = 0; lane < 5; ++lane) {
-        lastIndex[lane] = fx.slate.RandomShLaneUiState(lane).currentIndex.load();
-    }
-
-    std::array<std::size_t, 5> tickCounts{};
     for (int step = 1; step <= kTotalSteps; ++step) {
         const double qn = kTotalQuarterNotes * static_cast<double>(step) / static_cast<double>(kTotalSteps);
         fx.slate.Step(kSilent, kSilent, kSilent, qn);
-        fx.slate.PublishUiState();
-        for (std::size_t lane = 0; lane < 5; ++lane) {
-            const std::size_t newIndex = fx.slate.RandomShLaneUiState(lane).currentIndex.load();
-            if (newIndex != lastIndex[lane]) {
-                ++tickCounts[lane];
-                lastIndex[lane] = newIndex;
-            }
-        }
     }
 
-    REQUIRE_TRUE(tickCounts[0] == 8);   // source 1: quarter note (x1).
-    REQUIRE_TRUE(tickCounts[1] == 16);  // source 2: eighth (x2).
-    REQUIRE_TRUE(tickCounts[2] == 24);  // source 3: eighth triplet (x3).
-    REQUIRE_TRUE(tickCounts[3] == 8);   // source 4: quarter note (x1).
-    REQUIRE_TRUE(tickCounts[4] == 2);   // source 5: once per bar (QN/4).
+    REQUIRE_TRUE(fx.slate.RandomShLaneTickCountForTest(0) == 24);  // source 1: eighth triplet (x3).
+    REQUIRE_TRUE(fx.slate.RandomShLaneTickCountForTest(1) == 16);  // source 2: eighth (x2).
+    REQUIRE_TRUE(fx.slate.RandomShLaneTickCountForTest(2) == 8);   // source 3: quarter note (x1).
+    REQUIRE_TRUE(fx.slate.RandomShLaneTickCountForTest(3) == 4);   // source 4: once per two quarter notes.
+    REQUIRE_TRUE(fx.slate.RandomShLaneTickCountForTest(4) == 2);   // source 5: once per four quarter notes.
 }
 
 // A missing clock plan (std::nullopt every sample) must never advance any
@@ -347,6 +327,57 @@ TEST_CASE(source_six_visualizer_color_matches_its_own_registered_metadata_color)
 }
 
 }  // namespace
+
+// -----------------------------------------------------------------------
+// The anomaly gradient. Over one 256-quarter-note run at 120 BPM and
+// 48 kHz, every source's activity (mean |first difference| per sample:
+// step size times step rate, independent of slew because a one-pole is
+// monotone) and peak slope (peak |first difference|: slew times step size)
+// fall strictly from source 1 to source 6. The six pairs are printed so
+// the ledger carries the numbers.
+// -----------------------------------------------------------------------
+TEST_CASE(random_sh_sources_rank_by_anomaly) {
+    Fixture fx;
+    constexpr FroggersModulationSlate::VcoDrive kSilent{0.5f, 0.5f, 0.0f};
+    constexpr double kSampleRate = 48000.0;
+    constexpr double kQuarterNotesPerSample = (120.0 / 60.0) / kSampleRate;
+    constexpr double kTotalQuarterNotes = 256.0;
+    constexpr long kTotalSamples = static_cast<long>(kTotalQuarterNotes / kQuarterNotesPerSample);
+    constexpr std::size_t kSources = 6;
+
+    const auto read = [&](std::size_t source) {
+        return static_cast<double>(source < 5 ? fx.slate.RandomShLaneOutputForTest(source)
+                                              : fx.slate.RandomSh6OutputForTest());
+    };
+
+    fx.slate.PrepareBlockClock(kQuarterNotesPerSample);
+    fx.slate.Step(kSilent, kSilent, kSilent, 0.0);
+    std::array<double, kSources> last{};
+    std::array<double, kSources> sum{};
+    std::array<double, kSources> peak{};
+    for (std::size_t source = 0; source < kSources; ++source) {
+        last[source] = read(source);
+    }
+    for (long sample = 1; sample < kTotalSamples; ++sample) {
+        fx.slate.Step(kSilent, kSilent, kSilent, static_cast<double>(sample) * kQuarterNotesPerSample);
+        for (std::size_t source = 0; source < kSources; ++source) {
+            const double value = read(source);
+            const double difference = std::fabs(value - last[source]);
+            sum[source] += difference;
+            peak[source] = std::max(peak[source], difference);
+            last[source] = value;
+        }
+    }
+    for (std::size_t source = 0; source < kSources; ++source) {
+        std::cout << "  [anomaly gradient] Random S&H " << (source + 1)
+                  << " mean|d|=" << sum[source] / static_cast<double>(kTotalSamples - 1)
+                  << " peak|d|=" << peak[source] << "\n";
+    }
+    for (std::size_t source = 0; source + 1 < kSources; ++source) {
+        REQUIRE_TRUE(sum[source] > sum[source + 1]);
+        REQUIRE_TRUE(peak[source] > peak[source + 1]);
+    }
+}
 
 int main() {
     int failed = 0;

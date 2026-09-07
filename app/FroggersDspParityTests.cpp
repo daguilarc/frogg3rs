@@ -1186,58 +1186,192 @@ TEST_CASE(random_sh_same_seed_reconstructed_lane_matches) {
     }
 }
 
-TEST_CASE(random_sh_source3_is_narrow_and_centred) {
-    // Source #3 is the only narrow, centred source. spread=0.3 bounds
-    // output to [0.5-0.15, 0.5+0.15] = [0.35, 0.65] (bias=0).
-    dsp::RandomShLane lane = dsp::lanes::MakeSource3(0xABCDu);
-    for (int i = 0; i < 200; ++i) {
-        lane.Increment();
-        const float v = lane.Process();
-        REQUIRE_TRUE(v >= 0.35f - 1e-4f);
-        REQUIRE_TRUE(v <= 0.65f + 1e-4f);
-    }
-}
-
-TEST_CASE(random_sh_source4_settles_to_one_of_five_quantised_levels) {
-    dsp::RandomShLane lane = dsp::lanes::MakeSource4(0xBEEFu);
-    for (int step = 0; step < 20; ++step) {
-        lane.Increment();
-        float settled = 0.0f;
-        for (int i = 0; i < 32; ++i) {  // let the (fast) slew filter converge
-            settled = lane.Process();
+TEST_CASE(shape_spread_fixed_points_and_deviation_ordering) {
+    // Three fixed points on 64 uniform draws: 0.5 is the identity, 1.0 is
+    // bimodal, 0 is the centre. Below 0.5 contracts and above 0.5 expands:
+    // the mean absolute deviation from the centre is strictly ordered
+    // 0.25 < 0.5 < 0.75 on the same draws (0.75 is the positive control
+    // that the ordering is not just "everything shrinks").
+    dsp::RGen gen(0x5EEDu);
+    const float spreads[3] = {0.25f, 0.5f, 0.75f};
+    double deviation[3] = {0.0, 0.0, 0.0};
+    for (int i = 0; i < 64; ++i) {
+        const float u = gen.UniGen();
+        REQUIRE_NEAR(dsp::ShapeSpread(u, 0.5f), u, 1e-6);
+        const float bimodal = dsp::ShapeSpread(u, 1.0f);
+        REQUIRE_TRUE(bimodal == 0.0f || bimodal == 1.0f);
+        REQUIRE_NEAR(dsp::ShapeSpread(u, 0.0f), 0.5f, 1e-6);
+        for (int s = 0; s < 3; ++s) {
+            deviation[s] += std::fabs(dsp::ShapeSpread(u, spreads[s]) - 0.5f);
         }
-        const float nearestLevel = std::round(settled * 4.0f) / 4.0f;
-        REQUIRE_NEAR(settled, nearestLevel, 1e-3);
+    }
+    REQUIRE_TRUE(deviation[0] < deviation[1]);
+    REQUIRE_TRUE(deviation[1] < deviation[2]);
+}
+
+// The five rows of the character table, one axis per test: how each lane
+// takes fresh values and jumps (deja vu), the level grid its settled
+// output sits on (quantization), and the first-sample fraction of a step
+// (slew). Spread is covered by the shape test above and by the ranking
+// test in FroggersMarblesClockTests.cpp.
+
+namespace {
+
+struct DejaVuProfile {
+    int ticksWithAFreshValue = 0;   // ticks on which any slot's stored value changed
+    int ticksWithAJump = 0;         // ticks on which the read index did not advance by one
+};
+
+DejaVuProfile ProfileDejaVu(dsp::RandomShLane lane, int ticks) {
+    dsp::RandomShLane::UiState state;
+    lane.PopulateUiState(state);
+    std::array<float, dsp::RandomShLane::kNumSlots> previousSlots{};
+    for (std::size_t i = 0; i < previousSlots.size(); ++i) {
+        previousSlots[i] = state.slots[i].load();
+    }
+    std::size_t previousIndex = state.currentIndex.load();
+    DejaVuProfile profile;
+    for (int tick = 0; tick < ticks; ++tick) {
+        lane.Increment();
+        lane.PopulateUiState(state);
+        const std::size_t index = state.currentIndex.load();
+        if (index != (previousIndex + 1) % dsp::RandomShLane::kNumSlots) {
+            ++profile.ticksWithAJump;
+        }
+        bool fresh = false;
+        for (std::size_t i = 0; i < previousSlots.size(); ++i) {
+            const float slot = state.slots[i].load();
+            fresh = fresh || slot != previousSlots[i];
+            previousSlots[i] = slot;
+        }
+        profile.ticksWithAFreshValue += fresh ? 1 : 0;
+        previousIndex = index;
+    }
+    return profile;
+}
+
+float SettledOutput(dsp::RandomShLane& lane) {
+    float value = 0.0f;
+    for (int i = 0; i < 200000; ++i) {  // 20 time constants of the slowest lane (200 ms at 48 kHz)
+        value = lane.Process();
+    }
+    return value;
+}
+
+bool OnGrid(float value, int levels) {
+    const float steps = static_cast<float>(levels - 1);
+    return std::fabs(std::round(value * steps) / steps - value) < 1e-3f;
+}
+
+// alpha = first-sample fraction of the first step the lane produces.
+float MeasuredAlpha(dsp::RandomShLane lane) {
+    const float settled = SettledOutput(lane);
+    for (int tick = 0; tick < 64; ++tick) {
+        lane.Increment();
+        const float first = lane.Process();
+        if (std::fabs(first - settled) > 1e-6f) {
+            const float target = SettledOutput(lane);
+            return (first - settled) / (target - settled);
+        }
+    }
+    return -1.0f;
+}
+
+float ExpectedAlpha(float cutoffCyclesPerSample) {
+    return 1.0f - std::exp(-6.28318530717958647692f * cutoffCyclesPerSample);
+}
+
+}  // namespace
+
+TEST_CASE(random_sh_rows_take_fresh_values_and_jump_as_the_table_says) {
+    constexpr int kTicks = 64;
+    const DejaVuProfile lane1 = ProfileDejaVu(dsp::lanes::MakeSource1(0x1001u), kTicks);
+    REQUIRE_TRUE(lane1.ticksWithAFreshValue == kTicks);  // fresh value every tick
+    REQUIRE_TRUE(lane1.ticksWithAJump == 0);
+    const DejaVuProfile lane2 = ProfileDejaVu(dsp::lanes::MakeSource2(0x1002u), kTicks);
+    REQUIRE_TRUE(lane2.ticksWithAFreshValue > 0 && lane2.ticksWithAFreshValue < kTicks);  // half the ticks
+    REQUIRE_TRUE(lane2.ticksWithAJump == 0);
+    const DejaVuProfile lane3 = ProfileDejaVu(dsp::lanes::MakeSource3(0x1003u), kTicks);
+    REQUIRE_TRUE(lane3.ticksWithAFreshValue == 0);  // the bag is locked
+    REQUIRE_TRUE(lane3.ticksWithAJump > kTicks / 2);  // a random slot every tick, one in eight happens to be the next
+    const DejaVuProfile lane4 = ProfileDejaVu(dsp::lanes::MakeSource4(0x1004u), kTicks);
+    REQUIRE_TRUE(lane4.ticksWithAFreshValue == 0);
+    REQUIRE_TRUE(lane4.ticksWithAJump > 0 && lane4.ticksWithAJump < kTicks);  // jumps on half the ticks
+    const DejaVuProfile lane5 = ProfileDejaVu(dsp::lanes::MakeSource5(0x1005u), kTicks);
+    REQUIRE_TRUE(lane5.ticksWithAFreshValue == 0);
+    REQUIRE_TRUE(lane5.ticksWithAJump <= 8);  // one jump per fifty ticks
+}
+
+TEST_CASE(random_sh_rows_snap_to_the_table_grid) {
+    const int levels[3] = {3, 5, 8};
+    dsp::RandomShLane snapped[3] = {
+        dsp::lanes::MakeSource1(0x2001u),
+        dsp::lanes::MakeSource2(0x2002u),
+        dsp::lanes::MakeSource3(0x2003u),
+    };
+    for (int row = 0; row < 3; ++row) {
+        for (int tick = 0; tick < 20; ++tick) {
+            snapped[row].Increment();
+            REQUIRE_TRUE(OnGrid(SettledOutput(snapped[row]), levels[row]));
+        }
+    }
+    dsp::RandomShLane unsnapped[2] = {
+        dsp::lanes::MakeSource4(0x2004u),
+        dsp::lanes::MakeSource5(0x2005u),
+    };
+    for (auto& lane : unsnapped) {
+        bool leftEveryGrid = false;
+        for (int tick = 0; tick < 20; ++tick) {
+            lane.Increment();
+            const float value = SettledOutput(lane);
+            leftEveryGrid = leftEveryGrid || (!OnGrid(value, 3) && !OnGrid(value, 5) && !OnGrid(value, 8));
+        }
+        REQUIRE_TRUE(leftEveryGrid);
     }
 }
 
-TEST_CASE(random_sh_locked_loop_source_replays_without_regenerating) {
-    // Sources #1/#2/#3 are LOCKED loops: dejaVuKnob == 0.5 takes
-    // Marbles.hpp's :76 "else" branch with regen chance
-    // 2*(0.5-0.5) == 0, so the bag never regenerates after construction --
-    // only the read index advances. The slew filter (kFastCutoff, alpha
-    // ~0.94) still carries transient memory across a full 8-step loop, so
-    // this test warms up several full loops first (decay per loop is
-    // (1-alpha)^8 ~ 1.7e-10 -- fully settled) before comparing two
-    // back-to-back loops, rather than comparing the very first loop
-    // (filter starting from zero) against the second.
-    dsp::RandomShLane lane = dsp::lanes::MakeSource1(0x2222u);
-    for (int warmup = 0; warmup < 3 * 8; ++warmup) {
-        lane.Increment();
-        lane.Process();
+TEST_CASE(random_sh_rows_slew_as_the_table_says) {
+    const float alpha[5] = {
+        MeasuredAlpha(dsp::lanes::MakeSource1(0x3001u)),
+        MeasuredAlpha(dsp::lanes::MakeSource2(0x3002u)),
+        MeasuredAlpha(dsp::lanes::MakeSource3(0x3003u)),
+        MeasuredAlpha(dsp::lanes::MakeSource4(0x3004u)),
+        MeasuredAlpha(dsp::lanes::MakeSource5(0x3005u)),
+    };
+    const float expected[5] = {
+        ExpectedAlpha(dsp::lanes::kFastCutoff),
+        ExpectedAlpha(dsp::lanes::kSlew5ms),
+        ExpectedAlpha(dsp::lanes::kSlew20ms),
+        ExpectedAlpha(dsp::lanes::kSlew100ms),
+        ExpectedAlpha(dsp::lanes::kSlew200ms),
+    };
+    for (int row = 0; row < 5; ++row) {
+        REQUIRE_NEAR(alpha[row], expected[row], expected[row] * 0.02);
+        if (row > 0) {
+            REQUIRE_TRUE(alpha[row - 1] > alpha[row]);
+        }
     }
-    std::vector<float> loopA;
-    for (int i = 0; i < 8; ++i) {
-        lane.Increment();
-        loopA.push_back(lane.Process());
+}
+
+TEST_CASE(random_sh_reseed_redraws_the_bag_and_the_same_seed_reproduces_it) {
+    dsp::RandomShLane lane = dsp::lanes::MakeSource4(0x4001u);
+    dsp::RandomShLane::UiState state;
+    lane.PopulateUiState(state);
+    std::array<float, dsp::RandomShLane::kNumSlots> original{};
+    for (std::size_t i = 0; i < original.size(); ++i) {
+        original[i] = state.slots[i].load();
     }
-    std::vector<float> loopB;
-    for (int i = 0; i < 8; ++i) {
-        lane.Increment();
-        loopB.push_back(lane.Process());
+    lane.Reseed(0x4002u);
+    lane.PopulateUiState(state);
+    bool differs = false;
+    for (std::size_t i = 0; i < original.size(); ++i) {
+        differs = differs || state.slots[i].load() != original[i];
     }
-    for (size_t i = 0; i < loopA.size(); ++i) {
-        REQUIRE_NEAR(loopA[i], loopB[i], 1e-6);  // settled loop repeats
+    REQUIRE_TRUE(differs);
+    lane.Reseed(0x4001u);  // control: the constructor's seed reproduces the constructor's bag
+    lane.PopulateUiState(state);
+    for (std::size_t i = 0; i < original.size(); ++i) {
+        REQUIRE_TRUE(state.slots[i].load() == original[i]);
     }
 }
 
@@ -4626,59 +4760,6 @@ TEST_CASE(filter_fx_chain_stays_finite_under_self_oscillating_comb_with_audio_ra
         const float output = chain.Process(input, /*topology=*/0.0f, /*combPeakBlend=*/0.5f, scoopMix);
         REQUIRE_TRUE(std::isfinite(output));
     }
-}
-
-// =========================================================================
-// 8.4 -- RandomShLane deja-vu behavior: a locked loop
-// (dejaVuKnob=0.5, sources 1/2/3) never regenerates a slot value once
-// drawn; a free-running lane (dejaVuKnob=0.0, sources 4/5) regenerates the
-// current slot's value on every single Increment() call.
-// =========================================================================
-
-TEST_CASE(locked_loop_source_cycles_a_fixed_loop_across_two_full_cycles) {
-    dsp::RandomShLane lane = dsp::lanes::MakeSource1(0x3333u);  // dejaVuKnob=0.5 (locked loop, source #1).
-    dsp::RandomShLane::UiState state;
-
-    std::vector<float> firstCycle(dsp::RandomShLane::kNumSlots);
-    for (std::size_t i = 0; i < dsp::RandomShLane::kNumSlots; ++i) {
-        lane.PopulateUiState(state);
-        firstCycle[state.currentIndex.load()] = state.slots[state.currentIndex.load()].load();
-        lane.Increment();
-    }
-    std::vector<float> secondCycle(dsp::RandomShLane::kNumSlots);
-    for (std::size_t i = 0; i < dsp::RandomShLane::kNumSlots; ++i) {
-        lane.PopulateUiState(state);
-        secondCycle[state.currentIndex.load()] = state.slots[state.currentIndex.load()].load();
-        lane.Increment();
-    }
-    for (std::size_t i = 0; i < dsp::RandomShLane::kNumSlots; ++i) {
-        REQUIRE_TRUE(firstCycle[i] == secondCycle[i]);  // never regenerated -- bit-identical.
-    }
-}
-
-TEST_CASE(free_running_source_keeps_producing_new_values_across_two_full_cycles) {
-    dsp::RandomShLane lane = dsp::lanes::MakeSource4(0x4444u);  // dejaVuKnob=0.0 (free-running, source #4).
-    dsp::RandomShLane::UiState state;
-
-    std::vector<float> firstCycle(dsp::RandomShLane::kNumSlots);
-    for (std::size_t i = 0; i < dsp::RandomShLane::kNumSlots; ++i) {
-        lane.PopulateUiState(state);
-        firstCycle[state.currentIndex.load()] = state.slots[state.currentIndex.load()].load();
-        lane.Increment();
-    }
-    std::vector<float> secondCycle(dsp::RandomShLane::kNumSlots);
-    for (std::size_t i = 0; i < dsp::RandomShLane::kNumSlots; ++i) {
-        lane.PopulateUiState(state);
-        secondCycle[state.currentIndex.load()] = state.slots[state.currentIndex.load()].load();
-        lane.Increment();
-    }
-    bool sawADifference = false;
-    for (std::size_t i = 0; i < dsp::RandomShLane::kNumSlots; ++i) {
-        if (firstCycle[i] != secondCycle[i]) {
-            sawADifference = true;
-        }
-    }
-    REQUIRE_TRUE(sawADifference);
 }
 
 // =========================================================================

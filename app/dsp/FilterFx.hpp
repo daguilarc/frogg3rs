@@ -703,7 +703,7 @@ struct FilterFxChain
         // Sample-rate-independent knob-glide idiom this codebase already
         // uses when a DSP unit has no sample-rate handle to convert a real
         // Hz cutoff into alpha (RandomShLane.hpp's SetAlphaFromNatFreq
-        // call, kFastCutoff/kSlowCutoff constants) -- FilterFxChain
+        // call and its slew constants) -- FilterFxChain
         // has no SetSampleRate() of its own, so a fixed cycles/sample cutoff
         // is the only option without threading a new parameter down from
         // FroggersAppCore.
