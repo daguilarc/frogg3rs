@@ -95,6 +95,28 @@ one below it") is scoped to the modulation SOURCE count, not to this bank
 count, so the truncation does not contradict it — but the two draws now share
 a shape and the spec should say which requirement owns which.
 
+## The two count draws are the same shape with different bounds
+
+**OPERATOR RULING, 2026-09-07: zero is an acceptable draw for the number of
+Crispy knobs; it is not acceptable for the drilled-in source count.** The two
+must not be harmonized into one distribution on the grounds that they share a
+loop. Here, drawing zero means the press left the bit-scramble character
+alone, which is a legitimate outcome and the common one. There, drawing zero
+means the press did nothing at all, which is the defect
+`frogg3rs-drilled-in-randomize-floor` exists to remove.
+
+So the shape is shared and the bounds are not:
+
+| draw | floor | cap | zero means |
+|---|---|---|---|
+| Crispy banks (this change) | 0 | 2 | no bank's Crispy moved — fine |
+| drilled-in sources (that change) | 1 | none | the press was a no-op — the defect |
+
+If the two are ever collapsed into one helper, it takes BOTH a minimum and a
+maximum, and neither default may be borrowed from the other. A reader who
+sees two geometric coin loops and factors out "the" count draw without
+carrying both bounds reintroduces exactly the no-op this ruling separates.
+
 ## Overlaps with active changes
 
 `frogg3rs-drilled-in-randomize-floor` (PLANNED ONLY, 15 open tasks) changes
