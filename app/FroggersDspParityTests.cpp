@@ -6362,6 +6362,31 @@ TEST_CASE(pm_rate_floor_clears_the_audible_modulation_bound) {
     REQUIRE_TRUE(dsp::Vco::kPmLfoMinHz > kAudibleLfoRateBoundHz);
 }
 
+TEST_CASE(pm_pitch_deviation_is_the_same_at_every_rate) {
+    // The phase offset is kPmLfoDepth x StepPmLfo's return, so its slope,
+    // kPmLfoDepth x delta(return) x sampleRate, is the pitch deviation in
+    // Hz. It must be the same at the floor, the middle and the top of the
+    // rate knob: 2 pi x kPmLfoDepth x kPmLfoMaxHz. Without the rate scaling
+    // the floor would read one tenth of the top.
+    const float sr = 48000.0f;
+    const float expectedHz = 6.28318530717958647692f * dsp::Vco::kPmLfoDepth * dsp::Vco::kPmLfoMaxHz;
+    const float knobs[3] = {0.0f, 0.5f, 1.0f};
+    for (const float knob : knobs) {
+        dsp::Vco vco;
+        float previous = vco.StepPmLfo(knob, sr);
+        float peakDelta = 0.0f;
+        for (int i = 0; i < static_cast<int>(sr); ++i) {
+            const float current = vco.StepPmLfo(knob, sr);
+            peakDelta = std::max(peakDelta, std::fabs(current - previous));
+            previous = current;
+        }
+        const float deviationHz = peakDelta * dsp::Vco::kPmLfoDepth * sr;
+        std::cout << "  PM pitch deviation at rate knob " << knob << ": " << deviationHz << " Hz (expected "
+                  << expectedHz << ")\n";
+        REQUIRE_NEAR(deviationHz, expectedHz, expectedHz * 0.03);
+    }
+}
+
 TEST_CASE(pm_rate_floor_positive_control_lfo_moves_and_differs_from_ceiling) {
     // A "the rate is nonzero" assertion is worthless if the LFO could not
     // have moved. First prove the floor rate actually completes a cycle

@@ -114,16 +114,19 @@ struct Vco
     // is allowed to get, never to silence it. A cycle within a few
     // seconds reads as motion; one that takes tens of seconds reads as
     // drift.
-    // What the ear hears from phase modulation is the pitch deviation,
-    // and that scales with the LFO rate: the offset is kPmLfoDepth cycles
-    // of sine, so the peak deviation is 2 pi x kPmLfoDepth x rate, 0.94
-    // Hz per Hz of rate. At 0.3 Hz that was 0.28 Hz, two cents on a 200 Hz
-    // carrier, so the knob's bottom end did nothing audible however far
-    // the depth knobs were turned. 2 Hz gives 1.9 Hz of deviation, sixteen
-    // cents at 200 Hz: a slow vibrato, plainly heard.
+    // What the ear hears from phase modulation is the pitch deviation, the
+    // slope of the phase offset: 2 pi x (offset amplitude) x rate. With a
+    // fixed offset amplitude that slope falls with the rate, so the bottom
+    // of the rate knob was inaudible on any carrier above a few hundred
+    // hertz whatever the depth knobs did. StepPmLfo therefore scales the
+    // LFO by kPmLfoMaxHz / rate: the phase swing grows as the rate falls
+    // and the peak deviation is the same at every knob position,
+    // 2 pi x kPmLfoDepth x kPmLfoMaxHz = 18.8 Hz at full depth. The rate
+    // knob sets only how fast that wobble runs; the floor is the slowest
+    // wobble, half a second per cycle.
     static constexpr float kPmLfoMinHz = 2.0f;  // 0.5 s/cycle at the floor.
     static constexpr float kPmLfoMaxHz = 20.0f;
-    static constexpr float kPmLfoDepth = 0.15f;
+    static constexpr float kPmLfoDepth = 0.15f;  // cycles of phase swing at kPmLfoMaxHz; more below it
 
     // 08b5fd3:src/core/FroggersEngine.hpp:147-148 (x_pmLfoFloor/x_pmLfoRampWidth).
     static constexpr float kPmLfoFloor = 0.02f;
@@ -219,7 +222,9 @@ struct Vco
     float StepPmLfo(float pmRateKnob01, float sampleRate)
     {
         const float hz = ExpMapCompute(kPmLfoMinHz, kPmLfoMaxHz, pmRateKnob01);
-        const float lfoValue = Sine01(pmLfoPhase);
+        // Scaled so the pitch deviation does not fall with the rate (see
+        // kPmLfoMinHz above): unity at the top of the knob, ten at the floor.
+        const float lfoValue = Sine01(pmLfoPhase) * (kPmLfoMaxHz / hz);
         pmLfoPhase = WrapPhase(pmLfoPhase + hz / sampleRate);
         return lfoValue;
     }
