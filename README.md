@@ -32,7 +32,9 @@ so is the depth of that one. The amount by which one source modulates another ca
 This compounds exponentially. One parameter has fifteen depth knobs. Each of those
 fifteen has fifteen of its own, which is 225. Each of those 225 has fifteen
 more, which is 3,375. There is no fourth level, so a single parameter sits on
-top of 3,615 knobs. 
+top of 3,615 knobs. Across the instrument's 91 top-level parameters (six banks of
+fourteen, six Crispy knobs and Crunchy) that is 1,365 possible first-level depths and
+328,965 depths if every level were filled.
 
 
 
