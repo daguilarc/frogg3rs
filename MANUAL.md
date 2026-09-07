@@ -150,8 +150,8 @@ Randomize All redraws the held values of the five stepped sources, and every lau
 different set. The VCO Audio sources are each oscillator's raw signal at audio rate. The EF sources are each oscillator's slow envelope
 follower. Noise is broadband.
 
-External Audio and External Audio EF carry signal once an external input is connected — see Audio and
-MIDI configuration, below, for how each host connects one. Until then External Audio holds at 0.5 and
+External Audio and External Audio EF carry signal once an external input is connected — see Audio configuration and
+MIDI controllers, below, for how each host connects one. Until then External Audio holds at 0.5 and
 its envelope follower at 0.0, so neither one modulates anything.
 
 ### Randomize

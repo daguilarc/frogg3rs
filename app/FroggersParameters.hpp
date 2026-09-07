@@ -308,8 +308,8 @@ public:
     // Sized for the 91 top-level parameters this class itself registers (6
     // banks x 14 page
     // parameters + 6 per-bank Crispy + 1 shared Crunchy = 91) plus a little
-    // slack. Modulation-depth parameters (up to 915 level-1 plus
-    // more at level 2) are deliberately NOT sized for here -- that growth
+    // slack. Modulation-depth parameters (up to 1365 level-1, 91 x 15, plus
+    // more at deeper levels) are deliberately NOT sized for here -- that growth
     // rides ParameterGroup's own storage-batch request mechanism
     // (RequestParameterStorageBatch / ParameterMessageOutBus, or the direct
     // provisioning FroggersModulationSlate::Init() does) instead; out of

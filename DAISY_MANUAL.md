@@ -6,8 +6,8 @@ other.
 
 | variant | app directory | artifact | reverb page | external input |
 |---|---|---|---|---|
-| **Froggers Solo** | `src/FroggersSolo/` | `build/FroggersSolo.bin` | yes | ring mod replaces the oscillators |
-| **Froggers Guitar** | `src/FroggersGuitar/` | `build/FroggersGuitar.bin` | no | dry signal runs alongside the ring mod |
+| **Froggers Solo** | `src/FroggersSolo/` | `build/FroggersSolo.bin` | yes | only the oscillators' ring mod of the input is output |
+| **Froggers Guitar** | `src/FroggersGuitar/` | `build/FroggersGuitar.bin` | no | the dry input is mixed with that ring mod |
 
 The Field holds whichever you flashed last. Guitar is the one with no Reverb
 page.

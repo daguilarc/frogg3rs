@@ -4,14 +4,22 @@ This is a synthesizer designed for experimental noise; it probably won't make re
 filter, a distortion stage, a delay and a reverb. It can be run as a desktop app, as a VST3
 or Audio Unit plugin in a Digital Audio Workstation (DAW), and in a browser. Personally, I recommend using the web browser version or the plugin versions in a DAW. Since I won't bother paying for an Apple Developer account, and I don't have a computer running Windows, the desktop versions will not appear as automatically "trusted" by Mac or Windows operating systems. Apple now makes you go into System Settings to give permission to this un-trusted software to run on your computer, rather than in a pop-up window, which is kind of annoying. The plugins run on DAW software that was made by professional software developers so you won't need to deal with this janky stuff. Reaper is a free DAW that works pretty darn well, no need to worry about breaking the bank with Ableton Live.
 
+Two instruments share this repository. **Frogg3rs**, the app this README describes, lives under
+[`app/`](app/README.md) and runs as the desktop app, the plugins and the browser build. The original
+**Froggers** firmware for the Daisy Field Eurorack module lives under `src/`, is frozen, and has its own
+[`DAISY_MANUAL.md`](DAISY_MANUAL.md). They differ in more than where they run: the firmware runs an
+external input through the oscillators as a ring mod (Solo outputs only that ring mod while input is
+present; Guitar mixes the dry input with it), while the app never puts the input in the signal path and
+offers it only as two modulation sources, the raw signal and its envelope follower.
+
 Anyway, every parameter is an encoder knob on one of six
 banks of sixteen. Most parameter ranges are exponential, and you can attenuate the modulation depth by turning the knob, so even heavily modulated parameters are still audibly playable.
 
 These are some of the unique features in this digital synthesizer:
 
 **Modulation goes three levels deep.** Any parameter can be modulated by any of
-fifteen sources (the sixteenth slot in a modulation page is always the "back" button), and for the oscillators that includes themselves, so all oscillators can control themselves and/or each other. Six of the sources are random sample &
-hold lanes, with the last one being slewed. The rest are taken from the instrument: each oscillator's raw
+fifteen sources (the sixteenth slot in a modulation page is always the "back" button), and for the oscillators that includes themselves, so all oscillators can control themselves and/or each other. Six of the sources are random sample-and-hold
+lanes, graded from fast and extreme to slow and centred, the last one gliding continuously. The rest are taken from the instrument: each oscillator's raw
 audio-rate output, each oscillator's envelope follower, white noise, and
 external audio with its own envelope follower. The envelope followers run at
 10 ms attack and 50 ms release, so they move at a few Hz rather than at audio
@@ -19,7 +27,7 @@ rate, and one oscillator can drive any parameter either at audio rate or at that
 slower envelope rate depending on which source you pick.
 
 Each modulation depth parameter can go down carrying those same fifteen sources, and
-so is the depth of that one. The amount by which one source modulates another can be modulated, and can that modulation.
+so is the depth of that one. The amount by which one source modulates another can be modulated, and so can that modulation's own amount.
 
 This compounds exponentially. One parameter has fifteen depth knobs. Each of those
 fifteen has fifteen of its own, which is 225. Each of those 225 has fifteen
@@ -39,9 +47,9 @@ A randomized patch comes out with some parameters moving and some holding still.
 
 Randomize All covers one level at a time. To randomize the level below, open a
 modulation view and press it again there. Because each modulation depth is a real parameter that has to be
-materialized before it can hold a value, and the instrument provisions 915
-first-level depths plus 225 more for the one parameter whose modulation view is
-open, randomizing every level everywhere would mean materializing thousands of depths
+materialized before it can hold a value, and the instrument provisions a pool of
+1,440 of them (96 parameter slots times 15 sources) that every level draws on,
+randomizing every level everywhere would mean materializing thousands of depths
 per parameter. I'd rather not try that on my laptop for now.
 
 You may fork this repo if you wish to bias the randomization differently, or do even more randomization all at once. I
@@ -49,9 +57,9 @@ weighted this after testing and adjusting to taste; your taste may differ.
 
 **Crispy and Crunchy** knobs control a bit-scrambling function, which corrupts
 parameter values on their way to the DSP. This is basically like applying distortion to all the knobs, not just sounds.
-**Crunchy** is a single global knob shared by the whole instrument; each bank has its own local **Crispy**. Most parameter ranges are exponential, which scrambles only that bank's parameters. They cascade: Crunchy warps every value, Crunchy also warps
+**Crunchy** is a single global knob shared by the whole instrument; each bank has its own local **Crispy**, which scrambles only that bank's parameters. They cascade: Crunchy warps every value, Crunchy also warps
 the bank's Crispy knob itself, and that warped Crispy is then applied on top of
-the already-warped value. At zero (5 o'clock) both do nothing. Turned up, knob moves stop
+the already-warped value. At zero (fully counter-clockwise, 7 o'clock) both do nothing. Turned up, knob moves stop
 being smooth and values snap between newly crispy-crunchy islands. This works on human knob-turning as well as parameters patched through modulation sources.
 
 **Crunchy** is excluded from randomization: only you can turn it and set its modulation depths. Because every **Crispy** knob is randomized by **Randomize All**,
@@ -89,15 +97,6 @@ Build the playable app from the repo root:
 
 It writes `app/build-launcher/Frogg3rs.app` and signs it. The script caps itself at `-j2` and runs
 `nice`, which an 8-core machine needs; raising it can freeze the host.
-
-Run the tests:
-
-```sh
-cd app && make test
-```
-
-`make test` has no `-k` and stops at the first failing binary of ten — check that all ten ran before
-reading "green" into a partial result.
 
 Change proposals and specs live under [`openspec/`](openspec/).
 

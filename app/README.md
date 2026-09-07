@@ -18,6 +18,15 @@ files, so a header left off the list is silently untracked and edits to it
 produce a build that succeeds while ignoring the change. The script globs, so
 the list cannot go stale.
 
+## Tests
+
+```sh
+cd app && make test
+```
+
+Builds and runs every test binary. It stops at the first failing binary, so check that all twelve ran
+before reading a partial result as green.
+
 ## Status
 
 A full port of the Froggers synth onto Sheaf: the DSP, parameter/bank model,
