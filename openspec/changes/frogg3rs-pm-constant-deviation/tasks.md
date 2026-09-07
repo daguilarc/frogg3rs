@@ -95,8 +95,8 @@ at most.
 
 - [x] 6.1 Every gate in the table on the final tree; VST rebuilt and
       `ctest`.
-- [ ] 6.2 Postflight (S, fresh context): implementation versus this text.
-- [ ] 6.3 Sheaf first, because the submodule pin cannot resolve until its
+- [x] 6.2 Postflight (S, fresh context): implementation versus this text.
+- [x] 6.3 Sheaf first, because the submodule pin cannot resolve until its
       target exists on a remote: force-push `fix-out-of-tree-app-gaps`,
       `surface-background-constant`, `browser-audio-activation` and
       `app-midi-catalog` to `fork` (the rebase rewrote all four), and confirm
@@ -110,11 +110,11 @@ at most.
       both the first two groups — the PM change and the same-file hygiene
       interleave in them — so they land whole in the first commit rather than
       being split hunk by hunk. Fast-forward push to `main`.
-- [ ] 6.4 Rebuild the releases: move the `frogg3rs_v2` and `frogg3rs_vst`
+- [x] 6.4 Rebuild the releases: move the `frogg3rs_v2` and `frogg3rs_vst`
       tags to the new head and force-push them, which is what re-runs
       `desktop-release.yml` and `vst-plugin.yml`; `pages.yml` runs off the
       `main` push itself. Confirm all three workflows green.
-- [ ] 6.5 OPERATOR: on the desktop app, PM rate at its floor with any
+- [x] 6.5 OPERATOR: on the desktop app, PM rate at its floor with any
       Ph.mod knob up wobbles the pitch plainly on all three VCOs, and the
       top of the rate knob sounds as it did. Expect a wide warble at the
       floor at full depth — 274 cents on VCO1, 142 on VCO2, 96 on VCO3,
@@ -173,3 +173,10 @@ drift, and the only check that works is "every `src/core` citation carries a
 commit pin", which requires re-pinning 46 comments that are currently right.
 Editing 46 correct comments is a different and riskier change than repairing
 22 wrong ones, and it needs its own proposal. Named here so it is not lost.
+
+Closed 2026-09-07. Postflight ran fresh-context over both repos and its
+findings were applied before delivery. Sheaf pushed first (#9 `9973d3ab`,
+#11 `60ad4419`, #12 `62820f63`, #13 `b50cca18`), then frogg3rs `bae961a`,
+`57f98e3`, `6e76316` to `main`, then both release tags moved. CI green:
+Desktop Release 6m17s, VST Plugin 17m3s, Pages 4m16s, Firmware tests on
+both tags. Operator confirmed the PM behaviour.

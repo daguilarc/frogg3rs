@@ -127,7 +127,7 @@ Builds under `nice`, `-j2` at most.
       computation.
 - [x] 7.3 Postflight (S, fresh context): implementation versus this text.
 - [x] 7.4 Push to `main`; ledger with the before and after six pairs.
-- [ ] 7.5 OPERATOR: on the desktop app, lane 1 sounds jittery and extreme,
+- [x] 7.5 OPERATOR: on the desktop app, lane 1 sounds jittery and extreme,
       lane 6 drifts near the middle, Randomize All changes the locked
       phrases.
 
@@ -179,3 +179,5 @@ After the two post-postflight tests: parity 148/148 and marbles clock 9/9
 rebuilt and run by path; every other binary carried forward from the group
 5 run (their inputs did not move); VST carried forward (no `app/vst` or
 header edit after its build).
+
+Operator confirmed 2026-09-07.

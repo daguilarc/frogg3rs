@@ -212,10 +212,10 @@ here so a reader does not go looking for it.
 
 ## 6. Operator
 
-- [ ] 6.1 OPERATOR: a guitar into Guitar sounds like a guitar plus ring mod, not
+- [x] 6.1 OPERATOR: a guitar into Guitar sounds like a guitar plus ring mod, not
       like ring mod alone, and is not louder overall than Solo at the same knobs.
-- [ ] 6.2 OPERATOR: Guitar has no reverb page and page navigation has no hole.
-- [ ] 6.3 OPERATOR: rapid Randomize All no longer freezes either variant.
+- [x] 6.2 OPERATOR: Guitar has no reverb page and page navigation has no hole.
+- [x] 6.3 OPERATOR: rapid Randomize All no longer freezes either variant.
 - [x] 6.4 DROPPED with 1.2's boot splash. There is nothing to check on boot;
       identification is by filename before flashing and by page count after.
 
@@ -225,3 +225,5 @@ here so a reader does not go looking for it.
       not against the engine this change rewrites; re-sweep them against
       the engine as committed, in this change's postflight.
       Done 2026-09-06 by frogg3rs-omni-audit-repairs task 5.7 (every app/ citation into src/core re-resolved after the engine edit).
+
+Operator confirmed all three checks 2026-09-07.
