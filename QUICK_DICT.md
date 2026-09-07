@@ -20,7 +20,7 @@ Six banks — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 - **Shape 1 / 2 / 3** (slots 3–5) — Per-VCO waveform morph, sine → saw → square.
 - **Phase mod 1 / 2 / 3** (slots 6–8) — Per-VCO phase-mod depth from that VCO's own internal LFO; no cross-VCO coupling.
 - **Ring mod 1 / 2 / 3** (slots 9–11) — Per-VCO ring mod against its own internal carrier (20 Hz–5 kHz); true zero at the floor.
-- **PM rate** (slot 12) — One shared rate (0.05–20 Hz) for all three VCOs' phase-mod LFOs.
+- **PM rate** (slot 12) — One shared rate (2–20 Hz) for all three VCOs' phase-mod LFOs.
 - **VCO balance** (slot 13) — Tilts mix emphasis VCO1 → VCO2 → VCO3; every VCO always keeps 10–80% of the mix.
 
 ## Envelope

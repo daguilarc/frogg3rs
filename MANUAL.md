@@ -373,7 +373,7 @@ bottom of its travel — below a small floor, ring mod is completely off, not ju
 more of the metallic ring-modulated product as it's raised, fully replacing the dry tone at maximum.
 Defaults to 0, so ring mod is off on a fresh app.
 
-**PM rate** (`PMrt`, slot 12) — one shared knob (0.05 Hz–20 Hz) setting the phase-mod LFO rate for all
+**PM rate** (`PMrt`, slot 12) — one shared knob (2 Hz–20 Hz) setting the phase-mod LFO rate for all
 three VCOs at once. Depth and rate are independent: this sets the rate for all three, and each VCO's
 own Phase mod knob sets its depth.
 

@@ -6267,9 +6267,9 @@ TEST_CASE(pm_rate_default_knob_sits_at_the_floor_rate) {
 // from dsp::Vco::kPmLfoMinHz/kPmLfoMaxHz, so a change to either constant
 // cannot move this value in lockstep with the production code that reads
 // them. Recompute by hand whenever an endpoint changes intentionally:
-//   sqrt(kPmLfoMinHz * kPmLfoMaxHz) = sqrt(0.3 * 20) = sqrt(6)
-//                                   = 2.449489742783178... Hz
-constexpr float kPmRateMidpointHz = 2.4494897f;
+//   sqrt(kPmLfoMinHz * kPmLfoMaxHz) = sqrt(2 * 20) = sqrt(40)
+//                                   = 6.324555320336759... Hz
+constexpr float kPmRateMidpointHz = 6.3245553f;
 
 TEST_CASE(pm_rate_knob_midpoint_hz_is_pinned_against_silent_drift) {
     // Guards the ACTUAL VALUE: a change to either endpoint constant --

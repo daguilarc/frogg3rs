@@ -114,7 +114,14 @@ struct Vco
     // is allowed to get, never to silence it. A cycle within a few
     // seconds reads as motion; one that takes tens of seconds reads as
     // drift.
-    static constexpr float kPmLfoMinHz = 0.3f;  // ~3.3 s/cycle at the floor.
+    // What the ear hears from phase modulation is the pitch deviation,
+    // and that scales with the LFO rate: the offset is kPmLfoDepth cycles
+    // of sine, so the peak deviation is 2 pi x kPmLfoDepth x rate, 0.94
+    // Hz per Hz of rate. At 0.3 Hz that was 0.28 Hz, two cents on a 200 Hz
+    // carrier, so the knob's bottom end did nothing audible however far
+    // the depth knobs were turned. 2 Hz gives 1.9 Hz of deviation, sixteen
+    // cents at 200 Hz: a slow vibrato, plainly heard.
+    static constexpr float kPmLfoMinHz = 2.0f;  // 0.5 s/cycle at the floor.
     static constexpr float kPmLfoMaxHz = 20.0f;
     static constexpr float kPmLfoDepth = 0.15f;
 
