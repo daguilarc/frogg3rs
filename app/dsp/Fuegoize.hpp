@@ -17,13 +17,13 @@
 //   256 to uint8_t, wrapping to 0. The next expression is `row % 0`:
 //   undefined behavior, confirmed by UBSan, and observed to return
 //   different values at -O0 vs -O2 for the same input.
-//   src/core/Parameter.hpp:129-151 (the Daisy firmware's own inline
-//   fuegoize) does NOT have this bug: line 143 is
+//   08b5fd3:src/core/Parameter.hpp:129-151 (the Daisy firmware's own inline
+//   fuegoize) does NOT have this bug: line 142 is
 //     `uint8_t sh = 1u + (uint8_t)(m_position % ((mask + 1) ? (mask + 1) : 1));`
 //   Here the cast is on the RESULT of the modulo, not on the divisor --
 //   `mask + 1` stays at int width (up to 256) for the `%` itself, so the
 //   divisor is never truncated to 0. This is the correct, UB-free formula,
-//   and it is what this file ports: Parameter.hpp:143, not
+//   and it is what this file ports: 08b5fd3:src/core/Parameter.hpp:142, not
 //   the retired simulator's Fuegoize.hpp:23.
 
 #include <cmath>
@@ -31,7 +31,7 @@
 
 namespace synth_froggers::dsp {
 
-// src/core/Parameter.hpp:129-151, adapted from Parameter::Get's inline
+// 08b5fd3:src/core/Parameter.hpp:129-151, adapted from Parameter::Get's inline
 // scramble to a free function taking (value, fuegoization knob, row) --
 // the same signature the retired simulator's V2FuegoStack.hpp Fuegoize already used, so the
 // cascade below (FuegoStack) reads the same as that V2FuegoStack.hpp:9-23.
@@ -63,7 +63,7 @@ inline float Fuegoize(float value, float fuegKnob, uint8_t row)
     lowerBits ^= static_cast<uint16_t>((lowerBits >> 5) & mask);
     lowerBits ^= static_cast<uint16_t>((lowerBits << 1) & mask);
 
-    // Parameter.hpp:143 -- cast the RESULT of the modulo, not the divisor.
+    // 08b5fd3:src/core/Parameter.hpp:142 -- cast the RESULT of the modulo, not the divisor.
     // `mask + 1u` is computed here at uint32_t width (never truncated), so
     // at mask == 255 the divisor is genuinely 256, matching the firmware
     // (where `mask + 1` is computed at int width for the same reason).

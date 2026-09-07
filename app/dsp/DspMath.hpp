@@ -41,7 +41,7 @@ inline float Sine01(float phase)
     return std::sin(kTwoPi * wrappedPhase);
 }
 
-// -- src/core/FroggersEngine.hpp:124-126 (WrapPhase) ----------------------
+// -- 08b5fd3:src/core/FroggersEngine.hpp:177-180 (WrapPhase) --------------
 inline float WrapPhase(float p)
 {
     return p - std::floor(p);

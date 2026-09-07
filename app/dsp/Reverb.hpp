@@ -5,24 +5,24 @@
 //
 // Ported (7 of the Reverb page's 9 params -- Wet/dry, Room size, Decay,
 // Pre-delay, Damping, Stereo width, Diffusion) from:
-//   - src/core/FroggersEngine.hpp:301-342  ProcessReverb, verbatim signal
+//   - 08b5fd3:src/core/FroggersEngine.hpp:493-536  ProcessReverb, verbatim signal
 //     path (pre-delay tap, twin comb-ish delay lines A/B with cross-feed
 //     diffusion, shared damping low-pass, stereo width blend)
-//   - src/core/FroggersEngine.hpp:263-269  param wiring:
-//       :263 Wet/dry   = m_reverbParams->GetParam(0), direct passthrough
-//       :264 Room size = ExpMap(0.05, 1.0, GetParam(1))
-//       :265 Decay     = ExpMap(0.1, 0.98, GetParam(2))
-//       :266 Pre-delay = ExpMap(1/sr, 100/sr, GetParam(3)) [see note below]
-//       :267 Damping   = ExpMap(0.001, 0.2, 1 - GetParam(4)), fed directly
-//            as the shared damping filter's alpha (:379 `m_rvDampFilter
+//   - 08b5fd3:src/core/FroggersEngine.hpp:455-461  param wiring:
+//       :455 Wet/dry   = m_reverbParams->GetParam(0), direct passthrough
+//       :456 Room size = ExpMap(0.05, 1.0, GetParam(1))
+//       :457 Decay     = ExpMap(0.1, 0.98, GetParam(2))
+//       :458 Pre-delay = ExpMap(1/sr, 100/sr, GetParam(3)) [see note below]
+//       :459 Damping   = ExpMap(0.001, 0.2, 1 - GetParam(4)), fed directly
+//            as the shared damping filter's alpha (:574 `m_rvDampFilter
 //            .m_alpha = m_rvDamp.Process()`) -- NOT run through
 //            SetAlphaFromNatFreq; the ExpMap output IS the alpha.
-//       :268 Stereo width = GetParam(5), direct passthrough
-//       :269 Diffusion    = GetParam(6), direct passthrough
-//   - FroggersEngine.hpp:617-618 (ApplyOutputFx) -- the Wet/dry
+//       :460 Stereo width = GetParam(5), direct passthrough
+//       :461 Diffusion    = GetParam(6), direct passthrough
+//   - 08b5fd3:src/core/FroggersEngine.hpp:847 (ApplyOutputFx) -- the Wet/dry
 //     blend `(1-rvMix)*output + rvMix*rvb` that actually consumes Wet/dry;
 //     ProcessReverb itself never reads m_rvMix.
-//   - src/core/FroggersEngine.hpp:65-69 (x_rvSize = 4096, the three
+//   - 08b5fd3:src/core/FroggersEngine.hpp:65-69 (x_rvSize = 4096, the three
 //     x_rvSize-length ring buffers, and m_rvDampFilter's type OPLowPassFilter,
 //     ported here as the shared dsp::OnePoleLowPass).
 //
@@ -139,7 +139,7 @@ inline constexpr float kReverbWetLimiterReleaseSeconds = kSharedReleaseSeconds; 
 // derivation noted at its call site/setter.
 struct Reverb
 {
-    // src/core/FroggersEngine.hpp:65 (x_rvSize).
+    // 08b5fd3:src/core/FroggersEngine.hpp:65 (x_rvSize).
     static constexpr size_t kSize = 4096;
 
     // Authored Mod depth constants (no equivalent to cite) -- a slow
@@ -203,7 +203,7 @@ struct Reverb
     size_t indexB = 0;
     size_t preIndex = 0;
 
-    // src/core/FroggersEngine.hpp:69, shared between the A and B taps just
+    // 08b5fd3:src/core/FroggersEngine.hpp:69, shared between the A and B taps just
     // as the single m_rvDampFilter instance is (ported faithfully,
     // including the shared-state quirk of filtering A then B in sequence
     // through the same one-pole state each sample).
@@ -422,7 +422,7 @@ struct Reverb
 
     // Returns the fully mixed (dry/wet-blended) output, i.e. what
     // ApplyOutputFx's `(1.0f - rvMix) * output + rvMix * rvb` computes
-    // (FroggersEngine.hpp:617-618), folding the Wet/dry knob (:263) in here
+    // (08b5fd3:src/core/FroggersEngine.hpp:847), folding the Wet/dry knob (:455) in here
     // since this is the port's only consumer of that ported parameter.
     StereoSample Process(StereoSample input,
                    float mixKnob01,

@@ -4,7 +4,7 @@
 // FilterFxChain} -- a **copy** of the cited Froggers formulas.
 //
 // Ported from:
-//   - src/core/ResonantBump.hpp:44-71   RBJ peaking-biquad coefficients
+//   - 08b5fd3:src/core/ResonantBump.hpp:44-71   RBJ peaking-biquad coefficients
 //   - src/core/Comb.hpp:54              out = in + fb*sat(lp(delay[i-N]))
 //   - src/core/Comb.hpp:63              N = 1/freq (GetDelaySamples)
 //   - src/core/Comb.hpp:66-76           asymmetric +-1.1 feedback (GetFeedback --
@@ -15,7 +15,7 @@
 //     `wc -l` reports 108 while the struct's real content runs through
 //     line 109 -- confirmed by reading the file's raw bytes, not a citation
 //     error)
-//   - src/core/TanhSaturator.hpp:25-30  Pade rational approximation
+//   - 08b5fd3:src/core/TanhSaturator.hpp:25-30  Pade rational approximation
 //     x(27+x^2)/(27+9x^2), NOT std::tanh (formula :28, clamp :29)
 //   - 08b5fd3:src/core/FroggersEngine.hpp:822-848 (ApplyOutputFx) -- specifically
 //     the parallel branch :824-833 and serial branch :834-839. The reverb
@@ -98,7 +98,7 @@ inline std::complex<float> SafeDenominator(std::complex<float> denominator)
 
 }  // namespace transfer_function_detail
 
-// src/core/TanhSaturator.hpp:25-30. Despite the firmware struct's name, this
+// 08b5fd3:src/core/TanhSaturator.hpp:25-30. Despite the firmware struct's name, this
 // is a Pade rational approximation, not std::tanh -- pinned exactly,
 // including the clamp. Compressive: `Saturate(y) <= y` for `y >= 0` (the
 // rational part is `y * ratio` with `ratio = (27+y^2)/(27+9y^2) <= 1` for
@@ -116,7 +116,7 @@ struct PadeSaturator
     }
 };
 
-// src/core/ResonantBump.hpp:7-78. RBJ peaking EQ; coefficients at :44-71.
+// 08b5fd3:src/core/ResonantBump.hpp:7-78. RBJ peaking EQ; coefficients at :44-71.
 // The app's maximum peak-resonance gain, as a SHARED constant rather than a
 // literal at each use. It lives here, beside the unit it bounds,
 // because two places need to agree on it: FroggersAppCore's
@@ -272,7 +272,7 @@ struct ResonantBump
         UpdateCoefficients();
     }
 
-    // src/core/ResonantBump.hpp:44-71, verbatim formula.
+    // 08b5fd3:src/core/ResonantBump.hpp:44-71, verbatim formula.
     void UpdateCoefficients()
     {
         const float omega = 2.0f * static_cast<float>(M_PI) * freq;
