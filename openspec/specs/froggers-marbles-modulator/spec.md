@@ -2,29 +2,37 @@
 
 ## Purpose
 Six Marbles-style Random S&H modulation sources with no source-level controls (five stepped with deja-vu loops, one smooth ganged-random source immune to deja-vu), advanced by the master-clock quarter-note pulse and shaped only through second-layer modulation, each rendering its character as a visualizer.
-
 ## Requirements
 ### Requirement: Six Marbles-style Random S&H sources
-The app SHALL provide six random sample-and-hold modulation sources, labelled **Random S&H 1** through **Random S&H 6**, modelled on the Marbles random sampler. Five SHALL be stepped random voltages maintaining a remembered loop of stored values, with deja-vu behaviour selecting between repeating those values and overwriting them with fresh randoms. The sixth SHALL be the framework's own ganged random-walk generator, moving continuously rather than stepping, and is **not** affected by deja-vu.
+The app SHALL provide six random sample-and-hold modulation sources, labelled **Random S&H 1** through **Random S&H 6**, modelled on the Marbles random sampler, ordered so that a source's tendency to produce anomalous values falls with its number: the shorter a source's step period and the less it is slewed, the more often it takes a fresh value and the further from the centre that value can land. Five SHALL be stepped random voltages maintaining a remembered bag of eight stored values, with a fixed deja-vu character selecting, per step, between replaying those values, jumping among them, and overwriting them with fresh randoms. The sixth SHALL draw a fresh target and glide to it continuously, in the manner of Marbles' Y output, and is **not** affected by deja-vu.
 
-#### Scenario: High deja-vu repeats a fixed loop
-- **WHEN** a stepped source's deja-vu character is high and it is advanced repeatedly
+#### Scenario: Locked deja-vu repeats a fixed loop
+- **WHEN** a stepped source's deja-vu character is exactly the locked value and it is advanced repeatedly
 - **THEN** the output cycles through the same remembered values
 - **THEN** the cycle length matches that source's loop length
 
 #### Scenario: Low deja-vu keeps producing new values
-- **WHEN** a stepped source's deja-vu character is low and it is advanced repeatedly
+- **WHEN** a stepped source's deja-vu character is below the locked value and it is advanced repeatedly
 - **THEN** stored values are progressively replaced with new randoms
+
+#### Scenario: High deja-vu replays in a scrambled order
+- **WHEN** a stepped source's deja-vu character is above the locked value and it is advanced repeatedly
+- **THEN** no stored value is replaced
+- **THEN** the read position jumps to a random slot with the probability that character sets
 
 #### Scenario: The smooth source ignores deja-vu
 - **WHEN** Random S&H 6 is active
-- **THEN** its output moves smoothly rather than stepping
+- **THEN** its output glides between successive random targets rather than stepping
 - **THEN** its behaviour does not change with deja-vu
 
 #### Scenario: Smooth source movement duration follows tempo
 - **WHEN** the master clock's tempo changes
-- **THEN** Random S&H 6 recomputes its movement duration so that one move spans sixteen quarter notes at the new tempo
-- **THEN** its movement is tempo-proportional rather than locked to the quarter-note grid, which is what allows it to reuse the framework's ganged-random visualizer unmodified
+- **THEN** Random S&H 6 recomputes its timing so that one wait-and-glide round spans sixteen quarter notes at the new tempo
+- **THEN** its movement is tempo-proportional rather than locked to the quarter-note grid
+
+#### Scenario: Activity and peak slope rank the sources
+- **WHEN** every source is driven for the same span at one tempo and its output's mean absolute first difference per sample and its peak absolute first difference are measured
+- **THEN** both quantities fall strictly from Random S&H 1 to Random S&H 6
 
 ### Requirement: The sources carry no source-level parameters
 Random S&H sources SHALL expose no controls over their own behaviour — no loop length, deja-vu, spread, bias, rate, or slew control — and SHALL NOT occupy any bank slot. No dedicated page or additional bank SHALL be created for them. Each source's character SHALL be fixed at construction, chosen so the six differ usefully from one another.
@@ -47,15 +55,21 @@ This is distinct from their **modulation depth**, which is an ordinary bipolar e
 - **THEN** no control over the source's own behaviour exists anywhere
 
 ### Requirement: Stepped source character constants are new behavior
-The stepped sources' character constants — spread and bias in particular — SHALL be new behavior implemented for this capability, not carried over from the original Froggers random sampler, which exposes no range-narrowing or centring control. Of the six sources, exactly one SHALL be configured narrow-range and centred; the remaining five SHALL be full-range.
+The sources' character constants SHALL be new behavior implemented for this capability, not carried over from the original Froggers random sampler. Spread SHALL be a distribution shape on the uniform draw with three fixed points: at 0.5 the draw is unchanged, at 1.0 every draw lands on an extreme, at 0 every draw lands on the centre; below 0.5 the shape contracts draws toward the centre and above 0.5 it expands them toward the extremes, without bounding any draw away from the extremes. A stepped source SHALL apply the shape before its level quantizer. The six sources' constants SHALL follow one table in which, from source 1 to source 6, the step period rises, the probability of a fresh value per step falls, spread falls from near-bimodal to centre-hugging, quantization coarsens toward source 1 and is absent from source 4 onward, and slew lengthens.
 
-#### Scenario: Exactly one source is narrow and centred
+#### Scenario: Spread's three fixed points hold
+- **WHEN** a set of uniform draws is shaped at spread 0.5, 1.0 and 0
+- **THEN** at 0.5 every draw is unchanged
+- **THEN** at 1.0 every draw is 0 or 1
+- **THEN** at 0 every draw is 0.5
+- **THEN** the mean absolute deviation from the centre at 0.25 is below that at 0.5, which is below that at 0.75
+
+#### Scenario: Every axis is monotone in the source number
 - **WHEN** the six sources' character constants are enumerated
-- **THEN** exactly one source is narrow-range and centred
-- **THEN** the other five sources are full-range
+- **THEN** period, fresh-value probability, spread, quantization and slew are each monotone from source 1 to source 6
 
 ### Requirement: Sources advance on the master clock quarter-note pulse
-Every source SHALL derive its rate from the master clock's quarter-note pulse, rather than from a free-running internal timer, each at its own fixed multiple or division of that pulse. These per-source rates SHALL be fixed: Random S&H 1 advances once per quarter note; Random S&H 2 advances twice per quarter note (eighth notes); Random S&H 3 advances three times per quarter note (eighth-note triplets); Random S&H 4 advances once per quarter note; Random S&H 5 advances once per four quarter notes; Random S&H 6 is smooth and is not stepped at all, per its own requirement.
+Every stepped source SHALL derive its rate from the master clock's quarter-note pulse, rather than from a free-running internal timer, each at its own fixed multiple or division of that pulse. These per-source rates SHALL be fixed: Random S&H 1 advances three times per quarter note (eighth-note triplets); Random S&H 2 advances twice per quarter note (eighth notes); Random S&H 3 advances once per quarter note; Random S&H 4 advances once per two quarter notes; Random S&H 5 advances once per four quarter notes; Random S&H 6 is smooth and is not stepped at all, per its own requirement.
 
 #### Scenario: Advances track the clock
 - **WHEN** the transport runs for a known number of quarter notes
@@ -93,3 +107,20 @@ Each source SHALL provide a visualizer attached to the modulation source itself,
 #### Scenario: Depth cells show the visualizer
 - **WHEN** a modulation detail grid is open
 - **THEN** each Random S&H depth cell shows that source's visualizer as an underlay
+
+### Requirement: Randomize All redraws the locked bags
+Randomize All SHALL redraw every stepped source's bag of stored values from fresh randoms, so the locked and scrambled sources play a new phrase after the gesture, and the sources SHALL be seeded differently on each launch while a source built from an explicit seed remains reproducible.
+
+#### Scenario: Randomize All changes a locked phrase
+- **WHEN** a locked source's stored values are recorded and Randomize All is pressed
+- **THEN** at least one stored value differs afterwards
+
+#### Scenario: Randomize Page leaves the bags alone
+- **WHEN** a locked source's stored values are recorded and Randomize Page is pressed
+- **THEN** every stored value is unchanged
+
+#### Scenario: Launches differ, explicit seeds do not
+- **WHEN** two modulation slates are constructed in one process
+- **THEN** at least one source's stored values differ between them
+- **AND** two sources built from the same explicit seed hold identical values
+

@@ -242,3 +242,152 @@ cannot express.
 - **WHEN** an action a page emits is removed from that page's action list
 - **THEN** a check fails naming the page that emits it
 
+### Requirement: Each controller row control does one job
+The MIDI configuration page SHALL offer exactly one control that lists devices — the add row's selector — and SHALL NOT offer a device or preset list on a configured row. A configured row SHALL NOT name a preset at all; it SHALL offer a Restore action, and only while it was created from a preset and its stored configuration differs from that preset, so that the action's presence is itself the signal that the row has been edited. Every distinct device or operating mode SHALL be its own preset, chosen once when the row is created; the page SHALL NOT offer a second control asking which model or mode a row is. A row SHALL offer to release a bound controller whenever a device is bound to it, and SHALL NOT offer that control otherwise.
+
+#### Scenario: A row never offers another device's preset
+- **WHEN** a MIDI Fighter Twister row is presented
+- **THEN** no control on that row offers an Akai APC40 preset, or any preset for a kind other than the row's own
+- **AND** the only control listing devices anywhere on the page is the add row's selector
+- Check: `controllers_page_ui_tests.cpp`, the row-control tests (task 2.6); operator, tasks 6.1 and 6.3.
+
+#### Scenario: Restore appears only when there is something to restore
+- **WHEN** a row created from a preset has had a mapping edited
+- **THEN** the row offers Restore, and names no preset anywhere on it
+- **AND** pressing Restore reinstalls that row's own preset
+- **AND** a row whose configuration still matches its preset offers no Restore
+- **AND** a row that was never created from a preset offers none either
+- **AND** editing a mapping and setting it back by hand withdraws Restore again
+- Check: `controllers_page_ui_tests.cpp`, the Restore tests (task 2.6); operator, task 6.2.
+
+#### Scenario: A device model is chosen once, as a preset
+- **WHEN** the add row is opened
+- **THEN** each Launchpad model is listed as its own preset, alongside the Twister and each APC40 mode
+- **AND** no control anywhere on a created row asks which model or mode that row is
+- **AND** a row created from a preset carrying a connect-time message sends exactly that message when its output connects, and one created from a preset without such a message sends none
+- Check: `controllers_page_ui_tests.cpp`, the preset tests, and `instrument_tests.cpp`, the connect-message tests (task 2.6); operator, tasks 6.1a and 6.1b.
+
+#### Scenario: Releasing a controller frees it and keeps its mappings
+- **WHEN** a row with both endpoints bound is released
+- **THEN** its open endpoints are closed, its stored references are retained, and another application can take the device
+- **AND** reclaiming it restores its mappings
+- **AND** a row with no bound device offers no release control at all, rather than a disabled one
+- Check: `viewmodel_tests.cpp` and `browser_runtime_contract_tests.cpp`, the release round trip (task 2.5); operator, task 6.5.
+
+### Requirement: A row remembers which preset created it
+A controller row SHALL retain the identity of the preset that created it for as long as the row exists, and editing the row's mappings SHALL NOT discard that identity. Whether the row still matches that preset SHALL be determined by comparing the row's stored configuration against the preset's generated configuration, rather than by treating the recorded identity as a marker of an unedited row. Controls that depend on a row resolving to a known preset SHALL remain available after the row's mappings have been edited.
+
+#### Scenario: An edited row keeps its provenance
+- **WHEN** a mapping on a row created from a preset is edited, deleted, or added to
+- **THEN** the row still resolves to the preset that created it
+- **AND** the row is reported as differing from that preset
+- Check: `viewmodel_tests.cpp`, the provenance tests (task 2.6).
+
+#### Scenario: Editing a row does not withdraw its other controls
+- **WHEN** a row with both endpoints bound has one of its mappings edited
+- **THEN** the row still offers to release the bound controller
+- **AND** a released row that has been edited still offers Configure
+- Check: `controllers_page_ui_tests.cpp`, the row-control tests (task 2.6); operator, task 6.5.
+
+### Requirement: The MIDI configuration page fits this application's window in every state
+
+The MIDI configuration page SHALL lay every control inside this application's content width on every host in every reachable state: controller rows collapsed and expanded, each configuration section open, and a mapping row in each group that accepts an added row (Turn, Push, System, Gesture, App action) beside the rows a preset installs. The controller header SHALL be two lines: identity (name, device kind, Preset, and Variant for a Launchpad) and ports (MIDI in and MIDI out, each preceded by its own status dot, then Delete and Blacklist). The page SHALL show a controller's device kind by its display name, SHALL caption the preset selectors "Preset" on the row and on the add row, SHALL offer on the add row this application's presets followed by a Custom entry per device kind and nothing else, SHALL add the preset its add row displays when the operator has chosen none, SHALL name an added controller after its preset (with a numeric suffix when the name is taken), SHALL bind an added controller's ports to a connected device that matches the preset and otherwise leave them "(none)", SHALL keep the rename field inside the expanded editor under the caption "Name", SHALL keep a renamed controller's row expanded and its open sections open, SHALL caption the ports "MIDI in" and "MIDI out" with a legend for the status dots above the first controller, and SHALL show a controller's full name. A combo box or text field SHALL never draw past its own box.
+
+#### Scenario: Every state fits
+
+- **WHEN** a Twister, a Generic and a Launchpad controller are configured,
+  the Generic row is expanded with Encoders (a Turn and a Push row added),
+  System Messages (a row added) and Analogs (a Gesture and an App action
+  row added) open, the Launchpad row is expanded with System Messages
+  open, and the Twister row is expanded with Encoders open
+- **THEN** no control lies outside the page's content width in any of
+  those states
+- Check: `portable_ui_tests.cpp`,
+  `TestControllersRowFitsWithinFroggersNarrowestHost` (task 2.6);
+  operator, task 7.1.
+
+#### Scenario: The row reads as its parts
+
+- **WHEN** the operator reads a MIDI Fighter Twister row
+- **THEN** it shows "MIDI Fighter Twister", "MF Twister" and the Preset
+  selector on the first line; a status dot before the "MIDI in" selector,
+  a status dot before the "MIDI out" selector, Delete and Blacklist on the
+  second; no rename control in the header
+- Check: `controllers_page_ui_tests.cpp`, the caption, dot-order and
+  header tests (task 2.5); operator, task 7.1.
+
+#### Scenario: Renaming keeps the editor open
+
+- **WHEN** the operator expands a controller's editor, opens one of its
+  sections, types a new name in the Name field and presses Rename
+- **THEN** the controller is renamed, its row is still expanded, and the
+  section it had open is still open
+- **AND** deleting a controller and adding another with the same name
+  still starts that row fully collapsed
+- Check: `viewmodel_tests.cpp`, the rename expand-state tests;
+  `controllers_page_ui_tests.cpp` and
+  `juce/ControllersPageSimulationTests.cpp`, the post-rename editor
+  assertions (task 2.5); operator, task 7.2.
+
+#### Scenario: Adding from a preset
+
+- **WHEN** the operator presses Add on the add row with no Twister
+  connected, having chosen nothing, and the add row displays
+  "MIDI Fighter Twister"
+- **THEN** a row named "MIDI Fighter Twister" appears whose Preset reads
+  MIDI Fighter Twister and whose ports read "(none)"
+- **AND** with a Twister connected on both its ports, the same action
+  binds both ports to it
+- **AND** with only one of its ports present, both ports still read
+  "(none)" and the operator picks the present one from its selector
+- Check: `controllers_page_ui_tests.cpp`, the add-from-preset tests (task
+  2.5); operator, task 7.3.
+
+#### Scenario: A page change rebuilds every test that reads the page
+
+- **WHEN** `include/synth/ControllersPageUI.hpp` changes and the test
+  binaries are built
+- **THEN** every binary whose translation unit includes that header is
+  relinked from the changed source rather than reported up to date
+- **AND** a binary built from more than one translation unit is rebuilt
+  when a header reached by any one of them changes, not only the last
+- Check: `Makefile` depfiles, proven by the two-leg positive control in
+  task 2.4.
+
+#### Scenario: A selector's text stays in its box
+
+- **WHEN** a controller's Preset selector shows "MIDI Fighter Twister" in
+  the browser build
+- **THEN** the selector fills exactly its box and clips its text
+- Check: `browser/tests/ui-backend.spec.ts`, the select-fills-wrapper
+  assertion.
+
+### Requirement: The library is tested on the target the product ships to
+The library's own test binaries SHALL be built and run for the browser's wasm32 target as part of the test gate, so that behaviour depending on the width of `std::size_t` is exercised at the width the shipping build uses. The gate SHALL fail, rather than skip, when the toolchain that builds for that target is unavailable. Arithmetic guarding an index or a count SHALL be correct on every target the code is built for, independent of word size.
+
+#### Scenario: A width-dependent defect fails the gate
+- **WHEN** a size bound or overflow guard behaves differently under a 32-bit `std::size_t` than under a 64-bit one
+- **THEN** the test gate fails on the wasm32 target
+- **AND** the failure names the function whose behaviour differs
+- Check: the wasm32 gate, proven live in both directions — with the pre-fix guard restored it exits non-zero on 23 `blocks_tests` failures, and after the block validator's overflow guard is corrected it runs both binaries to 249 passes and 0 failures. The gate is fail-fast, so the 26 `viewmodel_tests` failures the same guard causes are measured by building that binary for the target directly, not through the gate.
+
+#### Scenario: Adding an encoder mapping succeeds in the browser build
+- **WHEN** a controller row created from a preset has Add or Block pressed in the Encoders editor
+- **THEN** the mapping or block is added, in the browser build as in every other
+- **AND** the same holds on a row with no existing mappings, and in the Analogs and System Messages sections
+- Check: `blocks_tests` and `viewmodel_tests` on wasm32, which fail on exactly these paths before the guard is corrected and pass after; and the operator on the deployed build.
+
+### Requirement: A control's label is legible and its neighbours are separated
+A text node SHALL be allocated a box wide enough for the text it renders, and adjacent controls within a row SHALL be separated by a non-zero gap, so that no label is clipped by, or visually continuous with, the control beside it. This SHALL be checked by a criterion applied to the page's rendered states, measuring text width finely enough to catch a sub-pixel overrun, rather than by inspection.
+
+#### Scenario: A column header is not clipped by the button beside it
+- **WHEN** the Encoders editor's Turn or Push group header is presented
+- **THEN** every column label is fully legible
+- **AND** a gap separates the last column from the Add button
+- Check: the text-fit criterion, extended to the row-expanded/Encoders-open state and to a sub-pixel measurement, proven to fail on the 58px `BlockStartPos` allocation and the zero gap before they are corrected; and the operator on the deployed build.
+
+#### Scenario: A rounding-width overrun is not reported as fitting
+- **WHEN** a label's rendered text exceeds its allocated box by less than one pixel
+- **THEN** the text-fit criterion reports a violation
+- Check: the same criterion. `scrollWidth` and `clientWidth` are integers and both read 58 for the 58.3px "Start Pos" label, so the integer comparison this replaces reports no violation on a live defect.
+

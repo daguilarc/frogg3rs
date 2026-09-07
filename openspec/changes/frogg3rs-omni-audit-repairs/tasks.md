@@ -303,7 +303,7 @@ under `nice` with `-j2` at most.
       passing check each.
 - [x] 10.4 Local-only commits listed by hash in the ledger; `git status`
       clean at repo and submodule level.
-- [ ] 10.5 OPERATOR: Play, Stop, Freeze on and off in the desktop app; the
+- [x] 10.5 OPERATOR: Play, Stop, Freeze on and off in the desktop app; the
       instrument silences on Stop and on Freeze release exactly as before.
 - [x] 10.6 The pair-AR path (P19): deleted from src/core, test/firmware, and the specs; see the ledger.
 
@@ -350,3 +350,5 @@ found, 46 changed, 47 another meaning; 22 `src/common` files deleted, 3
 Pair-AR removal (operator ruling 2026-09-06): PairArEnvelope.hpp, AudioPairArState.hpp, the m_pairAr branch, PairArEnvelope_test, the VariantMix PairArRun probe; REMOVED pair-ar-vcv-time-range; MODIFIED external-ring-mod-mix, mod-blend-semantics, field-operator-doc-parity.
 
 Open for the operator: 10.5 (Play/Stop/Freeze by ear).
+
+Operator confirmed these checks 2026-09-07.
