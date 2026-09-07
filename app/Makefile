@@ -182,6 +182,14 @@ check-no-firmware-includes:
 check-microphone-usage:
 	@bash $(APP_DIR)/check_microphone_usage_strings.sh "$(APP_DIR)"
 
+# --- parameter reference drift guard ------------------------------------------
+# MANUAL.md and QUICK_DICT.md restate FroggersParameters.hpp's bank tables and
+# FroggersUiSurface.hpp's rendered labels in prose; this fails when either
+# document's name, label or slot for a parameter drifts from the source. See
+# the script's own header for the entry grammar it parses.
+check-docs-match-parameter-table:
+	@python3 $(APP_DIR)/check_docs_match_parameter_table.py "$(APP_DIR)"
+
 # --- no-JUCE-in-app-core target ---------------------------------------------
 $(NO_JUCE_CHECK): $(NO_JUCE_CHECK_SRC) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(DSP_HEADERS) | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) -I$(JUCE_DIR)/modules $(CXXFLAGS) $(NO_JUCE_CHECK_SRC) -o $@
@@ -262,7 +270,7 @@ check-catalog-covers-screen-actions:
 	@bash $(APP_DIR)/check_catalog_covers_screen_actions.sh "$(APP_DIR)" \
 	    kSceneBlend kEncoderPress kEncoderDrag kInputSelect kViewportNarrow
 
-test: check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN) $(CONTROLLERS_PAGE_BIN)
+test: check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions check-docs-match-parameter-table $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN) $(CONTROLLERS_PAGE_BIN)
 	$(TEST_BIN)
 	$(MONO_VALIDATION_BIN)
 	$(DSP_TEST_BIN)

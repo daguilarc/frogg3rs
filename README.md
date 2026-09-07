@@ -39,12 +39,14 @@ fourteen, six Crispy knobs and Crunchy) that is 1,365 possible first-level depth
 
 
 **Randomization is weighted to stay playable.** Randomize All draws new values
-across the whole instrument, along with one level of modulation depths.
-Randomize Page draws exactly what is on screen: a bank's values on a parameter
-page, or that view's depths inside a modulation view. The number of sources a
-parameter picks up is a weighted draw, each count half as likely as the one
-before it: half of all parameters come out with no modulation at all, a quarter
-get one source, and four or more is rare.
+across the whole instrument, along with one level of modulation depths, and
+randomizes the Crispy of up to two banks. Randomize Page draws exactly what is
+on screen: a bank's values on a parameter page, or that view's depths inside a
+modulation view. The number of sources a parameter picks up is a weighted
+draw, each count half as likely as the one before it: half of all parameters
+come out with no modulation at all, a quarter get one source, and four or
+more is rare. Inside a modulation view, Randomize All draws from a floor of
+one source instead, so every press there moves something.
 A randomized patch comes out with some parameters moving and some holding still.
 
 Randomize All covers one level at a time. To randomize the level below, open a
@@ -64,8 +66,7 @@ the bank's Crispy knob itself, and that warped Crispy is then applied on top of
 the already-warped value. At zero (fully counter-clockwise, 7 o'clock) both do nothing. Turned up, knob moves stop
 being smooth and values snap between newly crispy-crunchy islands. This works on human knob-turning as well as parameters patched through modulation sources.
 
-**Crunchy** is excluded from randomization: only you can turn it and set its modulation depths. Because every **Crispy** knob is randomized by **Randomize All**,
-this is functionally the same outcome, without two bit-crushers pulling in different directions at the same time.
+**Crunchy** is never randomized: only you can turn it and set its modulation depths. **Randomize All** randomizes the Crispy of at most two of the six banks per press, never all six at once, because scrambling all six together lands where randomizing Crunchy would. **Randomize Page** randomizes the Crispy of the bank on screen.
 
 Full parameter reference: [`MANUAL.md`](MANUAL.md).
 
