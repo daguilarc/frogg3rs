@@ -3,8 +3,8 @@
 **Created 2026-09-07. PLANNED ONLY: nothing executes before the operator's
 go. Not yet preflighted.**
 
-Paths are repo-root relative. Line numbers are 2026-09-07 reads of `main` at
-`a0a92cc` plus the uncommitted working tree described below.
+Paths are repo-root relative. Line numbers are 2026-09-07 reads of the clean
+tree at `main`.
 
 ## What this supersedes, and why one change
 
@@ -15,18 +15,20 @@ call-site map with a rebase between:
 
 | superseded | state when absorbed |
 |---|---|
-| `frogg3rs-drilled-in-randomize-floor` | HALTED mid-execution. Code applied and green in the working tree, uncommitted, but built on an over-scoped plan (below). |
+| `frogg3rs-drilled-in-randomize-floor` | HALTED mid-execution on an over-scoped plan (below). Its partial execution was reverted; the design survives here, corrected. |
 | `frogg3rs-randomize-all-partial-crispy` | Proposal and spec delta only; never executed. |
 | `frogg3rs-controllers-editor-add-and-columns` | One task, `5b.2`: a red browser e2e suite it did not cause and correctly refused to repair. |
 | `frogg3rs-omni-audit-repairs` (archive) | Complete, but `openspec archive` aborts on it. |
 
 ## The state of the working tree
 
-`git status` at write time: `app/FroggersModulation.hpp`,
-`app/FroggersModulationTests.cpp` and the two halted-change artifacts are
-modified and UNCOMMITTED. The suite is green on that tree (352/352,
-`openspec validate --all --strict` clean), but green is not correct here —
-see the root defect. Nothing in that diff has been committed or pushed.
+Clean. The halted change's partially-executed code was reverted on
+2026-09-07 rather than carried forward, so that execution starts from the
+state this proposal describes rather than from a half-applied earlier plan.
+The reverted diff is kept at
+`scratchpad/halted-floor-work.patch` for reference only; it is not the
+starting point and must not be reapplied — it contains the over-scope below.
+Every line number in this proposal was re-resolved against the reverted tree.
 
 ## Root defect carried in from the halted change
 
@@ -37,10 +39,10 @@ drilled-in modulation level, **Randomize All** should never be a no-op."
 
 | call site | enclosing function | in the ask? |
 |---|---|---|
-| `:1587` | `RandomizeAll`, drilled-in branch | yes |
-| `:1622` | `RandomizeAll`, one-level descent | yes |
-| `:1497` | **`RandomizePage`** (defined `:1485`) | **no** |
-| `:1306` | `RandomizeBankLevel1Depths`, level 0 | no, correctly untouched |
+| `:1584` | `RandomizeAll`, drilled-in branch | yes |
+| `:1619` | `RandomizeAll`, one-level descent | yes |
+| `:1494` | **`RandomizePage`** (defined `:1482`) | **no** |
+| `:1303` | `RandomizeBankLevel1Depths`, level 0 | no, correctly untouched |
 
 A page-level press does not reach drilldown levels and nothing here changes
 that; equally, a drilled-in **Page** press is not a drilled-in **All** press.
@@ -50,8 +52,8 @@ part of it.
 
 **What the over-scope caused.**
 `randomize_page_mod_detail_moves_the_display_on_the_expected_fraction_of_500_trials`
-(`app/FroggersModulationTests.cpp:844`) drives `RandomizePage` at drill level
-1 — call site `:1497` — and asserted its moved-display rate in [35%, 65%].
+(`app/FroggersModulationTests.cpp:812`) drives `RandomizePage` at drill level
+1 — call site `:1494` — and asserted its moved-display rate in [35%, 65%].
 That test was correct. Execution read its failure as a stale band, widened it
 to >95%, and the halted change's own text was then amended to bless that as a
 superseding finding. A correct test was edited to fit an unrequested
@@ -69,9 +71,9 @@ assertion instead.
 
 ## What this change does
 
-**1. Correct the floor's scope, then keep it.** Revert `:1497` to the default
-floor of 0 and restore the test it broke. Keep the floor on `:1587` and
-`:1622`, which are the two halves of one drilled-in Randomize All press. The
+**1. Floor the drilled-in Randomize All.** Apply the floor to `:1584` and
+`:1619` only — the two halves of one drilled-in Randomize All press — and
+leave `:1303` and `:1494` on the default. The
 measured effect stands: level-1 and level-2 both move from mode 0 to mode 1,
 P(0)=0, while level 0 is byte-identical.
 
@@ -98,9 +100,8 @@ minimum and a maximum, and neither default may be borrowed from the other.
 presents one weighted table as universal ("Every parameter draws its own
 source count"); `README.md:41-44` says the same in prose. Both are correct
 for a page-level press and for Randomize Page at any level, and wrong for
-Randomize All at a drilled-in level. `app/FroggersModulation.hpp:1140-1143`
-states `P(k) = 0.5^(k+1)` unconditionally, sixteen lines above the line that
-now starts the count from `minimumSources`.
+Randomize All at a drilled-in level. `app/FroggersModulation.hpp:903` and `:1141`
+both state `P(k) = 0.5^(k+1)` unconditionally.
 
 **5. Unblock the `omni-audit-repairs` archive.** `openspec archive` aborts
 because that change's delta REMOVES all three requirements from
@@ -131,7 +132,8 @@ finding so it stops being parked against a change that has nothing else open.
 - Repairing `fake-app.e2e.spec.ts`. Item 6 re-homes the report only; the
   repair is a design ruling on the wizard flow and needs its own change.
 - Crunchy. It stays excluded from every randomize path.
-- Randomize Page's behaviour, at any level. Item 1 restores it.
+- Randomize Page's behaviour, at any level. It keeps the zero floor, and its
+  500-trial display test is the tripwire that proves the floor stayed out.
 - The level-0 floor. It stays at zero; a floor there roughly doubles a
   page-level press's depth allocation (~78 to ~164 materialized depths),
   against a prior hand-tuned ladder at ~151 that was abandoned for storage

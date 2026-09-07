@@ -3,10 +3,15 @@
 PLANNED ONLY. Not yet preflighted. Tier per task: **H** = mechanical, **S**
 = decides what something means. Builds under `nice`, `-j2` at most.
 
-Carried forward as already closed, not re-run: the halted change's preflight
-citations (helper `app/FroggersModulation.hpp:1106`; call sites `:1306`,
-`:1497`, `:1587`, `:1622`; `FroggersParameters.hpp:291`) and its BEFORE
-histograms, measured on the unmodified tree:
+The working tree is clean: the halted change's partial execution was reverted
+so this plan starts where it says it starts. All line numbers below are reads
+of the reverted tree.
+
+Carried forward as already closed, not re-run: the helper is at
+`app/FroggersModulation.hpp:1106`, its count loop at `:1158`, its four call
+sites at `:1303` (`RandomizeBankLevel1Depths`), `:1494` (`RandomizePage`),
+`:1584` and `:1619` (both `RandomizeAll`); `FroggersParameters.hpp:291`
+(`kNumModulators = 15`). BEFORE histograms, measured on this same tree:
 level-0 `P(0)=49.9% mode=0 mean=0.926`,
 level-1 `P(0)=48.2% mode=0 mean=1.024`,
 level-2 `P(0)=52.9% mode=0 mean=0.934`.
@@ -64,27 +69,46 @@ sections of `README.md`, `MANUAL.md` and `QUICK_DICT.md`. Name each as swept.
       with the 3+ tail discarded (50/25/12.5). Truncated is proposed.
 - [ ] 1.5 First run of every gate, recorded as the before line.
 
-## 2. Correct the floor's scope — H
+## 2. Floor the drilled-in Randomize All — H
 
-- [ ] 2.1 `app/FroggersModulation.hpp:1497` — remove the `1` argument so
-      `RandomizePage`'s drilled-in branch returns to the default floor 0.
-- [ ] 2.2 `app/FroggersModulationTests.cpp:838-843` — restore the original
-      [35%, 65%] band and its comment from
-      `git show a0a92cc:app/FroggersModulationTests.cpp`. Do not re-derive
-      it; that test was correct before this work touched it.
-- [ ] 2.3 KEEP the header-comment correction at `:801,804` (20% -> 50%,
-      "~80%" -> 50%, "weighted table" -> geometric draw): those figures were
-      stale against the code independently. Re-read after 2.2 and confirm the
-      header and the band now agree.
-- [ ] 2.4 Verify the floor reaches only Randomize All: `:1587` and `:1622`
-      keep the `1`; `:1306` and `:1497` are on the default. Report all four
-      with enclosing function names read from the file.
-- [ ] 2.5 Gate. Control:
+- [ ] 2.1 `detail::RandomizeParameterModulationDepths`
+      (`app/FroggersModulation.hpp:1106`) gains `std::size_t minimumSources = 0`
+      as a third parameter. The count draw at `:1158` becomes
+      `std::size_t count = std::min(minimumSources, eligible.size());` before
+      the existing while loop. The `eligible.empty()` early return stays ahead
+      of it. Nothing else in the function changes.
+- [ ] 2.2 Pass `1` at `:1584` (`RandomizeAll`'s drilled-in branch) and `:1619`
+      (`RandomizeAll`'s one-level descent) — the two halves of one drilled-in
+      press. Leave `:1303` (`RandomizeBankLevel1Depths`, level 0) and `:1494`
+      (`RandomizePage`, any level) on the default, and say why at each: level 0
+      keeps the zero floor because a floor roughly doubles its depth
+      allocation; Randomize Page keeps it because its contract is to
+      randomize exactly what is displayed.
+- [ ] 2.3 `RequireGeometricCountDistribution` (`app/FroggersModulationTests.cpp:903`)
+      gains a floor argument and asserts the shape from that floor: every
+      bucket below the floor exactly zero, mode at the floor, each count about
+      half the one below. THREE call sites: `:973` (level-0, floor 0), `:1044`
+      (level-1, floor 1), `:1045` (level-2, floor 1).
+- [ ] 2.4 Rename the two tests whose names say `mode_two` (`:953`, `:986`) to
+      name the distribution they assert, and correct the stale figures in the
+      comment at `:801` ("20%"), `:804` ("~80%") and its "weighted table"
+      phrase — all three, or the sentence is half-corrected.
+- [ ] 2.5 Positive control, both numbers reported. AFTER histograms beside the
+      BEFORE ones above. level-0 MUST be unchanged (mode 0, P(0) about 50%);
+      level-1 and level-2 MUST both show P(0)=0 and mode 1. If level-0 moved,
+      the floor leaked into the shared default — stop.
+- [ ] 2.6 Control on the untouched gesture:
       `randomize_page_mod_detail_moves_the_display_on_the_expected_fraction_of_500_trials`
-      passes with its ORIGINAL band and no edits. If it fails, the revert is
-      incomplete — stop. The level-1 and level-2 histograms must still show
-      P(0)=0 and mode 1, both being fed by Randomize All call sites; if
-      either reverts to mode 0, the call-site map in 2.4 is wrong.
+      (`:812`, band at `:843-844`) must pass UNCHANGED, with no edit to it.
+      It drives `RandomizePage` at drill level 1 — call site `:1494`. If it
+      fails, the floor reached a gesture the ask did not name; stop and
+      re-read 2.2. This test is the tripwire for the defect that superseded
+      the previous change.
+- [ ] 2.7 Measure the allocation cost: depths materialized per drilled-in
+      press before and after, and how often `partial` is reported. If
+      `partial` becomes common rather than rare, that is a finding this text
+      does not resolve — report it and stop.
+- [ ] 2.8 Gate: `nice make -C app -j2 test`, every binary by path.
 
 ## 3. Randomize All draws up to two banks' Crispy — S
 
@@ -120,9 +144,9 @@ Distinct from group 0: these are wrong BECAUSE of this change, not before it.
       needs restating, not just the count.
 - [ ] 4.4 `MANUAL.md:161-162` — "It leaves each bank's Crispy and the global
       Crunchy alone" becomes the at-most-two rule.
-- [ ] 4.5 `app/FroggersModulation.hpp:1140-1143` — the helper's doc comment
-      states `P(k) = 0.5^(k+1)` unconditionally, sixteen lines above the line
-      that now starts the count from `minimumSources`. State the floor.
+- [ ] 4.5 `app/FroggersModulation.hpp:903` and `:1141` — both state
+      `P(k) = 0.5^(k+1)` unconditionally. State the floor at both; fixing one
+      leaves the other contradicting it.
 - [ ] 4.6 `QUICK_DICT.md` expected unchanged; confirm by reading and say so.
 
 ## 5. Spec — S
