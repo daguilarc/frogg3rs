@@ -1,7 +1,8 @@
-# Delta — `frogg3rs-firmware-verification`
+# frogg3rs-firmware-verification Specification
 
-## ADDED Requirements
-
+## Purpose
+TBD - created by archiving change frogg3rs-omni-audit-repairs. Update Purpose after archive.
+## Requirements
 ### Requirement: The firmware tests have a checked-in invocation
 The firmware test suite under `test/firmware/` SHALL be runnable from one checked-in command that configures, builds and runs every registered test, and that command SHALL run in continuous integration whenever the firmware core or the tests change.
 
@@ -22,3 +23,4 @@ Each parameter path in the firmware core that a flag or knob gates SHALL have a 
 - **WHEN** the fuegoization test runs
 - **THEN** it asserts the scrambled value at a mask other than zero equals the documented formula
 - **AND** it asserts that value differs from the unscrambled input for at least one row
+

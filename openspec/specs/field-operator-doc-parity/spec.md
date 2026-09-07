@@ -3,9 +3,7 @@
 ## Purpose
 
 Keep Field hardware operator documentation (`DAISY_MANUAL.md`) aligned with engine external-mix behavior and FUEG semantics.
-
 ## Requirements
-
 ### Requirement: Field manual external mix documented plainly
 
 `DAISY_MANUAL.md` SHALL describe external-input mix without product ring mod or FUEG/Crispy mix-topology language:
@@ -14,7 +12,6 @@ Keep Field hardware operator documentation (`DAISY_MANUAL.md`) aligned with engi
 - No mix-topology table or FUEG morph between product and parallel.
 - Audio page: external gate open → `(ext × VCO1 + ext × VCO2 + ext × VCO3) / 3`; FUEG does not shape external mix.
 - Audio page exception: FUEG is fuegoizer plus PM3 depth only (no mix-topology bullet).
-- Pair-AR shapes VCO-only mix, not the external ring-mod path.
 
 #### Scenario: Field signal flow
 
@@ -34,3 +31,4 @@ Keep Field hardware operator documentation (`DAISY_MANUAL.md`) aligned with engi
 
 - **WHEN** reader opens SW1/SW2 troubleshooting in `DAISY_MANUAL.md`
 - **THEN** text references control-loop responsiveness (not bootloader) and distinguishes dead switches (no LED) from slow OLED under load
+

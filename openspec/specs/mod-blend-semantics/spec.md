@@ -35,7 +35,7 @@ For fuego-enabled parameters (page rows 1–7, Delay rows 1–7), the pipeline S
 1. Mod crossfade on stored base
 2. Fuego bit-scramble using effective Crispy amount (mod crossfade on Crispy when assigned)
 
-Fuego SHALL NOT apply to Crispy itself. Pair-AR parameters SHALL NOT be fuegoized.
+Fuego SHALL NOT apply to Crispy itself.
 
 #### Scenario: Mod then fuego on page row
 
