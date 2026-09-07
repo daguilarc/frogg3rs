@@ -267,14 +267,25 @@ Distinct from group 0: these are wrong BECAUSE of this change, not before it.
       `openspec validate --all --strict` 22 passed (the count includes a
       foreign untracked change, `frogg3rs-midi-shift`, not part of this
       work).
-- [ ] 7.2 Postflight (S, fresh context). Its brief includes 1.2's question —
+- [x] 7.2 Postflight (S, fresh context). Its brief includes 1.2's question —
       does the implementation do what the operator asked, not just what the
       plan said — and group 8's: does every rewritten entry match the table
       and the DSP source it cites.
-- [ ] 7.3 Commits on `main`, no AI attribution: hygiene (0.2, 0.3), code
+- [x] 7.3 Commits on `main`, no AI attribution: hygiene (0.2, 0.3), code
       (2, 3), documentation (4, 8), spec (5), in that order.
-- [ ] 7.4 Move `frogg3rs_v2` and `frogg3rs_vst` to the new head and
+      DONE 2026-09-07: `121bb51` hygiene, `e1b61ed` code, `45b3193`
+      documents and the drift check, `fd825b3` this change's record (the
+      spec delta lands with the record; README's 0.3 and 4.3 edits share
+      one file and land in the documents commit, after the code commit, so
+      no commit asserts a behaviour its code lacks). Pushed to `main`.
+      Postflight (fresh context) verdict: PASS WITH FINDINGS — a stale 4.5
+      checkbox and an inexact gate-input claim, both corrected above; core
+      code, tripwire test, spec backing and hygiene confirmed.
+- [x] 7.4 Move `frogg3rs_v2` and `frogg3rs_vst` to the new head and
       force-push; confirm Desktop Release, VST Plugin and Pages green.
+      DONE 2026-09-07: both tags at `fd825b3`; Desktop Release, VST Plugin
+      (on `main` and on the tag), GitHub Pages and both Firmware tests runs
+      completed with success.
 - [ ] 7.5 OPERATOR: drill into a parameter, press Randomize All repeatedly —
       every press moves something. On a parameter page, press Randomize All
       repeatedly — about half the parameters stay still, and some presses
