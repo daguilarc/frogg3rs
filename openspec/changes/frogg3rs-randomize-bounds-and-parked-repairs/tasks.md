@@ -38,6 +38,12 @@ sections of `README.md`, `MANUAL.md` and `QUICK_DICT.md`. Name each as swept.
       spec directory rather than leaving it empty — the inbound half of that
       deletion. Enumerate everything that MENTIONS it first, by name and by
       path, and fix each.
+      UNTRACED, settle it before acting: `openspec archive` is what writes
+      spec updates, so it may recreate this directory from the delta rather
+      than honour its absence. Try deleting first and archiving second; if the
+      archive recreates it or still aborts, archive first with `--skip-specs`
+      and delete after, and record which order actually worked. Do not guess
+      between the two — the failure reads as a tooling bug either way.
 - [ ] 0.3 `README.md:67` — "Because every **Crispy** knob is randomized by
       **Randomize All**, this is functionally the same outcome" is FALSE
       today: Randomize All excludes every Crispy
