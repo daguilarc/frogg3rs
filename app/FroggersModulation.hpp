@@ -153,6 +153,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <random>
 #include <span>
 #include <utility>
 #include <vector>
@@ -218,14 +219,21 @@ inline std::span<const synth::PhysicalEncoderId> FullPhysicalLayout(synth::Bank&
 // plain, non-relocated members).
 class FroggersModulationSlate {
 public:
-    FroggersModulationSlate()
+    // Every launch seeds the six random sources differently: one
+    // std::random_device draw, taken once here, is mixed into each lane's
+    // fixed seed by LaneSeed() and seeds source 6's own draw source. A test
+    // that wants a reproducible slate passes the salt itself.
+    FroggersModulationSlate() : FroggersModulationSlate(std::random_device{}()) {}
+
+    explicit FroggersModulationSlate(std::uint32_t launchSalt)
         : randomShLanes_{
-              dsp::lanes::MakeSource1(kRandomShSeeds[0]),
-              dsp::lanes::MakeSource2(kRandomShSeeds[1]),
-              dsp::lanes::MakeSource3(kRandomShSeeds[2]),
-              dsp::lanes::MakeSource4(kRandomShSeeds[3]),
-              dsp::lanes::MakeSource5(kRandomShSeeds[4]),
+              dsp::lanes::MakeSource1(LaneSeed(0, launchSalt)),
+              dsp::lanes::MakeSource2(LaneSeed(1, launchSalt)),
+              dsp::lanes::MakeSource3(LaneSeed(2, launchSalt)),
+              dsp::lanes::MakeSource4(LaneSeed(3, launchSalt)),
+              dsp::lanes::MakeSource5(LaneSeed(4, launchSalt)),
           },
+          gangedRandomLfo6_(launchSalt),
           noiseProcessor_(/*voiceCount=*/1),
           noiseVisualizer_(synth::Color::White),
           source6Visualizer_(gangedRandomLfo6_.UiState(), /*drawBackground=*/false),
@@ -517,6 +525,16 @@ public:
     // modulator group, so a test can measure them per sample.
     float RandomShLaneOutputForTest(std::size_t laneIx) const { return randomShLaneOutputs_[laneIx]; }
     float RandomSh6OutputForTest() const { return randomSh6Output_; }
+
+    // Redraws every lane's bag from a new salt: the same mixing the
+    // constructor uses, so a salt names one set of five bags whether it
+    // arrives at launch or from Randomize All. The lanes keep their read
+    // index and slew state, so the change glides in rather than clicking.
+    void ReseedRandomShLanes(std::uint32_t salt) {
+        for (std::size_t i = 0; i < kFroggersNumRandomShLanes; ++i) {
+            randomShLanes_[i].Reseed(LaneSeed(i, salt));
+        }
+    }
     std::uint32_t RandomShLaneTickCountForTest(std::size_t laneIx) const { return randomShLanes_[laneIx].TickCount(); }
 
 private:
@@ -662,10 +680,15 @@ private:
     // the glide's output (see Step()).
     static constexpr float kSource6Spread = 0.25f;
     // Distinct per-lane seeds: each RGen is per-instance, so
-    // distinct seeds are what actually gives five independent streams.
+    // distinct seeds are what actually gives five independent streams. A
+    // salt (the launch draw, or Randomize All's) is mixed into each by
+    // LaneSeed(), the one place a salt becomes five seeds.
     static constexpr std::array<uint32_t, kFroggersNumRandomShLanes> kRandomShSeeds{
         0x1a2b3c4du, 0x2b3c4d5eu, 0x3c4d5e6fu, 0x4d5e6f70u, 0x5e6f7081u,
     };
+    static constexpr std::uint32_t LaneSeed(std::size_t laneIx, std::uint32_t salt) {
+        return kRandomShSeeds[laneIx] ^ salt;
+    }
 
     synth::ParameterGroup* group_ = nullptr;
     double sampleRate_ = 48000.0;
@@ -1501,7 +1524,7 @@ inline FroggersRandomizeResult RandomizePage(synth::ParameterManager& manager, F
 //     Sheaf's badge criterion counts a depth that merely HAS sub-modulation.
 //     See detail::DepthIsModulating's own comment.
 inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, FroggersModulationDrillIn& drillIn,
-                                            FroggersParameterModel& model) {
+                                            FroggersParameterModel& model, FroggersModulationSlate& slate) {
     if (drillIn.Level() == 0) {
         bool partial = false;
         // Hoisted for the same reason as RandomizeBankLevel1Depths's own
@@ -1517,6 +1540,13 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
             const bool bankPartial = detail::RandomizeBankLevel1Depths(manager, bank);
             partial = partial || bankPartial;
         }
+        // The gesture that re-rolls the whole patch also re-rolls the five
+        // stepped sources' held values, so a locked phrase is a new phrase
+        // afterwards. The salt comes from the manager's own generator, so a
+        // fixture's injected index source governs it like every other draw.
+        // Drilled-in levels below randomize one parameter's depths and
+        // leave the bags alone.
+        slate.ReseedRandomShLanes(static_cast<std::uint32_t>(manager.NextRandomIndex(std::size_t{1} << 32)));
         return {partial};
     }
 

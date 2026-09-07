@@ -466,7 +466,7 @@ TEST_CASE(disconnected_external_audio_never_receives_randomized_depth) {
     fx.StepOnce(/*externalConnected=*/false);
 
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
-    RandomizeAll(fx.manager, drillIn, fx.model);  // parameter-page global randomize
+    RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);  // parameter-page global randomize
 
     ForEachTopLevelParameter(fx.model, [](synth::Parameter& parameter) {
         REQUIRE_TRUE(parameter.ModulationDepthParameter(kModSlotExternalAudio) == nullptr);
@@ -559,7 +559,7 @@ TEST_CASE(randomize_all_on_parameter_page_never_creates_level_two_depths) {
     fx.StepOnce(/*externalConnected=*/true);
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
 
-    RandomizeAll(fx.manager, drillIn, fx.model);
+    RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
 
     ForEachTopLevelParameter(fx.model, [](synth::Parameter& parameter) {
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
@@ -591,12 +591,12 @@ TEST_CASE(randomize_all_on_parameter_page_stays_within_793_ceiling_with_external
         return count;
     };
 
-    const auto result1 = RandomizeAll(fx.manager, drillIn, fx.model);
+    const auto result1 = RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
     const std::size_t after1 = countMaterialized();
     REQUIRE_TRUE(!result1.partial);
     REQUIRE_TRUE(after1 <= 61 * 13);
 
-    const auto result2 = RandomizeAll(fx.manager, drillIn, fx.model);
+    const auto result2 = RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
     const std::size_t after2 = countMaterialized();
     REQUIRE_TRUE(!result2.partial);
     REQUIRE_TRUE(after2 <= 61 * 13);
@@ -616,7 +616,7 @@ TEST_CASE(randomize_all_on_level_one_grid_materializes_that_parameters_own_level
     drillIn.PressEncoder(0);  // -> level 1 on `focused`
     REQUIRE_TRUE(drillIn.Level() == 1);
 
-    RandomizeAll(fx.manager, drillIn, fx.model);  // level-1 case: 15 + up to 225
+    RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);  // level-1 case: 15 + up to 225
 
     bool anyLevelTwoOnFocused = false;
     for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
@@ -663,7 +663,7 @@ TEST_CASE(randomize_all_on_level_one_grid_never_ejects_and_still_reaches_level_t
     // left FroggersRandomizeResult.partial true"), and is this file's own
     // established idiom for the same check -- see the 793-ceiling test
     // above.
-    const auto result = RandomizeAll(fx.manager, drillIn, fx.model);
+    const auto result = RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
 
     // 1) Still at level 1: a level-1 Randomize All must not navigate out.
     REQUIRE_TRUE(drillIn.Level() == 1);
@@ -697,7 +697,7 @@ TEST_CASE(crunchy_is_never_randomized_by_either_button_in_any_view) {
     const float before = crunchy.SceneCenter(0);
 
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
-    RandomizeAll(fx.manager, drillIn, fx.model);
+    RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
     REQUIRE_TRUE(crunchy.SceneCenter(0) == before);
     REQUIRE_TRUE(crunchy.ModulationDepthParameter(0) == nullptr);  // never opened/randomized either
 
@@ -727,7 +727,7 @@ TEST_CASE(randomize_all_leaves_local_crispy_alone_but_randomize_page_moves_it) {
     constexpr float kNeutral = detail::kNeutralModulationDepthCenter;
     for (int attempt = 0; attempt < 8; ++attempt) {
         crispyReverb.SceneCenter(0) = kNeutral;
-        RandomizeAll(fx.manager, drillIn, fx.model);
+        RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
         REQUIRE_TRUE(crispyReverb.SceneCenter(0) == kNeutral);
     }
 
@@ -959,7 +959,7 @@ TEST_CASE(randomize_depth_helper_level_zero_count_distribution_has_mode_two_acro
     constexpr int kTrials = 1000;
     std::array<int, FroggersParameterModel::kNumModulators + 1> histogram{};
     for (int trial = 0; trial < kTrials; ++trial) {
-        RandomizeAll(fx.manager, drillIn, fx.model);  // Level()==0: the level-0 draw.
+        RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);  // Level()==0: the level-0 draw.
         int nonNeutral = 0;
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
             synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
@@ -1006,7 +1006,7 @@ TEST_CASE(randomize_all_level_one_press_gives_its_own_depths_and_each_depths_sub
     std::array<int, FroggersParameterModel::kNumModulators + 1> level2Histogram{};
     int level2Samples = 0;
     for (int trial = 0; trial < kTrials; ++trial) {
-        RandomizeAll(fx.manager, drillIn, fx.model);  // Level()==1: own depths + each depth's own sub-depths.
+        RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);  // Level()==1: own depths + each depth's own sub-depths.
         ++level1Histogram[static_cast<std::size_t>(countNonNeutral(focused))];
         // The descent visits only depths that are ACTUALLY MODULATING, not
         // every materialized one: a neutral depth must carry ZERO
@@ -1064,7 +1064,7 @@ TEST_CASE(randomize_depth_helper_zero_and_four_plus_rates_match_the_geometric_dr
     int fourPlusCount = 0;
     int nonZeroCount = 0;
     for (int trial = 0; trial < kTrials; ++trial) {
-        RandomizeAll(fx.manager, drillIn, fx.model);  // Level()==0: the level-0 draw, uses the fixture's own seeded RNG.
+        RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);  // Level()==0: the level-0 draw, uses the fixture's own seeded RNG.
         int nonNeutral = 0;
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
             synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
@@ -1146,11 +1146,11 @@ TEST_CASE(randomize_all_is_non_additive_two_successive_presses_can_decrease_the_
     bool sawDecreaseScene1 = false;
     constexpr int kTrialPairs = 200;
     for (int trial = 0; trial < kTrialPairs; ++trial) {
-        RandomizeAll(fx.manager, drillIn, fx.model);
+        RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
         const int count1Scene0 = countNonNeutral(0);
         const int count1Scene1 = countNonNeutral(1);
 
-        RandomizeAll(fx.manager, drillIn, fx.model);
+        RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
         const int count2Scene0 = countNonNeutral(0);
         const int count2Scene1 = countNonNeutral(1);
 
@@ -1178,7 +1178,7 @@ TEST_CASE(randomize_all_scene_pair_has_identical_source_membership_but_different
     fx.StepOnce(/*externalConnected=*/true);
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
 
-    RandomizeAll(fx.manager, drillIn, fx.model);
+    RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
 
     bool checkedAtLeastOneParameter = false;
     bool foundAValueDifference = false;
@@ -1505,7 +1505,7 @@ TEST_CASE(reset_page_clears_only_current_bank_values_and_depths) {
     // values, and materialized, non-neutral depths, so ResetPage has
     // something real to clear on Reverb and something real to prove
     // untouched everywhere else.
-    RandomizeAll(fx.manager, drillIn, fx.model);
+    RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
     for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
         FroggersModulationDrillIn pageDrill(fx.model.BankAt(static_cast<FroggersBankId>(bankIx)));
         RandomizePage(fx.manager, pageDrill);
@@ -1569,7 +1569,7 @@ TEST_CASE(reset_page_on_audio_restores_shapes_and_pitch_detents_while_other_bank
     fx.StepOnce(/*externalConnected=*/true);
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Audio));
 
-    RandomizeAll(fx.manager, drillIn, fx.model);
+    RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
     for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
         FroggersModulationDrillIn pageDrill(fx.model.BankAt(static_cast<FroggersBankId>(bankIx)));
         RandomizePage(fx.manager, pageDrill);
@@ -1619,7 +1619,7 @@ TEST_CASE(reset_all_matches_a_freshly_constructed_default_patch_instance_field_f
     fx.StepOnce(/*externalConnected=*/true);
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
 
-    RandomizeAll(fx.manager, drillIn, fx.model);  // values+depths on all 6 banks' page params
+    RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);  // values+depths on all 6 banks' page params
     for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
         FroggersModulationDrillIn pageDrill(fx.model.BankAt(static_cast<FroggersBankId>(bankIx)));
         RandomizePage(fx.manager, pageDrill);  // Crispy on every bank -- Randomize All itself excludes it
@@ -2130,6 +2130,53 @@ TEST_CASE(lane_six_visualizer_omits_the_full_node_background_but_still_draws_its
 }
 
 }  // namespace
+
+// -----------------------------------------------------------------------
+// Randomize All redraws the five stepped sources' bags; Randomize Page
+// and a drilled-in Randomize All leave them alone. Every launch seeds the
+// bags differently and the same salt reproduces them.
+// -----------------------------------------------------------------------
+namespace {
+
+std::vector<float> ReadBags(FroggersModulationSlate& slate) {
+    slate.PublishUiState();
+    std::vector<float> bags;
+    for (std::size_t lane = 0; lane < kFroggersNumRandomShLanes; ++lane) {
+        for (const auto& slot : slate.RandomShLaneUiState(lane).slots) {
+            bags.push_back(slot.load());
+        }
+    }
+    return bags;
+}
+
+}  // namespace
+
+TEST_CASE(randomize_all_redraws_the_bags_and_page_and_drilled_in_randomize_do_not) {
+    Fixture fx;
+    const std::vector<float> before = ReadBags(fx.slate);
+
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    RandomizePage(fx.manager, drillIn);
+    REQUIRE_TRUE(ReadBags(fx.slate) == before);  // control: a page randomize never reaches the bags
+
+    drillIn.PressEncoder(0);  // -> level 1
+    RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
+    REQUIRE_TRUE(ReadBags(fx.slate) == before);  // control: drilled in, only the parameter's depths are drawn
+
+    FroggersModulationDrillIn levelZero(fx.model.BankAt(FroggersBankId::Reverb));
+    RandomizeAll(fx.manager, levelZero, fx.model, fx.slate);
+    REQUIRE_TRUE(ReadBags(fx.slate) != before);
+}
+
+TEST_CASE(launches_seed_the_bags_differently_and_the_same_salt_reproduces_them) {
+    FroggersModulationSlate launchA;
+    FroggersModulationSlate launchB;
+    REQUIRE_TRUE(ReadBags(launchA) != ReadBags(launchB));
+
+    FroggersModulationSlate saltedA{0x5A17u};
+    FroggersModulationSlate saltedB{0x5A17u};
+    REQUIRE_TRUE(ReadBags(saltedA) == ReadBags(saltedB));  // control
+}
 
 int main() {
     int failed = 0;

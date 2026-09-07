@@ -82,9 +82,10 @@ struct Register {
     } while (false)
 
 struct Fixture {
+    static constexpr std::uint32_t kSalt = 0x5A17u;  // a fixed launch salt, so every source is reproducible
     synth::ParameterManager manager;
     FroggersParameterModel model;
-    FroggersModulationSlate slate;
+    FroggersModulationSlate slate{kSalt};
 
     Fixture() {
         model.Init(manager);

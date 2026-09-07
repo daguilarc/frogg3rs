@@ -722,7 +722,7 @@ public:
             // future edit that does) would short-circuit and skip the second
             // call whenever the first's `.partial` was already true.
             if (pendingRandomizeAll_.exchange(false, std::memory_order_acq_rel)) {
-                const bool allPartial = RandomizeAll(*context_->parameterManager, *drillIn_, parameters_).partial;
+                const bool allPartial = RandomizeAll(*context_->parameterManager, *drillIn_, parameters_, modulation_).partial;
                 anyPartial = anyPartial || allPartial;
                 randomizeRan = true;
             }
