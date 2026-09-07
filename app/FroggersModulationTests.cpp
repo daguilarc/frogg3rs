@@ -705,43 +705,80 @@ TEST_CASE(crunchy_is_never_randomized_by_either_button_in_any_view) {
     REQUIRE_TRUE(crunchy.SceneCenter(0) == before);
 }
 
-// The two buttons must DIFFER on Crispy. A weaker assertion that only checks
-// whether *at least one of them* moved it cannot tell "both buttons
-// randomize it" apart from "only Page does" -- both satisfy it -- so this
-// pins each button's effect separately.
-//
-// Why Randomize All must leave it alone: local Crispy exists on all six pages,
-// so randomizing it six times over is effectively randomizing global Crunchy,
-// which this app deliberately never randomizes. Randomize Page touches one
-// page's Crispy, which is that page's own business.
-TEST_CASE(randomize_all_leaves_local_crispy_alone_but_randomize_page_moves_it) {
+// Randomize All's Crispy draw is bounded by kMaxRandomizedCrispy: the
+// aggregate of all six banks' Crispy is what reproduces global Crunchy
+// (which this app deliberately never randomizes), so randomizing all six at
+// once would land in the same place as randomizing Crunchy directly, and the
+// count Randomize All draws must stay bounded below six -- kMaxRandomizedCrispy
+// is that bound. Randomize Page keeps randomizing one page's own Crispy,
+// which is that page's own business.
+TEST_CASE(randomize_all_moves_at_most_two_of_six_banks_crispy_but_randomize_page_moves_only_its_own) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);
-    synth::Parameter& crispyReverb = fx.model.Crispy(FroggersBankId::Reverb);
 
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
 
-    // Randomize All must NOT move it. Run several times: a single pass leaving
-    // it untouched could be luck if the behaviour regressed, since a random
-    // draw could in principle land back on the same value.
-    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;
-    for (int attempt = 0; attempt < 8; ++attempt) {
-        crispyReverb.SceneCenter(0) = kNeutral;
+    auto crispyOf = [&](std::size_t bankIx) -> synth::Parameter& {
+        return fx.model.Crispy(static_cast<FroggersBankId>(bankIx));
+    };
+
+    constexpr int kTrials = 600;
+    std::array<int, kFroggersBankCount + 1> countHistogram{};
+    std::array<bool, kFroggersBankCount> bankEverChanged{};
+    for (int trial = 0; trial < kTrials; ++trial) {
+        std::array<float, kFroggersBankCount> before{};
+        for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+            before[bankIx] = crispyOf(bankIx).SceneCenter(0);
+        }
+
         RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
-        REQUIRE_TRUE(crispyReverb.SceneCenter(0) == kNeutral);
+
+        int changedCount = 0;
+        for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+            if (crispyOf(bankIx).SceneCenter(0) != before[bankIx]) {
+                ++changedCount;
+                bankEverChanged[bankIx] = true;
+            }
+        }
+        REQUIRE_TRUE(changedCount <= static_cast<int>(detail::kMaxRandomizedCrispy));
+        ++countHistogram[static_cast<std::size_t>(changedCount)];
     }
 
-    // Randomize Page on the parameter page still DOES move it. Sheaf's
-    // RandomizeVisibleValue draws from NextRandomValue(), so landing exactly
-    // back on the neutral value is effectively impossible; retry a couple of
-    // times regardless so this cannot flake on a freak draw.
+    // The count is 0 on roughly half of presses -- the common case, not a
+    // rare one. A [38%, 62%] band is the same sample-size-appropriate margin
+    // RequireGeometricCountDistribution uses elsewhere in this file.
+    REQUIRE_TRUE(countHistogram[0] > kTrials * 0.38);
+    REQUIRE_TRUE(countHistogram[0] < kTrials * 0.62);
+
+    // Every one of the six banks must be reachable across the run.
+    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+        REQUIRE_TRUE(bankEverChanged[bankIx]);
+    }
+
+    std::cout << "[OBSERVED] randomize-all-crispy-count histogram over " << kTrials << " trials:"
+              << " P(0)=" << (100.0 * countHistogram[0] / kTrials) << "%"
+              << " P(1)=" << (100.0 * countHistogram[1] / kTrials) << "%"
+              << " P(2)=" << (100.0 * countHistogram[2] / kTrials) << "%\n";
+
+    // Randomize Page on a parameter page still moves only that page's own
+    // Crispy, and no other bank's.
+    std::array<float, kFroggersBankCount> beforePage{};
+    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+        beforePage[bankIx] = crispyOf(bankIx).SceneCenter(0);
+    }
+    constexpr std::size_t kReverbIx = static_cast<std::size_t>(FroggersBankId::Reverb);
     bool changedByPage = false;
     for (int attempt = 0; attempt < 4 && !changedByPage; ++attempt) {
-        crispyReverb.SceneCenter(0) = kNeutral;
         RandomizePage(fx.manager, drillIn);
-        changedByPage = crispyReverb.SceneCenter(0) != kNeutral;
+        changedByPage = crispyOf(kReverbIx).SceneCenter(0) != beforePage[kReverbIx];
     }
     REQUIRE_TRUE(changedByPage);
+    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+        if (bankIx == kReverbIx) {
+            continue;
+        }
+        REQUIRE_TRUE(crispyOf(bankIx).SceneCenter(0) == beforePage[bankIx]);
+    }
 }
 
 TEST_CASE(randomize_page_on_parameter_page_changes_no_depths) {
@@ -785,12 +822,16 @@ TEST_CASE(randomize_page_on_mod_detail_grid_changes_only_that_parameters_own_dep
 // randomize-depth count distribution
 // ============================================================================
 // Sheaf's own private Bank::RandomizeModulationDepths coin loop is geometric
-// FROM ZERO (P(0)=50%), so a single RandomizePage call at drill-in level 1/2
-// used to be a no-op half the time. detail::RandomizeParameterModulationDepths
-// (FroggersModulation.hpp) replaces the count/source selection app-side --
-// Sheaf still performs every write. All three properties below are
-// statistical, not single-sample: a probability distribution cannot be
-// verified from one draw.
+// FROM ZERO (P(0)=50%), so a single call is a no-op half the time.
+// detail::RandomizeParameterModulationDepths (FroggersModulation.hpp)
+// replaces the count/source selection app-side with the same geometric
+// shape, drawn from a per-gesture floor -- zero everywhere except a
+// drilled-in Randomize All press, which floors at one and so is never a
+// no-op there. Every other gesture, including RandomizePage at any level,
+// keeps the zero floor and stays a no-op exactly half the time. Sheaf still
+// performs every write. All three properties below are statistical, not
+// single-sample: a probability distribution cannot be verified from one
+// draw.
 
 // The drill-in knob's display value (`UIDisplayCenter`) is populated only
 // by a smoothed one-shot nudge inside RandomizeVisibleValue itself, and is
@@ -798,10 +839,11 @@ TEST_CASE(randomize_page_on_mod_detail_grid_changes_only_that_parameters_own_dep
 // -- so a check that pins only the raw commanded value (`SceneCenter(0)`,
 // which RandomizeVisibleValue writes directly and immediately) can stay
 // green while the displayed knob is visually stuck at center. This test
-// pins `UIDisplayCenter` to catch that. `count` is 0 on 20% of draws in
-// RandomizeParameterModulationDepths's weighted table, so no single trial
+// pins `UIDisplayCenter` to catch that. `count` is 0 on 50% of draws in
+// RandomizeParameterModulationDepths's geometric draw from a floor of zero
+// (RandomizePage never floors above zero, at any level), so no single trial
 // can be required to move the display -- the assertion is over the 500-trial
-// aggregate instead, matching the ~80% of draws expected to produce at least
+// aggregate instead, matching the 50% of draws expected to produce at least
 // one source.
 //
 // `fx.manager.ComputeAllParameters()` is called per trial to stand in for
@@ -871,7 +913,7 @@ TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial
         [&coinsDrawn]() { return coinsDrawn++ < 4 ? 0.9f : 0.1f; },  // NextRandomCoin -> count=4
         [](std::size_t exclusiveMax) { return exclusiveMax - 1; });  // NextRandomIndex: always top-of-range
 
-    detail::RandomizeParameterModulationDepths(fx.manager, focused);
+    detail::RandomizeParameterModulationDepths(fx.manager, focused, /*minimumSources=*/0);
 
     std::size_t touchedCount = 0;
     for (std::size_t modIx = 0; modIx < 5; ++modIx) {
@@ -892,35 +934,47 @@ TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial
 // is needed here for the same reason (contrast the no-op/display test above,
 // which needs it for `UIDisplayCenter`, not `SceneCenter`).
 //
-// Shared assertions for a count histogram against the geometric draw -- reused
-// by the level-0 test and the level-1/level-2 regression pin below, so the
-// three properties (mode, rare 4+, zero rate) are pinned exactly once
-// rather than duplicated per level. Asserts on the resulting COUNT
+// Shared assertions for a count histogram against the geometric draw from a
+// per-gesture floor -- reused by the level-0 test (floor 0, Randomize All on
+// a parameter page) and the level-1/level-2 test below (floor 1, Randomize
+// All at a drilled-in level), so the four properties (buckets below the
+// floor, the floor bucket's rate, mode, rare floor+4+) are pinned exactly
+// once rather than duplicated per level. Asserts on the resulting COUNT
 // DISTRIBUTION, not on call counts -- the predecessor's version of this test
 // (median-based, one vector of samples) is the sixth green-while-wrong guard
 // on record for pinning the wrong layer; this one pins the actual observable
 // shape.
 void RequireGeometricCountDistribution(const std::array<int, FroggersParameterModel::kNumModulators + 1>& histogram,
-                                        int trials, const char* label) {
-    // P(0) is 50% under the geometric draw. A [38%, 62%] band is roughly 3.4
-    // standard errors wide even at `trials` as low as 200, where the
-    // binomial standard error at p=0.50 is ~3.5 points -- a wide,
-    // sample-size-appropriate margin.
-    REQUIRE_TRUE(histogram[0] > trials * 0.38);
-    REQUIRE_TRUE(histogram[0] < trials * 0.62);
+                                        int trials, const char* label, std::size_t floor) {
+    // Every bucket below the floor is exactly zero: the draw never returns a
+    // count under its own floor.
+    for (std::size_t count = 0; count < floor; ++count) {
+        REQUIRE_TRUE(histogram[count] == 0);
+    }
 
-    std::size_t mode = 0;
-    for (std::size_t count = 1; count < histogram.size(); ++count) {
+    // histogram[floor] is 50% under the geometric draw. A [38%, 62%] band is
+    // roughly 3.4 standard errors wide even at `trials` as low as 200, where
+    // the binomial standard error at p=0.50 is ~3.5 points -- a wide,
+    // sample-size-appropriate margin.
+    REQUIRE_TRUE(histogram[floor] > trials * 0.38);
+    REQUIRE_TRUE(histogram[floor] < trials * 0.62);
+
+    std::size_t mode = floor;
+    for (std::size_t count = floor + 1; count < histogram.size(); ++count) {
         if (histogram[count] > histogram[mode]) {
             mode = count;
         }
     }
-    REQUIRE_TRUE(mode == 0);  // 50% > 25% > 12.5% > ..., strictly decreasing.
+    REQUIRE_TRUE(mode == floor);  // 50% > 25% > 12.5% > ..., strictly decreasing from the floor.
 
+    int atLeastFloorPlusFour = 0;
     int atLeastFour = 0;
     int atLeastSeven = 0;
     double sum = 0.0;
     for (std::size_t count = 0; count < histogram.size(); ++count) {
+        if (count >= floor + 4) {
+            atLeastFloorPlusFour += histogram[count];
+        }
         if (count >= 4) {
             atLeastFour += histogram[count];
         }
@@ -929,12 +983,12 @@ void RequireGeometricCountDistribution(const std::array<int, FroggersParameterMo
         }
         sum += static_cast<double>(count) * static_cast<double>(histogram[count]);
     }
-    // P(>=4) is 6.25% under the geometric draw (0.5^4). "Materially below
-    // 13%" leaves a wide, sample-size-appropriate margin rather than one
-    // tightened until it happens to pass: even at `trials` as low as 200 the
-    // binomial standard error at p=0.0625 is ~1.7 points, so 13% sits
-    // roughly 4 standard errors above the true rate.
-    REQUIRE_TRUE(atLeastFour < trials * 0.13);
+    // P(>=floor+4) is 6.25% under the geometric draw (0.5^4), measured from
+    // the floor. "Materially below 13%" leaves a wide, sample-size-appropriate
+    // margin rather than one tightened until it happens to pass: even at
+    // `trials` as low as 200 the binomial standard error at p=0.0625 is ~1.7
+    // points, so 13% sits roughly 4 standard errors above the true rate.
+    REQUIRE_TRUE(atLeastFloorPlusFour < trials * 0.13);
 
     // [OBSERVED] -- not a pass condition (matches this file's own convention
     // for recording a measurement alongside its pass condition, e.g. the
@@ -950,7 +1004,7 @@ void RequireGeometricCountDistribution(const std::array<int, FroggersParameterMo
               << " mode=" << mode << " mean=" << (sum / trials) << "\n";
 }
 
-TEST_CASE(randomize_depth_helper_level_zero_count_distribution_has_mode_two_across_1000_trials) {
+TEST_CASE(randomize_depth_helper_level_zero_count_distribution_is_geometric_from_a_floor_of_zero_across_1000_trials) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);  // 15 connected sources -- N for the tail
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));  // default: Level()==0
@@ -970,20 +1024,20 @@ TEST_CASE(randomize_depth_helper_level_zero_count_distribution_has_mode_two_acro
         ++histogram[static_cast<std::size_t>(nonNeutral)];
     }
 
-    RequireGeometricCountDistribution(histogram, kTrials, "level-0");
+    RequireGeometricCountDistribution(histogram, kTrials, "level-0", /*floor=*/0);
 }
 
-// "The same distribution must apply at EVERY level, not just level 0" -- a
-// REGRESSION PIN, not a fix, since all four RandomMod dispatch sites already
-// share the one
-// `detail::RandomizeParameterModulationDepths` definition (retuning the table
-// changes every level by construction). Traced structurally in
+// The drilled-in Randomize All press's floor of one -- a REGRESSION PIN for
+// that specific gesture, not a fix, since all four RandomMod dispatch sites
+// already share the one `detail::RandomizeParameterModulationDepths`
+// definition and its `minimumSources` parameter. Traced structurally in
 // FroggersModulation.hpp: RandomizeAll's Level()==1 branch calls that shared
-// helper TWICE per press -- once on the selected parameter itself (its own,
-// level-1 depths) and once more on each of that parameter's now-materialized
-// depth parameters (each one's own, level-2 sub-depths) -- so a single press
-// exercises both nesting depths at once, and this test histograms both.
-TEST_CASE(randomize_all_level_one_press_gives_its_own_depths_and_each_depths_subdepths_the_mode_two_distribution) {
+// helper TWICE per press, both floored at one -- once on the selected
+// parameter itself (its own, level-1 depths) and once more on each of that
+// parameter's now-materialized depth parameters (each one's own, level-2
+// sub-depths) -- so a single press exercises both nesting depths at once,
+// both floored, and this test histograms both.
+TEST_CASE(randomize_all_level_one_press_gives_its_own_depths_and_each_depths_subdepths_the_geometric_from_a_floor_of_one_distribution) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);  // 15 connected sources
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
@@ -1001,12 +1055,44 @@ TEST_CASE(randomize_all_level_one_press_gives_its_own_depths_and_each_depths_sub
         return count;
     };
 
+    // Counts materialized depth-parameter slots in the focused parameter's
+    // subtree: its own (up to kNumModulators) depth slots, plus, for each
+    // materialized depth, its own materialized sub-depth slots. Storage is
+    // never freed, so calling this before and after a press isolates what
+    // that one press newly allocated.
+    auto countMaterialized = [](synth::Parameter& parameter) {
+        int count = 0;
+        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+            synth::Parameter* depthParam = parameter.ModulationDepthParameter(modIx);
+            if (depthParam == nullptr) {
+                continue;
+            }
+            ++count;
+            for (std::size_t subModIx = 0; subModIx < FroggersParameterModel::kNumModulators; ++subModIx) {
+                if (depthParam->ModulationDepthParameter(subModIx) != nullptr) {
+                    ++count;
+                }
+            }
+        }
+        return count;
+    };
+
     constexpr int kTrials = 500;
     std::array<int, FroggersParameterModel::kNumModulators + 1> level1Histogram{};
     std::array<int, FroggersParameterModel::kNumModulators + 1> level2Histogram{};
     int level2Samples = 0;
+    int partialPresses = 0;
+    long long newlyMaterializedTotal = 0;
+    int cumulativeAtEnd = 0;
     for (int trial = 0; trial < kTrials; ++trial) {
-        RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);  // Level()==1: own depths + each depth's own sub-depths.
+        const int materializedBefore = countMaterialized(focused);
+        // Level()==1: own depths + each depth's own sub-depths.
+        const FroggersRandomizeResult result = RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
+        if (result.partial) {
+            ++partialPresses;
+        }
+        cumulativeAtEnd = countMaterialized(focused);
+        newlyMaterializedTotal += (cumulativeAtEnd - materializedBefore);
         ++level1Histogram[static_cast<std::size_t>(countNonNeutral(focused))];
         // The descent visits only depths that are ACTUALLY MODULATING, not
         // every materialized one: a neutral depth must carry ZERO
@@ -1041,14 +1127,26 @@ TEST_CASE(randomize_all_level_one_press_gives_its_own_depths_and_each_depths_sub
     // than the histogram being near-empty from a wiring regression.
     REQUIRE_TRUE(level2Samples >= 200);
 
-    RequireGeometricCountDistribution(level1Histogram, kTrials, "level-1");
-    RequireGeometricCountDistribution(level2Histogram, level2Samples, "level-2");
+    RequireGeometricCountDistribution(level1Histogram, kTrials, "level-1", /*floor=*/1);
+    RequireGeometricCountDistribution(level2Histogram, level2Samples, "level-2", /*floor=*/1);
+
+    // [OBSERVED] -- the allocation cost of the floor of one at this level:
+    // mean count of depth-parameter slots newly materialized per press (the
+    // focused parameter's own depths plus their own sub-depths, counted
+    // before and after each press since storage is never freed), the
+    // cumulative materialized count in that subtree after the final press,
+    // and the fraction of presses that came back partial (storage
+    // exhausted).
+    std::cout << "[OBSERVED] level-1 newly-materialized-depths-per-press mean="
+              << (static_cast<double>(newlyMaterializedTotal) / kTrials)
+              << " cumulative-at-end=" << cumulativeAtEnd
+              << " partial-fraction=" << (100.0 * partialPresses / kTrials) << "%\n";
 }
 
 // Dedicated coverage for the zero bucket the geometric draw carries: a
 // fraction of RandomizeAll draws must leave a parameter with NO modulation
 // sources at all (count=0), not merely "rarely one source." This is
-// distinct from RequireModeTwoCountDistribution's zero-rate band above --
+// distinct from RequireGeometricCountDistribution's zero-rate band above --
 // that helper's job is the whole-shape regression pin; this test's job is
 // to state the zero and four-or-more rates as their own named properties,
 // plus a positive control that a broken always-zero randomizer could not
