@@ -237,7 +237,7 @@ inline const std::array<FroggersBankLayout, kFroggersBankCount>& FroggersBankLay
             // comment (dsp/Drive.hpp).
             {"Tone", "Tone", 1.0f}, {"Waveshaper offset", "Bias", 0.5f},
         }}},
-        {FroggersBankId::Delay, "Delay", synth::Color::Indigo, {{
+        {FroggersBankId::Delay, "Delay", synth::Color::Rgb(255, 105, 180), {{
             {"Delay time", "DlyTm"}, {"Send", "Send"}, {"Feedback", "Fb"},
             {"Stereo width", "Width"}, {"Freeze", "Frze"}, {"Mod depth", "ModDp"},
             {"Wet mix", "WetMx"}, {"Reverse blend", "Rev"}, {"Diffusion", "Diff"},
