@@ -151,10 +151,18 @@ change touches is the proposal's Impact list. Name each as swept.
       text does not resolve — report it and stop.
       DONE 2026-09-07 (measured as a per-press delta, since depth storage is
       never freed): newly materialized depths per press mean 0.45 over 500
-      presses; the focused parameter's subtree is fully materialized (240 of
-      240 slots, one sixth of the 1440 pool) by the end of the run; partial
-      0%. Finding, not a stop: repeated drilled-in presses on one parameter
-      saturate its subtree, and the floor of one reaches that state sooner.
+      presses; within the open view the focused parameter's subtree is fully
+      materialized (240 of 240 slots) by the end of the run; partial 0%.
+      Traced 2026-09-07 at the operator's question: this is a within-view
+      transient. Depth cells are pinned while the view is open; on Back,
+      `Bank::Deselect` (`External/Sheaf/projects/synth/src/ParameterModulation.cpp:2704-2718`)
+      unpins them and runs `CollectNeutralLocalParameters`, which recycles
+      every unpinned neutral depth and sub-depth back to the pool
+      (`CollectNeutralChildren`, `CanRecycleLocal`). The persistent
+      footprint is only the modulating depths of the last press. The floor
+      of one doubles that footprint and fills a view's subtree sooner; it
+      changes nothing about reclaim, and the spec's allocated-once clause is
+      honoured.
 - [x] 2.9 Gate: `nice make -C app -j2 test`, every binary by path.
 
 ## 3. Randomize All draws up to two banks' Crispy — S
