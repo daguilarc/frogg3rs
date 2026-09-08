@@ -95,12 +95,13 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>       // QueueRecordingExport's local-date file name.
 #include <cmath>
 #include <cstdio>   // Stop diagnostic (stopDiagBlocks_): std::fprintf.
 #include <cstdlib>  // Stop diagnostic (stopDiagEnabled_): std::getenv.
 #include <cstddef>
 #include <cstdint>      // EncodeWavPcm16Mono's byte/sample types.
-#include <functional>   // SetOnRecordingFinished/SetOnRecordRefused host seams.
+#include <ctime>        // QueueRecordingExport's local-date file name.
 #include <limits>
 #include <optional>
 #include <span>
@@ -127,6 +128,12 @@ inline std::size_t FroggersVisibleBankIndex(const synth::AppContext& context) {
     }
     return 0;
 }
+
+// Forward-declared so QueueRecordingExport() (below, inside the class) can
+// call it -- the definition (a pure std:: WAV encoder) sits after the class,
+// beside its own tests' idiom of exercising it standalone; see its own
+// comment there.
+inline std::vector<std::uint8_t> EncodeWavPcm16Mono(std::span<const float> samples, float sampleRate);
 
 class FroggersAppCore {
 public:
@@ -495,6 +502,12 @@ public:
             recordRefusalReason_ = kRecordRefusalReason;
             return false;
         }
+        // A Record press that beats the engine's own per-tick
+        // TakePendingFileExport() poll (see that method's own comment) would
+        // otherwise have this call's recordBuffer_.assign() below wipe out a
+        // truncated capture that was never exported -- flush it first so a
+        // fresh take never wipes an unsaved one.
+        QueueTruncatedExportIfPending();
         const std::size_t capacityFrames = capacityFramesOverride != 0
             ? capacityFramesOverride
             : static_cast<std::size_t>(kMaxRecordSeconds * sampleRate_);
@@ -502,6 +515,7 @@ public:
         recordFrames_.store(0, std::memory_order_release);
         recordTruncated_.store(false, std::memory_order_release);
         recordRefusalReason_ = nullptr;
+        captureExported_ = false;
         recordArmed_.store(true, std::memory_order_release);
         return true;
     }
@@ -532,29 +546,42 @@ public:
     // FreezeLatched() above.
     bool RecordArmed() const { return recordArmed_.load(std::memory_order_acquire); }
 
-    // Host-facing seams -- registered by the host (FroggersMain.cpp) on the
-    // message thread once, after launch. Both are plain std::function; JUCE
-    // stays on the other side of this boundary (this class only stores,
-    // null-checks, and invokes -- see check-no-juce, this file's own header
-    // comment). Fired by the SURFACE (FroggersUiSurface::HandleAction),
-    // never internally by ArmRecording()/StopRecording() themselves, so the
-    // surface -- not the core -- decides when a stop counts as "finished
-    // with data" versus "stopped with nothing captured."
-    void SetOnRecordingFinished(std::function<void()> callback) {
-        onRecordingFinished_ = std::move(callback);
+    // Queues the just-stopped recording as a file export -- called by the
+    // SURFACE (FroggersUiSurface::HandleAction) once it decides a stop
+    // counted as "finished with data," never internally by StopRecording()
+    // itself. UI-thread call: encodes the captured samples to a WAV byte
+    // stream, names the file from today's local date, and stores it for the
+    // host's engine to pick up and hand to whatever it installed through
+    // Engine::SetFileExportHandler -- this class only names and encodes the
+    // file; the host decides how (and whether) to save it.
+    void QueueRecordingExport() {
+        const std::vector<float> samples(RecordedAudio().begin(), RecordedAudio().end());
+        std::vector<std::uint8_t> bytes = EncodeWavPcm16Mono(samples, RecordSampleRate());
+
+        const std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        char dateBuffer[16] = {};
+        std::strftime(dateBuffer, sizeof(dateBuffer), "%Y-%m-%d", std::localtime(&now));
+
+        synth::FileExport fileExport;
+        fileExport.fileName = std::string(dateBuffer) + ".wav";
+        fileExport.mediaType = "audio/wav";
+        fileExport.bytes = std::move(bytes);
+        fileExport.note = RecordingTruncated() ? "stopped at the 30-minute limit" : "";
+        pendingExport_ = std::move(fileExport);
+        captureExported_ = true;
     }
-    void SetOnRecordRefused(std::function<void(const char*)> callback) {
-        onRecordRefused_ = std::move(callback);
-    }
-    void NotifyRecordingFinished() {
-        if (onRecordingFinished_) {
-            onRecordingFinished_();
-        }
-    }
-    void NotifyRecordRefused(const char* reason) {
-        if (onRecordRefused_) {
-            onRecordRefused_(reason);
-        }
+    // Satisfies synth::HasFileExports -- the engine calls this once per
+    // message-thread tick and hands whatever comes back to the handler the
+    // host installed. Flushes a truncated capture first (see
+    // QueueTruncatedExportIfPending()'s own comment): the audio thread
+    // disarms on its own the instant it hits the cap, so no Stop/Record
+    // press ever follows to queue that capture's export -- this poll is the
+    // only place left that can pick it up.
+    std::optional<synth::FileExport> TakePendingFileExport() {
+        QueueTruncatedExportIfPending();
+        std::optional<synth::FileExport> fileExport = std::move(pendingExport_);
+        pendingExport_.reset();
+        return fileExport;
     }
 
     // The surface's request API
@@ -2361,6 +2388,24 @@ private:
         visit(outputLimiter_, dsp::FiniteOnly{});
     }
 
+    // A capture that hits its cap disarms itself on the audio thread the
+    // instant it happens (recordArmed_.store(false) inside ProcessBlock's
+    // per-sample loop above, :1186-1194) -- no Stop/Record press ever
+    // follows it, so nothing else would ever call QueueRecordingExport()
+    // for that capture. TakePendingFileExport() and ArmRecording() both
+    // call this first instead: the engine polls TakePendingFileExport()
+    // once per message-thread tick regardless of any UI press, so that
+    // poll alone is enough to pick a truncated capture up; a Record press
+    // that beats the poll goes through ArmRecording(), so this call there
+    // flushes the old capture before recordBuffer_.assign() wipes it out
+    // from under it. captureExported_ keeps a capture from being queued
+    // twice across repeated calls from either caller.
+    void QueueTruncatedExportIfPending() {
+        if (RecordingTruncated() && RecordedFrameCount() > 0 && !captureExported_ && !RecordArmed()) {
+            QueueRecordingExport();
+        }
+    }
+
     // Stop-transport reset (operator report "Stop doesn't work" -- the ASR
     // gate closes on Stop but delay_/reverb_ are feedback structures that
     // self-sustain: StereoDelay feedback runs up to 0.98, Reverb Hold pushes
@@ -2484,11 +2529,18 @@ private:
     static constexpr const char* kRecordRefusalReason = "Press Play before recording.";
     const char* recordRefusalReason_ = nullptr;
 
-    // Storage for the two host-facing seams (SetOnRecordingFinished/
-    // SetOnRecordRefused above) -- message-thread-only, same as
+    // Storage for QueueRecordingExport()'s output, drained by
+    // TakePendingFileExport() -- message-thread-only, same as
     // recordRefusalReason_ just above (never touched by the audio thread).
-    std::function<void()> onRecordingFinished_;
-    std::function<void(const char*)> onRecordRefused_;
+    std::optional<synth::FileExport> pendingExport_;
+    // Whether the CURRENT capture (the one ArmRecording() most recently
+    // set up) has already been queued for export -- set by
+    // QueueRecordingExport(), cleared by ArmRecording() for the next
+    // capture. Lets QueueTruncatedExportIfPending() (below) queue a
+    // cap-triggered truncation's export exactly once, even though both
+    // TakePendingFileExport() and ArmRecording() call it on every
+    // invocation. Message-thread-only, same as pendingExport_ above.
+    bool captureExported_ = false;
 
     // DIAGNOSTIC (2026-08-07). "Stop does not stop" has never
     // reproduced in the test harness: one measurement found a clean decay on a static

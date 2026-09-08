@@ -434,10 +434,17 @@ TEST_CASE(device_defaults_are_valid_and_address_exactly_the_documented_controls)
     REQUIRE_TRUE(twister.config.systemMessages.size() == 6);
 
     const std::vector<std::string> twisterOrder = {
-        synth_froggers::FroggersActions::kBankPrevious, synth_froggers::FroggersActions::kBankNext,
-        synth_froggers::FroggersActions::kRandomizePage, synth_froggers::FroggersActions::kRandomizeAll,
-        synth_froggers::FroggersActions::kResetPage, synth_froggers::FroggersActions::kResetAll,
+        synth_froggers::FroggersActions::kBankNext, synth_froggers::FroggersActions::kPlay,
+        synth_froggers::FroggersActions::kFreeze, synth_froggers::FroggersActions::kSceneSelect,
+        synth_froggers::FroggersActions::kRandomizePage,
     };
+    const std::vector<std::string> twisterValues = {"", "", "", "0", ""};
+    const std::vector<std::string> twisterShiftedAction = {
+        synth_froggers::FroggersActions::kBankPrevious, synth_froggers::FroggersActions::kStop,
+        synth_froggers::FroggersActions::kResetPage, synth_froggers::FroggersActions::kSceneSelect,
+        synth_froggers::FroggersActions::kRandomizeAll,
+    };
+    const std::vector<std::string> twisterShiftedValue = {"", "", "", "1", ""};
     for (std::size_t ix = 0; ix < twisterOrder.size(); ++ix) {
         const synth::MidiControllerSystemMessageAssociation& assoc = twister.config.systemMessages[ix];
         REQUIRE_TRUE(assoc.control.has_value());
@@ -445,8 +452,32 @@ TEST_CASE(device_defaults_are_valid_and_address_exactly_the_documented_controls)
         REQUIRE_TRUE(assoc.control->cc == static_cast<std::uint8_t>(8 + ix));
         REQUIRE_TRUE(assoc.control->type == synth::MidiControlType::Cc);
         REQUIRE_TRUE(assoc.appAction == twisterOrder[ix]);
+        REQUIRE_TRUE(assoc.appActionValue == twisterValues[ix]);
         REQUIRE_TRUE(assoc.outputFeedback == false);
+        REQUIRE_TRUE(assoc.shiftedPress.has_value());
+        REQUIRE_TRUE(assoc.shiftedPress->type == synth::MessageIn::Type::AppAction);
+        REQUIRE_TRUE(assoc.shiftedAppAction == twisterShiftedAction[ix]);
+        REQUIRE_TRUE(assoc.shiftedAppActionValue == twisterShiftedValue[ix]);
+        REQUIRE_TRUE(synth::FindMidiAppAction(catalog, assoc.appAction, assoc.appActionValue).has_value());
+        REQUIRE_TRUE(
+            synth::FindMidiAppAction(catalog, assoc.shiftedAppAction, assoc.shiftedAppActionValue).has_value());
     }
+
+    const synth::MidiControllerSystemMessageAssociation& twisterShift = twister.config.systemMessages[5];
+    REQUIRE_TRUE(twisterShift.control.has_value());
+    REQUIRE_TRUE(twisterShift.control->channel == 3);
+    REQUIRE_TRUE(twisterShift.control->cc == 13);
+    REQUIRE_TRUE(twisterShift.control->type == synth::MidiControlType::Cc);
+    REQUIRE_TRUE(twisterShift.press.type == synth::MessageIn::Type::Shift);
+    REQUIRE_TRUE(twisterShift.press.boolValue == true);
+    REQUIRE_TRUE(twisterShift.release.has_value());
+    REQUIRE_TRUE(twisterShift.release->type == synth::MessageIn::Type::Shift);
+    REQUIRE_TRUE(twisterShift.release->boolValue == false);
+    REQUIRE_TRUE(!twisterShift.shiftedPress.has_value());
+    REQUIRE_TRUE(twisterShift.outputFeedback == false);
+
+    REQUIRE_TRUE(std::count(catalog.libraryKinds.begin(), catalog.libraryKinds.end(),
+                            synth::UISystemMessage::Shift) == 1);
 
     // --- the two APC40 defaults ---------------------------------------
     REQUIRE_TRUE(generic.kind == synth::MidiProfileKind::Generic);
@@ -505,12 +536,23 @@ TEST_CASE(device_defaults_are_valid_and_address_exactly_the_documented_controls)
 
         REQUIRE_TRUE(device->config.systemMessages.size() == 19);
         std::set<ControlTuple> actual;
+        bool foundHoldDrill = false;
         for (const synth::MidiControllerSystemMessageAssociation& assoc : device->config.systemMessages) {
             REQUIRE_TRUE(assoc.control.has_value());
             REQUIRE_TRUE(assoc.control->type == synth::MidiControlType::Note);
+            REQUIRE_TRUE(!assoc.shiftedPress.has_value());
             actual.insert({assoc.control->channel, assoc.control->cc, static_cast<int>(assoc.control->type),
                            assoc.appAction, assoc.appActionValue});
+            if (assoc.control->channel == 0 && assoc.control->cc == 98) {
+                foundHoldDrill = true;
+                REQUIRE_TRUE(assoc.press.type == synth::MessageIn::Type::HoldDrill);
+                REQUIRE_TRUE(assoc.press.boolValue == true);
+                REQUIRE_TRUE(assoc.release.has_value());
+                REQUIRE_TRUE(assoc.release->type == synth::MessageIn::Type::HoldDrill);
+                REQUIRE_TRUE(assoc.release->boolValue == false);
+            }
         }
+        REQUIRE_TRUE(foundHoldDrill);
         REQUIRE_TRUE(actual == expectedSystemMessages);
     }
 
@@ -551,6 +593,7 @@ TEST_CASE(launchpad_defaults_positions_carry_their_own_controller) {
         for (const synth::MidiControllerSystemMessageAssociation& assoc : device.config.systemMessages) {
             REQUIRE_TRUE(assoc.launchpadPosition.has_value());
             REQUIRE_TRUE(assoc.launchpadPosition->controller == preset.controller);
+            REQUIRE_TRUE(!assoc.shiftedPress.has_value());
         }
     }
 }

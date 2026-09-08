@@ -12,6 +12,7 @@ Six banks — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 - **Crunchy** (slot 15, shared across all six banks) — Same fuego scramble applied to every parameter in every bank, and to every bank's own Crispy; no-op at 0.
 - **Bank select** — Six buttons (Audio/Envelope/Filter/Drive/Delay/Reverb) choose which bank's slots are on screen; all six keep processing regardless.
 - **Play / Stop** — Transport. No manual note-on: while running, the shared envelope gate auto-pulses open for the first half of every quarter note (at the BPM control's tempo) and closed for the second half. Stop forces a fast ~50 ms fade on all three voices and clears Delay/Reverb tails.
+- **Freeze / Record** — Freeze is a latch: engaging it stops the transport but holds the envelope gate open and keeps the delay recirculating, so the instrument drones until Freeze releases or Play is pressed. Record arms on one press and stops on the next (refusing to arm while the transport is stopped), offering the capture as `YYYY-MM-DD.wav`, up to 30 minutes.
 - **Modulation assign** — Click a parameter's encoder (or a bank's own Crispy) to open its 15-source depth view; each source has an independent signed depth (0 = off) and multiple non-zero sources sum. Sources: Random S&H 1–6, VCO1–3 Audio, VCO1–3 EF, Noise, External Audio, External Audio EF (the last two carry real signal only once an external input is connected — see MANUAL.md's Audio configuration section; until then they hold silent defaults, 0.5 and 0.0).
 
 ## Audio

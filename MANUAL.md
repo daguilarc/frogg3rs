@@ -110,6 +110,18 @@ envelopes on every beat. This app takes no MIDI note input.
 **Stop** fades all three voices out over about 50 ms whatever the Release knobs are set to, so Stop
 always reads as immediate, and clears the Delay/Reverb tails once every voice has gone silent.
 
+**Freeze** is a latch. Engaging it stops the transport and holds the envelope gate open, and keeps the
+delay recirculating, so the instrument drones on with the transport stopped.
+Releasing Freeze silences the instrument, the same teardown Stop triggers. Pressing Play disarms
+Freeze and starts the transport.
+
+**Record** arms a capture of what the operator hears; press again to stop it. A finished recording is
+offered as a file named from today's date, `YYYY-MM-DD.wav` — the standalone through a save dialog on
+that name in the Documents folder, with a warning before it overwrites an existing file of the same
+name. Record refuses to arm while the transport is stopped: "Press Play before recording." shows
+beneath the transport buttons until Play is pressed or a recording arms. A capture stops itself after
+30 minutes and is offered at that moment with a note that it stopped at the limit.
+
 ### Modulation assignment
 
 Click any parameter's encoder — a page parameter or a bank's own Crispy (Crunchy is excluded) — to open
@@ -239,7 +251,7 @@ select an input here.
 The transport runs on its own internal clock, the same as the standalone (Play, Stop, Record, and an
 editable BPM slider). Audio input requires the browser's own microphone permission, granted through a
 **Retry Input** action; nothing is captured, and External Audio stays silent, until that permission is
-granted.
+granted. A stopped recording downloads as `YYYY-MM-DD.wav`.
 
 ---
 
@@ -290,8 +302,8 @@ the preset. With no such device its ports read "(none)".
 Every front-screen control. Encoder turns (relative or absolute), encoder pushes (which drill into a
 knob's modulation exactly like an on-screen press), Play, Stop, Freeze, Record, Randomize All,
 Randomize Page, Reset All, Reset Page, Bank 1 to 6, Bank Previous, Bank Next, Scene 1, Scene 2, the
-scene blend (an analog control), BPM (an analog control, 30 to 300), and **Hold Drill**. Buttons can
-be addressed by CC or by note number; analog controls by CC.
+scene blend (an analog control), BPM (an analog control, 30 to 300), **Hold Drill**, and **Shift**.
+Buttons can be addressed by CC or by note number; analog controls by CC.
 
 ### Hold Drill
 
@@ -299,14 +311,32 @@ While a button mapped to Hold Drill is held, turning a knob drills into that kno
 instead of changing its value, once per knob per hold; releasing the button makes every knob a plain
 knob again. On an absolute knob, the first turn after release jumps to the knob's position.
 
+### Shift
+
+A button mapped to Shift is held rather than tapped. While it is held, any other button on the same
+controller that has a shifted job assigned does that job instead of its ordinary one. The shifted job
+is set in the Shift column on the button's own row on the Controllers page, editable per row and saved
+with the patch like every other mapping. If the controller is unplugged while Shift is still held, its
+buttons stay shifted until Shift is pressed and released again.
+
 ### MIDI Fighter Twister
 
-The preset maps the 16 encoders (turn and push, with LED ring feedback) and the six side buttons:
-left side top to bottom Bank Previous, Bank Next, Randomize Page; right side top to bottom Randomize
-All, Reset Page, Reset All. Utility settings the device needs, set in the Midi Fighter Utility:
-every encoder's sensitivity/mode to "Enc 3FH/41H" (relative), all six side buttons to "CC Hold", and
-"Bank Side Buttons" unchecked, so the side buttons keep sending CC 8 to 13 on channel 4 (channel 3
-counted from 0) whatever bank the Twister shows.
+The preset maps the 16 encoders (turn and push, with LED ring feedback) and the six side buttons, each
+a press paired with a second job under Shift:
+
+| Button | Press | Shift + press |
+|---|---|---|
+| Left top | Bank Next | Bank Previous |
+| Left middle | Play | Stop |
+| Left bottom | Freeze | Reset Page |
+| Right top | Scene 1 | Scene 2 |
+| Right middle | Randomize Page | Randomize All |
+| Right bottom | Shift | (none) |
+
+Utility settings the device needs, set in the Midi Fighter Utility: every encoder's sensitivity/mode to
+"Enc 3FH/41H" (relative), all six side buttons to "CC Hold", and "Bank Side Buttons" unchecked, so the
+side buttons keep sending CC 8 to 13 on channel 4 (channel 3 counted from 0) whatever bank the Twister
+shows. CC Hold is also what lets the app see the Shift button's own release.
 
 ### Akai APC40 mkII (Generic)
 

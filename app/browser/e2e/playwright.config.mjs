@@ -33,7 +33,7 @@ if (!process.env.CI) {
 }
 
 const MOBILE_SPECS = [/link-roles\.spec\.mjs$/, /mobile-stacking\.spec\.mjs$/, /visibility\.spec\.mjs$/];
-const DESKTOP_SPECS = [/link-roles\.spec\.mjs$/, /desktop-layout\.spec\.mjs$/, /visibility\.spec\.mjs$/, /blank-frame\.spec\.mjs$/, /audio-activation\.spec\.mjs$/, /midi-activation\.spec\.mjs$/];
+const DESKTOP_SPECS = [/link-roles\.spec\.mjs$/, /desktop-layout\.spec\.mjs$/, /visibility\.spec\.mjs$/, /blank-frame\.spec\.mjs$/, /audio-activation\.spec\.mjs$/, /midi-activation\.spec\.mjs$/, /recording\.spec\.mjs$/];
 const PAGES_SPECS = [/blank-frame\.spec\.mjs$/, /first-visit-race\.spec\.mjs$/];
 // Measured on this machine's Playwright Chromium (audio-devices.spec.mjs's
 // own header comment carries the numbers): a plain launch's

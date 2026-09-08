@@ -138,10 +138,10 @@ private:
         try {
             // Holds the CONCRETE session (not the
             // type-erased synth_runtime::RuntimeSessionOwner, which exposes
-            // only Component()) so RegisterRecordingCallbacks below can
-            // reach the running FroggersApp via GetRuntime().GetEngine().
-            // Application() (Shell.hpp/Runtime.hpp/Engine.hpp) to register
-            // the Record button's host-facing seams.
+            // only Component()) so RegisterFileExportHandler below can
+            // reach the running engine via GetRuntime().GetEngine()
+            // (Shell.hpp/Runtime.hpp/Engine.hpp) to register the file-export
+            // handler that saves a finished Record capture.
             auto session = std::make_unique<synth_runtime::RuntimeShellSession<App>>(std::move(paths));
             const synth::RuntimeConfig config = App::Config();
 
@@ -174,82 +174,57 @@ private:
             // instantiates LaunchRegisteredApp with
             // synth_froggers::FroggersApp (see this file's own header
             // comment: "Registers and launches only Frogg3rs").
-            RegisterRecordingCallbacks(activeSession_->GetRuntime().GetEngine().Application());
+            RegisterFileExportHandler(activeSession_->GetRuntime().GetEngine());
         } catch (const std::exception& e) {
             INFO("FroggersMainApplication::LaunchRegisteredApp failed: %s", e.what());
         }
     }
 
-    // Registers the two host-facing seams
-    // FroggersAppCore exposes (SetOnRecordRefused/SetOnRecordingFinished --
-    // see that file's own comment) with their JUCE-side behaviour. This is
-    // the ONLY place in the app that JUCE dialog/file-write code for Record
-    // lives -- FroggersUiSurface.hpp only calls ArmRecording()/
-    // StopRecording() and fires these two callbacks; it never sees
-    // AlertWindow/FileChooser/FileOutputStream, and the core
-    // (FroggersAppCore.hpp) never sees JUCE at all (check-no-juce).
-    void RegisterRecordingCallbacks(synth_froggers::FroggersApp& app) {
-        app.SetOnRecordRefused([](const char* reason) {
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Recording",
-                                                    juce::String(reason));
-        });
-
-        // Captures `app` BY REFERENCE: this lambda is itself stored as a
-        // member of `app` (SetOnRecordingFinished, FroggersAppCore.hpp), so
-        // it cannot outlive the object it refers to. Everything the ASYNC
-        // continuation below needs (the samples, sample rate, truncation
-        // flag) is copied out of `app` here, synchronously, on the message
-        // thread, before the file chooser's own async callback -- which
-        // fires later (after the user picks a file) and must not read `app`
-        // at all, since a second Record press could re-arm (and reallocate
-        // FroggersAppCore's capture buffer) before the dialog closes.
-        app.SetOnRecordingFinished([&app] {
-            const std::vector<float> audioSamples(app.RecordedAudio().begin(), app.RecordedAudio().end());
-            const float sampleRate = app.RecordSampleRate();
-            const bool truncated = app.RecordingTruncated();
-
+    // Registers the JUCE-side behaviour for the engine's file-export seam
+    // (Engine::SetFileExportHandler -- see that method's own comment). This
+    // is the ONLY place in the app that JUCE dialog/file-write code for
+    // Record lives -- FroggersAppCore.hpp names and encodes the finished
+    // recording (QueueRecordingExport) without ever seeing JUCE
+    // (check-no-juce), and FroggersUiSurface.hpp shows Record's own refusal
+    // itself (its transportNotice_) rather than routing it through here.
+    void RegisterFileExportHandler(synth::Engine<synth_froggers::FroggersApp>& engine) {
+        engine.SetFileExportHandler([](synth::FileExport fileExport) {
             auto chooser = std::make_shared<juce::FileChooser>(
                 "Save Recording",
                 juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
-                    .getChildFile("frogg3rs-recording.wav"),
+                    .getChildFile(fileExport.fileName),
                 "*.wav");
             const int flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |
                                juce::FileBrowserComponent::warnAboutOverwriting;
             // `chooser` is captured into its own completion callback (JUCE's
             // documented FileChooser lifetime contract: the object must
             // outlive the dialog), so it self-destructs once this fires.
-            chooser->launchAsync(flags, [chooser, audioSamples, sampleRate, truncated](const juce::FileChooser& fc) {
+            // `fileExport` is captured by value: the async completion fires
+            // later (after the user picks a file), well after the engine's
+            // own FileExport that produced this call has gone out of scope.
+            chooser->launchAsync(flags, [chooser, fileExport](const juce::FileChooser& fc) {
                 const juce::File file = fc.getResult();
                 if (file == juce::File{}) {
                     return;  // Cancelled.
                 }
 
-                // The encoding itself is core-side, pure std:: (no
-                // juce::AudioFormatWriter anywhere in this app) -- this host
-                // layer is dialog-plus-byte-stream only, deliberately.
                 // Streamed to disk via
                 // juce::FileOutputStream (not std::ofstream): the target
                 // came back as a juce::File from the FileChooser, and this
                 // stays in the same JUCE idiom as everything else in this
                 // file rather than round-tripping through a raw path.
-                const std::vector<std::uint8_t> wavBytes =
-                    synth_froggers::EncodeWavPcm16Mono(audioSamples, sampleRate);
-
                 file.deleteFile();
                 juce::FileOutputStream stream(file);
                 bool ok = stream.openedOk();
                 if (ok) {
-                    ok = stream.write(wavBytes.data(), wavBytes.size());
+                    ok = stream.write(fileExport.bytes.data(), fileExport.bytes.size());
                     stream.flush();
                 }
 
                 juce::String message =
                     ok ? juce::String("Recording saved.") : juce::String("Failed to write recording.");
-                // v1-style, verbatim wording (desktop/Source/
-                // MainComponent.cpp:219, reference only) appended to the
-                // same completion alert rather than a separate one.
-                if (ok && truncated) {
-                    message += " (stopped at the 30-minute limit)";
+                if (ok && !fileExport.note.empty()) {
+                    message += " (" + juce::String(fileExport.note) + ")";
                 }
                 juce::AlertWindow::showMessageBoxAsync(
                     ok ? juce::AlertWindow::InfoIcon : juce::AlertWindow::WarningIcon, "Recording", message);

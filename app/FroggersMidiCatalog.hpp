@@ -4,19 +4,24 @@
 // actions a controller can dispatch (transport, randomize/reset, bank and
 // scene selection, BPM), the library kinds the Controllers page keeps
 // around for this app (parameter inc/dec, absolute set, push, scene blend,
-// hold drill), and the six device defaults offered from the Controllers
-// page's Layout dropdown -- MIDI Fighter Twister, Akai APC40 mkII
-// (Generic), Akai APC40 mkII (Ableton), Launchpad X, Launchpad Pro MK3, and
-// Launchpad Mini MK3. Choosing one of the six installs its mappings onto
-// the selected slot; Custom leaves the slot's mappings untouched and
-// editable by hand.
+// hold drill, shift), and the six device defaults offered from the
+// Controllers page's Layout dropdown -- MIDI Fighter Twister, Akai APC40
+// mkII (Generic), Akai APC40 mkII (Ableton), Launchpad X, Launchpad Pro
+// MK3, and Launchpad Mini MK3. Choosing one of the six installs its
+// mappings onto the selected slot; Custom leaves the slot's mappings
+// untouched and editable by hand.
 //
 // Twister: the manual's Utility settings must match this default --
 // every encoder set to relative (Enc 3FH/41H, not the factory absolute
 // setting), all six side buttons set to CC Hold (127 on press, 0 on
 // release, not the factory bank-switch behaviour on the middle pair), and
 // Bank Side Buttons unchecked so the side buttons keep this default's CC
-// addresses whatever Twister bank is lit.
+// addresses whatever Twister bank is lit. The six side buttons are five
+// paired jobs -- a press and a shifted press held under Shift -- plus
+// Shift itself: left column top to bottom Bank Next/Bank Previous,
+// Play/Stop, Freeze/Reset Page; right column Scene 1/Scene 2, Randomize
+// Page/Randomize All; Shift sits at the bottom right. CC Hold is required
+// on every side button because the release is what ends Shift.
 //
 // APC40 mkII (Generic): the unit's eight device knobs follow whichever
 // Track Select button is lit (track 1 = channel 0), so Track 1 must stay
@@ -46,9 +51,13 @@ namespace {
 
 // A momentary control that fires one app action on press and nothing on
 // release. The dispatched action's catalog index is resolved by the
-// engine at runtime, not stored here.
+// engine at runtime, not stored here. When shiftedAction is non-empty, the
+// button fires that second action instead while a Shift button on the
+// same controller is held.
 inline synth::MidiControllerSystemMessageAssociation AppActionButton(synth::MidiControlAddress address,
-                                                                       std::string action, std::string value) {
+                                                                       std::string action, std::string value,
+                                                                       std::string shiftedAction = {},
+                                                                       std::string shiftedValue = {}) {
     synth::MidiControllerSystemMessageAssociation association;
     association.control = address;
     association.press = synth::MessageIn::AppAction(0, 0, 0.0f);
@@ -56,16 +65,24 @@ inline synth::MidiControllerSystemMessageAssociation AppActionButton(synth::Midi
     association.outputFeedback = false;
     association.appAction = std::move(action);
     association.appActionValue = std::move(value);
+    if (!shiftedAction.empty()) {
+        association.shiftedPress = synth::MessageIn::AppAction(0, 0, 0.0f);
+        association.shiftedAppAction = std::move(shiftedAction);
+        association.shiftedAppActionValue = std::move(shiftedValue);
+    }
     return association;
 }
 
-// A momentary control that holds Hold Drill while pressed and releases it
-// on lift.
-inline synth::MidiControllerSystemMessageAssociation HoldDrillButton(synth::MidiControlAddress address) {
+// A momentary control that holds a state while pressed and releases it on
+// lift: Hold Drill on the APC40, Shift on the Twister. `kind` is one of
+// those two; each call site passes it as a literal.
+inline synth::MidiControllerSystemMessageAssociation HeldButton(synth::MidiControlAddress address,
+                                                                  synth::UISystemMessage kind) {
+    const bool drill = kind == synth::UISystemMessage::HoldDrill;
     synth::MidiControllerSystemMessageAssociation association;
     association.control = address;
-    association.press = synth::MessageIn::HoldDrill(0, true);
-    association.release = synth::MessageIn::HoldDrill(0, false);
+    association.press = drill ? synth::MessageIn::HoldDrill(0, true) : synth::MessageIn::Shift(0, true);
+    association.release = drill ? synth::MessageIn::HoldDrill(0, false) : synth::MessageIn::Shift(0, false);
     association.outputFeedback = false;
     return association;
 }
@@ -84,12 +101,17 @@ inline synth::MidiAppDeviceDefault TwisterDeviceDefault() {
     config.encoderInput = synth::EncoderMidiInConfig::TwisterDefault(0);
     config.encoderOutput = synth::EncoderMidiOutConfig::TwisterDefault(0);
     config.systemMessages = {
-        AppActionButton(synth::MidiControlAddress{.channel = 3, .cc = 8}, FroggersActions::kBankPrevious, ""),
-        AppActionButton(synth::MidiControlAddress{.channel = 3, .cc = 9}, FroggersActions::kBankNext, ""),
-        AppActionButton(synth::MidiControlAddress{.channel = 3, .cc = 10}, FroggersActions::kRandomizePage, ""),
-        AppActionButton(synth::MidiControlAddress{.channel = 3, .cc = 11}, FroggersActions::kRandomizeAll, ""),
-        AppActionButton(synth::MidiControlAddress{.channel = 3, .cc = 12}, FroggersActions::kResetPage, ""),
-        AppActionButton(synth::MidiControlAddress{.channel = 3, .cc = 13}, FroggersActions::kResetAll, ""),
+        AppActionButton(synth::MidiControlAddress{.channel = 3, .cc = 8}, FroggersActions::kBankNext, "",
+                         FroggersActions::kBankPrevious, ""),
+        AppActionButton(synth::MidiControlAddress{.channel = 3, .cc = 9}, FroggersActions::kPlay, "",
+                         FroggersActions::kStop, ""),
+        AppActionButton(synth::MidiControlAddress{.channel = 3, .cc = 10}, FroggersActions::kFreeze, "",
+                         FroggersActions::kResetPage, ""),
+        AppActionButton(synth::MidiControlAddress{.channel = 3, .cc = 11}, FroggersActions::kSceneSelect, "0",
+                         FroggersActions::kSceneSelect, "1"),
+        AppActionButton(synth::MidiControlAddress{.channel = 3, .cc = 12}, FroggersActions::kRandomizePage, "",
+                         FroggersActions::kRandomizeAll, ""),
+        HeldButton(synth::MidiControlAddress{.channel = 3, .cc = 13}, synth::UISystemMessage::Shift),
     };
     device.config = std::move(config);
     return device;
@@ -115,7 +137,7 @@ inline synth::MidiControllerProfileConfig Apc40BaseConfig() {
         return synth::MidiControlAddress{.channel = 0, .cc = number, .type = synth::MidiControlType::Note};
     };
     std::vector<synth::MidiControllerSystemMessageAssociation> messages;
-    messages.push_back(HoldDrillButton(note(98)));
+    messages.push_back(HeldButton(note(98), synth::UISystemMessage::HoldDrill));
     messages.push_back(AppActionButton(note(91), FroggersActions::kPlay, ""));
     messages.push_back(AppActionButton(note(92), FroggersActions::kStop, ""));
     messages.push_back(AppActionButton(note(93), FroggersActions::kRecord, ""));
@@ -281,6 +303,7 @@ inline synth::MidiAppCatalog FroggersMidiCatalog() {
         synth::UISystemMessage::ParamPush,
         synth::UISystemMessage::SetSceneBlend,
         synth::UISystemMessage::HoldDrill,
+        synth::UISystemMessage::Shift,
     };
     catalog.encoderPressAction = FroggersActions::kEncoderPress;
     catalog.patchCarriesMappings = true;

@@ -122,6 +122,9 @@ inline constexpr const char* kFreeze = "froggers.transport.freeze";
 // The Record transport BUTTON's own node id -- fourth child of the
 // transport row, beside Play/Stop/Freeze.
 inline constexpr const char* kRecord = "froggers.transport.record";
+// The label after the Record plate carrying Record's refusal text while it
+// applies -- see FroggersUiSurface's transportNotice_ member.
+inline constexpr const char* kTransportNotice = "froggers.transport.notice";
 // The "FREEZE" text label that sits beside kFreeze -- emitted ONLY when this
 // surface is attached in plugin-host mode
 // (FroggersUiSurface::SetPluginHostMode(true), see that method's own
@@ -142,6 +145,8 @@ inline constexpr const char* kFreezeLabel = "froggers.transport.freeze.label";
 inline constexpr const char* kInputSelect = "froggers.transport.input";
 // Row 3 of the left block (FroggersCellMap): Play | Stop | Freeze | Record.
 inline constexpr const char* kTransportRow = "froggers.layout.left.transport";
+// The transport cell, the plates row over the notice line.
+inline constexpr const char* kTransportStack = "froggers.layout.left.transport.stack";
 // Row 4 of the left block: Scene 1 | Scene 2.
 inline constexpr const char* kScenesRow = "froggers.layout.left.scenes";
 
@@ -1208,8 +1213,24 @@ private:
     }
 
     void AppendTransportRow(synth::ui::Builder& builder, float rowWeight) const {
+        // The transport cell is now a Column: the plates Row on top, sized
+        // to its own fixed plate height (Px(kTransportPlateSize)) rather
+        // than filling the cell, with Record's refusal notice appended
+        // below it as a second child only when non-empty -- see
+        // FroggersNodeIds::kTransportStack's own comment. The cell's own
+        // layout (main = Weight(rowWeight), what the plates Row carried
+        // before this Column existed) now sits on the stack instead.
+        synth::ui::LayoutOptions stackLayout;
+        stackLayout.main = synth::ui::Extent::Weight(rowWeight);
+        stackLayout.cross = synth::ui::Extent::Weight(1.0f);
+        stackLayout.padding = 0.0f;
+        stackLayout.gap = FroggersPageLayout::kGap;
+
+        // The plates Row's own layout inside the stack -- sized to the
+        // fixed plate height rather than the cell's full weighted share,
+        // now that the stack above carries that share.
         synth::ui::LayoutOptions rowLayout;
-        rowLayout.main = synth::ui::Extent::Weight(rowWeight);
+        rowLayout.main = synth::ui::Extent::Px(kTransportPlateSize);
         rowLayout.cross = synth::ui::Extent::Weight(1.0f);
         rowLayout.padding = 0.0f;
         rowLayout.gap = FroggersPageLayout::kGap;
@@ -1233,7 +1254,16 @@ private:
         // use, since the row-builder lambda below is not a member function
         // and cannot read `this` implicitly.
         const std::string inputSelectLabel = InputSelectButtonLabel();
-        builder.Row(FroggersNodeIds::kTransportRow, rowLayout,
+        // Read fresh into the column-builder lambda every rebuild, same
+        // idiom as inputSelectLabel just above -- read by the COLUMN lambda
+        // now (not the row lambda), since the notice Label moved out to
+        // become the stack's own second child, a sibling of the plates Row
+        // rather than a child inside it.
+        const std::string transportNotice = transportNotice_;
+
+        builder.Column(FroggersNodeIds::kTransportStack, stackLayout,
+                       [app, pluginHostMode, inputSelectLabel, transportNotice, rowLayout](synth::ui::Builder& col) {
+          col.Row(FroggersNodeIds::kTransportRow, rowLayout,
                     [app, pluginHostMode, inputSelectLabel](synth::ui::Builder& b) {
             // In plugin mode, Play, Stop, and Record are not rendered; the
             // Freeze button stays and gains a "FREEZE" text label beside it
@@ -1316,6 +1346,16 @@ private:
                     },
                     recordStyle);
             }
+          });
+
+          // Record's refusal text, shown below the plates row until a
+          // recording arms or Play is pressed -- same hand-rolled Label
+          // idiom kFreezeLabel above uses, now the stack's own second
+          // child (a sibling of the plates Row) rather than a child
+          // inside it.
+          if (!transportNotice.empty()) {
+              col.Label(FroggersNodeIds::kTransportNotice, transportNotice, synth::ui::ControlStyle{});
+          }
         });
     }
 
@@ -2168,6 +2208,7 @@ private:
             // LatchThenTransport's own comment for the happens-before
             // ordering this relies on.
             LatchThenTransport(false, synth::MessageIn::Start(NowMicros()), true);
+            transportNotice_.clear();
             return;
         }
         if (action.name == FroggersActions::kStop) {
@@ -2208,23 +2249,27 @@ private:
             // Unlike Freeze's plain latch flip, Record can REFUSE (transport
             // stopped -- FroggersAppCore::
             // ArmRecording's own comment) and produces a result the host
-            // cares about (captured audio to export), so both outcomes are
-            // surfaced through the host-facing callbacks
-            // (SetOnRecordRefused/SetOnRecordingFinished, FroggersAppCore.hpp)
-            // rather than a silent state flip -- see this file's own
+            // cares about (captured audio to export). A refusal shows as
+            // this surface's own transport notice (transportNotice_,
+            // cleared once a recording arms or Play is pressed); a
+            // finished capture with data is queued as a file export
+            // (FroggersAppCore::QueueRecordingExport) for the engine's
+            // installed handler to pick up -- see this file's own
             // HandleAction() header comment: this is still a direct
             // message-thread call, same as kFreeze above, not the
             // Request*/pending*_ bridge the encoder/randomize/BPM actions
             // below use.
             if (!app_->RecordArmed()) {
                 if (!app_->ArmRecording()) {
-                    app_->NotifyRecordRefused(app_->RecordRefusalReason());
+                    transportNotice_ = app_->RecordRefusalReason();
+                } else {
+                    transportNotice_.clear();
                 }
                 return;
             }
             app_->StopRecording();
             if (app_->RecordedFrameCount() > 0) {
-                app_->NotifyRecordingFinished();
+                app_->QueueRecordingExport();
             }
             return;
         }
@@ -2423,6 +2468,11 @@ private:
     // construction of this class (default constructed, no such action ever
     // dispatched) renders exactly as before.
     bool narrowViewport_ = false;
+    // The refusal text shown in the transport row until a recording arms or
+    // Play is pressed. Set by HandleAction's kRecord/kPlay branches below,
+    // read fresh into the transport row lambda every rebuild, same
+    // per-frame idiom as pluginHostMode_/narrowViewport_ above.
+    std::string transportNotice_;
     // See SetInputOptions()'s own comment. Defaults to just "None" (index
     // 0), the same "unavailable" reading a disabled/zero-channel bus
     // produces -- so a plugin-host construction that has not yet called

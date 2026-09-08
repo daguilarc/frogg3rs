@@ -40,6 +40,7 @@
 #include <iostream>
 #include <map>
 #include <optional>
+#include <regex>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -3137,11 +3138,13 @@ TEST_CASE(record_truncates_at_capacity_and_stops_growing) {
 //
 // The transport-row Record button (fourth Draw child beside Play/Stop/
 // Freeze), its HandleAction wiring to ArmRecording()/StopRecording() plus
-// the two host-facing callbacks (SetOnRecordRefused/SetOnRecordingFinished,
-// FroggersAppCore.hpp), and the pure std:: WAV encoder (EncodeWavPcm16Mono),
-// moved into the core specifically so it is testable headlessly here
-// -- no binary this Makefile builds compiles FroggersMain.cpp (verified by
-// reading app/Makefile: every target's source list stops at Main.cpp/
+// the surface's own transport notice (transportNotice_, shown as a Label
+// beside the Record plate) and the core's queued file export
+// (QueueRecordingExport/TakePendingFileExport, FroggersAppCore.hpp), and
+// the pure std:: WAV encoder (EncodeWavPcm16Mono), moved into the core
+// specifically so it is testable headlessly here -- no binary this
+// Makefile builds compiles FroggersMain.cpp (verified by reading
+// app/Makefile: every target's source list stops at Main.cpp/
 // FroggersHeadlessTests.cpp/.../FroggersSurfaceTests.cpp -- FroggersMain.cpp
 // appears nowhere in it; it is only ever compiled by app/build-launcher.sh's
 // separate `make -C .../sheaf-patch APP_SOURCES=.../FroggersMain.cpp` call).
@@ -3198,35 +3201,80 @@ TEST_CASE(record_action_arms_while_playing_and_stops_with_captured_frames) {
     rig.RunBlocks(4);
 }
 
-TEST_CASE(record_action_refused_while_stopped_fires_the_refusal_callback) {
+TEST_CASE(record_action_refused_while_stopped_shows_the_transport_notice) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
-        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("record_refusal_callback"));
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("record_refusal_notice"));
     rig.RunBlocks(4);
 
     synth::ui::Surface& surface = rig.Application().PortableSurface();
     synth_froggers::FroggersApp& app = rig.Application();
 
-    std::vector<std::string> refusalReasons;
-    app.SetOnRecordRefused([&refusalReasons](const char* reason) { refusalReasons.push_back(reason); });
+    // Before the Record dispatch, the built tree carries no notice node at
+    // all -- not merely an empty one.
+    const synth::ui::NodeTree beforeTree = surface.BuildTree();
+    REQUIRE_TRUE(FindNodeById(beforeTree, synth_froggers::FroggersNodeIds::kTransportNotice) == nullptr);
+
+    // With no notice, the four plates' resolved bounds are exactly what
+    // they were on `main` before AppendTransportRow's cell became a Column
+    // (froggers.layout.left.transport.stack) wrapping the plates Row over
+    // the notice line -- read from that pre-Column build at the same
+    // default 900x712 config SynthRig itself uses (FroggersAppCore::
+    // Config()), so the restructure moved nothing the operator can see.
+    const synth::ui::Bounds playBoundsBefore =
+        AbsoluteBounds(beforeTree, synth_froggers::FroggersNodeIds::kPlay);
+    const synth::ui::Bounds stopBoundsBefore =
+        AbsoluteBounds(beforeTree, synth_froggers::FroggersNodeIds::kStop);
+    const synth::ui::Bounds freezeBoundsBefore =
+        AbsoluteBounds(beforeTree, synth_froggers::FroggersNodeIds::kFreeze);
+    const synth::ui::Bounds recordBoundsBefore =
+        AbsoluteBounds(beforeTree, synth_froggers::FroggersNodeIds::kRecord);
+    REQUIRE_TRUE(playBoundsBefore.x == 16.0f && playBoundsBefore.y == 238.0f &&
+                 playBoundsBefore.width == 28.0f && playBoundsBefore.height == 28.0f);
+    REQUIRE_TRUE(stopBoundsBefore.x == 58.0f && stopBoundsBefore.y == 238.0f &&
+                 stopBoundsBefore.width == 28.0f && stopBoundsBefore.height == 28.0f);
+    REQUIRE_TRUE(freezeBoundsBefore.x == 100.0f && freezeBoundsBefore.y == 238.0f &&
+                 freezeBoundsBefore.width == 28.0f && freezeBoundsBefore.height == 28.0f);
+    REQUIRE_TRUE(recordBoundsBefore.x == 142.0f && recordBoundsBefore.y == 238.0f &&
+                 recordBoundsBefore.width == 28.0f && recordBoundsBefore.height == 28.0f);
 
     // Rig's own default state: transport stopped, never Played.
     surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRecord));
-
-    REQUIRE_TRUE(refusalReasons.size() == 1);
-    REQUIRE_TRUE(refusalReasons[0] == "Press Play before recording.");
     REQUIRE_TRUE(!app.RecordArmed());
+
+    const synth::ui::NodeTree refusedTree = surface.BuildTree();
+    const synth::ui::Node* noticeNode =
+        FindNodeById(refusedTree, synth_froggers::FroggersNodeIds::kTransportNotice);
+    REQUIRE_TRUE(noticeNode != nullptr);
+    REQUIRE_TRUE(noticeNode->kind == synth::ui::NodeKind::Label);
+    REQUIRE_TRUE(noticeNode->text == "Press Play before recording.");
+
+    // The notice's resolved (absolute) bounds lie inside the transport
+    // stack's (froggers.layout.left.transport.stack, the Column wrapping
+    // the plates Row and the notice line -- not the plates Row itself,
+    // which the notice sits BELOW as the stack's second child), in this
+    // wide-layout default (narrowViewport_ defaults false).
+    const synth::ui::Bounds noticeBounds =
+        AbsoluteBounds(refusedTree, synth_froggers::FroggersNodeIds::kTransportNotice);
+    const synth::ui::Bounds transportStackBounds =
+        AbsoluteBounds(refusedTree, synth_froggers::FroggersNodeIds::kTransportStack);
+    REQUIRE_TRUE(FullyInside(noticeBounds, transportStackBounds));
+
+    // A Play dispatch clears the notice -- the node is gone again.
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
+    const synth::ui::NodeTree afterPlayTree = surface.BuildTree();
+    REQUIRE_TRUE(FindNodeById(afterPlayTree, synth_froggers::FroggersNodeIds::kTransportNotice) == nullptr);
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
+    rig.RunBlocks(4);
 }
 
-TEST_CASE(record_action_stop_with_data_fires_the_finished_callback_exactly_once) {
+TEST_CASE(record_action_stop_with_data_queues_one_named_wav_export) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
-        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("record_finished_callback"));
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("record_wav_export"));
     rig.RunBlocks(4);
 
     synth::ui::Surface& surface = rig.Application().PortableSurface();
     synth_froggers::FroggersApp& app = rig.Application();
-
-    int finishedCount = 0;
-    app.SetOnRecordingFinished([&finishedCount] { ++finishedCount; });
 
     surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
     rig.RunBlocks(8);
@@ -3235,7 +3283,163 @@ TEST_CASE(record_action_stop_with_data_fires_the_finished_callback_exactly_once)
     REQUIRE_TRUE(app.RecordedFrameCount() > 0);
 
     surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRecord));
-    REQUIRE_TRUE(finishedCount == 1);
+
+    const std::optional<synth::FileExport> fileExport = app.TakePendingFileExport();
+    REQUIRE_TRUE(fileExport.has_value());
+    REQUIRE_TRUE(fileExport->mediaType == "audio/wav");
+    REQUIRE_TRUE(fileExport->bytes.size() >= 4 && fileExport->bytes[0] == 'R' && fileExport->bytes[1] == 'I' &&
+                 fileExport->bytes[2] == 'F' && fileExport->bytes[3] == 'F');
+    // EncodeWavPcm16Mono's canonical 44-byte header, 16-bit mono samples.
+    REQUIRE_TRUE(fileExport->bytes.size() >= 44);
+    REQUIRE_TRUE((fileExport->bytes.size() - 44) / 2 == app.RecordedFrameCount());
+    REQUIRE_TRUE(fileExport->note.empty());
+
+    static const std::regex kFileNamePattern("^\\d{4}-\\d{2}-\\d{2}\\.wav$");
+    std::cout << "  [wav export] fileName=" << fileExport->fileName << "\n";
+    REQUIRE_TRUE(std::regex_match(fileExport->fileName, kFileNamePattern));
+
+    // A second take, with no further Record stop, yields none.
+    REQUIRE_TRUE(!app.TakePendingFileExport().has_value());
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
+    rig.RunBlocks(4);
+}
+
+TEST_CASE(truncated_capture_queues_its_export_without_a_stop_press) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("record_wav_export_truncated"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
+    rig.RunBlocks(8);
+
+    synth_froggers::FroggersApp& app = rig.Application();
+    constexpr std::uint64_t kCapacityFrames = 256;
+
+    // Observe the export the way a real host does -- through the engine's
+    // own per-tick drain (Engine::MessageThreadTick, Engine.hpp:622-636),
+    // which hands every queued export to whatever handler is installed here
+    // and drops it otherwise. Installed before arming so the drain that
+    // follows the cap has somewhere to deliver it.
+    std::vector<synth::FileExport> exportedFiles;
+    rig.Engine().SetFileExportHandler(
+        [&exportedFiles](synth::FileExport fileExport) { exportedFiles.push_back(std::move(fileExport)); });
+
+    REQUIRE_TRUE(app.ArmRecording(/*capacityFramesOverride=*/static_cast<std::size_t>(kCapacityFrames)));
+
+    // Run well past the tiny capacity, same margin
+    // record_truncates_at_capacity_and_stops_growing above uses. The audio
+    // thread disarms itself the instant it hits the cap (FroggersAppCore::
+    // ProcessBlock, :1186-1194) -- no Record dispatch follows here, so the
+    // handler above is only ever reached through the engine's own per-tick
+    // TakePendingFileExport() poll (Engine.hpp:628), driven automatically by
+    // every RunBlocks() call's MessageThreadTick.
+    rig.RunBlocks(16);
+    REQUIRE_TRUE(app.RecordedFrameCount() == kCapacityFrames);
+    REQUIRE_TRUE(app.RecordingTruncated());
+    REQUIRE_TRUE(!app.RecordArmed());
+
+    REQUIRE_TRUE(exportedFiles.size() == 1);
+    const synth::FileExport& fileExport = exportedFiles.front();
+    REQUIRE_TRUE(fileExport.note == "stopped at the 30-minute limit");
+    REQUIRE_TRUE(fileExport.mediaType == "audio/wav");
+    REQUIRE_TRUE(fileExport.bytes.size() >= 44);
+    REQUIRE_TRUE((fileExport.bytes.size() - 44) / 2 == kCapacityFrames);
+
+    static const std::regex kFileNamePattern("^\\d{4}-\\d{2}-\\d{2}\\.wav$");
+    std::cout << "  [truncated export via engine tick] fileName=" << fileExport.fileName << "\n";
+    REQUIRE_TRUE(std::regex_match(fileExport.fileName, kFileNamePattern));
+
+    // Further ticks, with nothing new queued, must not hand the same
+    // capture to the handler a second time.
+    rig.RunBlocks(8);
+    REQUIRE_TRUE(exportedFiles.size() == 1);
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
+    rig.RunBlocks(4);
+}
+
+TEST_CASE(arming_after_an_unpolled_truncated_capture_flushes_it_first) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("record_unpolled_truncation_flush"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
+    // One ticked block is enough to land the transport-running state the
+    // direct, un-ticked blocks below need -- no further tick may run before
+    // the capture is filled (see that loop's own comment).
+    rig.RunBlocks(1);
+
+    synth_froggers::FroggersApp& app = rig.Application();
+    constexpr std::uint64_t kCapacityFrames = 256;
+    REQUIRE_TRUE(app.ArmRecording(/*capacityFramesOverride=*/static_cast<std::size_t>(kCapacityFrames)));
+
+    // Truncate the capture without ever ticking the message thread.
+    // RunBlocks()/RunOneBlockAt() always pair a ProcessBlock with a
+    // MessageThreadTick (SynthRig.hpp:~520-540), and that tick alone would
+    // drain and drop the truncated export (no handler installed in this
+    // test) before ArmRecording()'s own flush below ever gets a chance to
+    // run. synth::Engine<App>::ProcessBlock() -- the call RunOneBlockAt
+    // makes, minus the tick that follows it there -- is public and reachable
+    // via rig.Engine(); the block it needs is built here from
+    // FroggersApp::Config() rather than the rig's own block buffers, which
+    // are private.
+    const synth::RuntimeConfig config = synth_froggers::FroggersApp::Config();
+    const std::size_t blockFrames = static_cast<std::size_t>(config.preferredBlockSize);
+    std::vector<std::vector<float>> inputBuffers(static_cast<std::size_t>(config.numAudioInputs),
+                                                  std::vector<float>(blockFrames, 0.0f));
+    std::vector<std::vector<float>> outputBuffers(static_cast<std::size_t>(config.numAudioOutputs),
+                                                   std::vector<float>(blockFrames, 0.0f));
+    std::vector<const float*> inputPointers(inputBuffers.size());
+    std::vector<float*> outputPointers(outputBuffers.size());
+    for (std::size_t ch = 0; ch < inputPointers.size(); ++ch) {
+        inputPointers[ch] = inputBuffers[ch].data();
+    }
+    for (std::size_t ch = 0; ch < outputPointers.size(); ++ch) {
+        outputPointers[ch] = outputBuffers[ch].data();
+    }
+
+    // preferredBlockSize == kCapacityFrames, so the first direct block only
+    // fills the buffer exactly full; the truncation flag itself only sets
+    // on the first frame that finds it already full, early in the next
+    // block -- same wide margin record_truncates_at_capacity_and_stops_growing
+    // above uses, just driven without a tick.
+    std::uint64_t directTimestamp = 1;
+    for (int i = 0; i < 16; ++i) {
+        synth::AudioBlock block;
+        block.inputs = inputPointers.empty() ? nullptr : inputPointers.data();
+        block.outputs = outputPointers.empty() ? nullptr : outputPointers.data();
+        block.numInputChannels = config.numAudioInputs;
+        block.numOutputChannels = config.numAudioOutputs;
+        block.numFrames = blockFrames;
+        block.numRequestedInputChannels = config.numAudioInputs;
+        rig.Engine().ProcessBlock(block, directTimestamp++);
+    }
+    REQUIRE_TRUE(app.RecordedFrameCount() == kCapacityFrames);
+    REQUIRE_TRUE(app.RecordingTruncated());
+    REQUIRE_TRUE(!app.RecordArmed());
+
+    // The transport is still running from the Play dispatch above (no Stop
+    // sent), but dispatch Play again here so the test does not depend on
+    // that state having survived unchanged -- ArmRecording() below refuses
+    // outright while stopped.
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
+
+    // ArmRecording() flushes the still-unpolled truncated capture's export
+    // before its own recordBuffer_.assign() would otherwise wipe it out --
+    // see QueueTruncatedExportIfPending()'s own comment (FroggersAppCore.hpp).
+    REQUIRE_TRUE(app.ArmRecording(/*capacityFramesOverride=*/static_cast<std::size_t>(kCapacityFrames)));
+    REQUIRE_TRUE(app.RecordArmed());
+
+    const std::optional<synth::FileExport> fileExport = app.TakePendingFileExport();
+    REQUIRE_TRUE(fileExport.has_value());
+    REQUIRE_TRUE(fileExport->note == "stopped at the 30-minute limit");
+    REQUIRE_TRUE((fileExport->bytes.size() - 44) / 2 == kCapacityFrames);
+
+    // A further take, with nothing new queued, yields none.
+    REQUIRE_TRUE(!app.TakePendingFileExport().has_value());
 
     surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
     rig.RunBlocks(4);

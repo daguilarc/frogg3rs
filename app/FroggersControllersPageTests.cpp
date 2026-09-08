@@ -21,6 +21,7 @@
 #error "Froggers Controllers page tests must not see JUCE headers"
 #endif
 
+#include <algorithm>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -248,6 +249,65 @@ TEST_CASE(real_catalog_defaults_generate_and_accept_adds_through_the_view_model)
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// twister_system_rows_carry_shift_editable_field_and_derived_choice_index
+// ---------------------------------------------------------------------------
+TEST_CASE(twister_system_rows_carry_shift_editable_field_and_derived_choice_index) {
+    using Field = synth::MidiMappingRowVM::Field;
+
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+    const std::vector<synth::ControllerWizardDescriptor> registry =
+        synth::MakeControllerWizardRegistry(catalog);
+    std::vector<synth::MidiControllerSlot> slots = GenerateCatalogSlots(registry);
+
+    synth::MidiInstrumentConfig instrument;
+    synth::MidiConnectionState connection;
+    for (synth::MidiControllerSlot& slot : slots) {
+        REQUIRE_TRUE(instrument.AddController(std::move(slot)));
+        connection.controllers.push_back({});
+    }
+
+    std::size_t twisterIx = instrument.controllers.size();
+    for (std::size_t ix = 0; ix < instrument.controllers.size(); ++ix) {
+        if (instrument.controllers[ix].kind == synth::MidiProfileKind::MfTwister) {
+            twisterIx = ix;
+            break;
+        }
+    }
+    REQUIRE_TRUE(twisterIx < instrument.controllers.size());
+
+    synth::MidiConfigViewModel vm;
+    vm.SetMessageCatalog(synth::MakeUISystemMessageChoices(catalog));
+    vm.Rebuild(instrument, connection);
+
+    const std::vector<synth::MidiMappingRowVM> rows =
+        vm.SectionRows(twisterIx, synth::MidiConfigSection::SystemMessages);
+    REQUIRE_TRUE(rows.size() == 6);
+    for (std::size_t ix = 0; ix < 5; ++ix) {
+        const bool hasShiftField =
+            std::find(rows[ix].editableFields.begin(), rows[ix].editableFields.end(), Field::ShiftAction) !=
+            rows[ix].editableFields.end();
+        REQUIRE_TRUE(hasShiftField);
+    }
+    const bool shiftRowHasShiftField =
+        std::find(rows[5].editableFields.begin(), rows[5].editableFields.end(), Field::ShiftAction) !=
+        rows[5].editableFields.end();
+    REQUIRE_TRUE(!shiftRowHasShiftField);
+
+    const std::vector<synth::UISystemMessageChoice>& shiftCatalog = vm.ShiftCatalog();
+    int bankPreviousIx = -1;
+    for (std::size_t ix = 0; ix < shiftCatalog.size(); ++ix) {
+        if (shiftCatalog[ix].label == "Bank Previous") {
+            bankPreviousIx = static_cast<int>(ix);
+            break;
+        }
+    }
+    REQUIRE_TRUE(bankPreviousIx >= 0);
+
+    REQUIRE_TRUE(vm.ShiftChoiceIndex(twisterIx, synth::MidiConfigSection::SystemMessages, 0) == bankPreviousIx);
+    REQUIRE_TRUE(vm.ShiftChoiceIndex(twisterIx, synth::MidiConfigSection::SystemMessages, 5) == 0);
 }
 
 }  // namespace
