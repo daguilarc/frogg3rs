@@ -229,16 +229,21 @@ inline std::vector<synth::MidiControllerSystemMessageAssociation> LaunchpadPadMa
 // The three Launchpad presets below differ only in the model, the
 // descriptor id, the display name, the port aliases, and the
 // programmer-mode SysEx -- everything else (kind, pad map) is shared, so
-// one helper builds every descriptor.
+// one helper builds every descriptor. The aliases are per direction: a
+// Launchpad's two endpoints carry the direction word in their names, and it
+// is the opposite word on each side, so the application's input is the
+// unit's MIDI Out.
 inline synth::MidiAppDeviceDefault LaunchpadDeviceDefault(synth::LaunchpadController controller, std::string id,
-                                                           std::string displayName, std::vector<std::string> aliases,
+                                                           std::string displayName,
+                                                           std::vector<std::string> inputAliases,
+                                                           std::vector<std::string> outputAliases,
                                                            std::vector<std::uint8_t> programmerModeSysEx) {
     synth::MidiAppDeviceDefault device;
     device.id = std::move(id);
     device.displayName = std::move(displayName);
     device.kind = synth::MidiProfileKind::Launchpad;
-    device.inputAliases = aliases;
-    device.outputAliases = std::move(aliases);
+    device.inputAliases = std::move(inputAliases);
+    device.outputAliases = std::move(outputAliases);
 
     synth::MidiControllerProfileConfig config;
     config.systemMessages = LaunchpadPadMap(controller);
@@ -247,28 +252,41 @@ inline synth::MidiAppDeviceDefault LaunchpadDeviceDefault(synth::LaunchpadContro
     return device;
 }
 
-// Port aliases per Novation's manuals: the MIDI interface, not the DAW
-// interface (the manuals state Programmer Mode uses the MIDI interface). No
-// unit was available to confirm the exact macOS port string, so each model
-// lists the manual's own name, the combined "<product> <MIDI interface
-// name>" form some hosts report, and the bare product name.
+// The MIDI interface, not the DAW interface: the manuals state Programmer
+// Mode uses the MIDI interface, and no alias here names a DAW port. A JUCE
+// host reports each port as the device name, a space, and the port name, so
+// the name to match is "<product> <interface name> In" or "... Out" -- the
+// application's input being the unit's MIDI Out. The Mini MK3's two names
+// were read from a connected unit; the other two models' are the same
+// construction with each model's own interface name and are unconfirmed on
+// hardware, which is why each list keeps the shorter forms behind the full
+// one for a host that reports one of those instead.
 inline synth::MidiAppDeviceDefault LaunchpadXDeviceDefault() {
     return LaunchpadDeviceDefault(synth::LaunchpadController::LaunchpadX, "froggers.launchpad.x", "Launchpad X",
-                                   {"LPX MIDI", "Launchpad X LPX MIDI", "Launchpad X"},
+                                   {"Launchpad X LPX MIDI Out", "LPX MIDI", "Launchpad X LPX MIDI",
+                                    "Launchpad X"},
+                                   {"Launchpad X LPX MIDI In", "LPX MIDI", "Launchpad X LPX MIDI",
+                                    "Launchpad X"},
                                    {0xF0, 0x00, 0x20, 0x29, 0x02, 0x0C, 0x0E, 0x01, 0xF7});
 }
 
 inline synth::MidiAppDeviceDefault LaunchpadProMk3DeviceDefault() {
     return LaunchpadDeviceDefault(
         synth::LaunchpadController::LaunchpadProMk3, "froggers.launchpad.promk3", "Launchpad Pro MK3",
-        {"LPProMK3 MIDI", "Launchpad Pro MK3 LPProMK3 MIDI", "Launchpad Pro MK3"},
+        {"Launchpad Pro MK3 LPProMK3 MIDI Out", "LPProMK3 MIDI", "Launchpad Pro MK3 LPProMK3 MIDI",
+         "Launchpad Pro MK3"},
+        {"Launchpad Pro MK3 LPProMK3 MIDI In", "LPProMK3 MIDI", "Launchpad Pro MK3 LPProMK3 MIDI",
+         "Launchpad Pro MK3"},
         {0xF0, 0x00, 0x20, 0x29, 0x02, 0x0E, 0x00, 0x11, 0x00, 0x00, 0xF7});
 }
 
 inline synth::MidiAppDeviceDefault LaunchpadMiniMk3DeviceDefault() {
     return LaunchpadDeviceDefault(
         synth::LaunchpadController::LaunchpadMiniMk3, "froggers.launchpad.minimk3", "Launchpad Mini MK3",
-        {"LPMiniMK3 MIDI", "Launchpad Mini MK3 LPMiniMK3 MIDI", "Launchpad Mini MK3"},
+        {"Launchpad Mini MK3 LPMiniMK3 MIDI Out", "LPMiniMK3 MIDI",
+         "Launchpad Mini MK3 LPMiniMK3 MIDI", "Launchpad Mini MK3"},
+        {"Launchpad Mini MK3 LPMiniMK3 MIDI In", "LPMiniMK3 MIDI",
+         "Launchpad Mini MK3 LPMiniMK3 MIDI", "Launchpad Mini MK3"},
         {0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x0E, 0x01, 0xF7});
 }
 

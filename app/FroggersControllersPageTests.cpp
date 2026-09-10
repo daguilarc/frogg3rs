@@ -310,6 +310,85 @@ TEST_CASE(twister_system_rows_carry_shift_editable_field_and_derived_choice_inde
     REQUIRE_TRUE(vm.ShiftChoiceIndex(twisterIx, synth::MidiConfigSection::SystemMessages, 5) == 0);
 }
 
+// ---------------------------------------------------------------------------
+// launchpad_presets_pair_with_the_port_names_a_host_reports
+// ---------------------------------------------------------------------------
+// A connected unit is offered its preset only when one of that preset's
+// aliases equals the enumerated endpoint name whole (MatchesAnyAlias, case
+// insensitive, no substring or trimming), so the aliases have to carry the
+// name the host reports. A JUCE host reports a Launchpad's port as the device
+// name followed by the port name, which leaves the direction word on the end
+// and puts the opposite word on each side: the unit's MIDI Out is what the
+// application opens as an input. The Mini MK3 rows below were read from a
+// connected unit through this application's own JUCE; the X and Pro MK3 rows
+// are the same construction with each model's own interface name and are
+// unconfirmed on hardware. The Twister is the positive control: its port
+// carries one name per direction, which is why the same whole-string rule has
+// always paired it.
+TEST_CASE(launchpad_presets_pair_with_the_port_names_a_host_reports) {
+    struct HostPorts {
+        const char* wizardId;
+        const char* midiIn;   // the application's input: the unit's MIDI Out port
+        const char* midiOut;  // the application's output: the unit's MIDI In port
+        const char* dawIn;    // every Launchpad also exposes a DAW port pair,
+        const char* dawOut;   // which no preset drives
+    };
+    const HostPorts kPorts[] = {
+        {"froggers.twister", "Midi Fighter Twister", "Midi Fighter Twister", nullptr, nullptr},
+        {"froggers.launchpad.x", "Launchpad X LPX MIDI Out", "Launchpad X LPX MIDI In",
+         "Launchpad X LPX DAW Out", "Launchpad X LPX DAW In"},
+        {"froggers.launchpad.promk3", "Launchpad Pro MK3 LPProMK3 MIDI Out",
+         "Launchpad Pro MK3 LPProMK3 MIDI In", "Launchpad Pro MK3 LPProMK3 DAW Out",
+         "Launchpad Pro MK3 LPProMK3 DAW In"},
+        {"froggers.launchpad.minimk3", "Launchpad Mini MK3 LPMiniMK3 MIDI Out",
+         "Launchpad Mini MK3 LPMiniMK3 MIDI In", "Launchpad Mini MK3 LPMiniMK3 DAW Out",
+         "Launchpad Mini MK3 LPMiniMK3 DAW In"},
+    };
+    constexpr std::size_t kPortCount = sizeof(kPorts) / sizeof(kPorts[0]);
+
+    // The DAW port of each Launchpad is enumerated before its MIDI port, as the
+    // host reports them, so a preset that matched both would take the DAW one.
+    synth::MidiDeviceList devices;
+    for (const HostPorts& ports : kPorts) {
+        if (ports.dawIn != nullptr) {
+            devices.inputs.push_back({std::string(ports.wizardId) + ".daw.in", ports.dawIn});
+            devices.outputs.push_back({std::string(ports.wizardId) + ".daw.out", ports.dawOut});
+        }
+        devices.inputs.push_back({std::string(ports.wizardId) + ".in", ports.midiIn});
+        devices.outputs.push_back({std::string(ports.wizardId) + ".out", ports.midiOut});
+    }
+
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+    const std::vector<synth::ControllerWizardDescriptor> registry =
+        synth::MakeControllerWizardRegistry(catalog);
+    const synth::MidiInstrumentConfig instrument;
+    const synth::WizardDiscovery discovery =
+        synth::DiscoverControllerWizards(devices, instrument, registry);
+
+    for (const HostPorts& ports : kPorts) {
+        const synth::WizardCandidate* candidate = nullptr;
+        for (const synth::WizardCandidate& available : discovery.available) {
+            if (available.wizardId == ports.wizardId) {
+                candidate = &available;
+                break;
+            }
+        }
+        if (candidate == nullptr) {
+            std::cout << "  [" << ports.wizardId << "] nothing paired with \"" << ports.midiIn
+                      << "\"\n";
+        }
+        REQUIRE_TRUE(candidate != nullptr);
+        REQUIRE_TRUE(candidate->input.name == ports.midiIn);
+        REQUIRE_TRUE(candidate->output.name == ports.midiOut);
+    }
+
+    REQUIRE_TRUE(discovery.available.size() == kPortCount);
+    REQUIRE_TRUE(discovery.unmatchedInputs.size() == kPortCount - 1);
+    for (const synth::MidiDeviceInfoRef& unmatched : discovery.unmatchedInputs) {
+        REQUIRE_TRUE(unmatched.name.find("DAW") != std::string::npos);
+    }
+}
+
 }  // namespace
 
 int main() {

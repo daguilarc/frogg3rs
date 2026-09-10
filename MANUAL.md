@@ -364,21 +364,22 @@ Scene 1, Scene 2, Randomize Page, Reset Page. Right column, top six buttons: Ban
 The app switches the unit into programmer mode when its output connects; in that mode every pad's
 light is controlled by the host and this app sends none, so the pads stay dark.
 
-The ports this preset matches are taken from Novation's manuals, not confirmed on a unit — if a
-connected Launchpad X's MIDI in/out read "(none)" after adding it, bind its ports by hand from the
-port selectors.
+The preset matches the unit's MIDI ports, not its DAW ports. Those port names are taken from
+Novation's manuals and have not been confirmed on a Launchpad X — if a connected one's MIDI in/out
+read "(none)" after adding it, bind its ports by hand from the port selectors.
 
 ### Launchpad Pro MK3
 
 The same pad map as Launchpad X, on the Pro MK3's own row of round buttons above the grid and column
 beside it. The app switches the unit into programmer mode the same way when its output connects, and
-its pads stay dark for the same reason. Its ports are matched the same unconfirmed way as Launchpad
-X's; bind them by hand if they read "(none)".
+its pads stay dark for the same reason. Its MIDI ports are matched the same unconfirmed way as
+Launchpad X's; bind them by hand if they read "(none)".
 
 ### Launchpad Mini MK3
 
-The same pad map and programmer-mode switch as Launchpad X. Its ports are matched the same
-unconfirmed way as Launchpad X's; bind them by hand if they read "(none)".
+The same pad map and programmer-mode switch as Launchpad X. Its MIDI port names were read from a
+connected unit, so adding this preset with the Mini MK3 plugged in binds its ports; its DAW ports are
+left alone.
 
 ### Saving
 
