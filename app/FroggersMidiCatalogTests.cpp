@@ -651,6 +651,11 @@ TEST_CASE(launchpad_defaults_are_registered_with_expected_ids_and_kind) {
     for (const LaunchpadPresetId& preset : kLaunchpadPresetIds) {
         const synth::MidiAppDeviceDefault& device = RequireDeviceDefault(catalog, preset.id);
         REQUIRE_TRUE(device.kind == synth::MidiProfileKind::Launchpad);
+        // The model the profile records is what the Controllers page's Variant
+        // selector shows and what a row added to this preset is stamped from,
+        // so a preset that left it at the default would read as a Launchpad X
+        // row however its pads are addressed.
+        REQUIRE_TRUE(device.config.launchpadModel == preset.controller);
     }
     REQUIRE_TRUE(RequireDeviceDefault(catalog, "froggers.launchpad.x").displayName == "Launchpad X");
     REQUIRE_TRUE(RequireDeviceDefault(catalog, "froggers.launchpad.promk3").displayName == "Launchpad Pro MK3");

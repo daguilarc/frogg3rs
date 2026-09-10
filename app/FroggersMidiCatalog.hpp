@@ -246,6 +246,7 @@ inline synth::MidiAppDeviceDefault LaunchpadDeviceDefault(synth::LaunchpadContro
     device.outputAliases = std::move(outputAliases);
 
     synth::MidiControllerProfileConfig config;
+    config.launchpadModel = controller;
     config.systemMessages = LaunchpadPadMap(controller);
     config.openSysEx = {std::move(programmerModeSysEx)};
     device.config = std::move(config);
