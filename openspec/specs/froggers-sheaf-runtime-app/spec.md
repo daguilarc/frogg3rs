@@ -291,7 +291,7 @@ A controller row SHALL retain the identity of the preset that created it for as 
 
 ### Requirement: The MIDI configuration page fits this application's window in every state
 
-The MIDI configuration page SHALL lay every control inside this application's content width on every host in every reachable state: controller rows collapsed and expanded, each configuration section open, and a mapping row in each group that accepts an added row (Turn, Push, System, Gesture, App action) beside the rows a preset installs. The controller header SHALL be two lines: identity (name, device kind, Preset, and Variant for a Launchpad) and ports (MIDI in and MIDI out, each preceded by its own status dot, then Delete and Blacklist). The page SHALL show a controller's device kind by its display name, SHALL caption the preset selectors "Preset" on the row and on the add row, SHALL offer on the add row this application's presets followed by a Custom entry per device kind and nothing else, SHALL add the preset its add row displays when the operator has chosen none, SHALL name an added controller after its preset (with a numeric suffix when the name is taken), SHALL bind an added controller's ports to a connected device that matches the preset and otherwise leave them "(none)", SHALL keep the rename field inside the expanded editor under the caption "Name", SHALL keep a renamed controller's row expanded and its open sections open, SHALL caption the ports "MIDI in" and "MIDI out" with a legend for the status dots above the first controller, and SHALL show a controller's full name. A combo box or text field SHALL never draw past its own box.
+The MIDI configuration page SHALL lay every control inside this application's content width on every host in every reachable state: controller rows collapsed and expanded, each configuration section open, and a mapping row in each group that accepts an added row (Turn, Push, System, Gesture, App action) beside the rows a preset installs. The controller header SHALL be two lines: identity (name, device kind, and Variant for a Launchpad) and ports (MIDI in and MIDI out, each preceded by its own status dot, then Delete and Blacklist). The page SHALL show a controller's device kind by its display name, SHALL caption the add row's preset selector "Preset" and a Launchpad row's model selector "Variant", SHALL let a Launchpad row choose which Launchpad model it addresses and no other row choose anything of the sort, SHALL offer on the add row this application's presets followed by a Custom entry per device kind and nothing else, SHALL add the preset its add row displays when the operator has chosen none, SHALL name an added controller after its preset (with a numeric suffix when the name is taken), SHALL bind an added controller's ports to a connected device that matches the preset and otherwise leave them "(none)", SHALL keep the rename field inside the expanded editor under the caption "Name", SHALL keep a renamed controller's row expanded and its open sections open, SHALL caption the ports "MIDI in" and "MIDI out" with a legend for the status dots above the first controller, and SHALL show a controller's full name. A combo box or text field SHALL never draw past its own box.
 
 #### Scenario: Every state fits
 
@@ -309,10 +309,12 @@ The MIDI configuration page SHALL lay every control inside this application's co
 #### Scenario: The row reads as its parts
 
 - **WHEN** the operator reads a MIDI Fighter Twister row
-- **THEN** it shows "MIDI Fighter Twister", "MF Twister" and the Preset
-  selector on the first line; a status dot before the "MIDI in" selector,
-  a status dot before the "MIDI out" selector, Delete and Blacklist on the
-  second; no rename control in the header
+- **THEN** it shows "MIDI Fighter Twister" and "MF Twister" on the first line
+  and no preset selector, a preset being chosen once on the add row; a status
+  dot before the "MIDI in" selector, a status dot before the "MIDI out"
+  selector, Delete and Blacklist on the second; no rename control in the header
+- **AND** a Launchpad row shows a "Variant" selector on that first line,
+  holding the model its profile records
 - Check: `controllers_page_ui_tests.cpp`, the caption, dot-order and
   header tests (task 2.5); operator, task 7.1.
 
@@ -390,4 +392,26 @@ A text node SHALL be allocated a box wide enough for the text it renders, and ad
 - **WHEN** a label's rendered text exceeds its allocated box by less than one pixel
 - **THEN** the text-fit criterion reports a violation
 - Check: the same criterion. `scrollWidth` and `clientWidth` are integers and both read 58 for the 58.3px "Start Pos" label, so the integer comparison this replaces reports no violation on a live defect.
+
+### Requirement: A preset's port aliases are per direction and name what the host reports
+
+Each device preset this application offers SHALL carry its input aliases and its output aliases separately, and each list SHALL include the endpoint name the host reports for that direction, because the page pairs a connected unit with a preset by whole-string, case-insensitive equality against that name. Where a unit's two endpoints are named differently — a device whose ports carry a direction word, so that the input reads "Out" and the output reads "In" — the two lists SHALL differ accordingly. A preset MAY additionally carry shorter forms for hosts that report them, and SHALL NOT carry an alias that would pair the unit's DAW port when its MIDI port is the one the preset drives.
+
+#### Scenario: A connected Launchpad is offered its own preset
+
+- **WHEN** a Launchpad Mini MK3 is connected and the Controllers page enumerates its ports as "Launchpad Mini MK3 LPMiniMK3 MIDI Out" and "Launchpad Mini MK3 LPMiniMK3 MIDI In"
+- **THEN** the page pairs it with the Launchpad Mini MK3 preset
+- **AND** the unit's DAW ports pair with no preset
+- Check: `app/FroggersControllersPageTests.cpp`,
+  `launchpad_presets_pair_with_the_port_names_a_host_reports`.
+
+#### Scenario: The name a host reports is read from the host
+
+- **WHEN** an alias is written for a unit
+- **THEN** it is the name the host enumerates, read from that host rather than
+  constructed from a manual
+- Check: `app/FroggersControllersPageTests.cpp`, the same case; the Mini MK3's
+  rows of its table were read by calling `getAvailableDevices()` through this
+  application's own JUCE with the unit connected, the other two models' rows
+  are the same construction and are unconfirmed.
 

@@ -1,7 +1,8 @@
-# Delta — `froggers-midi-controller-mappings`
+# froggers-midi-controller-mappings Specification
 
-## ADDED Requirements
-
+## Purpose
+TBD - created by archiving change frogg3rs-midi-shift. Update Purpose after archive.
+## Requirements
 ### Requirement: A button's shifted job is part of its mapping
 The app SHALL keep the runtime library's Shift message kind in its MIDI catalog, so that any button on any controller can be mapped to Shift from the Controllers page, and SHALL offer no on-screen Shift control. Every system-message row on the Controllers page SHALL carry a shifted job, chosen from none or any of the app's actions, that fires instead of the row's ordinary job while a Shift button on the same controller is held. The app SHALL define no fixed pairing of actions: which job a button does while shifted is that button's own mapping, editable per row and stored with the patch like every other mapping.
 
@@ -36,3 +37,4 @@ The MIDI Fighter Twister preset SHALL map its six side buttons on channel 3 (cha
 - **THEN** that controller's mappings stay shifted until a Shift press and release arrive
 - **AND** the manual states this and the recovery
 - Check: `MANUAL.md`, the Shift subsection (documentation, no automated check)
+
