@@ -305,7 +305,9 @@ tables; the short of it:
 - [x] 13.2 `make -C app test -j2` plus every binary by path: 371 PASS /
       0 FAIL, 12 binaries, 5 check scripts OK. Re-run after the 11.4 refactor
       touched all three DSP pages; 18 exactness/parity pins green.
-- [ ] 13.3 Commit and push to `main`. Two commits, staged by path: the
-      predecessor archival and the off-path spec fix separately from this
-      change's own code and documents. `frogg3rs-midi-controller-resilience`
-      is untouched.
+- [x] 13.3 Pushed to `main`, staged by path, two commits: `85bf09e` archives
+      the three delivered predecessors and promotes what they shipped;
+      `814a703` is this change's own code, documents and artifacts. No Sheaf
+      file is touched, so the submodule stays pinned at `ba3898e4` and there
+      is no PR to raise against upstream. `frogg3rs-midi-controller-resilience`
+      is left open and untouched.
