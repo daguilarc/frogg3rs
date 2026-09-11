@@ -519,50 +519,89 @@ shapes an already comb-colored signal). Every value in between blends smoothly.
 
 ## Drive bank
 
-Signal path: 2×-oversampled polynomial waveshaper (with a sine-fold/tanh-fuzz blend) → digital
+Signal path: an oversampled polynomial waveshaper (with a sine-fold/tanh-fuzz blend) → digital
 reorganizer (bit XOR + bit-scramble) → two sample-rate reducers in series → a tone low-pass → dry/wet
-Blend with an allpass Phase stage on the wet side.
+Wet/Dry with an allpass Phase stage on the wet side.
 
-**Drive** (slot 0) — input gain into the polynomial waveshaper (1×–5×). Higher drive pushes the
+Wet/Dry is the page's master and Gain is what makes distortion as opposed to crushing, which is why
+those two sit first. No knob switches the whole page off except Wet/Dry: the bit and rate manglers
+act on a signal at any level, so crushing a quiet signal still crushes it.
+
+**Wet/Dry** (slot 0) — crossfades the dry (pre-Gain) signal against the fully processed Drive
+chain output. 0 = dry only, untouched by everything below and bit-for-bit identical to the input;
+1 = fully wet. Unlike Delay's and Reverb's own wet/dry controls, this one is not capped — it reaches
+fully wet, because a distortion that replaces its source is a sound you ask for by name.
+
+The crossfade is equal-power rather than linear. That matters here more than on most mixes: the
+wet path's fundamental is partly out of phase with the dry one, and which way it leans changes as
+Gain moves, so a linear crossfade thinned the sound over the knob's first quarter instead of
+fading the distortion in. Worst dip across the page's range is now about 1 dB, where it was
+just over 4 dB.
+
+**Gain** (slot 1) — input gain into the polynomial waveshaper (1×–5×). Higher gain pushes the
 shaper into denser, more extreme harmonic territory.
 
-**Shape** (slot 1) — recomputes the waveshaper's five polynomial coefficients along a
+**Shape** (slot 2) — recomputes the waveshaper's five polynomial coefficients along a
 space-filling curve, continuously changing its harmonic character. (Distinct from the Audio bank's
 per-VCO waveform Shape knobs — same name, different control.)
 
-**SRR 1** (slot 2) — first sample-rate-reducer stage. Raising the knob increases the reduction —
+**SRR 1** (slot 3) — first sample-rate-reducer stage. Raising the knob increases the reduction —
 heavier, stair-stepped decimation; off at the bottom (the same mapping as Delay's Crush, slot 13).
 
-**SRR 2** (slot 3) — a second, identical reducer stage running in series right after SRR 1, for a
+**SRR 2** (slot 4) — a second, identical reducer stage running in series right after SRR 1, for a
 second layer of decimation; same off-at-the-bottom mapping as SRR 1.
 
-**XOR** (slot 4) — an 8-bit XOR mask applied to the (quantized) sample, producing bit-flip
+**XOR** (slot 5) — an 8-bit XOR mask applied to the (quantized) sample, producing bit-flip
 glitching. 0 = no flip.
 
-**Bit depth** (slot 5) — how many of the sample's low bits the digital reorganizer scrambles.
-0 = untouched; higher values add progressively harsher low-bit digital noise.
+The middle of the travel is not a quiet spot, though it reads as one: from roughly 0.3 to 0.7 the
+mask strips about 16 dB out of everything below 1 kHz while leaving the top octaves where they
+were. Overall level barely moves. Body gone, fizz intact — most obvious into a filter. The knob is
+also mirror-symmetric: a setting and its opposite differ by a polarity flip, which is inaudible at
+full wet and audible at partial Wet/Dry, where the sign sums against the dry signal.
 
-**Fuzz** (slot 6) — blends between the sine-folded wet path (bottom of travel) and a
+**Bit depth** (slot 6) — how many of the sample's low bits the digital reorganizer scrambles.
+0 = untouched; higher values add progressively harsher low-bit digital noise. The knob is mapped
+onto the bit counts that actually do something, so the first audible step arrives just off the
+floor rather than a fifth of the way up.
+
+**Fuzz** (slot 7) — blends between the sine-folded wet path (bottom of travel) and a
 tanh-style hard saturator (top of travel) inside the waveshaper stage.
 
-**Blend** (slot 7) — crossfades the dry (pre-Drive) signal against the fully processed Drive
-chain output. 0 = dry only, untouched by everything above; 1 = fully wet.
-
-**Phase** (slot 8) — a first-order allpass filter on the wet signal, applied *before* the Blend
-crossfade above. At Blend 0 this has no audible effect at all, since dry passes through unfiltered
+**Phase** (slot 8) — a first-order allpass filter on the wet signal, applied *before* the Wet/Dry
+crossfade above. At Wet/Dry 0 this has no audible effect at all, since dry passes through unfiltered
 regardless of this knob's position.
 
-**Anti-alias brightness** (`Anti-alias`, slot 9) — trims the cutoff of the oversampler's anti-alias
-filter within a narrow range. A brightness adjustment, small either way.
+An allpass does not change level on its own, so everything you hear from this knob is how the
+rotated wet signal sums against the dry one. That makes its range conditional rather than fixed: at
+a partial Wet/Dry on a bass note the top of the travel lifts the sum by a couple of dB, while on a
+mid note with the shaper driven hard no position changes the tone measurably. The knob is mapped
+through the allpass's own corner frequency, so equal turns move the audible band by comparable
+amounts across the whole travel.
 
-**Link** (slot 10) — how strongly the Drive knob's amount skews Shape's coefficients. Turning
-it up makes Drive pull Shape's harmonic character along with it; turning it down decouples them.
+**Anti-alias brightness** (`Anti-alias`, slot 9) — crossfades between a clean, heavily
+oversampled shaper path and the grittier path the instrument has always used. At the top of the
+travel — the default — it is bit-for-bit what shipped before, so nothing is taken away.
+
+Turned down, it removes the metallic ring that hard shaping puts on higher notes: partials that
+belong to no key, a different one per semitone, so a line played up the keyboard changes character
+note to note instead of transposing. Measured at a 1.5 kHz tone, the clean end is about 23 dB
+cleaner than the grit end.
+
+It runs out at the top of the range, and deliberately so. It cleans up to roughly A6; above about
+2 kHz the harmonics that would need cleaning have already passed the oversampled domain's own
+ceiling, where no filter in this path can reach them. Expect no change at all on a bass note —
+nothing folds down there to remove. The in-band level is not quite constant across the sweep
+either: the fundamental drops about 2.5 dB from the clean end to the grit end.
+
+**Link** (slot 10) — how strongly the Gain knob's amount skews Shape's coefficients. Turning
+it up makes Gain pull Shape's harmonic character along with it; turning it down decouples them.
 
 **Fold** (slot 11) — divisor inside the sine-fold stage (1×–16×). A lower divisor folds harder;
 a higher divisor folds more gently.
 
 **Tone** (slot 12) — a low-pass filter at the end of the Drive chain, on the driven signal that
-Blend mixes against the dry. Fully open at the top of travel (the default), and progressively darker as
+Wet/Dry mixes against the dry. Fully open at the top of travel (the default), and progressively darker as
 it is turned down, to roughly an 800 Hz cutoff at the bottom.
 
 **Waveshaper offset** (`Bias`, slot 13) — shifts the waveshaper's input by a small DC offset (up to
@@ -575,28 +614,29 @@ asymmetrically without adding audible DC. Zero offset at the center default.
 
 A stereo delay effect, positioned after Filter and before Reverb in the actual audio chain.
 
-**Delay time** (slot 0) — base delay length, roughly 1 ms–2 s, exponential.
+**Wet/dry** (slot 0) — how much of the delay's wet output continues on toward Reverb. The dry signal
+never drops below 30% of its own level, the same floor Reverb's own Wet/dry shares. At 0, with Send
+also at its default-closed 0, the delay line is never fed and this stage is transparent.
 
 **Send** (slot 1) — how much signal is sent into the delay line at all. At 0, this stage produces
 no output — an exact bypass.
 
-**Feedback** (slot 2) — how much of each repeat feeds back for another pass, clamped below 100%
+**Delay time** (slot 2) — base delay length, roughly 1 ms–2 s, exponential.
+
+**Feedback** (slot 3) — how much of each repeat feeds back for another pass, clamped below 100%
 (98% max) so repeats always eventually die out even at maximum.
 
-**Stereo width** (slot 3) — cross-feed and time-spread between the left/right taps. At 0 the two
+**Stereo width** (slot 4) — cross-feed and time-spread between the left/right taps. At 0 the two
 channels behave almost identically; higher values spread the taps further apart in time and blend them
 into each other less.
 
-**Freeze** (slot 4) — crossfades the delay's feedback loop from its ordinary level toward full,
+**Freeze** (slot 5) — crossfades the delay's feedback loop from its ordinary level toward full,
 lossless recirculation. Raising it both lets more of each repeat feed back, up to unity gain, and
 reduces how much new input enters the loop, so at maximum the loop holds whatever was already inside
-it and takes in nothing new. At 0 the loop runs at the ordinary Feedback (slot 2) level.
+it and takes in nothing new. At 0 the loop runs at the ordinary Feedback (slot 3) level.
 
-**Mod depth** (slot 5) — amount of a slow LFO wobble on the delay time itself — chorus/vibrato
+**Mod depth** (slot 6) — amount of a slow LFO wobble on the delay time itself — chorus/vibrato
 motion on the repeats.
-
-**Wet mix** (slot 6) — how much of the delay's wet output continues on toward Reverb. Capped at 60%,
-the same ceiling Reverb's own Wet/dry shares.
 
 **Reverse blend** (`Reverse`, slot 7) — blends in a second, backward-travelling read of the same delay
 line against the ordinary forward-reading tap, per channel. At 0 only the forward tap is heard;
@@ -617,7 +657,7 @@ repeats get progressively darker as this is turned down. Fully open at the top o
 to roughly an 800 Hz cutoff at the bottom — the same range as the Drive bank's Tone. Because it sits in
 the loop, the darkening compounds: each repeat passes the filter again.
 
-**Mod rate** (slot 11) — rate of the delay-time LFO whose depth Mod depth (slot 5) sets
+**Mod rate** (slot 11) — rate of the delay-time LFO whose depth Mod depth (slot 6) sets
 (0.05 Hz–1.25 Hz). 0.25 Hz at the center default.
 
 **Width balance** (`Width bal`, slot 12) — an overall scalar on how strongly Stereo width's cross-feed
@@ -635,37 +675,47 @@ crushed.
 The signal actually reaches this bank last, after Audio/Envelope, Drive, Filter, and Delay have all
 already processed it.
 
-**Wet/dry** (slot 0) — reverb mix, internally capped at 60% wet so at least 40% dry always remains
-audible even at maximum.
+**Wet/dry** (slot 0) — reverb mix. The dry signal never drops below 30% of its own level, even at
+maximum, so it always remains audible. At 0, with Send also at its default-closed 0, the tank is
+never fed and this stage is transparent.
 
-**Room size** (slot 1) — sets both of the tank's internal delay-line lengths; larger room means
+**Send** (slot 1) — how much signal is sent into the reverb tank at all. At 0, the tank receives
+nothing and this stage produces no output — an exact bypass, the same job Delay's own Send does.
+
+**Room size** (slot 2) — sets both of the tank's internal delay-line lengths; larger room means
 longer, more spacious-sounding reflections.
 
-**Decay** (slot 2) — feedback amount inside the tank — tail length. Longer tails at higher
+**Decay** (slot 3) — feedback amount inside the tank — tail length. Longer tails at higher
 settings.
 
-**Pre-delay** (slot 3) — time before the input reaches the tank at all, separating a clean dry
-transient from the onset of the reverb tail.
+**Pre-delay** (slot 4) — time before the input reaches the tank at all, separating a clean dry
+transient from the onset of the reverb tail. Roughly 0.02 ms up to about 85 ms at 48 kHz, the
+ceiling being as much as the pre-delay line can hold; the top of the travel is far enough out to
+hear the dry hit and its tail as two separate events.
 
-**Damping** (slot 4) — high-frequency loss in the feedback path. Turning it UP darkens the
-tail; turning it down brightens it, up to roughly a 1.7 kHz damping cutoff at the bottom of travel.
-The dark end is floored at about 150 Hz, so the tail keeps some top even at maximum.
+**Damping** (slot 5) — a low-pass on the tank's output. Turning it UP darkens the tail; turning
+it down brightens it, up to roughly a 1.7 kHz cutoff at the bottom of travel. The dark end is
+floored at about 150 Hz, so the tail keeps some top even at maximum.
 
-**Stereo width** (slot 5) — spread between the tank's two internal taps in the final left/right
+It also makes the tail quieter, and that is the filter doing its job rather than a fault: a
+low-pass removes the energy sitting above its corner, so how much level it takes depends entirely
+on the material. Across the full travel it costs about 10 dB on a broad, bright source and about
+half a decibel on a low sine. Nothing compensates for that on purpose — a fixed makeup set for one
+of those two is wrong for the other, and it would turn Damping into a volume control on the
+material it currently leaves alone. Use **Send** to put the level back.
+
+**Stereo width** (slot 6) — spread between the tank's two internal taps in the final left/right
 output.
 
-**Diffusion** (slot 6) — cross-feed between the tank's two internal lines. Higher values smear
+**Diffusion** (slot 7) — cross-feed between the tank's two internal lines. Higher values smear
 the two lines into each other more.
 
-**Mod depth** (slot 7) — depth of a slow sinusoidal wow on the tank's read taps, for chorus-y
-movement in the tail. 0 = no movement.
+**Mod** (slot 8) — depth of a slow sinusoidal wow on the tank's read taps, for chorus-y
+movement in the tail, at a fixed rate (0.35 Hz). 0 = no movement.
 
-**Hold** (slot 8) — pushes the tank's internal feedback coefficient toward, but never quite to,
+**Hold** (slot 9) — pushes the tank's internal feedback coefficient toward, but never quite to,
 self-oscillation — indefinitely extending the tail's sustain without ever letting it hang forever. At 0
 it adds nothing beyond ordinary Decay.
-
-**Mod rate** (slot 9) — rate of the Mod depth LFO (0.07 Hz–1.75 Hz). 0.35 Hz at the center
-default.
 
 **Tank drive** (slot 10) — pre-gain (0.25×–4×, unity at the center default) into the tank's own
 feedback saturator, for more obvious saturation on the tail as it is raised.

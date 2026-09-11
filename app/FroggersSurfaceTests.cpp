@@ -1934,12 +1934,12 @@ TEST_CASE(every_rendered_label_matches_the_approved_list_verbatim) {
             {{"A1", "D1", "S1", "R1", "A2", "D2", "S2", "R2", "A3", "D3", "S3", "R3", "Curve", "Grace"}},
             {{"Peak freq", "Peak gain", "Peak Q", "Comb offset", "Comb delay", "Comb FB", "Comb LP",
               "Comb drive", "Scoop mix", "Scoop freq", "Scoop width", "Scoop depth", "Comb/Peak", "Topology"}},
-            {{"Drive", "Shape", "SRR 1", "SRR 2", "XOR", "Bit depth", "Fuzz", "Blend", "Phase", "Anti-alias",
+            {{"Wet/Dry", "Gain", "Shape", "SRR 1", "SRR 2", "XOR", "Bit depth", "Fuzz", "Phase", "Anti-alias",
               "Link", "Fold", "Tone", "Bias"}},
-            {{"Delay time", "Send", "Feedback", "Stereo width", "Freeze", "Mod depth", "Wet mix", "Reverse",
+            {{"Wet/dry", "Send", "Delay time", "Feedback", "Stereo width", "Freeze", "Mod depth", "Reverse",
               "Diffusion", "FB drive", "FB tone", "Mod rate", "Width bal", "Crush"}},
-            {{"Wet/dry", "Room size", "Decay", "Pre-delay", "Damping", "Stereo width", "Diffusion",
-              "Mod depth", "Hold", "Mod rate", "Tank drive", "Grit", "Tilt", "Tuned"}},
+            {{"Wet/dry", "Send", "Room size", "Decay", "Pre-delay", "Damping", "Stereo width",
+              "Diffusion", "Mod", "Hold", "Tank drive", "Grit", "Tilt", "Tuned"}},
         }};
     constexpr const char* kExpectedCrispy = "Crispy";
     constexpr const char* kExpectedCrunchy = "Crunchy";
@@ -2631,12 +2631,12 @@ TEST_CASE(play_and_stop_controls_exist_and_gate_the_transport) {
 
     synth::ui::Surface& surface = rig.Application().PortableSurface();
     const synth::ui::NodeTree tree = surface.BuildTree();
-    // F.2b/F.2e (2026-08-03, Sheaf pin 77a3019e): Play/Stop are real
+    // As of 2026-08-03 (Sheaf pin 77a3019e), Play/Stop are real
     // draw-command controls again -- a rounded plate plus a `Color::Green`
     // triangle (Play) / `Color::Red` square (Stop), via
     // `BuildPlayDrawCommands`/`BuildStopDrawCommands`
     // (FroggersUiSurface.hpp) -- replacing the EMOJI-glyph Button nodes
-    // (UI-rework ITEM 4/B.4, 2026-07-29) that were themselves a workaround
+    // (2026-07-29) that were themselves a workaround
     // for `Draw` nodes needing a double click and `Node` having no colour
     // field. Both causes are gone at this pin (plain click via
     // `ControlStyle::action`; a `Draw` node's own commands always carried
@@ -2836,20 +2836,19 @@ float ApplyFreezeEndToEndPatchAndPrime(synth_rig::SynthRig<synth_froggers::Frogg
     // stopping_transport_silences_self_sustaining_delay_and_reverb ("nonzero
     // VCO level, so there's signal to excite the tanks").
     model.PageParameter(synth_froggers::FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;  // VCO1 level.
-    model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;  // Drive.
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 1).SceneCenter(0) = 0.8f;  // Gain.
 
-    // Delay bank, rows per dsp::MapRowsToDelayParams's own comment
-    // (dsp/Delay.hpp): 0=Time, 1=Send, 2=Feedback, 3=Width, 4=Freeze,
-    // 5=Mod, 9=Feedback Drive. Feedback Drive stays at its own neutral
+    // Delay bank slots: 2=Time, 1=Send, 3=Feedback, 4=Width, 5=Freeze,
+    // 6=Mod, 9=Feedback Drive. Feedback Drive stays at its own neutral
     // (knob 0.5 -> fbDrive==1.0, dsp::StereoDelay::SetFeedbackDrive's own
     // comment) during priming -- only raised to "above centre" at the
     // moment of divergence, alongside the Freeze encoder, matching this
     // test's own header comment.
-    model.PageParameter(synth_froggers::FroggersBankId::Delay, 0).SceneCenter(0) = 0.0f;  // Time -> shortest round trip.
+    model.PageParameter(synth_froggers::FroggersBankId::Delay, 2).SceneCenter(0) = 0.0f;  // Time -> shortest round trip.
     model.PageParameter(synth_froggers::FroggersBankId::Delay, 1).SceneCenter(0) = 1.0f;  // Send.
-    model.PageParameter(synth_froggers::FroggersBankId::Delay, 2).SceneCenter(0) = 0.6f;  // Feedback.
-    model.PageParameter(synth_froggers::FroggersBankId::Delay, 3).SceneCenter(0) = 0.0f;  // Width -> no cross-feed smear.
-    model.PageParameter(synth_froggers::FroggersBankId::Delay, 5).SceneCenter(0) = 0.0f;  // Mod -> no LFO smear.
+    model.PageParameter(synth_froggers::FroggersBankId::Delay, 3).SceneCenter(0) = 0.6f;  // Feedback.
+    model.PageParameter(synth_froggers::FroggersBankId::Delay, 4).SceneCenter(0) = 0.0f;  // Width -> no cross-feed smear.
+    model.PageParameter(synth_froggers::FroggersBankId::Delay, 6).SceneCenter(0) = 0.0f;  // Mod -> no LFO smear.
     model.PageParameter(synth_froggers::FroggersBankId::Delay, 9).SceneCenter(0) = 0.5f;  // Feedback Drive, neutral for now.
 
     rig.StartAt(0);
@@ -2892,13 +2891,13 @@ TEST_CASE(freeze_latched_grows_the_recirculating_level_beyond_unlatched_end_to_e
     synth_froggers::FroggersParameterModel& latchedModel = latchedRig.Application().Parameters();
     latchedModel.PageParameter(synth_froggers::FroggersBankId::Delay, 9).SceneCenter(0) =
         1.0f;  // Feedback Drive -> 4.0, above centre.
-    latchedModel.PageParameter(synth_froggers::FroggersBankId::Delay, 4).SceneCenter(0) = 1.0f;  // Freeze encoder, max.
+    latchedModel.PageParameter(synth_froggers::FroggersBankId::Delay, 5).SceneCenter(0) = 1.0f;  // Freeze encoder, max.
     latchedRig.Application().SetFreezeLatched(true);  // the override under test.
 
     synth_froggers::FroggersParameterModel& unlatchedModel = unlatchedRig.Application().Parameters();
     unlatchedModel.PageParameter(synth_froggers::FroggersBankId::Delay, 9).SceneCenter(0) =
         1.0f;  // SAME Feedback Drive.
-    unlatchedModel.PageParameter(synth_froggers::FroggersBankId::Delay, 4).SceneCenter(0) =
+    unlatchedModel.PageParameter(synth_froggers::FroggersBankId::Delay, 5).SceneCenter(0) =
         1.0f;  // SAME Freeze encoder.
     // unlatchedRig.Application().SetFreezeLatched(...) is never called --
     // The clamped encoder value prevails instead.

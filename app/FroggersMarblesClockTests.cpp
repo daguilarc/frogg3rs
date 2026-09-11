@@ -273,7 +273,7 @@ TEST_CASE(random_sh_depth_encoders_are_bipolar_and_default_neutral) {
     }
 }
 
-// ITEM 2b (Sheaf call-site sweep): Sheaf's own StandardModulators::Init
+// Sheaf's own StandardModulators::Init
 // calls SetVoiceColor(voice, color) for every GangedRandomLfoProcessor it
 // owns (StandardModulators.hpp:126-130) before registering it as a
 // modulation source. gangedRandomLfo6_ is this app's OWN standalone

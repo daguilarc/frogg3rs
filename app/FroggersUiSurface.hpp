@@ -115,7 +115,7 @@ inline constexpr const char* kLeftButtons = "froggers.layout.left.buttons";
 inline constexpr const char* kPlay = "froggers.transport.play";
 inline constexpr const char* kStop = "froggers.transport.stop";
 // The Freeze transport BUTTON's own node id -- distinct from the Freeze
-// ENCODER (Delay bank slot 4, FroggersParameters.hpp), which has no id here
+// ENCODER (Delay bank slot 5, FroggersParameters.hpp), which has no id here
 // because encoder cells are addressed by grid index
 // (FroggersNodeIds::Encoder), not by name.
 inline constexpr const char* kFreeze = "froggers.transport.freeze";
@@ -823,16 +823,16 @@ FroggersApprovedLabels() {
           "Comb drive", "Scoop mix", "Scoop freq", "Scoop width", "Scoop depth", "Comb/Peak", "Topology"}},
         // Drive -- slot 9 shortened ("Anti-alias brightness" -> "Anti-alias"),
         // slot 13 shortened ("Waveshaper offset" -> "Bias").
-        {{"Drive", "Shape", "SRR 1", "SRR 2", "XOR", "Bit depth", "Fuzz", "Blend", "Phase",
+        {{"Wet/Dry", "Gain", "Shape", "SRR 1", "SRR 2", "XOR", "Bit depth", "Fuzz", "Phase",
           "Anti-alias", "Link", "Fold", "Tone", "Bias"}},
         // Delay -- slot 7 ("Reverse blend" -> "Reverse"), slot 9
         // ("Feedback drive" -> "FB drive"), slot 10 ("Feedback tone" ->
         // "FB tone"), slot 12 ("Width balance" -> "Width bal").
-        {{"Delay time", "Send", "Feedback", "Stereo width", "Freeze", "Mod depth", "Wet mix",
+        {{"Wet/dry", "Send", "Delay time", "Feedback", "Stereo width", "Freeze", "Mod depth",
           "Reverse", "Diffusion", "FB drive", "FB tone", "Mod rate", "Width bal", "Crush"}},
         // Reverb -- no shortenings.
-        {{"Wet/dry", "Room size", "Decay", "Pre-delay", "Damping", "Stereo width", "Diffusion",
-          "Mod depth", "Hold", "Mod rate", "Tank drive", "Grit", "Tilt", "Tuned"}},
+        {{"Wet/dry", "Send", "Room size", "Decay", "Pre-delay", "Damping", "Stereo width",
+          "Diffusion", "Mod", "Hold", "Tank drive", "Grit", "Tilt", "Tuned"}},
     }};
     return labels;
 }
@@ -852,7 +852,7 @@ inline const char* FroggersApprovedGlobalLabel(std::size_t slot) {
 // own
 // `every_approved_label_fits_the_single_row_grid`: the longest of all 86
 // entries in `FroggersApprovedLabels()`/`FroggersApprovedGlobalLabel` is
-// "Stereo width" (Delay slot 3 and Reverb slot 5), 12 characters including
+// "Stereo width" (Delay slot 4 and Reverb slot 6), 12 characters including
 // the space.
 inline constexpr int kApprovedLabelGridColumns = 12;
 

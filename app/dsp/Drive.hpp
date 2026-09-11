@@ -59,11 +59,14 @@
 // infrastructure owned by Sheaf's parameter model, not DSP. Callers here
 // pass already-resolved 0..1 knob values.
 //
-// NOT ported (deliberately): Blend and Phase (Drive page slots
-// 7 and 8). `m_driveParams->GetParam(7)`/`GetParam(8)` are never read
-// anywhere in FroggersEngine.hpp -- confirmed by grep -- so there is no
-// formula to pin. They are newly authored below (DriveBlendPhase),
-// clearly marked, with behavioral (not parity) tests.
+// NOT ported (deliberately): Wet/Dry (formerly Blend) and Phase, the
+// original firmware's params 7 and 8. `m_driveParams->GetParam(7)`/
+// `GetParam(8)` are never read anywhere in FroggersEngine.hpp -- confirmed
+// by grep -- so there is no formula to pin. They are newly authored below
+// (DriveBlendPhase), clearly marked, with behavioral (not parity) tests.
+// Live at this app's Drive-bank slots 0 and 8 (FroggersParameters.hpp) --
+// Wet/Dry moved off the firmware's own slot 7 when the Drive page's
+// controls were renumbered; Phase did not move.
 
 #include "DspMath.hpp"
 #include "FilterFx.hpp"  // reuse dsp::PadeSaturator (see note above)
@@ -73,6 +76,7 @@
                               // file names both types itself, not just through FilterFx.hpp's own use of them).
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 
@@ -159,40 +163,121 @@ struct Oversampler2x
     // rationale.
     float overCeilingSeconds = 0.0f;
 
-    Oversampler2x() { antiAlias.SetAlphaFromNatFreq(0.4f); }
+    // -----------------------------------------------------------------
+    // AUTHORED, not ported: the clean path. The one-pole `antiAlias`
+    // above sits at 30.7-47.9 kHz at this stage's own 96 kHz rate --
+    // above the 24 kHz Nyquist of the final output, so it is nearly
+    // transparent to the very content it exists to remove (measured: the
+    // knob moves a driven 3 kHz tone's alias-to-signal ratio by 0.01 dB
+    // across its whole range). A one-pole corner cannot fix that at any
+    // setting; what does is a steeper filter with more oversampled
+    // headroom to work with. This adds a second path -- the SAME
+    // `processFunc` run at 4x instead of 2x, decimated through an 8th-
+    // order Butterworth built from four cascaded dsp::BiquadDf1 sections
+    // (the existing primitive; no new filter type) -- and crossfades it
+    // against the one-pole path above, so the control keeps its name and
+    // starts actually doing the job the name promises.
+    //
+    // Standard cascaded-biquad Butterworth design (not specific to this
+    // codebase): an N-th order Butterworth lowpass factors into N/2
+    // second-order sections sharing one cutoff, each at its own quality
+    // factor Q_k = 1 / (2*cos(theta_k)), theta_k = (2k-1)*pi/(2N) for
+    // k = 1..N/2 -- the analog Butterworth pole angles. Each section is
+    // then the ordinary bilinear-transformed RBJ/Audio-EQ-Cookbook
+    // lowpass biquad at that section's own Q, computed once in
+    // ConfigureCleanFilter() below.
+    // 4x clears the fold-images up to about 1.5 kHz, which is the range this
+    // page is played in; above roughly 2 kHz the harmonics that matter have
+    // passed this domain's own Nyquist, where no decimation filter reaches
+    // them, so a higher factor buys the top of the range and nothing below it.
+    static constexpr int kCleanOversampleFactor = 4;
+    static constexpr int kCleanFilterOrder = 8;         // four cascaded BiquadDf1 sections.
+    // 21 kHz at an assumed 48 kHz base rate, expressed the way this file
+    // expresses every other un-Configure()'d cutoff -- cycles/sample at
+    // the rate it actually runs at (here, the 4x-oversampled rate), same
+    // convention as `antiAlias`'s own fixed 0.4 above:
+    // 21000 / (48000 * 4) == 0.109375.
+    static constexpr float kCleanCutoffCyclesPerSample = 0.109375f;
 
-    // (Drive slot 9, "Anti-alias brightness" / "ABrt"): knob-driven cutoff
-    // replacing the constructor's hardcoded
-    // 0.4f above. ExpMapCompute range [0.32, 0.5] cycles/sample -- narrow
-    // and centered on today's fixed value, a brightness fine-tune around
-    // the original design point rather than an unbounded range that could
-    // introduce audible aliasing (too low) or muffle the oversampled top
-    // end (too low a floor). Default knob 0.5f reproduces exactly 0.4f:
-    // ExpMapCompute(0.32,0.5,0.5) == sqrt(0.32*0.5) == sqrt(0.16) == 0.4
-    // (0.16 == 0.4^2 by choice of range, same squared-range trick as
-    // FrogBlock::SetFold below). SetAlphaFromNatFreq's own
-    // std::min(kMaxCutoff, ·) clamp (0.499) silently caps the top sliver of
-    // this range (max 0.5 vs kMaxCutoff 0.499) -- harmless, sub-audible.
-    // Never called by a raw `Oversampler2x over;` construction (e.g. the
-    // existing oversampler2x_first_sample_processes_twice_then_interpolates
-    // parity test), so the constructor's own 0.4f stays exactly reachable
-    // without this setter ever running.
-    void SetAntiAliasBrightness(float knob01)
+    std::array<BiquadDf1, kCleanFilterOrder / 2> cleanFilter;
+
+    // 0.0 (default, matching a raw `Oversampler2x over;` that never calls
+    // SetAntiAliasBrightness -- e.g. the existing
+    // oversampler2x_first_sample_processes_twice_then_interpolates parity
+    // test) is ALL grit: the crossfade below reduces to
+    // `gritOutput*1 + cleanOutput*0`, bit-identical to the one-pole path
+    // alone regardless of what the clean path computed, since multiplying
+    // by exactly 0.0f and adding the result changes nothing in IEEE 754
+    // as long as the clean path stays finite (it does -- see
+    // ConfigureCleanFilter/Reset).
+    float cleanMix = 0.0f;
+
+    Oversampler2x()
     {
-        antiAlias.SetAlphaFromNatFreq(ExpMapCompute(0.32f, 0.5f, knob01));
+        antiAlias.SetAlphaFromNatFreq(0.4f);
+        ConfigureCleanFilter();
     }
+
+    void ConfigureCleanFilter()
+    {
+        constexpr float kTwoPi = 6.28318530717958647692f;
+        constexpr float kPi = 3.14159265358979323846f;
+        const float w0 = kTwoPi * kCleanCutoffCyclesPerSample;
+        const float cosw0 = std::cos(w0);
+        const float sinw0 = std::sin(w0);
+        for (std::size_t stage = 0; stage < cleanFilter.size(); ++stage)
+        {
+            const float k = static_cast<float>(stage + 1);
+            const float theta = (2.0f * k - 1.0f) * kPi / (2.0f * static_cast<float>(kCleanFilterOrder));
+            const float q = 1.0f / (2.0f * std::cos(theta));
+            const float alpha = sinw0 / (2.0f * q);
+            const float b0 = (1.0f - cosw0) * 0.5f;
+            const float b1 = 1.0f - cosw0;
+            const float b2 = (1.0f - cosw0) * 0.5f;
+            const float a0 = 1.0f + alpha;
+            const float a1 = -2.0f * cosw0;
+            const float a2 = 1.0f - alpha;
+            BiquadDf1& section = cleanFilter[stage];
+            section.b0 = b0 / a0;
+            section.b1 = b1 / a0;
+            section.b2 = b2 / a0;
+            section.a1 = a1 / a0;
+            section.a2 = a2 / a0;
+        }
+    }
+
+    float ProcessCleanFilter(float x)
+    {
+        float y = x;
+        for (BiquadDf1& section : cleanFilter)
+        {
+            y = section.Process(y);
+        }
+        return y;
+    }
+
+    // (Drive slot 9, "Anti-alias brightness" / "ABrt"): the knob is
+    // repurposed from a one-pole brightness trim (which could not reach
+    // the aliasing band, see class comment above) into a clean-to-grit
+    // crossfade. knob01 == 1 (this control's new default,
+    // FroggersParameters.hpp) is ALL grit -- bit-identical to what shipped
+    // before this change, `cleanMix` at its own default of 0.0 -- and
+    // knob01 == 0 is the fully clean 4x path.
+    void SetAntiAliasBrightness(float knob01) { cleanMix = 1.0f - knob01; }
 
     template <typename ProcessFunc>
     float Process(float input, ProcessFunc processFunc)
     {
-        float output;
+        // The one-pole path -- UNCHANGED from before this knob was
+        // repurposed, so that cleanMix == 0.0 (the constructor's own
+        // default, and knob01 == 1's mapped value) reproduces it exactly.
+        float gritOutput;
         if (firstSample)
         {
             const float output1 = processFunc(input);
             const float output2 = processFunc(input);
             antiAlias.Process(output1);
-            output = antiAlias.Process(output2);
-            firstSample = false;
+            gritOutput = antiAlias.Process(output2);
         }
         else
         {
@@ -200,30 +285,91 @@ struct Oversampler2x
             const float output1 = processFunc(interpolated);
             const float output2 = processFunc(input);
             antiAlias.Process(output1);
-            output = antiAlias.Process(output2);
+            gritOutput = antiAlias.Process(output2);
         }
+
+        // The clean path: kCleanOversampleFactor evaluations of the SAME
+        // processFunc per input sample, linearly interpolated the same
+        // way the one-pole path above interpolates for its own two
+        // (first-sample: the same input repeated, matching the one-pole
+        // path's own first-sample idiom above), decimated by keeping only
+        // the last of each group's filtered outputs.
+        float cleanOutput = 0.0f;
+        if (firstSample)
+        {
+            for (int i = 0; i < kCleanOversampleFactor; ++i)
+            {
+                cleanOutput = ProcessCleanFilter(processFunc(input));
+            }
+        }
+        else
+        {
+            for (int i = 1; i <= kCleanOversampleFactor; ++i)
+            {
+                const float t = static_cast<float>(i) / static_cast<float>(kCleanOversampleFactor);
+                const float interpolated = prevInput + (input - prevInput) * t;
+                cleanOutput = ProcessCleanFilter(processFunc(interpolated));
+            }
+        }
+
         prevInput = input;
-        return output;
+        firstSample = false;
+        return gritOutput * (1.0f - cleanMix) + cleanOutput * cleanMix;
     }
 
     // (Per-unit recovery, app/FroggersAppCore.hpp): zeros only the
-    // recursive state -- prevInput (the interpolation history) and
-    // antiAlias.output (the anti-alias filter's one-pole state) -- and
-    // rearms firstSample so the very next Process() call re-enters the
-    // "first sample" branch rather than interpolating against a just-zeroed
-    // prevInput as if it were real history. NOT touched: antiAlias.alpha,
-    // set once in the constructor and never reconfigured per-block, so
-    // clearing it would be a tuning change, not a state clear.
+    // recursive state -- prevInput (the interpolation history shared by
+    // both paths), antiAlias.output (the grit path's one-pole state), and
+    // every clean-filter section's own history -- and rearms firstSample
+    // so the very next Process() call re-enters the "first sample" branch
+    // rather than interpolating against a just-zeroed prevInput as if it
+    // were real history. NOT touched: antiAlias.alpha and the clean
+    // filter's own coefficients, set once and never reconfigured
+    // per-block, so clearing them would be a tuning change, not a state
+    // clear.
     void Reset()
     {
         prevInput = 0.0f;
         firstSample = true;
         antiAlias.output = 0.0f;
+        for (BiquadDf1& section : cleanFilter)
+        {
+            section.x1 = 0.0f;
+            section.x2 = 0.0f;
+            section.y1 = 0.0f;
+            section.y2 = 0.0f;
+        }
         overCeilingSeconds = 0.0f;
     }
 
-    bool StateFinite() const { return std::isfinite(prevInput) && std::isfinite(antiAlias.output); }
-    float StateMagnitude() const { return std::max(std::fabs(prevInput), std::fabs(antiAlias.output)); }
+    bool StateFinite() const
+    {
+        if (!std::isfinite(prevInput) || !std::isfinite(antiAlias.output))
+        {
+            return false;
+        }
+        for (const BiquadDf1& section : cleanFilter)
+        {
+            if (!std::isfinite(section.x1) || !std::isfinite(section.x2) || !std::isfinite(section.y1) ||
+                !std::isfinite(section.y2))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+    float StateMagnitude() const
+    {
+        float magnitude = std::max(std::fabs(prevInput), std::fabs(antiAlias.output));
+        for (const BiquadDf1& section : cleanFilter)
+        {
+            magnitude = std::max(magnitude, std::fabs(section.x1));
+            magnitude = std::max(magnitude, std::fabs(section.x2));
+            magnitude = std::max(magnitude, std::fabs(section.y1));
+            magnitude = std::max(magnitude, std::fabs(section.y2));
+        }
+        return magnitude;
+    }
 };
 
 // SampleRateReducer.hpp (whole file), verbatim.
@@ -387,7 +533,37 @@ struct DigitalReorganizer
     }
 
     void SetFlip(float flipKnob01) { flip = static_cast<uint8_t>(flipKnob01 * 255.0f); }  // :154-157, truncates
-    void SetHash(float hashKnob01) { hashBits = static_cast<uint8_t>(std::round(hashKnob01 * 8.0f)); }  // :159-162, rounds
+
+    // AUTHORED remap, not the ported :159-162 formula (kept only in this
+    // comment for the record: `round(hashKnob01 * 8)`, nine positions
+    // 0..8). That formula wasted its own first fifth: hashBits == 1 masks
+    // exactly one bit, and Mangle's three shift-XOR steps
+    // (lowerBits << 3, >> 5, << 1, each masked back to the live bits)
+    // cancel completely for a one-bit mask -- shifting a single bit by 3
+    // or left by 1 always carries it outside a 1-bit mask before the AND,
+    // and shifting right by 5 always underflows to zero -- so hashBits == 1
+    // measures bit-identical to hashBits == 0 (`Process()` unchanged to
+    // float precision), not merely quiet. hashBits == 0 stays reachable
+    // (silence has to stay reachable), but the count the DEFAULT knob
+    // (0.0f, FroggersParameters.hpp) produces is unchanged, and every other
+    // position now maps onto a count that actually scrambles something:
+    // 2..8, geometrically enough of the range that knob 0.19 -- today's
+    // first audible position -- becomes reachable within the first
+    // hundredth instead.
+    void SetHash(float hashKnob01)
+    {
+        constexpr float kOffFloor = 0.01f;
+        if (hashKnob01 <= kOffFloor)
+        {
+            hashBits = 0;
+            return;
+        }
+        constexpr uint8_t kFirstActingBitCount = 2;
+        constexpr uint8_t kLastBitCount = 8;
+        const float travel = (hashKnob01 - kOffFloor) / (1.0f - kOffFloor);
+        const float span = static_cast<float>(kLastBitCount - kFirstActingBitCount);
+        hashBits = static_cast<uint8_t>(kFirstActingBitCount + std::round(travel * span));
+    }
 };
 
 // 08b5fd3:src/core/TanhSaturator.hpp:25-30 already ported as
@@ -487,10 +663,11 @@ struct FrogBlock
 };
 
 // -------------------------------------------------------------------------
-// Authored, NOT ported: Blend and Phase, Drive page slots 7/8.
-// No Froggers original exists (see file header) -- design rationale below.
+// Authored, NOT ported: Wet/Dry (formerly Blend) and Phase, Drive page
+// slots 0/8. No Froggers original exists (see file header) -- design
+// rationale below.
 //
-// Blend crossfades the dry input against the driven (FrogBlock) signal --
+// Wet/Dry crossfades the dry input against the driven (FrogBlock) signal --
 // the common "parallel drive" pattern that keeps the raw input available
 // underneath the processed tone. Phase applies a first-order allpass to
 // the wet signal before the blend; the coefficient is mapped from the knob
@@ -616,8 +793,22 @@ struct DriveBlendPhase
                   "DesiredMagnitude into an exponential amplifier -- see dsp/Limiter.hpp");
     static constexpr float kOutputLimiterAttackSeconds = 2.0e-6f;  // 2 microseconds -- measured, see class comment.
 
+    // Both endpoints of the Phase knob's coefficient range -- same 0.98
+    // margin the coefficient mapping used directly before it was rerouted
+    // through the break frequency (see CoeffFromBreakFreq/BreakFreqFromCoeff
+    // below), so the allpass's pole stays exactly as far inside the unit
+    // circle as it always has.
+    static constexpr float kPhaseCoeffMargin = 0.98f;
+
     float allpassX1 = 0.0f;
     float allpassY1 = 0.0f;
+
+    // The break frequencies (cycles/sample) phaseKnob01 == 0 and
+    // phaseKnob01 == 1 reach -- derived from kPhaseCoeffMargin in
+    // Configure() below rather than hardcoded, so a future change to the
+    // margin re-derives these rather than going stale next to it.
+    float phaseBreakFreqAtNegativeMargin = 0.0f;
+    float phaseBreakFreqAtPositiveMargin = 0.0f;
 
     // Tier 2's per-unit sustained-over-
     // ceiling counter, owned here rather than in FroggersAppCore -- see
@@ -654,6 +845,31 @@ struct DriveBlendPhase
         Configure(kDefaultAssumedSampleRate);
     }
 
+    // The allpass `H(z) = (z^-1 - a) / (1 - a*z^-1)` this struct evaluates
+    // has unit magnitude at every frequency and crosses -90 degrees of phase
+    // at one frequency per value of `a` -- its "break frequency". Solving
+    // H(e^{j*2*pi*fb}) = -j for `a` gives a closed form:
+    // `a = tan(pi/4 - pi*fb)`, monotonically decreasing from +1 at fb == 0 to
+    // -1 at fb == 0.5 cycles/sample. This is the inverse of
+    // BreakFreqFromCoeff below, so the two must be kept in the same
+    // convention (fb in cycles/sample, `a` this struct's own coefficient)
+    // if either one changes.
+    static float CoeffFromBreakFreq(float breakFreqCyclesPerSample)
+    {
+        constexpr float kQuarterCircle = 0.78539816339744830962f;  // pi/4
+        constexpr float kTwoPi = 6.28318530717958647692f;
+        return std::tan(kQuarterCircle - 0.5f * kTwoPi * breakFreqCyclesPerSample);
+    }
+
+    // Inverse of CoeffFromBreakFreq: the break frequency (cycles/sample)
+    // at which this allpass's phase crosses -90 degrees for a given `a`.
+    static float BreakFreqFromCoeff(float a)
+    {
+        constexpr float kQuarterCircle = 0.78539816339744830962f;  // pi/4
+        constexpr float kPi = 3.14159265358979323846f;
+        return (kQuarterCircle - std::atan(a)) / kPi;
+    }
+
     void Configure(float sampleRate)
     {
         coeffSmoother.SetAlphaFromNatFreq(kPhaseCoeffGlideCyclesPerSample);
@@ -667,6 +883,16 @@ struct DriveBlendPhase
         // header note), so re-running it here on a later Configure() call
         // is a harmless no-op re-derivation, not a behaviour change.
         coeffSmoother.output = -0.98f;
+        // The two break frequencies phaseKnob01's endpoints reach --
+        // derived from the SAME +-0.98 margin the coefficient mapping used
+        // to reach directly, so both endpoints stay exactly as far inside
+        // the unit circle as before. Computed once here rather than per
+        // sample -- Process() below only takes the atan-free direction
+        // (CoeffFromBreakFreq), and does it every sample because
+        // phaseKnob01 is not assumed static (see class header comment on
+        // audio-rate modulation of this knob).
+        phaseBreakFreqAtNegativeMargin = BreakFreqFromCoeff(-kPhaseCoeffMargin);  // near Nyquist -> a == -0.98
+        phaseBreakFreqAtPositiveMargin = BreakFreqFromCoeff(kPhaseCoeffMargin);   // near DC -> a == +0.98
         // Retargeted from kSharedCeiling to kStageCeiling -- see the
         // static_assert above.
         outputLimiter.Configure(sampleRate, kOutputLimiterThreshold, kStageCeiling, kOutputLimiterAttackSeconds,
@@ -675,18 +901,78 @@ struct DriveBlendPhase
 
     float Process(float dry, float wet, float blendKnob01, float phaseKnob01)
     {
-        // Item 3 fix: 0.98x keeps |a| < 1 strictly across the whole knob
-        // range, including both endpoints (phaseKnob01 == 0 -> a == -0.98,
-        // phaseKnob01 == 1 -> a == 0.98), so the allpass's pole never sits
-        // on the unit circle.
-        const float aTarget = 0.98f * (2.0f * phaseKnob01 - 1.0f);  // authored mapping -> (-0.98, 0.98)
+        // Mapped through the allpass's own break frequency rather than
+        // linearly through `a`: `a` swept linearly leaves the break
+        // frequency pinned near Nyquist across nearly the whole knob (a
+        // linear-in-`a` sweep is a sweep in tan-space, which is nearly flat
+        // away from its own asymptotes), so a low tone barely rotates until
+        // the last tenth of the travel -- measured, at 220 Hz the first
+        // three quarters moved the blended output by 0.08% combined.
+        // Sweeping the break frequency itself geometrically (equal knob
+        // steps, equal ratio of frequency, same convention as every other
+        // ExpMapCompute-mapped knob in this file) from the +-0.98 margin's
+        // near-Nyquist endpoint down to its near-DC endpoint, with the knob
+        // itself pre-warped by a square root so the low end of that
+        // sweep -- where a bass note's own phase actually moves -- gets
+        // more than a sliver of the travel, spreads the audible action
+        // across the whole knob instead of concentrating it at one end.
+        // Both endpoints are unchanged from before (phaseKnob01 == 0 ->
+        // a == -0.98, phaseKnob01 == 1 -> a == 0.98), so the pole margin
+        // that keeps the allpass strictly inside the unit circle is
+        // preserved exactly, just reached along a different path.
+        const float knobWarped = std::sqrt(phaseKnob01);
+        const float breakFreqRatio = phaseBreakFreqAtPositiveMargin / phaseBreakFreqAtNegativeMargin;
+        const float breakFreq = phaseBreakFreqAtNegativeMargin * std::pow(breakFreqRatio, knobWarped);
+        const float aTarget = CoeffFromBreakFreq(breakFreq);
         // Smooth the coefficient itself, not the knob input --
         // see class header comment for the measurement that picked this glide.
         const float a = coeffSmoother.Process(aTarget);
         const float phased = -a * wet + allpassX1 + a * allpassY1;
         allpassX1 = wet;
         allpassY1 = phased;
-        const float blended = dry * (1.0f - blendKnob01) + phased * blendKnob01;
+        // Equal-power crossfade, not linear: a linear
+        // `dry*(1-blend) + phased*blend` only holds level when the two legs
+        // are correlated, and here they are not -- the wet path's
+        // fundamental is partly ANTI-correlated with dry, with a sign that
+        // flips across the Drive knob (measured correlation of the wet
+        // render against dry: -0.22 at Gain 0.25, -0.35 at Gain 0.50, +0.02
+        // at Gain 0.75, -0.085 at Gain 1.00), so no fixed polarity and no
+        // fixed Phase setting removes the resulting notch. cos/sin quadrant
+        // weights preserve power regardless of that correlation and measure
+        // much flatter across the same travel: worst dip anywhere across
+        // 110/220/440/880 Hz and Gain 0.25/0.50/0.75/1.00, Phase at its 0.86
+        // default, is -4.10 dB for the linear law above versus -1.09 dB for
+        // this one (0.00 dB at 11 of the 16 points).
+        //
+        // Both ends are special-cased rather than left to std::cos/std::sin:
+        // blendKnob01 == 0 has to return `dry` bit-for-bit (an existing pin
+        // depends on it) and blendKnob01 == 1 has to reach `phased` with no
+        // dry leakage (this page's Wet/Dry, unlike Delay's and Reverb's, is
+        // deliberately uncapped). Checked directly rather than assumed:
+        // theta == 0 lands std::cos/std::sin on exactly 1.0f/0.0f here, but
+        // theta == pi/2 does not land std::cos on exactly 0.0f (it measures
+        // -4.37e-8f), which would otherwise leak a trace of dry into a
+        // nominally fully-wet output.
+        float blended;
+        if (blendKnob01 <= 0.0f)
+        {
+            blended = dry;
+        }
+        else if (blendKnob01 >= 1.0f)
+        {
+            blended = phased;
+        }
+        else
+        {
+            // Same law the floored pages use (dsp::EqualPowerWetDry,
+            // Limiter.hpp); this page passes a zero floor, which is the whole
+            // of the difference between them. The two endpoints above stay
+            // exact cases here rather than going through the helper, because
+            // an uncapped travel reaches pi/2, where std::cos does not land
+            // on an exact 0.0f.
+            const WetDryGains gains = EqualPowerWetDry(blendKnob01, 0.0f);
+            blended = dry * gains.dry + phased * gains.wet;
+        }
         // Catches the residual smoothing alone cannot close.
         return outputLimiter.Process(blended);
     }

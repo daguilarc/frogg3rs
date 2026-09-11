@@ -52,30 +52,30 @@ Six banks — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 
 ## Drive
 
-- **Drive** (slot 0) — Input gain into the polynomial waveshaper, 1×–5×.
-- **Shape** (slot 1) — Recomputes the waveshaper's coefficients; harmonic character.
-- **SRR 1** (slot 2) — First sample-rate reducer stage; raising the knob increases the reduction, off at the bottom.
-- **SRR 2** (slot 3) — Second sample-rate reducer stage, in series after SRR 1; same off-at-the-bottom mapping.
-- **XOR** (slot 4) — 8-bit XOR mask on the sample.
-- **Bit depth** (slot 5) — How many low bits the digital reorganizer scrambles.
-- **Fuzz** (slot 6) — Blend from sine-fold to tanh-style hard saturation.
-- **Blend** (slot 7) — Dry/wet crossfade of the whole Drive chain.
-- **Phase** (slot 8) — Allpass on the wet signal before Blend; silent effect at Blend 0.
-- **Anti-alias brightness** (`Anti-alias`, slot 9) — Oversampler anti-alias filter cutoff trim.
-- **Link** (slot 10) — How strongly Drive amount skews Shape's coefficients.
+- **Wet/Dry** (slot 0) — Dry/wet crossfade of the whole Drive chain; not capped, reaches fully wet.
+- **Gain** (slot 1) — Input gain into the polynomial waveshaper, 1×–5×.
+- **Shape** (slot 2) — Recomputes the waveshaper's coefficients; harmonic character.
+- **SRR 1** (slot 3) — First sample-rate reducer stage; raising the knob increases the reduction, off at the bottom.
+- **SRR 2** (slot 4) — Second sample-rate reducer stage, in series after SRR 1; same off-at-the-bottom mapping.
+- **XOR** (slot 5) — 8-bit XOR mask on the sample; the mid-travel plateau strips the low end and leaves the top.
+- **Bit depth** (slot 6) — How many low bits the digital reorganizer scrambles.
+- **Fuzz** (slot 7) — Blend from sine-fold to tanh-style hard saturation.
+- **Phase** (slot 8) — Allpass on the wet signal before Wet/Dry; silent effect at Wet/Dry 0.
+- **Anti-alias brightness** (`Anti-alias`, slot 9) — Crossfade between a clean oversampled shaper path and today's gritty one; top of travel is what shipped before.
+- **Link** (slot 10) — How strongly Gain amount skews Shape's coefficients.
 - **Fold** (slot 11) — Sine-fold divisor, 1×–16×; lower folds harder.
 - **Tone** (slot 12) — Low-pass at the end of the chain, ~800 Hz to bypass; bypass at default.
 - **Waveshaper offset** (`Bias`, slot 13) — Small DC offset (±0.02) into the waveshaper, removed after; zero at default.
 
 ## Delay
 
-- **Delay time** (slot 0) — Base delay length, ~1 ms–2 s.
+- **Wet/dry** (slot 0) — Delay wet level continuing to Reverb; dry signal floored at 30% of its own level, the same floor Reverb's Wet/dry shares.
 - **Send** (slot 1) — Signal sent into the delay line; 0 = bypass.
-- **Feedback** (slot 2) — Repeat feedback, capped below 98%.
-- **Stereo width** (slot 3) — Cross-feed/time-spread between L/R taps.
-- **Freeze** (slot 4) — Crossfades the feedback loop from the ordinary Feedback level toward full, lossless recirculation; at 0 the loop runs at the Feedback level.
-- **Mod depth** (slot 5) — LFO wobble depth on delay time.
-- **Wet mix** (slot 6) — Delay wet level continuing to Reverb; capped at 60%, the same ceiling Reverb's Wet/dry shares.
+- **Delay time** (slot 2) — Base delay length, ~1 ms–2 s.
+- **Feedback** (slot 3) — Repeat feedback, capped below 98%.
+- **Stereo width** (slot 4) — Cross-feed/time-spread between L/R taps.
+- **Freeze** (slot 5) — Crossfades the feedback loop from the ordinary Feedback level toward full, lossless recirculation; at 0 the loop runs at the Feedback level.
+- **Mod depth** (slot 6) — LFO wobble depth on delay time.
 - **Reverse blend** (`Reverse`, slot 7) — Blends in a backward-travelling read of the delay line against the forward tap; 0 = off, 1 = fully reversed.
 - **Diffusion** (slot 8) — Smears each repeat through a short allpass cascade; exact bypass at 0.
 - **Feedback drive** (`FB drive`, slot 9) — Pre-gain into the feedback saturator, 0.25×–4×, unity at default.
@@ -86,16 +86,16 @@ Six banks — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 
 ## Reverb
 
-- **Wet/dry** (slot 0) — Reverb mix, capped at 60% wet.
-- **Room size** (slot 1) — Both tank delay-line lengths.
-- **Decay** (slot 2) — Tank feedback / tail length.
-- **Pre-delay** (slot 3) — Time before input reaches the tank.
-- **Damping** (slot 4) — HF loss in feedback; darker tail at higher knob.
-- **Stereo width** (slot 5) — Spread between the tank's two taps.
-- **Diffusion** (slot 6) — Cross-feed between the tank's two lines.
-- **Mod depth** (slot 7) — Sinusoidal wow depth on the tank's read taps.
-- **Hold** (slot 8) — Pushes tank feedback toward, never to, self-oscillation.
-- **Mod rate** (slot 9) — Mod depth LFO rate, 0.07–1.75 Hz.
+- **Wet/dry** (slot 0) — Reverb mix, dry signal floored at 30% of its own level.
+- **Send** (slot 1) — Signal sent into the reverb tank; 0 = bypass, same job as Delay's Send.
+- **Room size** (slot 2) — Both tank delay-line lengths.
+- **Decay** (slot 3) — Tank feedback / tail length.
+- **Pre-delay** (slot 4) — Time before input reaches the tank, 0.02 ms to about 85 ms.
+- **Damping** (slot 5) — low-pass on the tank output; darker AND quieter tail at higher knob.
+- **Stereo width** (slot 6) — Spread between the tank's two taps.
+- **Diffusion** (slot 7) — Cross-feed between the tank's two lines.
+- **Mod** (slot 8) — Sinusoidal wow depth on the tank's read taps, fixed 0.35 Hz rate.
+- **Hold** (slot 9) — Pushes tank feedback toward, never to, self-oscillation.
 - **Tank drive** (slot 10) — Pre-gain into the tank's feedback saturator, 0.25×–4×, unity at default.
 - **Grit** (slot 11) — Digital reorganizer (bit-scramble) on the tank's feedback taps; bypass at 0.
 - **Tilt** (slot 12) — Bipolar tone shave on the final output around ~1 kHz; center = no change.

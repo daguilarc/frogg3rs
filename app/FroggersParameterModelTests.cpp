@@ -637,7 +637,7 @@ TEST_CASE(envelope_bank_short_names_survive_four_char_truncation_distinctly) {
     }
 }
 
-// --- ITEM 2a: ConfigureProcessingTiming must be wired at PrepareToPlay -----
+// --- ConfigureProcessingTiming must be wired at PrepareToPlay -----
 //
 // Sheaf's parameter-smoothing constants (kDefaultProcessLiteAlpha,
 // kDefaultTargetComputeIntervalSamples, kDefaultUiDisplayCenterAlpha,

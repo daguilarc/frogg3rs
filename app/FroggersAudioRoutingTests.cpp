@@ -244,11 +244,11 @@ TEST_CASE(default_patch_produces_non_silent_finite_audio) {
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
 
     // Confirm this really is the default patch before trusting the
-    // energy assertion below to mean anything -- Drive (Drive bank, slot 0)
+    // energy assertion below to mean anything -- Gain (Drive bank, slot 1)
     // reads 20% of range, and at least one cross-VCO modulation depth is
     // materialized (ApplyFroggersDefaultPatch is called unconditionally
     // from FroggersApp::Init()).
-    const synth::Parameter& driveParam = model.PageParameter(synth_froggers::FroggersBankId::Drive, 0);
+    const synth::Parameter& driveParam = model.PageParameter(synth_froggers::FroggersBankId::Drive, 1);
     REQUIRE_TRUE(std::fabs(driveParam.SceneCenter(0) - 0.2f) < 1e-5f);
     const synth::Parameter& vco1Pitch = model.PageParameter(synth_froggers::FroggersBankId::Audio, 0);
     REQUIRE_TRUE(vco1Pitch.ModulationDepthParameter(synth_froggers::kModSlotVco2Audio) != nullptr);
@@ -376,11 +376,11 @@ TEST_CASE(non_default_patch_produces_non_silent_finite_audio) {
     REQUIRE_TRUE(vco1Pitch.ModulationDepthParameter(synth_froggers::kModSlotVco2Audio) != nullptr);
 
     vco1Pitch.SceneCenter(0) = 0.5f;  // nonzero VCO level.
-    model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;    // nonzero Drive.
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 1).SceneCenter(0) = 0.8f;    // nonzero Gain.
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 12).SceneCenter(0) = 0.5f;   // Comb/Peak blend.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 0.4f;   // Wet/dry.
     model.PageParameter(synth_froggers::FroggersBankId::Delay, 1).SceneCenter(0) = 0.4f;    // Send.
-    model.PageParameter(synth_froggers::FroggersBankId::Delay, 6).SceneCenter(0) = 0.4f;    // Wet mix.
+    model.PageParameter(synth_froggers::FroggersBankId::Delay, 0).SceneCenter(0) = 0.4f;    // Wet/dry.
 
     // Same as the default-patch test above -- the ASR gate only opens
     // while the transport runs.
@@ -413,9 +413,10 @@ TEST_CASE(self_oscillating_comb_and_near_unity_reverb_hold_stays_finite_and_boun
 
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95.
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 12).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb.
-    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 1.0f;  // Hold -> ceiling.
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 1).SceneCenter(0) = 1.0f;  // Send.
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 9).SceneCenter(0) = 1.0f;  // Hold -> ceiling.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // Wet/dry fully wet.
-    model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 1.0f;   // maximum Drive.
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 1).SceneCenter(0) = 1.0f;   // maximum Gain.
 
     // The transport must be running, or the ASR gate stays closed and this
     // scenario never actually drives the self-oscillating comb with real
@@ -456,9 +457,10 @@ TEST_CASE(output_clamp_bounds_overdriven_patch_to_full_scale) {
 
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95.
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 12).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb.
-    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 1.0f;  // Hold -> ceiling.
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 1).SceneCenter(0) = 1.0f;  // Send.
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 9).SceneCenter(0) = 1.0f;  // Hold -> ceiling.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // Wet/dry fully wet.
-    model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 1.0f;   // maximum Drive.
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 1).SceneCenter(0) = 1.0f;   // maximum Gain.
 
     rig.StartAt(0);
     rig.RunBlocks(64);
@@ -659,9 +661,10 @@ TEST_CASE(overdriven_patch_stays_bounded) {
 
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95.
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 12).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb.
-    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 1.0f;  // Hold -> ceiling.
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 1).SceneCenter(0) = 1.0f;  // Send.
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 9).SceneCenter(0) = 1.0f;  // Hold -> ceiling.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // Wet/dry fully wet.
-    model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 1.0f;   // maximum Drive.
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 1).SceneCenter(0) = 1.0f;   // maximum Gain.
 
     rig.StartAt(0);
     // 256 blocks: the boundedness-stress window. No
@@ -695,9 +698,10 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
     // known-hostile by measurement rather than by assumption.
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 12).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb
-    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 1.0f;  // Hold -> ceiling
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 1).SceneCenter(0) = 1.0f;  // Send.
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 9).SceneCenter(0) = 1.0f;  // Hold -> ceiling
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // fully wet
-    model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 1.0f;   // maximum Drive
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 1).SceneCenter(0) = 1.0f;   // maximum Gain
     // PLUS the operator's stated repro on top: Filter bank Crispy at max
     // scrambles all 8 bits of every Filter parameter per read. NOTE the
     // accessor -- Crispy is NOT in pageParameters_ (9 wide); it lives in its
@@ -785,9 +789,10 @@ TEST_CASE(master_limiter_stays_at_unity_under_live_modulation) {
     // Identical hostile patch to master_limiter_stays_at_unity_across_hostile_patch.
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 12).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb
-    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 1.0f;  // Hold -> ceiling
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 1).SceneCenter(0) = 1.0f;  // Send.
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 9).SceneCenter(0) = 1.0f;  // Hold -> ceiling
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // fully wet
-    model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 1.0f;   // maximum Drive
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 1).SceneCenter(0) = 1.0f;   // maximum Gain
     model.Crispy(synth_froggers::FroggersBankId::Filter).SceneCenter(0) = 1.0f;
 
     // PLUS deep audio-rate modulation on the two parameters the evidence
@@ -933,7 +938,7 @@ TEST_CASE(finiteness_recovery_resets_only_the_poisoned_unit_and_audio_recovers) 
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("finiteness_recovery"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
     model.PageParameter(synth_froggers::FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;  // nonzero VCO level.
-    model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 0.5f;  // nonzero Drive.
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 1).SceneCenter(0) = 0.5f;  // nonzero Gain.
     rig.StartAt(0);
 
     // "Other unit untouched" marker: a sentinel written into the Comb's
@@ -1115,7 +1120,7 @@ TEST_CASE(silent_while_transport_is_stopped) {
     REQUIRE_TRUE(vco1Pitch.ModulationDepthParameter(synth_froggers::kModSlotVco2Audio) != nullptr);
 
     vco1Pitch.SceneCenter(0) = 0.5f;  // nonzero VCO level.
-    model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;  // nonzero Drive.
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 1).SceneCenter(0) = 0.8f;  // nonzero Gain.
 
     // Deliberately no rig.StartAt(...) -- the rig's transport starts
     // Stopped (MasterClock::Prepare() resets transportState_ to Stopped,
@@ -1171,7 +1176,7 @@ TEST_CASE(silent_while_transport_is_stopped) {
 TEST_CASE(gate_period_tracks_tempo_change) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("tempo_tracks_gate"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
-    model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 1).SceneCenter(0) = 0.8f;
     model.PageParameter(synth_froggers::FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;
 
     constexpr double kBaseTempoBpm = 1500.0;
@@ -1216,7 +1221,7 @@ TEST_CASE(gate_period_tracks_tempo_change) {
 TEST_CASE(missing_clock_plan_does_not_fault_and_leaves_gate_closed) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("missing_clock_plan"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
-    model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 1).SceneCenter(0) = 0.8f;
     model.PageParameter(synth_froggers::FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;
     // Deliberately no rig.StartAt(...) -- same "transport never started"
     // starting point as silent_while_transport_is_stopped above.
@@ -1265,17 +1270,21 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb) {
 
     synth::Parameter& vco1Pitch = model.PageParameter(synth_froggers::FroggersBankId::Audio, 0);
     vco1Pitch.SceneCenter(0) = 0.5f;  // nonzero VCO level, so there's signal to excite the tanks.
-    model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;  // nonzero Drive.
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 1).SceneCenter(0) = 0.8f;  // nonzero Gain.
 
-    // Delay bank: rows per dsp::MapRowsToDelayParams's own comment (Delay.hpp
-    // :1088-1119) -- 1=Send, 2=Feedback, 6=Mix. Feedback at 1.0 clamps to 0.98
-    // inside StereoDelay::Process (Delay.hpp:818), the near-unity extreme
-    // the defect report cites.
+    // Delay bank slots: 1=Send, 3=Feedback, 0=Wet/dry. Feedback at 1.0
+    // clamps to 0.98 inside StereoDelay::Process (Delay.hpp:818), the
+    // near-unity extreme the defect report cites.
     model.PageParameter(synth_froggers::FroggersBankId::Delay, 1).SceneCenter(0) = 1.0f;  // Send.
-    model.PageParameter(synth_froggers::FroggersBankId::Delay, 2).SceneCenter(0) = 1.0f;  // Feedback -> 0.98.
-    model.PageParameter(synth_froggers::FroggersBankId::Delay, 6).SceneCenter(0) = 1.0f;  // Wet mix.
+    model.PageParameter(synth_froggers::FroggersBankId::Delay, 3).SceneCenter(0) = 1.0f;  // Feedback -> 0.98.
+    model.PageParameter(synth_froggers::FroggersBankId::Delay, 0).SceneCenter(0) = 1.0f;  // Wet/dry.
 
-    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 0.08f;  // Hold -> moderate.
+    // Reverb bank: Send must be opened too, now that Reverb's tank is only
+    // fed through it (Send defaults closed, like Delay's) -- without this
+    // the reverb tank never gets excited and "establish self-sustaining
+    // ringing in both tanks" below would only be true of Delay's.
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 1).SceneCenter(0) = 1.0f;  // Send.
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 9).SceneCenter(0) = 0.08f;  // Hold -> moderate.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // Wet/dry fully wet.
 
     rig.StartAt(0);
@@ -1396,7 +1405,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
 
     synth::Parameter& vco1Pitch = model.PageParameter(synth_froggers::FroggersBankId::Audio, 0);
     vco1Pitch.SceneCenter(0) = 0.5f;  // nonzero VCO level, so there's signal to excite the tanks.
-    model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;  // nonzero Drive.
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 1).SceneCenter(0) = 0.8f;  // nonzero Gain.
 
     // Envelope bank: interleaved ADSR, slot = 4*vco + {0:Attack, 1:Decay,
     // 2:Sustain, 3:Release} (FroggersParameters.hpp:162-164), so rows 3/7/11
@@ -1406,14 +1415,17 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
     model.PageParameter(synth_froggers::FroggersBankId::Envelope, 7).SceneCenter(0) = 1.0f;  // Release VCO2 -> ~2.5s.
     model.PageParameter(synth_froggers::FroggersBankId::Envelope, 11).SceneCenter(0) = 1.0f;  // Release VCO3 -> ~2.5s.
 
-    // Delay bank: rows per dsp::MapRowsToDelayParams's own comment
-    // (Delay.hpp:1088-1119) -- 0=Time, 1=Send, 2=Feedback, 6=Mix.
-    model.PageParameter(synth_froggers::FroggersBankId::Delay, 0).SceneCenter(0) = 0.6f;  // Time -> ~96ms/cycle.
+    // Delay bank slots: 2=Time, 1=Send, 3=Feedback, 0=Wet/dry.
+    model.PageParameter(synth_froggers::FroggersBankId::Delay, 2).SceneCenter(0) = 0.6f;  // Time -> ~96ms/cycle.
     model.PageParameter(synth_froggers::FroggersBankId::Delay, 1).SceneCenter(0) = 1.0f;  // Send.
-    model.PageParameter(synth_froggers::FroggersBankId::Delay, 2).SceneCenter(0) = 1.0f;  // Feedback -> 0.98.
-    model.PageParameter(synth_froggers::FroggersBankId::Delay, 6).SceneCenter(0) = 1.0f;  // Wet mix.
+    model.PageParameter(synth_froggers::FroggersBankId::Delay, 3).SceneCenter(0) = 1.0f;  // Feedback -> 0.98.
+    model.PageParameter(synth_froggers::FroggersBankId::Delay, 0).SceneCenter(0) = 1.0f;  // Wet/dry.
 
-    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 0.08f;  // Hold -> moderate.
+    // Reverb bank: Send must be opened too, now that Reverb's tank is only
+    // fed through it (Send defaults closed, like Delay's) -- see the
+    // sibling test above's own comment on this.
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 1).SceneCenter(0) = 1.0f;  // Send.
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 9).SceneCenter(0) = 0.08f;  // Hold -> moderate.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // Wet/dry fully wet.
 
     rig.StartAt(0);
@@ -1535,7 +1547,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
 // This test pins the stopped-transport override directly -- while the
 // transport is stopped, the
 // three drive pre-gains (Delay slot 9 "Feedback drive", Reverb slot 10
-// "Tank drive", Filter slot 7 "Comb drive") and Freeze (Delay slot 4)
+// "Tank drive", Filter slot 7 "Comb drive") and Freeze (Delay slot 5)
 // resolve to their unity/zero effective values regardless of the commanded
 // knob, WITHOUT writing to the parameter model, and resuming play restores
 // the commanded mapping bit-exactly. Commanded values are deliberately
@@ -1565,7 +1577,7 @@ TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes
     model.PageParameter(FroggersBankId::Filter, 7).SceneCenter(0) = 1.0f;  // Comb drive commanded MAX.
     model.PageParameter(FroggersBankId::Delay, 9).SceneCenter(0) = 1.0f;    // Feedback drive commanded MAX.
     model.PageParameter(FroggersBankId::Reverb, 10).SceneCenter(0) = 1.0f;  // Tank drive commanded MAX.
-    model.PageParameter(FroggersBankId::Delay, 4).SceneCenter(0) = 1.0f;    // Freeze commanded MAX.
+    model.PageParameter(FroggersBankId::Delay, 5).SceneCenter(0) = 1.0f;    // Freeze commanded MAX.
     // Grit (Reverb slot 11) commanded MAX -- joins the same
     // stopped-state override this test already pins for the other four.
     model.PageParameter(FroggersBankId::Reverb, 11).SceneCenter(0) = 1.0f;  // Grit commanded MAX.
@@ -1601,7 +1613,7 @@ TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes
     REQUIRE_TRUE(model.PageParameter(FroggersBankId::Filter, 7).CachedKnobValue(0) == 1.0f);
     REQUIRE_TRUE(model.PageParameter(FroggersBankId::Delay, 9).CachedKnobValue(0) == 1.0f);
     REQUIRE_TRUE(model.PageParameter(FroggersBankId::Reverb, 10).CachedKnobValue(0) == 1.0f);
-    REQUIRE_TRUE(model.PageParameter(FroggersBankId::Delay, 4).CachedKnobValue(0) == 1.0f);
+    REQUIRE_TRUE(model.PageParameter(FroggersBankId::Delay, 5).CachedKnobValue(0) == 1.0f);
     REQUIRE_TRUE(model.PageParameter(FroggersBankId::Reverb, 11).CachedKnobValue(0) == 1.0f);
 
     // Resume play: the override stops applying and the never-touched
@@ -1863,7 +1875,7 @@ TEST_CASE(stop_forces_release_from_mid_attack_bypassing_grace_and_stage_completi
     using synth_froggers::FroggersBankId;
 
     model.PageParameter(FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;  // VCO1 pitch.
-    model.PageParameter(FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;  // Drive gain.
+    model.PageParameter(FroggersBankId::Drive, 1).SceneCenter(0) = 0.8f;  // Gain.
     model.PageParameter(FroggersBankId::Envelope, 0).SceneCenter(0) = 1.0f;   // Attack VCO1: ceiling (~0.25s).
     model.PageParameter(FroggersBankId::Envelope, 13).SceneCenter(0) = 1.0f;  // Grace: ceiling (~1.0s).
     // Curve (slot 12) left at its 0.0f default -- explicit per this test's
@@ -1988,11 +2000,16 @@ std::uint64_t BuildLatchedRingHeldAcrossStop(Rig& rig) {
         std::log(632.0f / dsp::Vco::kPitchMinHz) /
         std::log(dsp::Vco::kPitchMaxHz / dsp::Vco::kPitchMinHz);
     model.PageParameter(FroggersBankId::Audio, 0).SceneCenter(0) = kRingExcitePitchKnob;
-    model.PageParameter(FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;
+    model.PageParameter(FroggersBankId::Drive, 1).SceneCenter(0) = 0.8f;
     model.PageParameter(FroggersBankId::Delay, 1).SceneCenter(0) = 1.0f;  // Send.
-    model.PageParameter(FroggersBankId::Delay, 2).SceneCenter(0) = 1.0f;  // Feedback -> 0.98.
-    model.PageParameter(FroggersBankId::Delay, 6).SceneCenter(0) = 1.0f;  // Wet mix.
-    model.PageParameter(FroggersBankId::Reverb, 8).SceneCenter(0) = 0.08f;  // Hold -> moderate.
+    model.PageParameter(FroggersBankId::Delay, 3).SceneCenter(0) = 1.0f;  // Feedback -> 0.98.
+    model.PageParameter(FroggersBankId::Delay, 0).SceneCenter(0) = 1.0f;  // Wet/dry.
+    // Reverb's own Send is deliberately left at its default-closed 0.0f here
+    // -- this ring only needs to be Delay's own, and an open Send would let
+    // Reverb's independently-sustaining tank (Hold below) dilute measurements
+    // callers make against this ring's total peak (encoder_edit_while_frozen_
+    // changes_the_output_measurably's own Delay-only reasoning, below).
+    model.PageParameter(FroggersBankId::Reverb, 9).SceneCenter(0) = 0.08f;  // Hold -> moderate.
     model.PageParameter(FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;   // Wet/dry fully wet.
 
     rig.StartAt(0);
@@ -2195,11 +2212,12 @@ TEST_CASE(no_freeze_stop_press_sequence_leaves_the_instrument_sounding_after_sto
         synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
         using synth_froggers::FroggersBankId;
         model.PageParameter(FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;
-        model.PageParameter(FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;
+        model.PageParameter(FroggersBankId::Drive, 1).SceneCenter(0) = 0.8f;
         model.PageParameter(FroggersBankId::Delay, 1).SceneCenter(0) = 1.0f;
-        model.PageParameter(FroggersBankId::Delay, 2).SceneCenter(0) = 1.0f;
-        model.PageParameter(FroggersBankId::Delay, 6).SceneCenter(0) = 1.0f;
-        model.PageParameter(FroggersBankId::Reverb, 8).SceneCenter(0) = 0.08f;
+        model.PageParameter(FroggersBankId::Delay, 3).SceneCenter(0) = 1.0f;
+        model.PageParameter(FroggersBankId::Delay, 0).SceneCenter(0) = 1.0f;
+        model.PageParameter(FroggersBankId::Reverb, 1).SceneCenter(0) = 1.0f;  // Send.
+        model.PageParameter(FroggersBankId::Reverb, 9).SceneCenter(0) = 0.08f;
         model.PageParameter(FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;
 
         rig.StartAt(0);
@@ -2279,8 +2297,7 @@ TEST_CASE(releasing_freeze_does_not_restart_the_transport) {
 // while the drone is held must change the output measurably, with a
 // positive control proving the drone was live immediately before the edit
 // (a null result from an already-dead instrument would be void). Edits
-// Delay Mix (bank Delay slot
-// 6, "6=Mix" per MapRowsToDelayParams's own comment) from fully wet to
+// Delay Wet/dry (bank Delay slot 0, DelayParams::dmix) from fully wet to
 // fully dry -- a post-gain crossfade applied every sample to the delay's
 // own (already self-sustaining) output, so its effect on an ALREADY-
 // ringing signal is immediate, not dependent on new input reaching the
@@ -2314,7 +2331,7 @@ TEST_CASE(encoder_edit_while_frozen_changes_the_output_measurably) {
     // still pass even if THIS task's actual claim (ProcessSample() itself
     // stays ungated by transport state) were broken. A plain SceneCenter
     // write exercises the real path an operator's encoder turn uses.
-    model.PageParameter(FroggersBankId::Delay, 6).SceneCenter(0) = 0.0f;  // Mix: fully wet -> fully dry.
+    model.PageParameter(FroggersBankId::Delay, 0).SceneCenter(0) = 0.0f;  // Wet/dry: fully wet -> fully dry.
 
     // The periodic smoothed Compute (alpha 0.0994 every 16 samples,
     // this file's own ApplyPatchNow comment) converges geometrically;
@@ -2441,9 +2458,9 @@ TEST_CASE(free_running_modulation_source_holds_while_stopped_with_positive_contr
 // read -- through the ordinary ProcessBlock path, with the transport never
 // started at all (this rig's default state, per this file's own header
 // comment: "The rig's transport starts Stopped by default").
-// The Delay bank's Wet mix crossfades the dry signal against a wet path that
+// The Delay bank's Wet/dry crossfades the dry signal against a wet path that
 // Send feeds, and Send defaults to zero (dsp/Delay.hpp's DelayParams). So at
-// Wet mix maximum the crossfade lands on a path carrying nothing and the
+// Wet/dry maximum the crossfade lands on a path carrying nothing and the
 // instrument disappears -- a mute knob wearing a mix label, and the first
 // thing a new listener meets, because the default patch is what ships.
 //
@@ -2477,9 +2494,12 @@ TEST_CASE(reverb_width_produces_a_stereo_image) {
     using synth_froggers::FroggersBankId;
 
     // Fully wet, so the tank's own pair is what reaches the output, and Width
-    // pushed away from centre.
+    // pushed away from centre. Send must be open too -- it defaults closed,
+    // like Delay's own Send, and a closed Send leaves the tank unfed, which
+    // would read as no image rather than an inert Width.
+    model.PageParameter(FroggersBankId::Reverb, 1).SceneCenter(0) = 1.0f;  // Send.
     model.PageParameter(FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // Wet/dry.
-    model.PageParameter(FroggersBankId::Reverb, 5).SceneCenter(0) = 1.0f;  // Stereo width.
+    model.PageParameter(FroggersBankId::Reverb, 6).SceneCenter(0) = 1.0f;  // Stereo width.
     ApplyPatchNow(rig);
     // StartAt(0), matching the default-patch audibility test above: the ASR
     // gate follows the transport's quarter-note pulse, and starting further
@@ -2499,7 +2519,7 @@ TEST_CASE(reverb_width_produces_a_stereo_image) {
     // POSITIVE CONTROL: the same patch with Width at centre must NOT produce
     // a difference. Without this, "the channels differ" could be true of a
     // build that simply decorrelated them for some unrelated reason.
-    model.PageParameter(FroggersBankId::Reverb, 5).SceneCenter(0) = 0.0f;
+    model.PageParameter(FroggersBankId::Reverb, 6).SceneCenter(0) = 0.0f;
     ApplyPatchNow(rig);
     rig.RunBlocks(16);
     rig.ClearOutput();
@@ -2521,9 +2541,9 @@ TEST_CASE(delay_stereo_width_produces_a_stereo_image) {
     // Send must be up: the delay line is what carries the image, and it is
     // fed only through Send, which defaults to zero.
     model.PageParameter(FroggersBankId::Delay, 1).SceneCenter(0) = 0.8f;   // Send.
-    model.PageParameter(FroggersBankId::Delay, 2).SceneCenter(0) = 0.7f;   // Feedback.
-    model.PageParameter(FroggersBankId::Delay, 6).SceneCenter(0) = 1.0f;   // Wet mix.
-    model.PageParameter(FroggersBankId::Delay, 3).SceneCenter(0) = 1.0f;   // Stereo width.
+    model.PageParameter(FroggersBankId::Delay, 3).SceneCenter(0) = 0.7f;   // Feedback.
+    model.PageParameter(FroggersBankId::Delay, 0).SceneCenter(0) = 1.0f;   // Wet/dry.
+    model.PageParameter(FroggersBankId::Delay, 4).SceneCenter(0) = 1.0f;   // Stereo width.
     ApplyPatchNow(rig);
     // StartAt(0), matching the default-patch audibility test above: the ASR
     // gate follows the transport's quarter-note pulse, and starting further
@@ -2550,23 +2570,36 @@ TEST_CASE(delay_wet_mix_ceiling_leaves_dry_signal_and_keeps_its_full_travel) {
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
     using synth_froggers::FroggersBankId;
 
-    model.PageParameter(FroggersBankId::Delay, 6).SceneCenter(0) = 1.0f;  // Wet mix commanded MAX.
+    model.PageParameter(FroggersBankId::Delay, 0).SceneCenter(0) = 1.0f;  // Wet/dry commanded MAX.
     ApplyPatchNow(rig);
     rig.StartAt(120.0);
     rig.RunBlocks(4);
     REQUIRE_TRUE(!rig.SawNaN());
 
     const float mixAtMax = rig.Application().TestLastDelayWetMixEffective();
-    const float dryShare = 1.0f - mixAtMax;
-    std::cout << "  [delay wet ceiling] knob 1.0 -> mix " << mixAtMax << ", dry share " << dryShare
+    // dsp::StereoDelay::ToStereo blends with the same equal-power law Reverb
+    // does (`dry*cos(theta) + wet*sin(theta)`, theta = mix*acos(kMinDryLevel),
+    // both scaled further by WetAuthority() in [0,1] before reaching that
+    // formula), so `cos(mixAtMax*thetaMax)` is a lower bound on the true dry
+    // share for the same reason the Reverb ceiling test's own comment gives
+    // (cos decreasing over [0, thetaMax], actual mix <= mixAtMax). No more
+    // knob-level ceiling scales `mixAtMax` down from 1.0 -- the floor now
+    // lives entirely in thetaMax (dsp::kMinDryLevel's own comment,
+    // Limiter.hpp) -- so at full authority this lower bound is also the
+    // exact floor: mixAtMax == 1.0 puts theta at exactly thetaMax.
+    const float thetaMax = std::acos(synth_froggers::dsp::kMinDryLevel);
+    const float dryShare = std::cos(mixAtMax * thetaMax);
+    std::cout << "  [delay wet ceiling] knob 1.0 -> mix " << mixAtMax << ", dry share (lower bound) " << dryShare
               << "\n";
-    // Same float-representation epsilon as the Reverb ceiling: 0.6 has no
-    // exact binary form, so `1 - mix` lands just under 0.40.
-    REQUIRE_TRUE(dryShare >= 0.40f - 1e-6f);
+    // Same float-representation epsilon as the Reverb ceiling: 0.3 has no
+    // exact binary form, so the floor stores as 0.30000001 -- the epsilon
+    // documents that this is float representation slop, not slack in the
+    // requirement, in either direction.
+    REQUIRE_TRUE(dryShare >= 0.30f - 1e-6f);
 
     // The ceiling is on the mapped value, not the knob range, so half the
     // knob is half the ceiling.
-    model.PageParameter(FroggersBankId::Delay, 6).SceneCenter(0) = 0.5f;
+    model.PageParameter(FroggersBankId::Delay, 0).SceneCenter(0) = 0.5f;
     ApplyPatchNow(rig);
     rig.RunBlocks(4);
     const float mixAtHalf = rig.Application().TestLastDelayWetMixEffective();
@@ -2575,7 +2608,7 @@ TEST_CASE(delay_wet_mix_ceiling_leaves_dry_signal_and_keeps_its_full_travel) {
     // POSITIVE CONTROL: the knob really did move, so a high dry share is a
     // ceiling doing its job rather than a control that never left zero.
     REQUIRE_TRUE(mixAtMax > 0.0f);
-    model.PageParameter(FroggersBankId::Delay, 6).SceneCenter(0) = 0.0f;
+    model.PageParameter(FroggersBankId::Delay, 0).SceneCenter(0) = 0.0f;
     ApplyPatchNow(rig);
     rig.RunBlocks(4);
     REQUIRE_TRUE(rig.Application().TestLastDelayWetMixEffective() == 0.0f);
@@ -2591,7 +2624,7 @@ TEST_CASE(delay_wet_mix_at_maximum_leaves_the_default_patch_audible) {
     const synth::Parameter& send = model.PageParameter(FroggersBankId::Delay, 1);
     const float sendDefault = send.SceneCenter(0);
 
-    model.PageParameter(FroggersBankId::Delay, 6).SceneCenter(0) = 1.0f;  // Wet mix commanded MAX.
+    model.PageParameter(FroggersBankId::Delay, 0).SceneCenter(0) = 1.0f;  // Wet/dry commanded MAX.
     ApplyPatchNow(rig);
     rig.StartAt(0);
     rig.RunBlocks(8);
@@ -2603,35 +2636,43 @@ TEST_CASE(delay_wet_mix_at_maximum_leaves_the_default_patch_audible) {
     RequireFiniteStereo(output);
     constexpr float kEpsilon = 1.0e-4f;
     const float peakAtMaxWet = PeakAbs(output);
-    std::cout << "  [delay wet mix] Send default " << sendDefault << ", Wet mix 1.0 -> peak "
+    std::cout << "  [delay wet/dry] Send default " << sendDefault << ", Wet/dry 1.0 -> peak "
               << peakAtMaxWet << "\n";
 
-    // POSITIVE CONTROL: the same rig with Wet mix at zero must be audible, so
-    // a silent result above is the Wet mix removing the instrument rather
+    // POSITIVE CONTROL: the same rig with Wet/dry at zero must be audible, so
+    // a silent result above is the Wet/dry removing the instrument rather
     // than a rig that was never making sound in the first place.
-    model.PageParameter(FroggersBankId::Delay, 6).SceneCenter(0) = 0.0f;
+    model.PageParameter(FroggersBankId::Delay, 0).SceneCenter(0) = 0.0f;
     ApplyPatchNow(rig);
     rig.RunBlocks(8);
     rig.ClearOutput();
     rig.RunBlocks(4);
     const float peakAtDry = PeakAbs(rig.Output());
-    std::cout << "  [delay wet mix] Wet mix 0.0 -> peak " << peakAtDry << "\n";
+    std::cout << "  [delay wet/dry] Wet/dry 0.0 -> peak " << peakAtDry << "\n";
     REQUIRE_TRUE(peakAtDry > kEpsilon);
 
     REQUIRE_TRUE(peakAtMaxWet > kEpsilon);
 }
 
-TEST_CASE(reverb_wet_mix_always_leaves_at_least_forty_percent_dry) {
-    // The property the wet ceiling exists to guarantee, read off what the DSP
+TEST_CASE(reverb_wet_mix_always_leaves_at_least_thirty_percent_dry) {
+    // The property the dry floor exists to guarantee, read off what the DSP
     // was actually handed rather than off the constant it was computed from.
-    // Reverb blends `(1 - mix) * dry + mix * wet` (dsp/Reverb.hpp), so the
-    // dry share at any knob position is exactly `1 - mix`: a mix that could
-    // reach 1.0 would remove the dry signal entirely, which reads as a drop
-    // in level rather than as more reverb.
+    // Reverb blends `dry*cos(theta) + wet*sin(theta)`, theta =
+    // mix*acos(kMinDryLevel) -- an equal-power law (dsp/Reverb.hpp's
+    // `mixedL`/`mixedR` comment), not the linear `(1-mix)*dry + mix*wet`
+    // this pin used to assert. `mix` itself is
+    // `mixKnob01 * wetAuthority.Authority()`, and Authority() is in [0,1], so
+    // the mix actually reaching the crossfade is never more than `mixAtMax`
+    // below (the pre-authority, knob-mapped value TestLastReverbWetMixEffective
+    // reports, no longer scaled down by any knob-level constant -- the floor
+    // now lives entirely in thetaMax). cos is monotonically DECREASING over
+    // [0, thetaMax], so `cos(mixAtMax*thetaMax)` is a valid lower bound on
+    // the true dry share no matter how much authority the wet path has
+    // actually earned by the time this measurement runs.
     //
-    // A test that asserted `kMaxWetMix == 0.6f` would restate the edit
-    // and would keep passing if the ceiling were later applied to the wrong
-    // thing, or stopped being applied at all.
+    // A test that asserted `dsp::kMinDryLevel == 0.30f` would restate the
+    // edit and would keep passing if the floor were later applied to the
+    // wrong thing, or stopped being applied at all.
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("reverb_wet_ceiling"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
     using synth_froggers::FroggersBankId;
@@ -2643,14 +2684,11 @@ TEST_CASE(reverb_wet_mix_always_leaves_at_least_forty_percent_dry) {
     REQUIRE_TRUE(!rig.SawNaN());
 
     const float mixAtMax = rig.Application().TestLastReverbWetMixEffective();
-    const float dryShare = 1.0f - mixAtMax;
-    std::cout << "  [reverb wet ceiling] knob 1.0 -> mix " << mixAtMax << ", dry share " << dryShare
+    const float thetaMax = std::acos(synth_froggers::dsp::kMinDryLevel);
+    const float dryShare = std::cos(mixAtMax * thetaMax);
+    std::cout << "  [reverb wet ceiling] knob 1.0 -> mix " << mixAtMax << ", dry share (lower bound) " << dryShare
               << "\n";
-    // The epsilon is float representation, not slack in the requirement:
-    // 0.6 has no exact binary form, so the ceiling stores as 0.60000002 and
-    // `1 - mix` lands at 0.39999998. Asserting a bare `>= 0.40f` would fail
-    // on a ceiling that is exactly right.
-    REQUIRE_TRUE(dryShare >= 0.40f - 1e-6f);
+    REQUIRE_TRUE(dryShare >= 0.30f - 1e-6f);
 
     // The control still sweeps its whole travel: the ceiling is on the mapped
     // value, not on the knob's range, so half the knob is half the ceiling.
@@ -2673,7 +2711,7 @@ TEST_CASE(reverb_wet_mix_always_leaves_at_least_forty_percent_dry) {
 TEST_CASE(patch_change_still_reaches_dsp_while_transport_stopped) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("s1a2_patch_reaches_dsp_while_stopped"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
-    synth::Parameter& driveGain = model.PageParameter(synth_froggers::FroggersBankId::Drive, 0);
+    synth::Parameter& driveGain = model.PageParameter(synth_froggers::FroggersBankId::Drive, 1);
 
     const float before = driveGain.CachedKnobValue(0);
     constexpr float kTarget = 0.8f;

@@ -77,6 +77,172 @@ inline constexpr float kStageCeiling = 0.80f;
 // stage's own comment already said "matches the master". One value.
 inline constexpr float kSharedReleaseSeconds = 0.1f;
 
+// Tuning for `WetAuthorityFollower` below, shared by `dsp::StereoDelay`
+// (dsp/Delay.hpp) and `dsp::Reverb` (dsp/Reverb.hpp). Both stages crossfade a
+// dry signal against a wet path that a Send control feeds -- Delay's already,
+// Reverb's once a later change gives it one -- and Send defaults to zero, so
+// the wet path can be silent while the mix knob sits at maximum; a crossfade
+// against silence is a mute. Authority tracks what the wet path actually
+// HOLDS, so a low-Send high-feedback patch -- a loud echo fed by very little
+// -- still earns the control its full travel.
+//
+// Each stage's own wet limiter cannot serve this job: it is a gain multiplier
+// that sits at exactly 1.0 for anything under threshold (Limiter.hpp), so a
+// quiet echo and silence read identically to it.
+//
+// Release is kSharedReleaseSeconds, which both stages' own wet limiters
+// ALREADY apply to this exact signal, so authority tracks at a rate this path
+// is measured not to pump at -- a genuinely shared value, not an analogy.
+//
+// Attack is 10ms, the same figure VcoEnvelopeFollowers uses, and that IS an
+// analogy: it has not been measured for either path. It is a deliberately
+// unshared literal for that reason. Delay's own wet-limiter comment records
+// why -- its tuning was measured rather than taken from the master limiter,
+// because "analogy-picked constants have been measured wrong before in this
+// codebase" -- and Limiter.hpp's own per-stage thresholds record the same
+// judgement, which did not collapse either. Sharing one constant across every
+// site would assert a derivation that only the VCO followers have. Rising
+// quickly is the safe direction here, so being approximately right costs
+// little; the honest note is that it is approximate.
+inline constexpr float kWetAuthorityAttackSeconds = 0.010f;
+inline constexpr float kWetAuthorityReleaseSeconds = kSharedReleaseSeconds;
+// The level at or above which the wet path has earned the control its full
+// travel. This is an AUDIBILITY threshold, not a loudness one: the failure
+// being fixed is a crossfade against silence, so anything the operator can
+// plainly hear should give the knob its whole range, and only a path holding
+// essentially nothing should take it away.
+//
+// MEASURED, not chosen by eye, against Delay's own wet path (dsp/Delay.hpp).
+// The wet limiter's own threshold (0.72) was tried first and is wrong for
+// this: a frozen delay line ringing at peak 0.37 -- unmistakably audible, and
+// exactly the loud-echo-fed-by-little case the scaling exists to serve --
+// would get only half its travel there. This value sits an order of
+// magnitude above the routing suite's own measured noise floor for a
+// self-sustaining ring (0.0063), so a path holding only numerical residue
+// still reads as empty.
+inline constexpr float kWetAuthorityFullLevel = 0.05f;
+
+// Shared by `dsp::StereoDelay::wetAuthority` and `dsp::Reverb::wetAuthority`:
+// one follower tracking how much level a wet path actually holds, so a
+// wet/dry mix control can be scaled by what it has actually earned instead of
+// crossfading against a path that a closed Send leaves silent. `Advance()` is
+// called once per processed sample with the level the wet path just produced
+// (or a fixed target when a stage has no gate of its own yet -- see
+// `dsp::Reverb`'s own comment on its instance); `Authority()` reads the
+// result without advancing it, so a caller can use it from a `const` method
+// (mirrors `StereoDelay::ToStereo`, which reads this every call but only
+// `Process()` updates it).
+struct WetAuthorityFollower
+{
+    float level = 0.0f;
+    float attackCoeff = 0.0f;
+    float releaseCoeff = 0.0f;
+
+    // Sample-rate-dependent, recomputed wherever a real sample rate becomes
+    // known -- same rationale as every other Configure()/SetSampleRate() in
+    // this file.
+    void Configure(float sampleRate)
+    {
+        attackCoeff = std::exp(-1.0f / (kWetAuthorityAttackSeconds * sampleRate));
+        releaseCoeff = std::exp(-1.0f / (kWetAuthorityReleaseSeconds * sampleRate));
+    }
+
+    // One-pole toward the measured level, faster up than down (see the
+    // authority constants above).
+    void Advance(float target)
+    {
+        const float coeff = target > level ? attackCoeff : releaseCoeff;
+        level = target + coeff * (level - target);
+    }
+
+    // How much of the mix control's travel the wet path has earned:
+    // proportional to the level it holds, saturating where the path stops
+    // getting louder.
+    float Authority() const { return std::min(level / kWetAuthorityFullLevel, 1.0f); }
+
+    // `startingLevel` defaults to 0.0f (Delay's own reset value -- a
+    // just-cleared wet path has earned nothing). A stage with no gate of its
+    // own yet passes a different starting level; see `dsp::Reverb::Reset()`.
+    void Reset(float startingLevel = 0.0f) { level = startingLevel; }
+
+    bool StateFinite() const { return std::isfinite(level); }
+};
+
+// The floor on dry signal shared by every wet/dry crossfade on the Delay and
+// Reverb pages (`dsp::StereoDelay::ToStereo`, dsp/Delay.hpp;
+// `dsp::Reverb::Process`'s `mixedL`/`mixedR`, dsp/Reverb.hpp). Both stages
+// crossfade dry against wet with an EQUAL-POWER law -- `dry*cos(theta) +
+// wet*sin(theta)`, the same law `dsp::DriveBlendPhase::Process` (Drive.hpp)
+// already applies to the Drive page's own Wet/Dry -- and cap `theta` at
+// `std::acos(kMinDryLevel)` rather than letting it reach a full quarter
+// turn, so the dry signal's own gain never drops below this value no matter
+// where the knob sits. This is a GAIN, not a share of a linear mix: dry and
+// wet are two independent amplitude gains whose SQUARES sum to one
+// (`kMinDryLevel*kMinDryLevel + sin(acos(kMinDryLevel))^2 == 1.0`, i.e.
+// 0.300^2 + 0.954^2 == 1.0), constant power, not two mix shares adding to
+// one.
+//
+// The equal-power law is why a wet control no longer loses level toward the
+// wet end of its travel: against a wet path uncorrelated with dry, total
+// output power holds at 1.0 across the WHOLE travel (dry^2 + wet^2 == 1.0 by
+// construction, every theta), where the old linear crossfade (dry gain
+// 1-mix, wet gain mix) sagged to dry^2+wet^2 == 0.3^2+0.7^2 == 0.58 at its
+// own wettest setting -- about 2.4 dB quieter there than the dry input, with
+// the wet leg itself only 0.700 rather than this law's 0.954. That sag, on a
+// wet path largely uncorrelated with dry, is what read as the Delay and
+// Reverb pages going quiet and noise-like at full wet (operator 2026-07-29
+// "clamp the reverb wetness down, it's too fucking quiet", tightened again
+// 2026-08-26): the linear law cancelled the dry signal away, leaving behind
+// a quiet, uncorrelated wet path. Holding the dry floor at this same 0.300
+// while fixing the law that was collapsing the wet leg's own level -- 0.954
+// here versus 0.700 before -- addresses that report at its cause rather
+// than only treating the symptom.
+//
+// The Drive page's own Wet/Dry carries no such floor -- it reaches fully
+// wet -- because it is a distortion control an operator asks for by name,
+// not a reverb or a delay that a full-wet setting would throw the
+// instrument away for.
+inline constexpr float kMinDryLevel = 0.30f;
+
+// The equal-power wet/dry law itself, in one place. Every master mix on the
+// instrument uses it -- `dsp::DriveBlendPhase::Process` (Drive.hpp),
+// `dsp::StereoDelay::ToStereo` and `dsp::Reverb::Process` -- and before this
+// was extracted each page carried its own copy, with Delay's and Reverb's
+// byte-identical to each other. Three copies of one law is three places a
+// later correction has to land, and the two floored pages had already drifted
+// into citing each other's comments as if that made them shared.
+//
+// `minDryLevel` is what separates the pages, and it is the ONLY thing that
+// does: at 0 the control reaches fully wet (the Drive page, where replacing
+// the source is the point), and at kMinDryLevel it stops short so the dry
+// signal survives (Delay and Reverb, per the operator ruling above).
+//
+// Callers pass the mix AFTER any authority scaling, since what a page has
+// earned is that page's business and not this law's.
+struct WetDryGains
+{
+    float dry;
+    float wet;
+};
+
+inline WetDryGains EqualPowerWetDry(float mix01, float minDryLevel)
+{
+    // mix == 0 has to return the dry signal bit-for-bit; pins on all three
+    // pages depend on it, and std::cos(0)/std::sin(0) landing on exactly
+    // 1.0f/0.0f is checked rather than assumed by those pins.
+    if (mix01 <= 0.0f) return WetDryGains{1.0f, 0.0f};
+
+    constexpr float kHalfPi = 1.57079632679489661923f;
+    // A floored page's thetaMax sits well short of pi/2, which is the only
+    // place std::cos stops landing on an exact value. An unfloored page's
+    // does not, so its top endpoint needs the caller's own exact case --
+    // std::cos(pi/2) in float returns -4.37e-8, not 0, which would leak a
+    // trace of dry into a nominally fully-wet output.
+    const float thetaMax = (minDryLevel > 0.0f) ? std::acos(minDryLevel) : kHalfPi;
+    const float theta = mix01 * thetaMax;
+    return WetDryGains{std::cos(theta), std::sin(theta)};
+}
+
 // The per-stage THRESHOLDS did NOT collapse into one shared value: peak
 // (0.7, dsp/FilterFx.hpp) and Drive's output limiter (0.7, dsp/Drive.hpp)
 // were already measured strictly below the new ceiling and are unchanged;

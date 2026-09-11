@@ -356,7 +356,7 @@ TEST_CASE(stop_silences_curve_one_grace_active_voice_within_bound) {
     using synth_froggers::FroggersBankId;
 
     model.PageParameter(FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;   // VCO1 pitch.
-    model.PageParameter(FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;   // Drive gain.
+    model.PageParameter(FroggersBankId::Drive, 1).SceneCenter(0) = 0.8f;   // Gain.
     // Same recipe as the loud-stuck regime above:
     // mid Decay + audible Sustain on VCO1 (ease-in Decay's slow start keeps
     // level lingering near peak -- default fast Decay or silent Sustain

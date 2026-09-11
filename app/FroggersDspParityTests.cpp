@@ -1077,7 +1077,7 @@ TEST_CASE(envelope_followers_coeffs_match_exp_formula) {
 
 TEST_CASE(envelope_followers_only_three_taps_no_pair_sums) {
     // The frozen bank has 5 taps (3 solo + 2 pair-sum); this port keeps
-    // only the 3 solo taps that feed the D5 slate (:9-11).
+    // only the 3 solo taps the modulation slate reads (:9-11).
     REQUIRE_TRUE(dsp::VcoEnvelopeFollowers::kNumTaps == 3);
 }
 
@@ -2650,7 +2650,7 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_under_audio_rate_h
 }
 
 // -----------------------------------------------------------------------
-// FAILING-FIRST for the property the trim alone could not close -- the
+// Pins the property the trim alone does not close -- the
 // peak branch respects its own computed bound `A` (not the looser
 // untrimmed ceiling `A * kMaxResonantBumpHeight` the test above settles
 // for) under the exact same adversarial per-sample-random height
@@ -2676,7 +2676,7 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_under_audio_rate_h
 // worst-case overshoot with the trim only (no limiter) = 1.615898 against
 // bound 1.0 (this single seed does not reach the full 500k-trial/10-seed
 // worst case of 1.669, but is comfortably past the bound this test pins,
-// which is what makes it a valid failing-first repro). With
+// which is what makes this seed a valid case for it). With
 // `peakLimiter` inserted at its measured tuning (kPeakLimiterThreshold
 // 0.7, kPeakLimiterAttackSeconds 5 microseconds, kPeakLimiterReleaseSeconds
 // 100ms, FilterFx.hpp): worst-case overshoot = 0.988341, at or below bound.
@@ -3086,9 +3086,11 @@ TEST_CASE(reverb_room_size_decay_predelay_damp_match_expmap_formulas) {
     REQUIRE_NEAR(dsp::Reverb::DecayFeedbackFromKnob(0.0f), 0.1f, 1e-6);
     REQUIRE_NEAR(dsp::Reverb::DecayFeedbackFromKnob(1.0f), 0.98f, 1e-6);
 
-    const float sr = 48000.0f;
-    REQUIRE_NEAR(dsp::Reverb::PreDelayNormFromKnob(0.0f, sr), 1.0f / sr, 1e-9);
-    REQUIRE_NEAR(dsp::Reverb::PreDelayNormFromKnob(1.0f, sr), 100.0f / sr, 1e-9);
+    // Pre-delay's own formula is no longer part of this pin: its range moved
+    // from 1-100 SAMPLES to 1ms-to-buffer-capacity, and is pinned on its own
+    // in reverb_predelay_sweeps_tens_of_milliseconds_with_no_dead_adjacent_steps
+    // and reverb_predelay_floor_and_ceiling_match_derived_millisecond_range
+    // below.
 
     // Damping: ExpMap(0.02, 0.2, 1-knob) -- knob=0 -> upper bound 0.2,
     // knob=1 -> lower bound 0.02 (the 1-knob flip is part of the cited
@@ -3096,6 +3098,92 @@ TEST_CASE(reverb_room_size_decay_predelay_damp_match_expmap_formulas) {
     // see DampAlphaFromKnob's own comment for why it is not any more.
     REQUIRE_NEAR(dsp::Reverb::DampAlphaFromKnob(0.0f), 0.2f, 1e-6);
     REQUIRE_NEAR(dsp::Reverb::DampAlphaFromKnob(1.0f), 0.02f, 1e-6);
+}
+
+// Pre-delay's range was 1 to 100 SAMPLES (0.02ms to 2.08ms at 48kHz), not
+// milliseconds -- the firmware's ExpMap divided both endpoints by
+// sampleRate and Process() re-multiplied by the same sampleRate, so the two
+// cancelled exactly and left a sample-count range dressed up as a time
+// computation. Measured by the tail's first-arrival time against a click,
+// fully wet, the loudest partial against the fundamental, which is what a listener hears.
+TEST_CASE(reverb_predelay_sweeps_tens_of_milliseconds_with_no_dead_adjacent_steps) {
+    const float sr = 48000.0f;
+    const auto tailArrivalMs = [sr](float preKnob) -> float {
+        dsp::Reverb rv;
+        // This test isolates Pre-delay's own timing, not the Send/wetAuthority
+        // ramp (dsp::Reverb::Process now scales mix by wetAuthority.Authority(),
+        // which starts at 0.0f and takes several milliseconds to earn full
+        // travel -- see that follower's own field comment). Setting both
+        // coefficients to 1.0f makes Advance() an exact identity
+        // (`level = target + 1.0f*(level-target) == level`, algebraically,
+        // regardless of target), so Authority() stays pinned at exactly 1.0
+        // for the rest of this closure -- a true bypass, not merely a head
+        // start that the click's own silence-then-click shape would still
+        // erode one release step at a time. The same isolation idiom a
+        // `dirty`-state fixture elsewhere in this file uses to perturb
+        // internal state directly rather than through Process()'s own inputs.
+        rv.wetAuthority.level = dsp::kWetAuthorityFullLevel;
+        rv.wetAuthority.attackCoeff = 1.0f;
+        rv.wetAuthority.releaseCoeff = 1.0f;
+        constexpr int kSamples = 20000;
+        for (int i = 0; i < kSamples; ++i) {
+            const float input = (i == 0) ? 1.0f : 0.0f;
+            const float out = ReverbMono(rv, input, /*mix=*/1.0f, /*size=*/0.3f, /*decay=*/0.3f, preKnob,
+                                          /*damp=*/0.5f, /*width=*/0.5f, /*diffusion=*/0.3f, sr);
+            // Sample 0 carries the click's own direct contribution through
+            // Wet/dry's dry floor (dsp::kMinDryLevel, Limiter.hpp) -- a
+            // fixed, immediate artifact of the crossfade itself, not the
+            // tail this measurement is after -- so it is excluded from the
+            // scan; every later sample's `input` is 0, so nothing but the
+            // pre-delayed tail can trip the threshold from here on.
+            if (i > 0 && std::fabs(out) > 1e-4f) {
+                return 1000.0f * static_cast<float>(i) / sr;
+            }
+        }
+        return -1.0f;
+    };
+
+    const float atFloor = tailArrivalMs(0.0f);
+    const float atCeiling = tailArrivalMs(1.0f);
+    REQUIRE_TRUE(atFloor > 0.0f);
+    REQUIRE_TRUE(atCeiling > 0.0f);
+    // A pre-delay earns its name at tens of milliseconds, where it
+    // separates the source from its own tail; today's ~2ms sweep sits
+    // inside the window where a listener fuses the two.
+    REQUIRE_TRUE(atCeiling - atFloor > 20.0f);
+
+    // No two adjacent knob positions may be bit-identical -- today's bug
+    // makes 0.20 and 0.25 collide exactly (both 1 sample apart, rounding to
+    // the same integer sample count).
+    bool sawDeadStep = false;
+    float previous = tailArrivalMs(0.0f);
+    for (int step = 1; step <= 50; ++step) {
+        const float knob = static_cast<float>(step) / 50.0f;
+        const float current = tailArrivalMs(knob);
+        if (current == previous) {
+            sawDeadStep = true;
+        }
+        previous = current;
+    }
+    REQUIRE_TRUE(!sawDeadStep);
+}
+
+TEST_CASE(reverb_predelay_floor_and_ceiling_match_derived_millisecond_range) {
+    // Floor is the port's own "1.0" literal, now read as 1ms instead of 1
+    // sample. Ceiling is derived from the pre-delay line's own capacity
+    // (`kSize - 1` samples at the sample rate in force), not a guessed
+    // number -- at 48kHz that is 4095/48000 = 85.3125ms.
+    const float sr = 48000.0f;
+    REQUIRE_NEAR(dsp::Reverb::PreDelayNormFromKnob(0.0f, sr), 0.001f, 1e-9);
+    const float expectedCeilingSeconds = static_cast<float>(dsp::Reverb::kSize - 1) / sr;
+    REQUIRE_NEAR(dsp::Reverb::PreDelayNormFromKnob(1.0f, sr), expectedCeilingSeconds, 1e-9);
+    REQUIRE_NEAR(expectedCeilingSeconds * 1000.0f, 85.3125f, 1e-3);
+
+    // The ceiling is derived from sampleRate at each call, not baked in at
+    // 48kHz -- at 96kHz the same buffer holds half as much time.
+    const float sr2 = 96000.0f;
+    const float expectedCeilingSeconds2 = static_cast<float>(dsp::Reverb::kSize - 1) / sr2;
+    REQUIRE_NEAR(dsp::Reverb::PreDelayNormFromKnob(1.0f, sr2), expectedCeilingSeconds2, 1e-9);
 }
 
 TEST_CASE(reverb_damping_stays_geometric_and_never_reaches_the_inaudible_end) {
@@ -3188,12 +3276,37 @@ TEST_CASE(reverb_process_matches_manual_tank_replica_at_neutral_mod_and_hold) {
     const float diffusionKnob = 0.5f;
 
     dsp::Reverb rv;
+    // This pin is about the TANK MATH (pre-delay ring, twin delay lines,
+    // damping, width blend), not about Send/wetAuthority -- Process() now
+    // scales its mix by wetAuthority.Authority(), which starts at 0.0f and
+    // ramps up over several milliseconds (see that follower's own field
+    // comment). Freezing both coefficients at 1.0f makes Advance() an exact
+    // identity (see the pre-delay test's own comment on this same idiom, just
+    // above), pinning Authority() at exactly 1.0 so this test isolates the
+    // mechanism it actually pins from the separate ramp
+    // `reverb_wet_authority_tracks_whether_send_is_open_and_the_tank_is_fed`
+    // (below) already covers.
+    rv.wetAuthority.level = dsp::kWetAuthorityFullLevel;
+    rv.wetAuthority.attackCoeff = 1.0f;
+    rv.wetAuthority.releaseCoeff = 1.0f;
+
+    // Reverb::Process's own wetLimiter (dsp/Reverb.hpp), replicated with its
+    // own independent state rather than read off `rv` -- see the
+    // `expected`/`mixedL`/`mixedR` comment below for why this pin now needs
+    // it at all.
+    dsp::OutputLimiter replicaWetLimiter;
+    replicaWetLimiter.Configure(sr, dsp::kReverbWetLimiterThreshold, dsp::kReverbWetLimiterCeiling,
+                                 dsp::kReverbWetLimiterAttackSeconds, dsp::kReverbWetLimiterReleaseSeconds);
 
     for (int step = 0; step < 32; ++step) {
         const float input = std::sin(0.1f * static_cast<float>(step));
 
-        // -- manual replica --
-        const float preNorm = dsp::ExpMapCompute(1.0f / sr, 100.0f / sr, preKnob);
+        // -- manual replica -- pre-delay's own formula moved to
+        // dsp::Reverb::PreDelayNormFromKnob (1ms to buffer-capacity, see
+        // that function's own comment); called directly here rather than
+        // re-copied, since this replica's job is the tank math around it,
+        // not a second copy of the range that already has its own pin.
+        const float preNorm = dsp::Reverb::PreDelayNormFromKnob(preKnob, sr);
         size_t preDelay = static_cast<size_t>(std::round(preNorm * sr));
         if (preDelay >= kSize) preDelay = kSize - 1;
         preLine[preIndex] = input;
@@ -3230,14 +3343,87 @@ TEST_CASE(reverb_process_matches_manual_tank_replica_at_neutral_mod_and_hold) {
         const float mid = 0.5f * (aOut + bOut);
         const float wetL = mid + widthKnob * (aOut - mid);
         const float wetR = mid + widthKnob * (bOut - mid);
-        const float wet = 0.5f * (wetL + wetR);
-        const float expected = (1.0f - mixKnob) * input + mixKnob * wet;
+        // Equal-power crossfade (dsp::Reverb::Process's own comment on
+        // `mixedL`/`mixedR`), not the linear `(1-mix)*input + mix*wet` this
+        // pin used to assert -- theta is capped at acos(kMinDryLevel), not a
+        // full quarter turn (dsp::kMinDryLevel's own comment, Limiter.hpp).
+        // mixKnob is strictly inside (0,1) here (0.6), so std::cos/std::sin
+        // apply directly with no endpoint special-casing to replicate.
+        const float thetaMax = std::acos(dsp::kMinDryLevel);
+        const float theta = mixKnob * thetaMax;
+        // Per-channel, not the mono average: Tilt is an exact no-op at its
+        // centre default (dsp::Reverb::Process's own comment on
+        // tiltAmount), so these equal `tiltedL`/`tiltedR` there too, and are
+        // what the real wetLimiter actually sees. Driving a mono `expected`
+        // through the equal-power law and calling it done under-replicated
+        // this chain: with kMinDryLevel's dry floor raising the level this
+        // stage reaches (this constant's own comment, Limiter.hpp), some of
+        // these 32 steps now cross the wetLimiter's threshold, and that
+        // limiter is stereo-LINKED, driven by whichever channel is louder
+        // (ReverbMono's own header comment) -- a mono `wet` average cannot
+        // reproduce that gain.
+        const float mixedL = std::cos(theta) * input + std::sin(theta) * wetL;
+        const float mixedR = std::cos(theta) * input + std::sin(theta) * wetR;
+        const dsp::StereoSample limited = replicaWetLimiter.Process(dsp::StereoSample{mixedL, mixedR});
+        const float expected = 0.5f * (limited.l + limited.r);
 
         const float actual = ReverbMono(rv, input, mixKnob, sizeKnob, decayKnob, preKnob,
                                           dampKnob, widthKnob, diffusionKnob, sr,
                                           /*modDepthKnob01=*/0.0f, /*holdKnob01=*/0.0f);
         REQUIRE_NEAR(actual, expected, 1e-4);
     }
+}
+
+// dsp::Reverb::Process scales its mix by dsp::WetAuthorityFollower::Authority()
+// (Limiter.hpp), the same protection dsp::StereoDelay::ToStereo already
+// applies (dsp/Delay.hpp) -- shared code. Reverb now has its own Send
+// (`sendKnob01`), gating the tank's feed exactly the way StereoDelay's own
+// Send gates its delay line, so `wetAuthority` starts UNFED (0.0f, "a
+// just-cleared wet path has earned nothing") and must be EARNED by a fed
+// tank, not pinned at 1.0 from sample one. Two cases, mirroring Delay's own
+// pin on this exact mechanism: Send open lets a continuously-driven tank
+// ramp Authority() up to (and hold at) 1.0; Send closed leaves the tank
+// unfed and Authority() at 0 regardless of how loud `input` is.
+TEST_CASE(reverb_wet_authority_tracks_whether_send_is_open_and_the_tank_is_fed) {
+    const float sr = 48000.0f;
+    const auto drive = [sr](float sendKnob, int steps) {
+        dsp::Reverb rv;
+        rv.Configure(sr);
+        float authority = rv.wetAuthority.Authority();
+        for (int step = 0; step < steps; ++step) {
+            const float input = 0.7f * std::sin(0.05f * static_cast<float>(step));
+            const float sizeKnob = 0.5f + 0.4f * std::sin(0.001f * static_cast<float>(step));
+            const float decayKnob = 0.5f + 0.4f * std::sin(0.0013f * static_cast<float>(step));
+            rv.Process(dsp::StereoSample{input, input}, /*mixKnob01=*/0.6f, sizeKnob, decayKnob,
+                       /*preKnob01=*/0.2f, /*dampKnob01=*/0.5f, /*widthKnob01=*/0.4f,
+                       /*diffusionKnob01=*/0.5f, sr, /*modDepthKnob01=*/0.3f, /*holdKnob01=*/0.4f,
+                       /*modRateKnob01=*/0.5f, /*tankDriveKnob01=*/0.5f, /*gritKnob01=*/0.0f,
+                       /*tiltKnob01=*/0.5f, /*tunedKnob01=*/0.5f, sendKnob);
+            authority = rv.wetAuthority.Authority();
+        }
+        return authority;
+    };
+
+    // Fresh, never-processed instance: earned nothing yet.
+    dsp::Reverb freshRv;
+    REQUIRE_TRUE(freshRv.wetAuthority.Authority() == 0.0f);
+
+    // Send open, continuously driven: Authority() reaches full travel well
+    // within the 20000-sample run and stays there.
+    const float authorityOpen = drive(/*sendKnob=*/1.0f, 20000);
+    std::cout << "  [reverb wet authority, send open] Authority() after 20000 samples = " << authorityOpen
+              << "\n";
+    REQUIRE_TRUE(authorityOpen > 0.999f);
+
+    // POSITIVE CONTROL: Send closed on the SAME driving signal leaves the
+    // tank unfed (preLine write scaled by send, dsp/Reverb.hpp's Process())
+    // -- so Authority() never earns any travel at all, proving the open
+    // case above is the ramp actually working, not a floor every run reaches
+    // regardless of Send.
+    const float authorityClosed = drive(/*sendKnob=*/0.0f, 20000);
+    std::cout << "  [reverb wet authority, send closed] Authority() after 20000 samples = " << authorityClosed
+              << "\n";
+    REQUIRE_TRUE(authorityClosed == 0.0f);
 }
 
 TEST_CASE(reverb_authored_hold_lengthens_decay_but_stays_bounded_and_finite) {
@@ -3283,8 +3469,38 @@ TEST_CASE(reverb_authored_mod_depth_alters_output_and_stays_finite) {
     REQUIRE_TRUE(sawDifference);
 }
 
+TEST_CASE(reverb_mod_depth_and_rate_collapse_to_one_control) {
+    // Mod depth and Mod rate collapse to one control inside dsp::Reverb --
+    // modRateKnob01 stays in Process()'s signature (every existing call
+    // site still compiles) but no longer changes the output; Mod depth
+    // alone governs the wow, at a fixed rate (see modLfoHz's own comment
+    // in Process() for the measurement that chose it).
+    dsp::Reverb rvRateLow;
+    dsp::Reverb rvRateHigh;
+    const float sr = 48000.0f;
+    bool sawDifference = false;
+    for (int i = 0; i < 20000; ++i) {
+        const float input = std::sin(0.05f * static_cast<float>(i));
+        const float outLow = ReverbMono(rvRateLow, input, 1.0f, 0.5f, 0.5f, 0.1f, 0.5f, 0.5f, 0.5f, sr,
+                                         /*modDepthKnob01=*/1.0f, /*holdKnob01=*/0.0f, /*modRateKnob01=*/0.0f);
+        const float outHigh = ReverbMono(rvRateHigh, input, 1.0f, 0.5f, 0.5f, 0.1f, 0.5f, 0.5f, 0.5f, sr,
+                                          /*modDepthKnob01=*/1.0f, /*holdKnob01=*/0.0f, /*modRateKnob01=*/1.0f);
+        REQUIRE_TRUE(std::isfinite(outLow));
+        REQUIRE_TRUE(std::isfinite(outHigh));
+        if (std::fabs(outLow - outHigh) > 1e-4f) {
+            sawDifference = true;
+        }
+    }
+    REQUIRE_TRUE(!sawDifference);
+
+    // modRateKnob01's own default (0.5f) must still be the value the fixed
+    // rate reproduces exactly, through the SAME formula -- so the ported
+    // parity case's own 0.35 Hz assumption still holds.
+    REQUIRE_NEAR(dsp::Reverb::ModRateHzFromKnob(0.5f), 0.35f, 1e-6);
+}
+
 // -----------------------------------------------------------------------
-// FAILING-FIRST for the property that nothing upstream of the master
+// Pins the property that nothing upstream of the master
 // output limiter used to bound -- this stage's own finding: Hold pushes
 // `fb` to ~0.99998 (Reverb.hpp:494), ~50,000x steady-state gain, so the
 // master limiter was the only thing standing between Hold-at-max and the
@@ -3617,10 +3833,26 @@ TEST_CASE(reverb_tank_stays_bounded_under_sustained_overdrive_at_max_decay_and_h
     // + fbk). dampFilter.output/wetL/wetR are each a convex combination
     // (coefficients in [0,1]) of quantities already <= this same bound
     // (dampFilter.alpha in (0.001,0.2); widthKnob fixed at 0.5 above, in
-    // [0,1]), so the SAME bound covers dsp::Reverb::StateMagnitude()'s
-    // full scan (lineA, lineB, preLine, dampFilter.output, wetL, wetR),
-    // not just the raw taps.
-    const float bound = std::fabs(kOverdriveInput) + fb;
+    // [0,1]), so this tank bound covers lineA, lineB, preLine,
+    // dampFilter.output and wetL/wetR -- but not the rest of
+    // StateMagnitude()'s scan any more.
+    const float tankBound = std::fabs(kOverdriveInput) + fb;
+    // Process()'s Tilt stage runs on `mixedL`/`mixedR` (dry*cos(theta) +
+    // wet*sin(theta), dsp::kMinDryLevel's own comment, Limiter.hpp) and
+    // tiltLowPass.output/tiltHighPass.output -- both included in
+    // StateMagnitude()'s scan -- are each a one-pole output of THAT signal,
+    // so they inherit mixedL/mixedR's own bound, not the tank's. Wet/dry's
+    // equal-power crossfade leaves a dry floor even at mix == 1.0 (this
+    // stage's own fully-wet pin above), so mixedL now carries a direct,
+    // unsaturated slice of `input` -- at this test's overdrive level, past
+    // what the tank alone would ever pass. dryGain and wetGain always
+    // satisfy dryGain^2 + wetGain^2 == 1 (the crossfade's own Pythagorean
+    // identity, true at every theta the knob and Send authority can reach,
+    // not only at this test's mix == 1.0), so by Cauchy-Schwarz
+    // `dryGain*|input| + wetGain*tankBound` never exceeds
+    // `sqrt(input^2 + tankBound^2)` regardless of theta -- the tightest
+    // bound this test can state without pinning theta's exact trajectory.
+    const float bound = std::sqrt(kOverdriveInput * kOverdriveInput + tankBound * tankBound);
 
     UnsaturatedTankReplica control;
 
@@ -3643,7 +3875,7 @@ TEST_CASE(reverb_tank_stays_bounded_under_sustained_overdrive_at_max_decay_and_h
     }
 
     std::cout << "  [bounded-vs-unbounded] input=" << kOverdriveInput << " fb=" << fb
-              << " bound=|input|+fb=" << bound << "\n"
+              << " tankBound=|input|+fb=" << tankBound << " bound=sqrt(input^2+tankBound^2)=" << bound << "\n"
               << "  [bounded-vs-unbounded]   WITH saturator (post-fix, StateMagnitude() max over "
               << kSamples << " samples):    " << maxRawMagnitude << "\n"
               << "  [bounded-vs-unbounded]   WITHOUT saturator (positive control, identical run): "
@@ -3933,6 +4165,71 @@ TEST_CASE(reverb_tank_grit_zero_lets_the_measured_pass_d_seed_decay_where_grit_0
 // Froggers original -- GetParam(7)/(8) unread).
 // =========================================================================
 
+// Every knob RouteDriveBank (app/FroggersAppCore.hpp:1692-1713) drives,
+// gathered so each TEST_CASE below only names the ones it moves off their
+// FroggersParameters.hpp default.
+struct DriveBankKnobs {
+    float drive = 0.0f;
+    float shape = 0.0f;
+    float srr1 = 0.0f;
+    float srr2 = 0.0f;
+    float xorKnob = 0.0f;
+    float bitDepth = 0.0f;
+    float fuzz = 0.0f;
+    float blend = 0.0f;
+    float phase = 0.0f;
+    float antiAlias = 1.0f;
+    float link = 0.5f;
+    float fold = 0.5f;
+    float tone = 1.0f;
+    float bias = 0.5f;
+};
+
+// RouteDriveBank's own setter order: Drive (SetGain) and Link (SetLink)
+// before Shape (SetCoefs, which reads both), then SRR1/SRR2/XOR/Bit
+// depth/Fuzz/Anti-alias/Fold/Tone/Bias.
+void SetFrogBlockKnobs(dsp::FrogBlock& block, const DriveBankKnobs& k) {
+    block.polynomialDrive.SetGain(k.drive);
+    block.polynomialDrive.SetLink(k.link);
+    block.polynomialDrive.SetCoefs(k.shape);
+    block.sampleRateReducer1.SetFreq(1e-2f + dsp::ZeroedExpCompute(10.0f, 1.0f - k.srr1));
+    block.sampleRateReducer2.SetFreq(1e-2f + dsp::ZeroedExpCompute(10.0f, 1.0f - k.srr2));
+    block.digitalReorganizer.SetFlip(k.xorKnob);
+    block.digitalReorganizer.SetHash(k.bitDepth);
+    block.fuzz = k.fuzz;
+    block.oversampler.SetAntiAliasBrightness(k.antiAlias);
+    block.SetFold(k.fold);
+    block.SetTone(k.tone);
+    block.SetBias(k.bias);
+}
+
+// The full bank, FrogBlock's wet output crossfaded against dry through the
+// authored DriveBlendPhase stage -- Blend/Phase (slots 7/8) applied last,
+// same as RouteDriveBank's own return.
+float ProcessDriveBank(dsp::FrogBlock& block, dsp::DriveBlendPhase& blendPhase, const DriveBankKnobs& k,
+                        float chainIn) {
+    SetFrogBlockKnobs(block, k);
+    const float driveWet = block.Process(chainIn);
+    return blendPhase.Process(chainIn, driveWet, k.blend, k.phase);
+}
+
+// Sums GoertzelPower (above) across the harmonics of a fundamental that
+// fall in [firstHarmonic, lastHarmonic] -- valid without any bin alignment
+// or window, the same reason a single GoertzelPower call is, because a
+// memoryless/LTI chain driven by a steady periodic input settles to an
+// output periodic at the SAME fundamental, so its energy decomposes
+// exactly onto that fundamental's own harmonic series. Absolute values
+// depend on the window length, like GoertzelPower's own; the RATIO between
+// two such sums measured over the same window does not.
+double HarmonicBandPower(const std::vector<float>& samples, double fundamentalHz, double sampleRateHz,
+                          int firstHarmonic, int lastHarmonic) {
+    double total = 0.0;
+    for (int n = firstHarmonic; n <= lastHarmonic; ++n) {
+        total += GoertzelPower(samples, fundamentalHz * n, sampleRateHz);
+    }
+    return total;
+}
+
 TEST_CASE(polynomial_drive_gain_matches_expmap_1_to_5) {
     dsp::PolynomialDrive drive;
     drive.SetGain(0.0f);
@@ -3989,8 +4286,14 @@ TEST_CASE(digital_reorganizer_set_flip_truncates_set_hash_rounds) {
     reorg.SetFlip(0.5f);
     REQUIRE_TRUE(reorg.flip == static_cast<uint8_t>(0.5f * 255.0f));  // truncation, :156
 
+    // Re-derived against SetHash's own remap (dsp/Drive.hpp):
+    // knob 0.5f is past the 0.01f off-floor, so it lands on
+    // 2 + round(((0.5f - 0.01f) / (1.0f - 0.01f)) * 6) bits, not the old
+    // round(0.5f * 8) == 4.
     reorg.SetHash(0.5f);
-    REQUIRE_TRUE(reorg.hashBits == static_cast<uint8_t>(std::round(0.5f * 8.0f)));  // rounds, :161
+    const uint8_t expectedHashBits =
+        static_cast<uint8_t>(2.0f + std::round(((0.5f - 0.01f) / (1.0f - 0.01f)) * 6.0f));
+    REQUIRE_TRUE(reorg.hashBits == expectedHashBits);
 }
 
 // Process() now returns Mangle(x) - Mangle(0), not Mangle(x) alone, at any
@@ -4076,6 +4379,123 @@ TEST_CASE(digital_reorganizer_process_at_and_beyond_input_1_0_is_defined_and_sat
         REQUIRE_TRUE(std::isfinite(out1));
         REQUIRE_TRUE(out1 == out2);
     }
+}
+
+// -----------------------------------------------------------------------
+// SetHash's linear round(knob*8) gives Bit
+// depth nine positions, and the first two -- everything up to knob 0.19 --
+// scramble zero or one bits, which is inaudible. Measured the same way
+// the knob-threshold survey measured every control's floor -- magnitude
+// spectra at Blend 0.25, Drive 0.6, Shape 0.4, 660 Hz -- via the RMS of the
+// sample-by-sample difference against the knob-0.0 floor, in dB relative to
+// that floor (this file's own difference convention); -40 dB is that
+// convention's one-percent threshold.
+// -----------------------------------------------------------------------
+TEST_CASE(drive_bit_depth_first_audible_knob_value_falls_from_0_19_to_a_hundredth) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float freqHz = 660.0f;
+    constexpr int kWarmupSamples = 4000;
+    constexpr int kMeasureSamples = 8192;
+
+    const auto render = [&](float bitDepthKnob) {
+        dsp::FrogBlock block;
+        dsp::DriveBlendPhase blendPhase;
+        DriveBankKnobs knobs;
+        knobs.drive = 0.6f;
+        knobs.shape = 0.4f;
+        knobs.blend = 0.25f;
+        knobs.bitDepth = bitDepthKnob;
+
+        std::vector<float> samples;
+        samples.reserve(kMeasureSamples);
+        int sampleIx = 0;
+        for (; sampleIx < kWarmupSamples; ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            ProcessDriveBank(block, blendPhase, knobs, 0.5f * std::sin(phase));
+        }
+        for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            samples.push_back(ProcessDriveBank(block, blendPhase, knobs, 0.5f * std::sin(phase)));
+        }
+        return samples;
+    };
+
+    // Renders with hashBits forced directly to what TODAY'S shipped
+    // formula (round(bitDepthKnob * 8), pre-fix -- see SetHash's own
+    // comment, dsp/Drive.hpp) produces, bypassing the now-fixed SetHash --
+    // every other knob is driven through the real SetFrogBlockKnobs order,
+    // then hashBits is overridden the one field SetFrogBlockKnobs would
+    // otherwise set via the NEW mapping.
+    const auto renderWithOldHashFormula = [&](float bitDepthKnob) {
+        dsp::FrogBlock block;
+        dsp::DriveBlendPhase blendPhase;
+        DriveBankKnobs knobs;
+        knobs.drive = 0.6f;
+        knobs.shape = 0.4f;
+        SetFrogBlockKnobs(block, knobs);
+        block.digitalReorganizer.hashBits = static_cast<uint8_t>(std::round(bitDepthKnob * 8.0f));
+
+        std::vector<float> samples;
+        samples.reserve(kMeasureSamples);
+        int sampleIx = 0;
+        for (; sampleIx < kWarmupSamples; ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            const float chainIn = 0.5f * std::sin(phase);
+            const float driveWet = block.Process(chainIn);
+            blendPhase.Process(chainIn, driveWet, 0.25f, 0.0f);
+        }
+        for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            const float chainIn = 0.5f * std::sin(phase);
+            const float driveWet = block.Process(chainIn);
+            samples.push_back(blendPhase.Process(chainIn, driveWet, 0.25f, 0.0f));
+        }
+        return samples;
+    };
+
+    const auto diffDb = [](const std::vector<float>& a, const std::vector<float>& floorSamples) {
+        double sumSqDiff = 0.0;
+        double sumSqRef = 0.0;
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            const double d = static_cast<double>(a[i]) - static_cast<double>(floorSamples[i]);
+            sumSqDiff += d * d;
+            sumSqRef += static_cast<double>(floorSamples[i]) * static_cast<double>(floorSamples[i]);
+        }
+        const double diffRms = std::sqrt(sumSqDiff / static_cast<double>(a.size()));
+        const double refRms = std::sqrt(sumSqRef / static_cast<double>(floorSamples.size()));
+        return 20.0 * std::log10(diffRms / refRms);
+    };
+
+    const std::vector<float> oldFloorSamples = renderWithOldHashFormula(0.0f);
+
+    // Today: knob 0.18 stays at hashBits == 1 (round(0.18*8) == 1), which
+    // measures as an EXACT no-op -- the scramble's own three shift-XOR
+    // steps cancel completely for a single-bit mask (mask == 1: each shift
+    // moves the one live bit outside the mask before the AND, or the AND
+    // zeros a shift that stayed in range), so this is not merely "quiet",
+    // it is bit-identical. Knob 0.19 crosses into hashBits == 2, the first
+    // knob value that measures as a real difference at all: -40 dB is a
+    // one-percent spectral difference, at the edge of an A/B -- a
+    // boundary crossing, not a large gap, so the audible side is checked
+    // with a wider margin (-45 dB) than the inaudible side needs.
+    const double at018 = diffDb(renderWithOldHashFormula(0.18f), oldFloorSamples);
+    const double at019 = diffDb(renderWithOldHashFormula(0.19f), oldFloorSamples);
+    std::cout << "  [bit depth threshold, today] diff at knob 0.18/0.19 = " << at018 << " / " << at019 << " dB\n";
+    REQUIRE_TRUE(std::isinf(at018));
+    REQUIRE_TRUE(at019 > -45.0);
+
+    const std::vector<float> floorSamples = render(0.0f);
+
+    // After the fix: the SAME knob's first hundredth must already be
+    // audible -- the fix has to move the threshold down near a hundredth,
+    // not merely shift it somewhere else below 0.19. Knob 0.01 must stay
+    // an exact no-op (hashBits == 0, unchanged from today -- the default
+    // knob's own value: the count the default produces is unchanged).
+    const double at001 = diffDb(render(0.01f), floorSamples);
+    const double at002 = diffDb(render(0.02f), floorSamples);
+    std::cout << "  [bit depth threshold, fixed] diff at knob 0.01/0.02 = " << at001 << " / " << at002 << " dB\n";
+    REQUIRE_TRUE(std::isinf(at001));
+    REQUIRE_TRUE(at002 > -45.0);
 }
 
 TEST_CASE(oversampler2x_first_sample_processes_twice_then_interpolates) {
@@ -4168,7 +4588,7 @@ TEST_CASE(drive_blend_phase_authored_allpass_is_stable_and_finite) {
     REQUIRE_TRUE(maxAbs < 100.0f);  // energy-preserving allpass, no runaway
 }
 
-// Item 3 (new, found while reading the code): phaseKnob01 DEFAULTS to 0,
+// phaseKnob01 DEFAULTS to 0,
 // mapping to a == -1 under the OLD [-1,1] coefficient mapping -- a pole
 // exactly on the unit circle, so the allpass's state rings forever at
 // constant amplitude instead of decaying once excited. Drives the allpass
@@ -4201,7 +4621,7 @@ TEST_CASE(drive_blend_phase_default_phase_impulse_response_decays_not_rings_fore
 }
 
 // -----------------------------------------------------------------------
-// FAILING-FIRST for the property this fixes. An earlier measurement found
+// Pins the property this fixes. An earlier measurement found
 // DriveBlendPhase's allpass coefficient `a` -- read fresh from the Phase
 // knob every sample, unsmoothed -- produces gain up to 4.15x under
 // full-bank per-sample-random modulation and 50.5x under a periodic
@@ -4226,7 +4646,7 @@ TEST_CASE(drive_blend_phase_default_phase_impulse_response_decays_not_rings_fore
 //       divergent, matching that same plateau finding.
 //
 // MEASURED with this exact test (reverting dsp::DriveBlendPhase's
-// coeffSmoother/outputLimiter to confirm the failing-first requirement,
+// coeffSmoother/outputLimiter to confirm the bound fails without them,
 // then restoring the fix):
 //   BEFORE the fix: pattern A worst = 4.810x, pattern B worst = 61.214x
 //     (both against bound 1.0) -- FAILS (exceeds bound+0.02 on both).
@@ -4294,6 +4714,19 @@ TEST_CASE(drive_blend_phase_output_stays_at_or_below_computed_bound_under_audio_
 // 1.0f, bit for bit) -- isolating this test to the smoother's effect only,
 // not conflating it with the limiter's.
 // -----------------------------------------------------------------------
+// Re-derived against the break-frequency mapping (dsp/Drive.hpp): the
+// reference `a` for a given phaseKnob01 is computed through the SAME two
+// static helpers Process() itself calls (CoeffFromBreakFreq/
+// BreakFreqFromCoeff), not a hand-copied formula, so this pin tracks the
+// mapping's own two functions rather than a transcribed duplicate of them.
+float ReferencePhaseCoeff(float phaseKnob01) {
+    const float fbAtNegMargin = dsp::DriveBlendPhase::BreakFreqFromCoeff(-dsp::DriveBlendPhase::kPhaseCoeffMargin);
+    const float fbAtPosMargin = dsp::DriveBlendPhase::BreakFreqFromCoeff(dsp::DriveBlendPhase::kPhaseCoeffMargin);
+    const float knobWarped = std::sqrt(phaseKnob01);
+    const float breakFreq = fbAtNegMargin * std::pow(fbAtPosMargin / fbAtNegMargin, knobWarped);
+    return dsp::DriveBlendPhase::CoeffFromBreakFreq(breakFreq);
+}
+
 TEST_CASE(drive_blend_phase_static_phase_output_unchanged_by_smoothing_and_limiter_fix) {
     constexpr float kRefAmplitude = 0.3f;  // well under outputLimiter's 0.7 threshold.
 
@@ -4307,7 +4740,7 @@ TEST_CASE(drive_blend_phase_static_phase_output_unchanged_by_smoothing_and_limit
         dsp::DriveBlendPhase bp;
         float refX1 = 0.0f;
         float refY1 = 0.0f;
-        const float a = 0.98f * (2.0f * 0.0f - 1.0f);  // == -0.98, matches the constructor's seed.
+        const float a = ReferencePhaseCoeff(0.0f);  // == -0.98, matches the constructor's seed.
         for (int i = 0; i < 2000; ++i) {
             const float wet = kRefAmplitude * std::sin(0.31f * static_cast<float>(i));
             const float actual = bp.Process(/*dry=*/0.0f, wet, /*blendKnob01=*/1.0f, /*phaseKnob01=*/0.0f);
@@ -4328,7 +4761,7 @@ TEST_CASE(drive_blend_phase_static_phase_output_unchanged_by_smoothing_and_limit
     {
         dsp::DriveBlendPhase bp;
         constexpr float phaseKnob01 = 0.7f;
-        const float a = 0.98f * (2.0f * phaseKnob01 - 1.0f);
+        const float a = ReferencePhaseCoeff(phaseKnob01);
         float refX1 = 0.0f;
         float refY1 = 0.0f;
         constexpr int kWarmupSamples = 1000;
@@ -4348,6 +4781,62 @@ TEST_CASE(drive_blend_phase_static_phase_output_unchanged_by_smoothing_and_limit
             refY1 = refPhased;
             REQUIRE_NEAR(actual, refPhased, 1e-4);
         }
+    }
+}
+
+// -----------------------------------------------------------------------
+// The property the break-frequency remap (dsp/Drive.hpp)
+// fixes. Phase mapped linearly through the allpass coefficient `a` spends
+// nearly its whole travel where a first-order allpass barely rotates a low
+// tone, so the RMS after Blend hardly moves until the very end. Swept
+// 0/0.25/0.5/0.75/1.0 at Drive 0.5, Blend 0.25, 220 Hz -- the same Drive/
+// Blend/frequency setting this file's own Wet/Dry travel test measures --
+// requiring EACH quarter of the travel to move the measured RMS by more
+// than a fixed fraction, not just the sweep as a whole.
+// -----------------------------------------------------------------------
+TEST_CASE(drive_phase_sweep_moves_output_meaningfully_across_each_quarter_of_travel) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float freqHz = 220.0f;
+    constexpr int kWarmupSamples = 4000;
+    constexpr int kMeasureSamples = 8000;
+    // Below this a knob move is not doing anything a listener could hear.
+    // Today's linear-in-`a` mapping fails this on the first three quarters
+    // (see this TEST_CASE's own console output); only its last tenth
+    // clears it.
+    constexpr double kMinFractionalMovePerQuarter = 0.001;  // 0.1%.
+
+    const auto measureRms = [&](float phaseKnob) {
+        dsp::FrogBlock block;
+        dsp::DriveBlendPhase blendPhase;
+        DriveBankKnobs knobs;
+        knobs.drive = 0.5f;
+        knobs.blend = 0.25f;
+        knobs.phase = phaseKnob;
+
+        double sumSq = 0.0;
+        int sampleIx = 0;
+        for (; sampleIx < kWarmupSamples; ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            ProcessDriveBank(block, blendPhase, knobs, 0.5f * std::sin(phase));
+        }
+        for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            const float out = ProcessDriveBank(block, blendPhase, knobs, 0.5f * std::sin(phase));
+            sumSq += static_cast<double>(out) * static_cast<double>(out);
+        }
+        return std::sqrt(sumSq / static_cast<double>(kMeasureSamples));
+    };
+
+    const double rms[5] = {measureRms(0.00f), measureRms(0.25f), measureRms(0.50f), measureRms(0.75f),
+                            measureRms(1.00f)};
+    std::cout << "  [phase sweep] RMS at Phase 0.00/0.25/0.50/0.75/1.00 = " << rms[0] << " / " << rms[1] << " / "
+              << rms[2] << " / " << rms[3] << " / " << rms[4] << "\n";
+
+    for (int q = 0; q < 4; ++q) {
+        const double fractionalMove = std::fabs(rms[q + 1] - rms[q]) / rms[q];
+        std::cout << "  [phase sweep] quarter " << (q + 1) << " fractional move = " << (fractionalMove * 100.0)
+                  << "%\n";
+        REQUIRE_TRUE(fractionalMove > kMinFractionalMovePerQuarter);
     }
 }
 
@@ -4443,11 +4932,19 @@ TEST_CASE(stereo_delay_time_maps_via_expmap_0p001_to_2s) {
     }
 }
 
-// The crossfade is still the frozen source's `(1-mix)*dry + mix*wet`, but the
-// mix it applies is now scaled by how much signal the wet path actually holds:
-// Send feeds that path and defaults to zero, so the unscaled formula could
-// crossfade the instrument away against silence. Both halves are asserted --
-// the shape, where the path is loud, and the inertness, where it is empty.
+// The crossfade is an equal-power law (`dry*cos(theta) + wet*sin(theta)`,
+// theta = mix*acos(kMinDryLevel) -- ToStereo's own comment), not the frozen
+// source's linear `(1-mix)*dry + mix*wet` this pin used to assert (see
+// dsp/Delay.hpp's header comment on the notch that law caused). theta is
+// capped short of a full quarter turn, dsp::kMinDryLevel's own dry floor
+// (Limiter.hpp), so even fully-earned, fully-commanded Wet/dry (mix == 1.0)
+// leaves that much dry gain behind -- it is no longer the "reaches pure wet"
+// endpoint the frozen source's law had. The mix it applies is scaled by how
+// much signal the wet path actually holds regardless of which law runs on
+// top of it: Send feeds that path and defaults to zero, so the unscaled
+// formula could crossfade the instrument away against silence. Both halves
+// are asserted -- the shape, where the path is loud, and the inertness,
+// where it is empty.
 TEST_CASE(stereo_delay_to_reverb_mono_scales_the_mix_formula_by_wet_authority) {
     dsp::StereoDelay delay;
     delay.SetSampleRate(48000.0f);
@@ -4478,16 +4975,27 @@ TEST_CASE(stereo_delay_to_reverb_mono_scales_the_mix_formula_by_wet_authority) {
         delay.Process(1.0f, p);
     }
     REQUIRE_NEAR(delay.WetAuthority(), 1.0f, 1e-6);
+    const float thetaMax = std::acos(dsp::kMinDryLevel);
     for (float mix : {0.0f, 0.25f, 0.5f, 1.0f}) {
         const dsp::StereoSample out = delay.ToStereo(bumpIn, wet, mix);
+        // Equal-power weights (dsp/Delay.hpp's ToStereo comment); mix == 0.0f
+        // is the endpoint ToStereo special-cases for exact bit-for-bit dry
+        // (std::cos does land on exact 1.0f at theta == 0, but the pin needs
+        // no approximation there either way). mix == 1.0f needs no such case
+        // any more -- thetaMax sits well short of pi/2, so std::cos/std::sin
+        // apply directly there too, landing on the dry floor rather than on
+        // pure wet.
+        const float theta = mix * thetaMax;
+        const float dryGain = (mix <= 0.0f) ? 1.0f : std::cos(theta);
+        const float wetGain = (mix <= 0.0f) ? 0.0f : std::sin(theta);
         // Each channel crossfades the (mono) dry source against its OWN wet
         // channel, so the pair carries the delay's image instead of a sum.
-        REQUIRE_NEAR(out.l, (1.0f - mix) * bumpIn + mix * wet.l, 1e-6);
-        REQUIRE_NEAR(out.r, (1.0f - mix) * bumpIn + mix * wet.r, 1e-6);
+        REQUIRE_NEAR(out.l, dryGain * bumpIn + wetGain * wet.l, 1e-6);
+        REQUIRE_NEAR(out.r, dryGain * bumpIn + wetGain * wet.r, 1e-6);
         // And the mono fold of that pair is exactly what the old mono-only
         // path produced -- the identity that makes a mono device's output
         // unchanged by this stage becoming stereo.
-        const float expectedMono = (1.0f - mix) * bumpIn + mix * monoWet;
+        const float expectedMono = dryGain * bumpIn + wetGain * monoWet;
         REQUIRE_NEAR(0.5f * (out.l + out.r), expectedMono, 1e-6);
     }
 }
@@ -4514,7 +5022,7 @@ TEST_CASE(stereo_delay_clear_buffers_resets_to_silence) {
 }
 
 // -----------------------------------------------------------------------
-// FAILING-FIRST, pinning a latent defect nobody has heard: the delay was
+// Pins a latent defect nobody has heard: the delay was
 // the only unsaturated feedback stage. Pre-fix, `StereoDelay::Process`
 // wrote `inSignal + fbL * fbk` -- a linear, unsaturated loop. `fbk` clamps
 // to 0.98 (dsp/Delay.hpp:844), so the loop's steady
@@ -4569,7 +5077,7 @@ TEST_CASE(delay_feedback_loop_stays_bounded_at_max_feedback) {
 }
 
 // -----------------------------------------------------------------------
-// FAILING-FIRST for the property the in-loop saturator alone cannot close
+// Pins the property the in-loop saturator alone cannot close
 // -- it bounds the LOOP's own write to `|inSignal| + fbk` (~1.98 at max
 // feedback, the test above), still well over the master output limiter's
 // 0.9 threshold (at A = 0.5 that is 25.0 against a 0.9 threshold). This
@@ -4787,7 +5295,7 @@ TEST_CASE(filter_fx_chain_stays_finite_under_self_oscillating_comb_with_audio_ra
 }
 
 // =========================================================================
-// Drive/Delay slots 9-13 (D1-D10). Each mapping's
+// Drive/Delay slots 9-13. Each mapping's
 // own default-reproduces-today's-literal claim is pinned here through the
 // REAL setter, not just by inspecting the in-class fallback default that
 // the tests above (frog_block_process_matches_manual_chain_replica,
@@ -4795,17 +5303,285 @@ TEST_CASE(filter_fx_chain_stays_finite_under_self_oscillating_comb_with_audio_ra
 // to exercise by never calling these setters at all.
 // =========================================================================
 
-TEST_CASE(drive_set_anti_alias_brightness_default_knob_reproduces_0_4f_cutoff) {
-    // D1: knob 0.5f -> ExpMapCompute(0.32,0.5,0.5) == sqrt(0.16) == 0.4f exactly.
+// Re-derived: the knob is repurposed from a one-pole brightness trim into
+// a clean/grit crossfade (dsp/Drive.hpp), and its registered default moved
+// from 0.5f to 1.0f (FroggersParameters.hpp) -- the crossfade's all-grit
+// end, matching what shipped before the repurposing. Default knob 1.0f ->
+// cleanMix == 1.0f - 1.0f == 0.0f exactly, so a fresh instance's grit-only
+// output (already covered by the oversampler2x_first_sample_processes_
+// twice_then_interpolates parity pin) is unaffected by having called this
+// setter at its own default.
+TEST_CASE(drive_set_anti_alias_brightness_default_knob_reaches_all_grit_crossfade) {
     dsp::Oversampler2x over;
-    over.SetAntiAliasBrightness(0.5f);
-    dsp::OnePoleLowPass reference;
-    reference.SetAlphaFromNatFreq(0.4f);
-    REQUIRE_NEAR(over.antiAlias.alpha, reference.alpha, 1e-6);
+    over.SetAntiAliasBrightness(1.0f);
+    REQUIRE_NEAR(over.cleanMix, 0.0f, 1e-9);
+}
+
+// =========================================================================
+// Alias-to-signal measurement fixture, isolated to this section: a complex
+// (magnitude AND phase) Goertzel and a Hann window, evaluated directly at
+// each candidate alias-image frequency rather than against a separate
+// alias-free reference -- because a candidate frequency that has been
+// excluded from lying near any genuine harmonic of the tone (see
+// LoudestInharmonicPartialLevelDb below) has no legitimate source other
+// than aliasing, so its own level needs no residual subtraction to isolate.
+//
+// A rectangular window's sidelobes leak a driven tone's own harmonic peaks
+// into neighbouring bins at roughly -35 dB -- louder than the aliasing this
+// measures -- which is why every call below windows first. The test tone
+// itself is chosen off any simple ratio of the 48 kHz sample rate for the
+// same reason: a tone whose harmonics divide the sample rate evenly (3 kHz,
+// for instance, at exactly 1/16) puts every fold-image of a harmonic on a
+// bin some genuine harmonic already occupies, so classifying a frequency as
+// "harmonic" or "alias" by proximity alone cannot separate the two there.
+// =========================================================================
+
+double AliasHannGoertzelReal(const std::vector<float>& samples, double freqHz, double sampleRateHz,
+                              double* outImag) {
+    const int n = static_cast<int>(samples.size());
+    double real = 0.0;
+    double imag = 0.0;
+    const double w = 2.0 * M_PI * freqHz / sampleRateHz;
+    for (int i = 0; i < n; ++i) {
+        const double windowed = samples[i] * (0.5 - 0.5 * std::cos(2.0 * M_PI * i / (n - 1)));
+        real += windowed * std::cos(w * i);
+        imag += windowed * -std::sin(w * i);
+    }
+    *outImag = imag / (n / 2.0);
+    return real / (n / 2.0);
+}
+
+// The waveshaper FrogBlock::Process runs inside its oversampler's lambda
+// (dsp/Drive.hpp), reproduced standalone at fuzz==0/bias==0 (both
+// defaults) from the already-independently-tested dsp::PolynomialDrive/
+// Sine01 primitives, same pattern frog_block_process_matches_manual_chain_
+// replica above uses -- so it can serve as the shaping function each path
+// under test drives through its own oversampled processing.
+struct AliasReferenceShaper {
+    dsp::PolynomialDrive drive;
+    float foldDivisor = 4.0f;
+    float Process(float in) const {
+        const float sinIn = drive.Process(in) / foldDivisor;
+        return dsp::Sine01(sinIn);
+    }
+};
+
+// The fundamental's own level in dB relative to full scale, from the same
+// Hann-windowed Goertzel used above -- independent of the aliasing measured
+// below, so a sweep that suppresses aliasing can also be checked for how
+// much it moves the in-band signal a listener actually hears.
+double FundamentalLevelDb(const std::vector<float>& samples, double toneHz, double sr) {
+    double imag = 0.0;
+    const double real = AliasHannGoertzelReal(samples, toneHz, sr, &imag);
+    return 20.0 * std::log10(std::sqrt(real * real + imag * imag));
+}
+
+// The loudest inharmonic partial's own level in dB relative to full scale,
+// from the same Hann-windowed Goertzel used above -- evaluated at every
+// candidate alias-image frequency rather than at the fundamental. A
+// candidate is the fold of a tone harmonic that would land above Nyquist,
+// reflected back into 0..Nyquist the way a decimator actually aliases it;
+// harmonics that already sit inside 0..Nyquist are genuine partials, not
+// alias candidates, so they and any candidate within 40 Hz of one of them
+// are skipped -- at that spacing a residual and the harmonic beside it
+// cannot be told apart by level alone. Candidates under 20 Hz or within
+// 20 Hz of Nyquist are unmeasurable and skipped too. What is heard as a
+// metallic ring is one partial standing level with its neighbours, not a
+// summed total, so the loudest surviving candidate -- not their combined
+// energy -- is what gets compared against the fundamental.
+double LoudestInharmonicPartialLevelDb(const std::vector<float>& samples, double toneHz, double sr) {
+    const double nyquist = sr / 2.0;
+
+    std::vector<double> genuineHarmonics;
+    for (int h = 1; h * toneHz <= nyquist; ++h) {
+        genuineHarmonics.push_back(h * toneHz);
+    }
+
+    double loudestMag = 0.0;
+    constexpr int kMaxHarmonic = 200;  // far past where this waveshaper's harmonic content stays measurable.
+    for (int h = 1; h <= kMaxHarmonic; ++h) {
+        const double raw = h * toneHz;
+        if (raw <= nyquist) continue;  // a genuine in-band harmonic, not an alias candidate.
+        double image = std::fmod(raw, sr);
+        if (image < 0.0) image += sr;
+        if (image > nyquist) image = sr - image;
+        if (image < 20.0 || image > nyquist - 20.0) continue;
+
+        bool nearGenuineHarmonic = false;
+        for (double harmonicHz : genuineHarmonics) {
+            if (std::fabs(image - harmonicHz) < 40.0) {
+                nearGenuineHarmonic = true;
+                break;
+            }
+        }
+        if (nearGenuineHarmonic) continue;
+
+        double imag = 0.0;
+        const double real = AliasHannGoertzelReal(samples, image, sr, &imag);
+        const double mag = std::sqrt(real * real + imag * imag);
+        if (mag > loudestMag) loudestMag = mag;
+    }
+    return 20.0 * std::log10(loudestMag);
+}
+
+// The hand-replica of today's shipped (pre-fix) one-pole-only path,
+// reproducing dsp::Oversampler2x::Process exactly as it read before this
+// change (git history), with the OLD SetAntiAliasBrightness mapping
+// applied directly to its one-pole -- kept here purely as a measurement of
+// what shipped, not as a second implementation this suite could
+// accidentally start relying on. File scope, not local to the TEST_CASE
+// below, because its Process() is a template and a local class cannot
+// declare one.
+struct OldOnePoleOnlyPath {
+    float prevInput = 0.0f;
+    bool firstSample = true;
+    dsp::OnePoleLowPass antiAlias;
+    void SetAntiAliasBrightnessOld(float knob01) {
+        antiAlias.SetAlphaFromNatFreq(dsp::ExpMapCompute(0.32f, 0.5f, knob01));
+    }
+    template <typename ProcessFunc>
+    float Process(float input, ProcessFunc processFunc) {
+        float output;
+        if (firstSample) {
+            const float o1 = processFunc(input);
+            const float o2 = processFunc(input);
+            antiAlias.Process(o1);
+            output = antiAlias.Process(o2);
+            firstSample = false;
+        } else {
+            const float interpolated = (prevInput + input) * 0.5f;
+            const float o1 = processFunc(interpolated);
+            const float o2 = processFunc(input);
+            antiAlias.Process(o1);
+            output = antiAlias.Process(o2);
+        }
+        prevInput = input;
+        return output;
+    }
+};
+
+// Today's SetAntiAliasBrightness moves a one-pole corner across 0.32-0.5
+// cycles/sample -- 30.7-47.9 kHz at the oversampler's own 96 kHz rate,
+// entirely above the 24 kHz Nyquist of the final output, so it is nearly
+// transparent to the very aliasing it exists to remove. Measured here
+// (this file's own independent Hann-windowed loudest-inharmonic-partial
+// measurement, not the shipped clean path) across that historical range on
+// a hand-replica of the pre-fix one-pole-only path, the whole old knob
+// moves the alias-to-signal metric by under 1 dB -- the control could not
+// reach the aliasing band at all. What replaces it -- Oversampler2x's own
+// clean/grit crossfade -- must move the SAME metric by much more than that
+// across its whole travel, while leaving the in-band tone itself close to
+// where it started.
+//
+// The sweep is measured at 1487 Hz rather than a round number: 1487 does
+// not divide 48 kHz by any small integer, so none of its harmonics' fold
+// images during decimation land on a frequency a genuine harmonic already
+// occupies (unlike, say, 1500 Hz, which divides 48 kHz exactly and would
+// reintroduce that collision). That keeps the alias measurement below from
+// ever being contaminated by an in-band harmonic peak.
+TEST_CASE(drive_anti_alias_crossfade_falls_monotonically_and_the_old_one_pole_barely_moved_it) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float toneHz = 1487.0f;
+    constexpr int kNumSamples = 4096;
+
+    AliasReferenceShaper shaper;
+    shaper.drive.SetGain(1.0f);   // Drive 1.0.
+    shaper.drive.SetCoefs(0.6f);  // Shape 0.6.
+
+    // Driven below full scale: at 1.0 the waveshaper's own ceiling clips in
+    // a way that stops distinguishing the knob positions cleanly, so the
+    // sweep is measured at the same 0.9 amplitude the spec's own reference
+    // numbers were taken at.
+    constexpr float kDriveAmplitude = 0.9f;
+
+    const auto measureOld = [&](float knob01) {
+        constexpr int kWarmupSamples = 4000;
+        OldOnePoleOnlyPath path;
+        path.SetAntiAliasBrightnessOld(knob01);
+        for (int i = 0; i < kWarmupSamples; ++i) {
+            const float ph = 2.0f * static_cast<float>(M_PI) * toneHz * static_cast<float>(i) / sampleRate;
+            path.Process(kDriveAmplitude * std::sin(ph), [&](float x) { return shaper.Process(x); });
+        }
+        std::vector<float> samples;
+        samples.reserve(kNumSamples);
+        for (int i = 0; i < kNumSamples; ++i) {
+            const int ix = i + kWarmupSamples;
+            const float ph = 2.0f * static_cast<float>(M_PI) * toneHz * static_cast<float>(ix) / sampleRate;
+            samples.push_back(path.Process(kDriveAmplitude * std::sin(ph), [&](float x) { return shaper.Process(x); }));
+        }
+        return LoudestInharmonicPartialLevelDb(samples, toneHz, sampleRate) -
+               FundamentalLevelDb(samples, toneHz, sampleRate);
+    };
+
+    const double oldAt0 = measureOld(0.0f);
+    const double oldAt1 = measureOld(1.0f);
+    std::cout << "  [anti-alias, old one-pole] alias-to-signal at knob 0.0/1.0 = " << oldAt0 << " / " << oldAt1
+              << " dB (span " << std::fabs(oldAt1 - oldAt0) << " dB)\n";
+    // The old control could not reach the aliasing band from either end of
+    // its own travel -- its whole span stays under 3 dB.
+    REQUIRE_TRUE(std::fabs(oldAt1 - oldAt0) < 3.0);
+
+    // The shipped fix: the REAL dsp::Oversampler2x, swept across its own
+    // crossfade knob. Each knob position reports both the loudest
+    // inharmonic partial (relative to the fundamental) and the in-band
+    // fundamental's own level, so the sweep can be checked for how much
+    // aliasing it removes AND how little it disturbs the signal along the
+    // way.
+    struct ShippedMeasurement {
+        double aliasToSignalDb;
+        double fundamentalDb;
+    };
+    const auto measureShipped = [&](float knob01) {
+        constexpr int kWarmupSamples = 4000;
+        dsp::Oversampler2x over;
+        over.SetAntiAliasBrightness(knob01);
+        for (int i = 0; i < kWarmupSamples; ++i) {
+            const float ph = 2.0f * static_cast<float>(M_PI) * toneHz * static_cast<float>(i) / sampleRate;
+            over.Process(kDriveAmplitude * std::sin(ph), [&](float x) { return shaper.Process(x); });
+        }
+        std::vector<float> samples;
+        samples.reserve(kNumSamples);
+        for (int i = 0; i < kNumSamples; ++i) {
+            const int ix = i + kWarmupSamples;
+            const float ph = 2.0f * static_cast<float>(M_PI) * toneHz * static_cast<float>(ix) / sampleRate;
+            samples.push_back(over.Process(kDriveAmplitude * std::sin(ph), [&](float x) { return shaper.Process(x); }));
+        }
+        const double fundamentalDb = FundamentalLevelDb(samples, toneHz, sampleRate);
+        const double partialDb = LoudestInharmonicPartialLevelDb(samples, toneHz, sampleRate);
+        return ShippedMeasurement{partialDb - fundamentalDb, fundamentalDb};
+    };
+
+    const ShippedMeasurement measurements[5] = {measureShipped(0.00f), measureShipped(0.25f), measureShipped(0.50f),
+                                                 measureShipped(0.75f), measureShipped(1.00f)};
+    double atKnob[5];
+    double fundamentalAtKnob[5];
+    for (int i = 0; i < 5; ++i) {
+        atKnob[i] = measurements[i].aliasToSignalDb;
+        fundamentalAtKnob[i] = measurements[i].fundamentalDb;
+    }
+    std::cout << "  [anti-alias, new crossfade] alias-to-signal at knob 0.00/0.25/0.50/0.75/1.00 = " << atKnob[0]
+              << " / " << atKnob[1] << " / " << atKnob[2] << " / " << atKnob[3] << " / " << atKnob[4] << " dB\n";
+    std::cout << "  [anti-alias, new crossfade] fundamental level at knob 0.00/0.25/0.50/0.75/1.00 = "
+              << fundamentalAtKnob[0] << " / " << fundamentalAtKnob[1] << " / " << fundamentalAtKnob[2] << " / "
+              << fundamentalAtKnob[3] << " / " << fundamentalAtKnob[4] << " dB\n";
+
+    // Monotonic across the whole sweep, not merely its endpoints: clean
+    // (knob 0) must never read worse than grit (knob 1), and nothing in
+    // between may reverse that direction either.
+    for (int i = 0; i < 4; ++i) {
+        REQUIRE_TRUE(atKnob[i] <= atKnob[i + 1] + 1e-6);
+    }
+    // The crossfade's whole travel must clear a real margin of aliasing
+    // suppression at this tone.
+    REQUIRE_TRUE(atKnob[4] - atKnob[0] > 15.0);
+    // ...while leaving the in-band tone itself close to where it started:
+    // the fundamental's own level must not move by more than a small,
+    // barely-audible amount across the same travel.
+    REQUIRE_TRUE(std::fabs(fundamentalAtKnob[4] - fundamentalAtKnob[0]) < 3.0);
 }
 
 TEST_CASE(polynomial_drive_set_link_default_knob_reproduces_0_25f_coupling) {
-    // D2: knob 0.5f -> linkScalar == 0.5f*0.5f == 0.25f exactly, matching
+    // Link: knob 0.5f -> linkScalar == 0.5f*0.5f == 0.25f exactly, matching
     // the pre-existing hardcoded literal this same formula
     // (polynomial_drive_set_coefs_matches_space_filling_curve_formula
     // above) already pins.
@@ -4821,7 +5597,7 @@ TEST_CASE(polynomial_drive_set_link_default_knob_reproduces_0_25f_coupling) {
 }
 
 TEST_CASE(frog_block_set_fold_divisor_stays_strictly_positive_across_full_knob_range) {
-    // D3's binding requirement: the divisor must never reach or cross zero
+    // The fold divisor must never reach or cross zero
     // (out/0 -> +-inf -> Sine01's floor() turns it into NaN). ExpMapCompute's
     // floor is `min` (1.0 here), so this holds by construction across the
     // whole representable knob range, checked densely here as a regression
@@ -4846,8 +5622,8 @@ TEST_CASE(frog_block_set_fold_min_knob_reaches_unity_no_folding) {
     REQUIRE_NEAR(block.foldDivisor, 1.0f, 1e-6);
 }
 
-// D1/D3/D4/D5's combined claim: at the exact default knob values recorded in
-// FroggersParameters.hpp (0.5f/0.5f/1.0f/0.5f for ABrt/Fold/Tone/Bias), a
+// Anti-alias, Fold, Tone and Bias together: at the exact default knobs in
+// FroggersParameters.hpp (1.0f/0.5f/1.0f/0.5f for ABrt/Fold/Tone/Bias), a
 // FrogBlock wired through the real setters must be bit-for-bit identical to
 // one that never calls them at all (the previous behaviour) -- the actual
 // claim "a fresh launch sounds EXACTLY as it does today" makes, verified
@@ -4862,19 +5638,23 @@ TEST_CASE(frog_block_default_knob_values_reproduce_original_output_exactly) {
     blockOld.digitalReorganizer.SetHash(0.5f);
     blockOld.fuzz = 0.3f;
 
-    dsp::FrogBlock blockNew;  // same knobs, PLUS the four new setters at their FroggersParameters.hpp defaults.
-    blockNew.polynomialDrive.SetGain(0.4f);
-    blockNew.polynomialDrive.SetLink(0.5f);
-    blockNew.polynomialDrive.SetCoefs(0.7f);
+    // Same knobs, PLUS the four new setters at their FroggersParameters.hpp
+    // defaults -- wired through the same helper RouteDriveBank's own setter
+    // order uses (SetFrogBlockKnobs) rather than a second hand-copied setter
+    // sequence. The SRR frequencies are raw literals, matching blockOld's own
+    // raw SetFreq calls above rather than a knob mapping, so they are set
+    // directly afterward, overriding whatever SetFrogBlockKnobs's own
+    // default-knob SRR mapping left in place.
+    dsp::FrogBlock blockNew;
+    DriveBankKnobs knobs;
+    knobs.drive = 0.4f;
+    knobs.shape = 0.7f;
+    knobs.xorKnob = 0.2f;
+    knobs.bitDepth = 0.5f;
+    knobs.fuzz = 0.3f;
+    SetFrogBlockKnobs(blockNew, knobs);
     blockNew.sampleRateReducer1.SetFreq(0.8f);
     blockNew.sampleRateReducer2.SetFreq(0.75f);
-    blockNew.digitalReorganizer.SetFlip(0.2f);
-    blockNew.digitalReorganizer.SetHash(0.5f);
-    blockNew.fuzz = 0.3f;
-    blockNew.oversampler.SetAntiAliasBrightness(0.5f);
-    blockNew.SetFold(0.5f);
-    blockNew.SetTone(1.0f);
-    blockNew.SetBias(0.5f);
 
     for (int i = 0; i < 64; ++i) {
         const float input = 0.6f * std::sin(0.21f * static_cast<float>(i));
@@ -4942,7 +5722,7 @@ TEST_CASE(drive_tone_default_knob_passes_its_input_unchanged) {
 
 TEST_CASE(stereo_delay_feedback_tone_default_knob_is_exact_bypass_alpha) {
     dsp::StereoDelay delay;
-    delay.SetFeedbackTone(1.0f);  // D7 default knob.
+    delay.SetFeedbackTone(1.0f);  // Feedback tone's default knob.
     REQUIRE_NEAR(delay.fbToneL.alpha, 1.0f, 1e-6);
     REQUIRE_NEAR(delay.fbToneR.alpha, 1.0f, 1e-6);
 }
@@ -4999,14 +5779,14 @@ TEST_CASE(delay_feedback_tone_never_reaches_the_inaudible_end) {
 
 TEST_CASE(stereo_delay_crush_default_knob_is_exact_bypass_freq) {
     dsp::StereoDelay delay;
-    delay.SetCrush(0.0f);  // D10 default knob.
+    delay.SetCrush(0.0f);  // Crush's default knob.
     REQUIRE_TRUE(delay.crushL.freq >= 1.0f);
     REQUIRE_TRUE(delay.crushR.freq >= 1.0f);
 }
 
-// D9's two binding bounds, checked across the WHOLE widthBalance knob range
-// (not just the default), matching this task's own "must hold by
-// construction of the mapping, not by luck" requirement.
+// Width balance's two bounds, checked across the WHOLE knob range rather
+// than at the default alone, so they hold by construction of the mapping
+// rather than at the one position anybody looked at.
 TEST_CASE(stereo_delay_width_balance_mapping_keeps_cross_in_0_1_and_spread_at_or_below_todays_max) {
     dsp::StereoDelay delay;
     for (int wb = 0; wb <= 20; ++wb) {
@@ -5026,7 +5806,7 @@ TEST_CASE(stereo_delay_width_balance_mapping_keeps_cross_in_0_1_and_spread_at_or
     REQUIRE_NEAR(delay.widthBalance, 1.0f, 1e-6);  // default knob reproduces today's 0.35/0.5 ratio exactly.
 }
 
-// D6's binding placement requirement: fbDrive multiplies the ARGUMENT of
+// Feedback drive's placement: fbDrive multiplies the ARGUMENT of
 // Saturate only, so the per-sample write bound `|inSignal| + fbk` must hold
 // REGARDLESS of fbDrive -- checked here at fbDrive's own maximum (knob 1.0f
 // -> ExpMapCompute(0.25,4,1.0) == 4.0x), the same scenario
@@ -5058,12 +5838,12 @@ TEST_CASE(stereo_delay_feedback_drive_at_maximum_does_not_raise_the_per_sample_b
     }
 }
 
-// D6/D7/D8/D9/D10's combined claim, same shape as the FrogBlock version
+// The five Delay mappings together, same shape as the FrogBlock version
 // above: at the exact default knob values recorded in FroggersParameters.hpp
 // (0.5f/1.0f/0.5f/1.0f/0.0f for FbDr/FbTn/MdRt/WBal/Crsh), a StereoDelay
 // wired through the real setters is bit-for-bit identical to one that never
 // calls them, across enough samples (and a nonzero dmod) to exercise the
-// mod-rate LFO path D8 touches.
+// mod-rate LFO path SetModRate touches.
 TEST_CASE(stereo_delay_default_knob_values_reproduce_original_output_exactly) {
     const float sr = 48000.0f;
     dsp::StereoDelay delayOld;
@@ -5083,7 +5863,7 @@ TEST_CASE(stereo_delay_default_knob_values_reproduce_original_output_exactly) {
     p.dfbk = 0.6f;
     p.dwid = 0.4f;
     p.dfrz = 0.1f;
-    p.dmod = 0.5f;  // nonzero -- exercises the mod-rate LFO path D8's SetModRate touches.
+    p.dmod = 0.5f;  // nonzero -- exercises the mod-rate LFO path SetModRate touches.
 
     for (int i = 0; i < 4000; ++i) {
         const float input = 0.5f * std::sin(0.05f * static_cast<float>(i));
@@ -5116,7 +5896,7 @@ TEST_CASE(stereo_delay_diffusion_at_default_zero_is_bit_identical_to_no_diffusio
     // own history is the ONLY difference between the two instances. Both
     // then process identical input, built through the real production
     // entry point (dsp::MapRowsToDelayParams, the same call
-    // FroggersAppCore.hpp makes) with row8Diffusion explicitly 0.0f. If
+    // FroggersAppCore.hpp makes) with diffusionKnob01 explicitly 0.0f. If
     // ddif==0 truly bypasses the diffuser (dsp/Delay.hpp Process()), the
     // dirtied history is never read and outputs must match exactly; if a
     // future change drops the bypass (e.g. always blends `diffused*ddif`
@@ -5354,7 +6134,7 @@ TEST_CASE(stereo_delay_reverse_blend_at_default_zero_is_bit_identical_to_no_reve
     // lineL/lineR/lfoPhase/wetLimiter envelope differs AT ALL going in; the
     // reverse tap's own state is the ONLY difference between the two
     // instances. Both then process identical input, built through the real
-    // production entry point (dsp::MapRowsToDelayParams) with row7Reverse
+    // production entry point (dsp::MapRowsToDelayParams) with reverseKnob01
     // explicitly 0.0f. If drev==0 truly bypasses the reverse tap's
     // contribution (dsp/Delay.hpp Process()), the dirtied state is never
     // read into the output and outputs must match exactly.
@@ -5404,7 +6184,7 @@ TEST_CASE(stereo_delay_reverse_blend_at_maximum_time_reverses_a_sharp_attack_slo
     // the reverse tap (drev=1) reads the SAME line content, just backward.
     // Both instances see identical writes throughout -- drev only selects
     // which tap is READ, applied before the feedback write, and with
-    // dfbk=0 the write is `inSignal` regardless of dL/dR's value (D9) --
+    // dfbk=0 the write is `inSignal` regardless of dL/dR's value --
     // so the two instances' delay lines stay identical and only the OUTPUT
     // differs.
     //
@@ -5675,7 +6455,7 @@ TEST_CASE(stereo_delay_reverse_blend_does_not_raise_wet_output_beyond_limiter_ce
 }
 
 // =========================================================================
-// Freeze (Delay slot 4): a crossfade on BOTH new-input write and feedback
+// Freeze (Delay slot 5): a crossfade on BOTH new-input write and feedback
 // loop gain (dsp/Delay.hpp DelayParams::dfrz/dfrzLatched,
 // StereoDelay::Process). drev/ddif (slots 7/8) stay untouched here.
 //
@@ -6466,6 +7246,565 @@ TEST_CASE(mix_osc_voices_default_balance_knob_reproduces_original_equal_thirds_a
                                                /*balanceKnob01=*/0.5f);
         REQUIRE_NEAR(mixed, oldStyle, 1e-6);
     }
+}
+
+
+// Wet/Dry crossfades dry against the driven signal with an EQUAL-POWER law
+// (`dry*cos(theta) + phased*sin(theta)`, theta = blend*pi/2, dsp/Drive.hpp),
+// not the linear `dry*(1-blend) + phased*blend` this pin used to assert.
+// The wet path's fundamental is partly anti-correlated with dry, and the
+// sign of that correlation flips across the Drive knob (measured: -0.22 at
+// Gain 0.25, -0.35 at 0.50, +0.02 at 0.75, -0.085 at 1.00), which is why a
+// linear crossfade notched -- a fixed pair of weights cannot hold level
+// against a correlation that changes sign -- and why no fixed Phase setting
+// removed it either. The equal-power law does not eliminate the notch (the
+// correlation itself is unchanged), but it holds level far better than the
+// linear law did: swept 110/220/440/880 Hz x Gain 0.25/0.50/0.75/1.00 at
+// Phase's own 0.86 default, worst dip anywhere on the travel is well inside
+// the bound below, where the old linear law's worst dip (this test's own
+// prior pin) was roughly -4 dB.
+TEST_CASE(drive_blend_travel_holds_level_within_1_2_db_across_gain_and_frequency) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr int kWarmupSamples = 4000;
+    constexpr int kMeasureSamples = 8000;
+    constexpr float kPhaseDefault = 0.86f;  // FroggersParameters.hpp's shipped Phase default.
+    constexpr double kMaxDipDb = 1.2;
+
+    const auto measureRms = [&](float freqHz, float driveKnob, float blendKnob) {
+        dsp::FrogBlock block;
+        dsp::DriveBlendPhase blendPhase;
+        DriveBankKnobs knobs;
+        knobs.drive = driveKnob;
+        knobs.phase = kPhaseDefault;
+        knobs.blend = blendKnob;
+
+        double sumSq = 0.0;
+        int sampleIx = 0;
+        for (; sampleIx < kWarmupSamples; ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            ProcessDriveBank(block, blendPhase, knobs, 0.5f * std::sin(phase));
+        }
+        for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            const float out = ProcessDriveBank(block, blendPhase, knobs, 0.5f * std::sin(phase));
+            sumSq += static_cast<double>(out) * static_cast<double>(out);
+        }
+        return std::sqrt(sumSq / static_cast<double>(kMeasureSamples));
+    };
+
+    const float freqs[4] = {110.0f, 220.0f, 440.0f, 880.0f};
+    const float gains[4] = {0.25f, 0.50f, 0.75f, 1.00f};
+
+    double worstDipDb = 0.0;
+    for (float freq : freqs) {
+        for (float gain : gains) {
+            const double rmsDry = measureRms(freq, gain, 0.0f);
+            const double dryDb = 20.0 * std::log10(rmsDry);
+            for (int step = 1; step <= 20; ++step) {
+                const float blend = static_cast<float>(step) / 20.0f;
+                const double rms = measureRms(freq, gain, blend);
+                const double dipDb = 20.0 * std::log10(rms) - dryDb;
+                if (dipDb < worstDipDb) worstDipDb = dipDb;
+            }
+        }
+    }
+
+    std::cout << "  [blend travel] worst dip anywhere across 110-880 Hz, Gain 0.25-1.00 = " << worstDipDb << " dB\n";
+
+    // The master must not lose level across its travel: no more than about
+    // 1.2 dB of dip anywhere, versus the old linear law's roughly -4 dB.
+    REQUIRE_TRUE(worstDipDb > -kMaxDipDb);
+}
+
+// XOR's middle stripes energy out of the bottom of the spectrum while
+// leaving the top alone, rather than going quiet -- "twelve o'clock" reads
+// as quiet because the body is gone, not because the level is. Measured as
+// the sum of Goertzel power across the fundamental's own harmonics below
+// 1 kHz (n=1..4, i.e. 220-880 Hz) and above 5 kHz (n=23..100, i.e.
+// 5060-22000 Hz); the ratio between XOR 0.00 and 0.50 is independent of the
+// window-length-dependent constant either sum carries on its own.
+TEST_CASE(drive_xor_mid_sweep_collapses_energy_below_1khz_leaving_the_top_octaves_alone) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float freqHz = 220.0f;
+    constexpr int kWarmupSamples = 4000;
+    constexpr int kMeasureSamples = 8192;
+
+    const auto measureBands = [&](float xorKnob) {
+        dsp::FrogBlock block;
+        dsp::DriveBlendPhase blendPhase;
+        DriveBankKnobs knobs;
+        knobs.drive = 0.6f;
+        knobs.shape = 0.4f;
+        knobs.blend = 1.0f;
+        knobs.xorKnob = xorKnob;
+
+        std::vector<float> samples;
+        samples.reserve(kMeasureSamples);
+        int sampleIx = 0;
+        for (; sampleIx < kWarmupSamples; ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            ProcessDriveBank(block, blendPhase, knobs, 0.5f * std::sin(phase));
+        }
+        for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            samples.push_back(ProcessDriveBank(block, blendPhase, knobs, 0.5f * std::sin(phase)));
+        }
+
+        const double under1k = HarmonicBandPower(samples, freqHz, sampleRate, 1, 4);
+        const double over5k = HarmonicBandPower(samples, freqHz, sampleRate, 23, 100);
+        return std::make_pair(under1k, over5k);
+    };
+
+    const auto atZero = measureBands(0.00f);
+    const auto atHalf = measureBands(0.50f);
+
+    const double under1kDropDb = 10.0 * std::log10(atHalf.first / atZero.first);
+    const double over5kChangeDb = 10.0 * std::log10(atHalf.second / atZero.second);
+
+    std::cout << "  [xor sweep] under-1kHz change XOR 0.00 -> 0.50 = " << under1kDropDb
+              << " dB, over-5kHz change = " << over5kChangeDb << " dB\n";
+
+    // Measured at -17.04 dB; a +-5 dB band pins the actual collapse (a
+    // regression halving it, to roughly -8.5 dB, now fails) while staying
+    // wide enough to survive a different build's floating-point rounding.
+    REQUIRE_TRUE(under1kDropDb < -12.0);
+    REQUIRE_TRUE(under1kDropDb > -22.0);
+    // The top octaves stay close to where they were.
+    REQUIRE_TRUE(std::fabs(over5kChangeDb) < 3.0);
+}
+
+// SetCoefs adds `link * (gain - 1.0f)` inside the coefficient's Sine01
+// argument (dsp/Drive.hpp:115); SetGain maps knob 0 to gain exactly 1.0
+// (`ExpMapCompute(1,5,0) == 1` by construction), so at Drive 0 that term is
+// multiplied by exactly zero regardless of what Link is set to -- Link
+// becomes cosmetically live but functionally inert. The positive control
+// (Drive 0.6, same Shape 0) proves the instrument can tell Link sweeps
+// apart at all, so the Drive-0 inertness is a real property of the
+// mapping, not a test that could never fail.
+TEST_CASE(drive_link_is_inert_at_zero_drive_and_moves_the_output_once_driven) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float freqHz = 220.0f;
+    constexpr int kWarmupSamples = 2000;
+    constexpr int kMeasureSamples = 4000;
+
+    const auto renderWet = [&](float driveKnob, float linkKnob) {
+        dsp::FrogBlock block;
+        DriveBankKnobs knobs;
+        knobs.drive = driveKnob;
+        knobs.shape = 0.0f;
+        knobs.link = linkKnob;
+        SetFrogBlockKnobs(block, knobs);
+
+        std::vector<float> samples;
+        samples.reserve(kMeasureSamples);
+        int sampleIx = 0;
+        for (; sampleIx < kWarmupSamples; ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            block.Process(0.5f * std::sin(phase));
+        }
+        for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            samples.push_back(block.Process(0.5f * std::sin(phase)));
+        }
+        return samples;
+    };
+
+    const auto diffDb = [](const std::vector<float>& a, const std::vector<float>& b) {
+        double sumSqDiff = 0.0;
+        double sumSqRef = 0.0;
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            const double d = static_cast<double>(a[i]) - static_cast<double>(b[i]);
+            sumSqDiff += d * d;
+            sumSqRef += static_cast<double>(b[i]) * static_cast<double>(b[i]);
+        }
+        const double diffRms = std::sqrt(sumSqDiff / static_cast<double>(a.size()));
+        const double refRms = std::sqrt(sumSqRef / static_cast<double>(b.size()));
+        return 20.0 * std::log10(diffRms / refRms);
+    };
+
+    // At Drive 0: every Link position renders bit-identically to Link 0.
+    const std::vector<float> driveZeroLink0 = renderWet(0.0f, 0.0f);
+    double worstAtDriveZero = -1000.0;
+    for (float linkKnob : {0.25f, 0.5f, 1.0f}) {
+        const double db = diffDb(renderWet(0.0f, linkKnob), driveZeroLink0);
+        worstAtDriveZero = std::max(worstAtDriveZero, db);
+    }
+    std::cout << "  [link at Drive 0] worst Link-vs-Link0 difference = " << worstAtDriveZero << " dB\n";
+    REQUIRE_TRUE(worstAtDriveZero < -100.0);
+
+    // Positive control: with Drive raised (same Shape 0), the identical
+    // Link sweep DOES move the output.
+    const std::vector<float> driveDrivenLink0 = renderWet(0.6f, 0.0f);
+    double worstAtDriveDriven = -1000.0;
+    for (float linkKnob : {0.25f, 0.5f, 1.0f}) {
+        const double db = diffDb(renderWet(0.6f, linkKnob), driveDrivenLink0);
+        worstAtDriveDriven = std::max(worstAtDriveDriven, db);
+    }
+    std::cout << "  [link at Drive 0.6, positive control] worst Link-vs-Link0 difference = " << worstAtDriveDriven
+              << " dB\n";
+    REQUIRE_TRUE(worstAtDriveDriven > -20.0);
+}
+
+// With Shape at 0 the polynomial's ONLY populated even-power terms
+// (coefs[1]/coefs[3], on input^2/input^4) come from `link * (gain - 1.0f)`
+// (dsp/Drive.hpp:115); at Drive 0, gain is exactly 1.0 so those terms
+// vanish too and the whole polynomial is exactly `y = gain * x`. For an
+// exactly linear stage, `Process(in + bias) - Process(bias)` is `gain*in`
+// regardless of bias -- Bias cancels by construction. The positive control
+// (Drive 0.6, same Shape 0) reintroduces the even-power terms through the
+// same Link coupling, which breaks the odd symmetry Bias's cancellation
+// depends on, so the SAME bias sweep moves the output once Drive is
+// raised.
+TEST_CASE(drive_bias_cancels_at_zero_drive_and_moves_the_output_once_driven) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float freqHz = 220.0f;
+    constexpr int kWarmupSamples = 2000;
+    constexpr int kMeasureSamples = 4000;
+
+    const auto renderWet = [&](float driveKnob, float biasKnob) {
+        dsp::FrogBlock block;
+        DriveBankKnobs knobs;
+        knobs.drive = driveKnob;
+        knobs.shape = 0.0f;
+        knobs.bias = biasKnob;
+        SetFrogBlockKnobs(block, knobs);
+
+        std::vector<float> samples;
+        samples.reserve(kMeasureSamples);
+        int sampleIx = 0;
+        for (; sampleIx < kWarmupSamples; ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            block.Process(0.5f * std::sin(phase));
+        }
+        for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            samples.push_back(block.Process(0.5f * std::sin(phase)));
+        }
+        return samples;
+    };
+
+    const auto diffDb = [](const std::vector<float>& a, const std::vector<float>& b) {
+        double sumSqDiff = 0.0;
+        double sumSqRef = 0.0;
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            const double d = static_cast<double>(a[i]) - static_cast<double>(b[i]);
+            sumSqDiff += d * d;
+            sumSqRef += static_cast<double>(b[i]) * static_cast<double>(b[i]);
+        }
+        const double diffRms = std::sqrt(sumSqDiff / static_cast<double>(a.size()));
+        const double refRms = std::sqrt(sumSqRef / static_cast<double>(b.size()));
+        return 20.0 * std::log10(diffRms / refRms);
+    };
+
+    // At Drive 0, Shape 0: every Bias position renders bit-identically
+    // (down to float rounding) to Bias's own default (0.5 -> bias 0).
+    const std::vector<float> driveZeroBiasDefault = renderWet(0.0f, 0.5f);
+    double worstAtDriveZero = -1000.0;
+    for (float biasKnob : {0.0f, 0.25f, 0.75f, 1.0f}) {
+        const double db = diffDb(renderWet(0.0f, biasKnob), driveZeroBiasDefault);
+        worstAtDriveZero = std::max(worstAtDriveZero, db);
+    }
+    std::cout << "  [bias at Drive 0] worst Bias-vs-default difference = " << worstAtDriveZero << " dB\n";
+    REQUIRE_TRUE(worstAtDriveZero < -100.0);
+
+    // Positive control: with Drive raised (same Shape 0), the identical
+    // Bias sweep DOES move the output.
+    const std::vector<float> driveDrivenBiasDefault = renderWet(0.6f, 0.5f);
+    double worstAtDriveDriven = -1000.0;
+    for (float biasKnob : {0.0f, 0.25f, 0.75f, 1.0f}) {
+        const double db = diffDb(renderWet(0.6f, biasKnob), driveDrivenBiasDefault);
+        worstAtDriveDriven = std::max(worstAtDriveDriven, db);
+    }
+    std::cout << "  [bias at Drive 0.6, positive control] worst Bias-vs-default difference = " << worstAtDriveDriven
+              << " dB\n";
+    REQUIRE_TRUE(worstAtDriveDriven > -20.0);
+}
+
+// =========================================================================
+// Delay bank: transparency at rest, pinned ahead of the Wet/dry (formerly
+// Wet mix) and Send move to slots 0/1.
+// =========================================================================
+
+// RouteDelayBank (app/FroggersAppCore.hpp) feeds Send (slot 1)
+// and Wet/dry (slot 0) through MapRowsToDelayParams, with slots 9-13
+// applied through their own setters first. `StereoDelay::Process`'s own
+// `p.dsnd <= 0.0001f` early return means Send at its own default of zero
+// never lets the wet path's level follower rise off zero; `ToStereo`
+// scales Wet/dry by `WetAuthority()`, that same follower's level, so
+// raising Wet/dry against a silent line multiplies by zero rather than
+// crossfading the dry signal away. The positive control (Send opened)
+// proves the same sweep DOES move the output once the wet path is fed.
+TEST_CASE(delay_wet_dry_leaves_dry_untouched_while_send_is_closed_and_moves_it_once_fed) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float freqHz = 220.0f;
+    constexpr int kSamples = 6000;
+
+    const auto renderThroughDelayBank = [&](float sendKnob, float wetMixKnob) {
+        dsp::StereoDelay delay;
+        delay.SetSampleRate(sampleRate);
+        delay.SetFeedbackDrive(0.5f);  // slot 9 default.
+        delay.SetFeedbackTone(1.0f);   // slot 10 default.
+        delay.SetModRate(0.5f);        // slot 11 default.
+        delay.SetWidthBalance(1.0f);   // slot 12 default.
+        delay.SetCrush(0.0f);          // slot 13 default.
+
+        std::vector<float> dryIn(kSamples);
+        std::vector<dsp::StereoSample> out(kSamples);
+        for (int i = 0; i < kSamples; ++i) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(i) / sampleRate;
+            const float input = 0.5f * std::sin(phase);
+            dryIn[i] = input;
+            const dsp::DelayParams params = dsp::MapRowsToDelayParams(
+                /*timeKnob01=*/0.0f, /*sendKnob01=*/sendKnob, /*feedbackKnob01=*/0.0f,
+                /*widthKnob01=*/0.0f, /*freezeKnob01=*/0.0f, /*modKnob01=*/0.0f,
+                /*mixKnob01=*/wetMixKnob, /*reverseKnob01=*/0.0f, /*diffusionKnob01=*/0.0f);
+            const dsp::DelayWetPair wet = delay.Process(input, params);
+            out[i] = delay.ToStereo(input, wet, params.dmix);
+        }
+        return std::make_pair(dryIn, out);
+    };
+
+    // Send closed (its own default): the dry signal is untouched no matter
+    // where Wet/dry sweeps.
+    for (float wetMixKnob : {0.0f, 0.5f, 1.0f}) {
+        const auto rendered = renderThroughDelayBank(/*sendKnob=*/0.0f, wetMixKnob);
+        const std::vector<float>& dryIn = rendered.first;
+        const std::vector<dsp::StereoSample>& out = rendered.second;
+        for (int i = 0; i < kSamples; ++i) {
+            REQUIRE_NEAR(out[i].l, dryIn[i], 1e-6);
+            REQUIRE_NEAR(out[i].r, dryIn[i], 1e-6);
+        }
+    }
+
+    // Positive control: with Send opened, the same Wet/dry sweep DOES
+    // change the output once the line has had time to fill.
+    const auto renderedMixLow = renderThroughDelayBank(/*sendKnob=*/1.0f, /*wetMixKnob=*/0.0f);
+    const auto renderedMixHigh = renderThroughDelayBank(/*sendKnob=*/1.0f, /*wetMixKnob=*/1.0f);
+    const std::vector<dsp::StereoSample>& outMixLow = renderedMixLow.second;
+    const std::vector<dsp::StereoSample>& outMixHigh = renderedMixHigh.second;
+
+    double sumSqDiff = 0.0;
+    double sumSqRef = 0.0;
+    for (int i = 0; i < kSamples; ++i) {
+        const double dl = static_cast<double>(outMixHigh[i].l) - static_cast<double>(outMixLow[i].l);
+        const double dr = static_cast<double>(outMixHigh[i].r) - static_cast<double>(outMixLow[i].r);
+        sumSqDiff += dl * dl + dr * dr;
+        sumSqRef += static_cast<double>(outMixLow[i].l) * static_cast<double>(outMixLow[i].l) +
+                    static_cast<double>(outMixLow[i].r) * static_cast<double>(outMixLow[i].r);
+    }
+    const double diffRms = std::sqrt(sumSqDiff / static_cast<double>(2 * kSamples));
+    const double refRms = std::sqrt(sumSqRef / static_cast<double>(2 * kSamples));
+    const double diffDb = 20.0 * std::log10(diffRms / refRms);
+
+    std::cout << "  [delay wet/dry, send open, positive control] Wet/dry 0.0 vs 1.0 difference = " << diffDb
+              << " dB\n";
+    REQUIRE_TRUE(diffDb > -20.0);  // clearly audible, not noise-floor.
+}
+
+// The Drive page's hierarchy: Gain is what makes distortion, and the bit and
+// rate manglers do not need it. Both halves are asserted, because the claim is
+// a division of labour and either half alone would be consistent with a
+// different one. The manglers act on whatever level reaches them -- crushing a
+// quiet signal still crushes it -- so no knob but Wet/Dry gates the page.
+//
+// The all-floor render is the positive control: with every mangler at its own
+// floor the reorganizer and both reducers are exact bypasses, so a render taken
+// twice at those settings is bit-identical and the instrument reports 0.0
+// difference when there genuinely is none. Every "this stage is audible"
+// figure below is measured against that same reference.
+TEST_CASE(drive_gain_makes_distortion_and_the_manglers_act_at_any_gain) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float freqHz = 220.0f;
+    constexpr int kWarmupSamples = 2000;
+    constexpr int kMeasureSamples = 4096;
+
+    const auto render = [&](const DriveBankKnobs& knobs) {
+        dsp::FrogBlock block;
+        SetFrogBlockKnobs(block, knobs);
+        std::vector<float> samples;
+        samples.reserve(kMeasureSamples);
+        int sampleIx = 0;
+        for (; sampleIx < kWarmupSamples; ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            block.Process(0.5f * std::sin(phase));
+        }
+        for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            samples.push_back(block.Process(0.5f * std::sin(phase)));
+        }
+        return samples;
+    };
+
+    // RMS of the sample-by-sample difference, in dB relative to the reference's
+    // own RMS -- this file's own difference convention.
+    const auto diffDb = [](const std::vector<float>& a, const std::vector<float>& ref) {
+        double sumSqDiff = 0.0;
+        double sumSqRef = 0.0;
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            const double d = static_cast<double>(a[i]) - static_cast<double>(ref[i]);
+            sumSqDiff += d * d;
+            sumSqRef += static_cast<double>(ref[i]) * static_cast<double>(ref[i]);
+        }
+        if (sumSqDiff <= 0.0) return -240.0;
+        return 20.0 * std::log10(std::sqrt(sumSqDiff) / std::sqrt(sumSqRef));
+    };
+
+    // Harmonics 2..12 against the fundamental, as a percentage.
+    const auto thdPercent = [&](const std::vector<float>& samples) {
+        const auto binMag = [&](double hz) {
+            double re = 0.0;
+            double im = 0.0;
+            for (std::size_t n = 0; n < samples.size(); ++n) {
+                const double w = 2.0 * M_PI * hz * static_cast<double>(n) / sampleRate;
+                re += samples[n] * std::cos(w);
+                im += samples[n] * std::sin(w);
+            }
+            return std::sqrt(re * re + im * im) / static_cast<double>(samples.size());
+        };
+        const double fundamental = binMag(freqHz);
+        double harmonicSq = 0.0;
+        for (int h = 2; h <= 12; ++h) {
+            const double mag = binMag(freqHz * h);
+            harmonicSq += mag * mag;
+        }
+        return 100.0 * std::sqrt(harmonicSq) / fundamental;
+    };
+
+    DriveBankKnobs allFloor;
+    allFloor.drive = 0.0f;
+    allFloor.shape = 0.0f;
+    allFloor.blend = 1.0f;  // fully wet, so the page's own stages are what is measured.
+    const std::vector<float> reference = render(allFloor);
+
+    // Positive control: the same settings rendered again reproduce the
+    // reference exactly, so 0.0 difference is a reading this rig can produce.
+    REQUIRE_TRUE(diffDb(render(allFloor), reference) <= -239.0);
+
+    // Half one: each mangler is audible with Gain at its floor.
+    DriveBankKnobs xorOnly = allFloor;
+    xorOnly.xorKnob = 0.30f;
+    DriveBankKnobs bitsOnly = allFloor;
+    bitsOnly.bitDepth = 0.75f;
+    DriveBankKnobs srrOnly = allFloor;
+    srrOnly.srr1 = 0.60f;
+
+    DriveBankKnobs srr2Only = allFloor;
+    srr2Only.srr2 = 0.60f;
+
+    // -26 dB is a five-percent spectral difference, the "plainly audible"
+    // threshold this change measured every Drive control's floor against.
+    constexpr double kPlainlyAudibleDb = -26.0;
+    const double xorDb = diffDb(render(xorOnly), reference);
+    const double bitsDb = diffDb(render(bitsOnly), reference);
+    const double srr1Db = diffDb(render(srrOnly), reference);
+    const double srr2Db = diffDb(render(srr2Only), reference);
+    std::cout << "  [drive stages at Gain 0] XOR " << xorDb << " dB, Bit depth " << bitsDb
+              << " dB, SRR 1 " << srr1Db << " dB, SRR 2 " << srr2Db << " dB\n";
+
+    REQUIRE_TRUE(xorDb > kPlainlyAudibleDb);
+    REQUIRE_TRUE(bitsDb > kPlainlyAudibleDb);
+    REQUIRE_TRUE(srr1Db > kPlainlyAudibleDb);
+    REQUIRE_TRUE(srr2Db > kPlainlyAudibleDb);
+
+    // Half two: with every mangler at its floor, Gain alone is what introduces
+    // harmonic distortion. At Gain 0 with Shape 0 the polynomial reduces to a
+    // plain scalar, so the floor reading is the shaper doing nothing.
+    DriveBankKnobs gainOnly = allFloor;
+    gainOnly.drive = 0.8f;
+
+    const double thdAtFloor = thdPercent(reference);
+    const double thdDriven = thdPercent(render(gainOnly));
+    REQUIRE_TRUE(thdAtFloor < 5.0);
+    REQUIRE_TRUE(thdDriven > 10.0 * thdAtFloor);
+}
+
+// Damping darkens the reverb tail AND quiets it, and the quieting is the
+// lowpass working rather than a defect: how much level a lowpass removes
+// depends on where the signal's energy sits relative to its corner. This pins
+// both halves, because a later change that "fixes" the level with a static
+// makeup term would have to break one of them.
+//
+// Room size is the positive control. It sweeps the same tank over the same
+// travel and must move the same broadband figure by almost nothing, so a large
+// reading from Damping is a property of Damping and not of the rig.
+//
+// The source is a deterministic LCG noise rather than a tone: a lowpass's
+// broadband loss is the quantity under test, and a single tone measures only
+// where that tone sits against the corner (a 110 Hz tone moves by about half a
+// decibel across this same sweep).
+TEST_CASE(reverb_damping_darkens_and_quiets_the_tank_while_room_size_does_neither) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr int kWarmupSamples = 12000;
+    constexpr int kMeasureSamples = 24000;
+
+    std::uint32_t lcg = 20260911u;
+    std::vector<float> noise;
+    noise.reserve(kWarmupSamples + kMeasureSamples);
+    for (int i = 0; i < kWarmupSamples + kMeasureSamples; ++i) {
+        lcg = lcg * 1664525u + 1013904223u;
+        noise.push_back(0.5f * (static_cast<float>(lcg >> 8) / 8388608.0f - 1.0f));
+    }
+
+    struct WetLeg {
+        double levelDb;
+        double highOverLow;
+    };
+
+    const auto sweep = [&](float dampKnob, float sizeKnob) {
+        dsp::Reverb rv;
+        rv.Configure(sampleRate);
+        std::vector<double> wet;
+        wet.reserve(kMeasureSamples);
+        for (std::size_t i = 0; i < noise.size(); ++i) {
+            rv.Process(dsp::StereoSample{noise[i], noise[i]}, /*mixKnob01=*/0.0f, sizeKnob,
+                       /*decayKnob01=*/0.0f, /*preKnob01=*/0.0f, dampKnob, /*widthKnob01=*/0.0f,
+                       /*diffusionKnob01=*/0.0f, sampleRate, /*modDepthKnob01=*/0.0f,
+                       /*holdKnob01=*/0.0f, /*modRateKnob01=*/0.5f, /*tankDriveKnob01=*/0.5f,
+                       /*gritKnob01=*/0.0f, /*tiltKnob01=*/0.5f, /*tunedKnob01=*/0.5f,
+                       /*sendKnob01=*/1.0f);
+            if (static_cast<int>(i) >= kWarmupSamples) wet.push_back(0.5 * (rv.wetL + rv.wetR));
+        }
+
+        double sumSq = 0.0;
+        for (double v : wet) sumSq += v * v;
+
+        const auto binMag = [&](double hz) {
+            double re = 0.0;
+            double im = 0.0;
+            for (std::size_t n = 0; n < wet.size(); ++n) {
+                const double w = 2.0 * M_PI * hz * static_cast<double>(n) / sampleRate;
+                re += wet[n] * std::cos(w);
+                im += wet[n] * std::sin(w);
+            }
+            return std::sqrt(re * re + im * im) / static_cast<double>(wet.size());
+        };
+        return WetLeg{10.0 * std::log10(sumSq / static_cast<double>(wet.size())),
+                      binMag(4000.0) / binMag(200.0)};
+    };
+
+    const float knobs[5] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+
+    WetLeg damping[5];
+    for (int i = 0; i < 5; ++i) damping[i] = sweep(knobs[i], /*sizeKnob=*/0.0f);
+
+    // Level falls monotonically, and by a lot.
+    for (int i = 1; i < 5; ++i) REQUIRE_TRUE(damping[i].levelDb < damping[i - 1].levelDb);
+    REQUIRE_TRUE(damping[0].levelDb - damping[4].levelDb > 6.0);
+
+    // Tilt moves the same way, which is the half that says the control still
+    // does its named job rather than having become a volume knob.
+    for (int i = 1; i < 5; ++i) REQUIRE_TRUE(damping[i].highOverLow < damping[i - 1].highOverLow);
+    REQUIRE_TRUE(damping[0].highOverLow > 2.0 * damping[4].highOverLow);
+
+    // Positive control: Room size over the same travel moves neither figure.
+    double roomLow = 1e9;
+    double roomHigh = -1e9;
+    for (int i = 0; i < 5; ++i) {
+        const double db = sweep(/*dampKnob=*/0.0f, knobs[i]).levelDb;
+        roomLow = std::min(roomLow, db);
+        roomHigh = std::max(roomHigh, db);
+    }
+    REQUIRE_TRUE(roomHigh - roomLow < 0.5);
 }
 
 }  // namespace

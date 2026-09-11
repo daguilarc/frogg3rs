@@ -1456,11 +1456,14 @@ inline void ApplyAudioBankOverlay(FroggersParameterModel& model) {
     }
 }
 
-// Drive (Drive bank, slot 0) = 20% of its range, identical in both scene
-// poles -- only the Audio bank's shapes differ between poles.
+// Gain (Drive bank, slot 1) = 20% of its range, identical in both scene
+// poles -- only the Audio bank's shapes differ between poles. Wet/Dry (slot
+// 0) is left at its own registered default (0.0f, fully dry) by the loop
+// above this overlay runs after -- the instrument ships bypassed on the
+// Drive page, driven at a nonzero Gain.
 inline void ApplyDriveBankOverlay(FroggersParameterModel& model) {
     for (const synth::SceneState& pole : kScenePoles) {
-        model.PageParameter(FroggersBankId::Drive, 0).HandleSetAbsolute(pole, 0.2f);
+        model.PageParameter(FroggersBankId::Drive, 1).HandleSetAbsolute(pole, 0.2f);
     }
 }
 

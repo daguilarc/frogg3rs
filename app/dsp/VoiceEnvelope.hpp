@@ -282,7 +282,7 @@ struct VcoAdsrState
         return input * m_level[voiceIndex];
     }
 
-    // ITEM 1 (app/FroggersAppCore.hpp's Stop-transport delay/reverb reset):
+    // Used by app/FroggersAppCore.hpp's Stop-transport delay/reverb reset:
     // true once every voice has fully released and stopped producing
     // signal, i.e. no voice can still be re-exciting a downstream feedback
     // structure (delay/reverb). Const, read-only -- does not step or alter

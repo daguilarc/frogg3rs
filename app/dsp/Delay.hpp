@@ -128,47 +128,14 @@ static_assert(kDelayWetLimiterThreshold < kDelayWetLimiterCeiling,
 inline constexpr float kDelayWetLimiterAttackSeconds = 2.0e-6f;   // 2 microseconds -- see comment above.
 inline constexpr float kDelayWetLimiterReleaseSeconds = kSharedReleaseSeconds;  // shared; see Limiter.hpp.
 
-// Tuning for the wet-level follower `StereoDelay::wetAuthority` reads, which
-// decides how much of the dry signal Wet mix is allowed to remove. Send feeds
-// the delay line and defaults to zero, so the wet path can be silent while Wet
-// mix is at maximum; a crossfade against silence is a mute. Authority tracks
-// what the wet path actually HOLDS, so a low-Send high-Feedback patch -- a loud
-// echo fed by very little -- still earns the control its full travel.
-//
-// The wet limiter's own envelope cannot serve: it is a gain multiplier that
-// sits at exactly 1.0 for anything under threshold (Limiter.hpp), so a quiet
-// echo and silence read identically to it.
-//
-// Release is kSharedReleaseSeconds, which the wet limiter ALREADY applies to
-// this exact signal, so authority tracks at a rate this path is measured not
-// to pump at -- a genuinely shared value, not an analogy.
-//
-// Attack is 10ms, the same figure VcoEnvelopeFollowers uses, and that IS an
-// analogy: it has not been measured for this path. It is a deliberately
-// unshared literal for that reason. This file's own wet-limiter comment
-// records why -- its tuning was measured rather than taken from the master
-// limiter, because "analogy-picked constants have been measured wrong before
-// in this codebase" -- and Limiter.hpp:80 records the same judgement for the
-// per-stage thresholds, which did not collapse. Sharing one constant across
-// all three sites would assert a derivation that only the VCO followers have.
-// Rising quickly is the safe direction here, so being approximately right
-// costs little; the honest note is that it is approximate.
-inline constexpr float kDelayWetAuthorityAttackSeconds = 0.010f;
-inline constexpr float kDelayWetAuthorityReleaseSeconds = kSharedReleaseSeconds;
-// The level at or above which the wet path has earned the control its full
-// travel. This is an AUDIBILITY threshold, not a loudness one: the failure
-// being fixed is a crossfade against silence, so anything the operator can
-// plainly hear should give the knob its whole range, and only a path holding
-// essentially nothing should take it away.
-//
-// MEASURED, not chosen by eye. The wet limiter's own threshold (0.72) was
-// tried first and is wrong for this: a frozen delay line ringing at peak 0.37
-// -- unmistakably audible, and exactly the loud-echo-fed-by-little case the
-// scaling exists to serve -- would get only half its travel there. This value
-// sits an order of magnitude above the routing suite's own measured noise
-// floor for a self-sustaining ring (0.0063), so a path holding only numerical
-// residue still reads as empty.
-inline constexpr float kDelayFullAuthorityLevel = 0.05f;
+// The wet-level follower `StereoDelay::wetAuthority` reads (decides how much
+// of the dry signal Wet/dry is allowed to remove) is `dsp::WetAuthorityFollower`
+// (Drive.hpp), shared with `dsp::Reverb::wetAuthority` -- one definition for
+// both stages' attack/release coefficients and full-authority level, so
+// Reverb's own Send shares this exact protection rather than a second copy
+// that happens to agree. See that struct's own header comment (Drive.hpp)
+// for the tuning
+// derivation.
 
 // the retired simulator's StereoDelay.hpp:10-19, plus three fields added later that
 // are not present in that frozen source -- see each field's own comment.
@@ -178,7 +145,7 @@ struct DelayParams
     float dsnd = 0.0f;
     float dfbk = 0.0f;
     float dwid = 0.0f;
-    float dfrz = 0.0f;  // Freeze (slot 4, was Detune/ddet). Crossfades
+    float dfrz = 0.0f;  // Freeze (slot 5, was Detune/ddet). Crossfades
                         // new input and feedback loop gain toward a hold -- see StereoDelay::Process() below.
     bool dfrzLatched = false;  // Freeze override, meant to be set by the transport-button latch --
                                 // NOT part of the row -> DelayParams mapping below. Inert as a SOURCE for
@@ -468,10 +435,9 @@ struct StereoDelay
     // One follower for both channels: it tracks `monoWet`, the value
     // ToReverbMono already forms, so the measurement costs one fabs, one
     // compare, one multiply-add and one float of state per sample rather than
-    // a pair of followers on a value nothing else needs.
-    float wetLevel = 0.0f;
-    float wetAuthorityAttackCoeff = 0.0f;
-    float wetAuthorityReleaseCoeff = 0.0f;
+    // a pair of followers on a value nothing else needs. `WetAuthorityFollower`
+    // (Limiter.hpp) is the same unit `dsp::Reverb::wetAuthority` owns.
+    WetAuthorityFollower wetAuthority;
 
     // (Delay slot 9, "Feedback drive" / "FbDr"):
     // pre-gain on the ARGUMENT of Saturate only, see Process() below.
@@ -574,9 +540,12 @@ struct StereoDelay
         lfoPhase = 0.0f;
         lastWet = {};
         // Cleared with the line it measures: a recovered unit whose follower
-        // still held the level of the audio that faulted would grant Wet mix
-        // authority over a path that is now empty.
-        wetLevel = 0.0f;
+        // still held the level of the audio that faulted would grant Wet/dry
+        // authority over a path that is now empty. Defaults to 0.0f (a
+        // just-cleared wet path has earned nothing) -- see
+        // WetAuthorityFollower::Reset's own comment (Limiter.hpp) for why that
+        // default differs for `dsp::Reverb`.
+        wetAuthority.Reset();
         // The wet limiters carry their own per-sample `envelope` state
         // (dsp::OutputLimiter::Process), so a buffer clear -- whether the
         // Stop-transport reset or Tier 1 fault recovery via Reset() below --
@@ -625,7 +594,7 @@ struct StereoDelay
     bool StateFinite() const
     {
         if (!std::isfinite(lfoPhase) || !std::isfinite(lastWet.l) || !std::isfinite(lastWet.r) ||
-            !std::isfinite(wetLevel))
+            !wetAuthority.StateFinite())
         {
             return false;
         }
@@ -751,8 +720,7 @@ struct StereoDelay
                                kDelayWetLimiterAttackSeconds, kDelayWetLimiterReleaseSeconds);
         // Same reason as the limiters immediately above: this is the one place
         // a real sample rate is known.
-        wetAuthorityAttackCoeff = std::exp(-1.0f / (kDelayWetAuthorityAttackSeconds * sampleRate));
-        wetAuthorityReleaseCoeff = std::exp(-1.0f / (kDelayWetAuthorityReleaseSeconds * sampleRate));
+        wetAuthority.Configure(sampleRate);
         // Section delay lengths (4.7ms/12.3ms/21.1ms) are converted
         // to samples here, the one place a real sample rate is known --
         // same rationale as the wetLimiter Configure calls just above.
@@ -849,7 +817,7 @@ struct StereoDelay
         if (p.dsnd <= 0.0001f || capacity == 0)
         {
             lastWet = {};
-            // Send is off, so Wet mix goes inert regardless of what the line
+            // Send is off, so Wet/dry goes inert regardless of what the line
             // still holds: the follower's TARGET drops at once rather than
             // tracking the decaying tail. The follower itself keeps running,
             // so what an operator hears is a fade at the release constant, not
@@ -946,7 +914,7 @@ struct StereoDelay
         // regardless of fbDrive (writing `fbDrive * fbk * Saturate(...)`
         // instead would raise that bound; deliberately not done).
         //
-        // (Freeze, Delay slot 4): a
+        // (Freeze, Delay slot 5): a
         // crossfade, not a write-enable toggle. Two quantities change at
         // the write below -- inSignal's own attenuation and fbk's own
         // effective value -- computed here because both are consumed ONLY
@@ -1047,21 +1015,14 @@ struct StereoDelay
         return lastWet;
     }
 
-    // One-pole toward the measured level, faster up than down (see the
-    // authority constants). Called from both of Process()'s exits, which is
-    // what makes Send-off a target change rather than a frozen follower.
-    void AdvanceWetLevel(float target)
-    {
-        const float coeff = target > wetLevel ? wetAuthorityAttackCoeff : wetAuthorityReleaseCoeff;
-        wetLevel = target + coeff * (wetLevel - target);
-    }
+    // Thin name alias over WetAuthorityFollower::Advance (Limiter.hpp) --
+    // called from both of Process()'s exits, which is what makes Send-off a
+    // target change rather than a frozen follower.
+    void AdvanceWetLevel(float target) { wetAuthority.Advance(target); }
 
-    // How much of Wet mix's travel the wet path has earned: proportional to
+    // How much of Wet/dry's travel the wet path has earned: proportional to
     // the level it holds, saturating where this stage stops getting louder.
-    float WetAuthority() const
-    {
-        return std::min(wetLevel / kDelayFullAuthorityLevel, 1.0f);
-    }
+    float WetAuthority() const { return wetAuthority.Authority(); }
 
     DelayWetPair GetLastWet() const { return lastWet; }
 
@@ -1083,8 +1044,34 @@ struct StereoDelay
     StereoSample ToStereo(float bumpIn, DelayWetPair wet, float dmix) const
     {
         const float mix = std::min(std::max(dmix, 0.0f), 1.0f) * WetAuthority();
-        const float dry = (1.0f - mix) * bumpIn;
-        return {dry + mix * wet.l, dry + mix * wet.r};
+        // Equal-power crossfade, not linear: a linear `(1-mix)*dry + mix*wet`
+        // only holds level when the two legs are correlated, and here they
+        // are not -- the wet path is a delayed, filtered, cross-fed copy of
+        // the same signal, largely uncorrelated with dry at the frequencies
+        // that matter. MEASURED worst dip across the control's whole travel
+        // under the old linear law: -4.92 dB at 220 Hz, -6.50 dB at 440 Hz,
+        // -16.53 dB at 880 Hz. cos/sin quadrant weights hold level regardless
+        // of that correlation, the same fix dsp::DriveBlendPhase::Process
+        // (Drive.hpp) already applies to the Drive page's own Wet/Dry.
+        //
+        // theta is capped at acos(kMinDryLevel) rather than a full quarter
+        // turn (dsp::kMinDryLevel's own comment, Limiter.hpp), so mix == 1.0
+        // reaches this stage's dry floor, not silence -- the dry signal's
+        // own gain never drops below kMinDryLevel no matter where Wet/dry
+        // sits.
+        //
+        // The law itself lives in dsp::EqualPowerWetDry (Limiter.hpp), shared
+        // with the Drive page, whose only difference from this one is the
+        // floor it passes. A nonzero floor is also why this page needs no
+        // exact case at the top of its travel: thetaMax sits well short of
+        // pi/2, the one place std::cos stops landing on an exact value. The
+        // zero endpoint the helper does hold exactly, because mix == 0 has to
+        // return `bumpIn` bit-for-bit here and an existing pin depends on it.
+        const WetDryGains gains = EqualPowerWetDry(mix, kMinDryLevel);
+        const float dryGain = gains.dry;
+        const float wetGain = gains.wet;
+        const float dry = dryGain * bumpIn;
+        return {dry + wetGain * wet.l, dry + wetGain * wet.r};
     }
 
 private:
@@ -1259,33 +1246,36 @@ private:
 
 // the retired simulator's DelayState.hpp:165-198 (processInsert): originally the row ->
 // DelayParams mapping (:180-186) and the Color/Halo fold (:187-193).
-// REMOVED: the fold is gone -- every one of the nine rows below now maps
-// to exactly one DelayParams field, no two rows are combined, and row4/
-// row7/row8 carry the retired Detune/Color/Halo slots' new identities
-// (Freeze/Reverse blend/Diffusion, FroggersParameters.hpp). Callers supply
-// the nine already-fuegoized/modulated 0..1 row values (rows 0-8); this
-// function owns none of the smoothing/mod/fuego machinery that produces
-// them (see file header "NOT ported").
-inline DelayParams MapRowsToDelayParams(float row0Time,
-                                        float row1Send,
-                                        float row2Feedback,
-                                        float row3Width,
-                                        float row4Freeze,
-                                        float row5Mod,
-                                        float row6Mix,
-                                        float row7Reverse,
-                                        float row8Diffusion)
+// REMOVED: the fold is gone -- every one of the nine arguments below now
+// maps to exactly one DelayParams field, no two are combined, and the
+// freeze/reverse/diffusion arguments carry the retired Detune/Color/Halo
+// rows' new identities (Freeze/Reverse blend/Diffusion,
+// FroggersParameters.hpp). Named by DSP field, not by Delay-bank slot --
+// the bank's own slots move independently of this order as the Delay bank
+// gets renumbered (its own call site says which slot feeds which argument).
+// Callers supply the nine already-fuegoized/modulated 0..1 values in this
+// fixed field order; this function owns none of the smoothing/mod/fuego
+// machinery that produces them (see file header "NOT ported").
+inline DelayParams MapRowsToDelayParams(float timeKnob01,
+                                        float sendKnob01,
+                                        float feedbackKnob01,
+                                        float widthKnob01,
+                                        float freezeKnob01,
+                                        float modKnob01,
+                                        float mixKnob01,
+                                        float reverseKnob01,
+                                        float diffusionKnob01)
 {
     DelayParams params;
-    params.dtim = row0Time;   // :180
-    params.dsnd = row1Send;   // :181
-    params.dfbk = row2Feedback;  // :182
-    params.dwid = row3Width;  // :183
-    params.dfrz = row4Freeze;  // was :184 (Detune/ddet) -- slot 4 is now Freeze; see DelayParams::dfrz.
-    params.dmod = row5Mod;    // :185
-    params.dmix = row6Mix;    // :186
-    params.drev = row7Reverse;    // slot 7 is now Reverse blend (was Color, previously folded into ddet).
-    params.ddif = row8Diffusion;  // slot 8 is now Diffusion (was Halo, previously folded into dmod).
+    params.dtim = timeKnob01;   // :180
+    params.dsnd = sendKnob01;   // :181
+    params.dfbk = feedbackKnob01;  // :182
+    params.dwid = widthKnob01;  // :183
+    params.dfrz = freezeKnob01;  // was :184 (Detune/ddet) -- Delay bank slot 5 is now Freeze; see DelayParams::dfrz.
+    params.dmod = modKnob01;    // :185
+    params.dmix = mixKnob01;    // :186
+    params.drev = reverseKnob01;    // Delay bank slot 7 is Reverse blend (was Color, previously folded into ddet).
+    params.ddif = diffusionKnob01;  // Delay bank slot 8 is Diffusion (was Halo, previously folded into dmod).
     return params;
 }
 

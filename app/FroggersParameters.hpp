@@ -134,12 +134,12 @@ struct FroggersBankLayout {
 //               Comb feedback, Comb LP, Comb drive, Scoop mix, Scoop freq,
 //               Scoop width, Scoop depth, Comb/Peak, Topology (grouped by
 //               stage; the v2 source's own order predates the grouping)
-//   Drive    -- Drive, Shape, SRR 1, SRR 2, XOR, Bit depth, Fuzz, Blend,
+//   Drive    -- Wet/Dry, Gain, Shape, SRR 1, SRR 2, XOR, Bit depth, Fuzz,
 //               Phase
-//   Delay    -- Delay time, Send, Feedback, Stereo width, Freeze, Mod
-//               depth, Wet mix, Reverse blend, Diffusion
-//   Reverb   -- Wet/dry, Room size, Decay, Pre-delay, Damping, Stereo width,
-//               Diffusion, Mod depth, Hold
+//   Delay    -- Wet/dry, Send, Delay time, Feedback, Stereo width, Freeze,
+//               Mod depth, Reverse blend, Diffusion
+//   Reverb   -- Wet/dry, Send, Room size, Decay, Pre-delay, Damping,
+//               Stereo width, Diffusion, Mod, Hold
 inline const std::array<FroggersBankLayout, kFroggersBankCount>& FroggersBankLayouts() {
     static const std::array<FroggersBankLayout, kFroggersBankCount> layouts{{
         {FroggersBankId::Audio, "Audio", synth::Color::Red, {{
@@ -222,25 +222,40 @@ inline const std::array<FroggersBankLayout, kFroggersBankCount>& FroggersBankLay
             {"Topology", "Topo", 0.0f},
         }}},
         {FroggersBankId::Drive, "Drive", synth::Color::Orange, {{
-            {"Drive", "Drive"}, {"Shape", "Shape"}, {"SRR 1", "SRR1"},
-            {"SRR 2", "SRR2"}, {"XOR", "XOR"}, {"Bit depth", "BitDp"},
-            {"Fuzz", "Fuzz"}, {"Blend", "Blend"}, {"Phase", "Phase"},
+            {"Wet/Dry", "Wet"}, {"Gain", "Gain"}, {"Shape", "Shape"}, {"SRR 1", "SRR1"},
+            {"SRR 2", "SRR2"}, {"XOR", "XOR"}, {"Bit depth", "BitDp"}, {"Fuzz", "Fuzz"},
+            // Default knob 0.86f -- MEASURED (dsp/Drive.hpp's
+            // DriveBlendPhase::Process, Wet/Dry 0.25, Gain 0.5, 220 Hz): the
+            // knob whose break frequency lands on 220 Hz itself, where the
+            // allpass rotates its own input by exactly -90 degrees and the
+            // wet path -- already close to antiphase with dry at this Gain
+            // setting -- lands in quadrature with it instead of cancelling
+            // (knob 0, today's old default) or reinforcing it (knob 1). Only
+            // matters once Wet/Dry is off its own floor -- at Wet/Dry 0 this
+            // stage returns dry exactly regardless of Phase, so the app's
+            // registered default patch is unaffected by this default moving.
+            {"Phase", "Phase", 0.86f},
+            // Anti-alias brightness default knob 1.0f -- the crossfade's
+            // ALL-GRIT end (dsp/Drive.hpp's Oversampler2x::SetAntiAliasBrightness,
+            // cleanMix = 1 - knob), bit-identical to what shipped before the
+            // knob was repurposed into a clean/grit crossfade, so no
+            // existing preset changes until it is moved off this end.
             // Default knob 0.5f for
-            // each of these four -- ABrt's ExpMapCompute(0.32,0.5,·), Link's
-            // knob*0.5f, Fold's ExpMapCompute(1,16,·), and Bias's
-            // 0.02f*(2*knob-1) mappings all reproduce a fixed
-            // literal (0.4f / 0.25f / 4.0f / 0.0f respectively) exactly at
-            // knob==0.5f -- see each setter's own comment in dsp/Drive.hpp.
-            {"Anti-alias brightness", "ABrt", 0.5f}, {"Link", "Link", 0.5f}, {"Fold", "Fold", 0.5f},
+            // each of the other three -- Link's knob*0.5f, Fold's
+            // ExpMapCompute(1,16,·), and Bias's 0.02f*(2*knob-1) mappings
+            // all reproduce a fixed literal (0.25f / 4.0f / 0.0f
+            // respectively) exactly at knob==0.5f -- see each setter's own
+            // comment in dsp/Drive.hpp.
+            {"Anti-alias brightness", "ABrt", 1.0f}, {"Link", "Link", 0.5f}, {"Fold", "Fold", 0.5f},
             // Default knob 1.0f -- ExpMapCompute(0.02,1.0,1.0) == 1.0
             // exactly, an exact-identity (bypass) alpha, see SetTone's own
             // comment (dsp/Drive.hpp).
             {"Tone", "Tone", 1.0f}, {"Waveshaper offset", "Bias", 0.5f},
         }}},
         {FroggersBankId::Delay, "Delay", synth::Color::Rgb(255, 105, 180), {{
-            {"Delay time", "DlyTm"}, {"Send", "Send"}, {"Feedback", "Fb"},
-            {"Stereo width", "Width"}, {"Freeze", "Frze"}, {"Mod depth", "ModDp"},
-            {"Wet mix", "WetMx"}, {"Reverse blend", "Rev"}, {"Diffusion", "Diff"},
+            {"Wet/dry", "Wet"}, {"Send", "Send"}, {"Delay time", "DlyTm"},
+            {"Feedback", "Fb"}, {"Stereo width", "Width"}, {"Freeze", "Frze"},
+            {"Mod depth", "ModDp"}, {"Reverse blend", "Rev"}, {"Diffusion", "Diff"},
             // Default knob 0.5f -- FbDr's
             // ExpMapCompute(0.25,4,·) reproduces unity (1.0f) exactly at
             // 0.5f, MdRt's ExpMapCompute(0.05,1.25,·) reproduces 0.25Hz
@@ -259,19 +274,18 @@ inline const std::array<FroggersBankLayout, kFroggersBankCount>& FroggersBankLay
             {"Crush", "Crsh", 0.0f},
         }}},
         {FroggersBankId::Reverb, "Reverb", synth::Color::Cyan, {{
-            {"Wet/dry", "Wet"}, {"Room size", "Room"}, {"Decay", "Decay"},
+            {"Wet/dry", "Wet"}, {"Send", "Send"}, {"Room size", "Room"}, {"Decay", "Decay"},
             {"Pre-delay", "PreDly"}, {"Damping", "Damp"}, {"Stereo width", "Width"},
-            {"Diffusion", "Diff"}, {"Mod depth", "ModDp"}, {"Hold", "Hold"},
-            // Default knob 0.5f for MdRt/
-            // TkDv/Tilt/Tund -- MdRt's ExpMapCompute(0.07,1.75,·) reproduces
-            // 0.35Hz exactly, TkDv's ExpMapCompute(0.25,4,·) reproduces
+            {"Diffusion", "Diff"}, {"Mod", "Mod"}, {"Hold", "Hold"},
+            // Default knob 0.5f for
+            // TkDv/Tilt/Tund -- TkDv's ExpMapCompute(0.25,4,·) reproduces
             // unity (1.0f) exactly, Tilt's centre crossfade weight is exactly
             // 0.0f, Tund's (2*knob-1) offset is exactly 0 samples -- all at
             // knob==0.5f -- see each constant's own comment (dsp/Reverb.hpp).
             // Grit defaults 0.0f -- dsp::DigitalReorganizer::SetFlip/SetHash
             // both reduce to flip==0/hashBits==0 at knob 0.0f, its own exact
             // bypass (same file).
-            {"Mod rate", "MdRt", 0.5f}, {"Tank drive", "TkDv", 0.5f}, {"Grit", "Grit", 0.0f},
+            {"Tank drive", "TkDv", 0.5f}, {"Grit", "Grit", 0.0f},
             {"Tilt", "Tilt", 0.5f}, {"Tuned", "Tund", 0.5f},
         }}},
     }};
@@ -385,12 +399,12 @@ public:
             // own per-call-only duplicate check
             // (:2572-2578). The per-page labels are page-LOCAL in the
             // original product and genuinely repeat across pages ("Stereo
-            // width" is both a Reverb and a Delay row; "Mod depth" is both a
+            // width" is both a Reverb and a Delay row; "Wet/dry" is both a
             // Reverb and a Delay row) -- confirmed by the independent
             // re-derivation above, not an invented collision. A verbatim
             // Parameter::Name() per spec.name would throw "duplicate
             // parameter name" the second page registers "Stereo width" or
-            // "Mod depth". Resolution: qualify the internal, global-namespace
+            // "Wet/dry". Resolution: qualify the internal, global-namespace
             // Name() with the bank name ("Reverb Stereo width" / "Delay
             // Stereo width"), while leaving ShortName() -- the field the
             // encoder grid actually renders (EncoderDraw.hpp:322) -- as the

@@ -352,7 +352,7 @@ public:
         sampleRate_ = static_cast<float>(sampleRate);
         audioAdsr_.init(sampleRate_);
 
-        // ITEM 2a: Sheaf's parameter-smoothing constants
+        // Sheaf's parameter-smoothing constants
         // (kDefaultProcessLiteAlpha/kDefaultTargetComputeIntervalSamples/
         // kDefaultUiDisplayCenterAlpha/kDefaultUiDisplaySpreadAlpha,
         // ParameterModulation.hpp:170-174) are defined at a 48 kHz
@@ -1259,7 +1259,7 @@ public:
             vcoScopeWriter_.AdvanceIndex();
         }
 
-        // ITEM 1: no once-per-block clearing step here anymore -- the single
+        // No once-per-block clearing step here anymore -- the single
         // clear this policy owes (fired either at the running->stopped edge
         // if voices were already Idle, or the instant AllIdle() first turns
         // true afterward) is now detected and performed sample-accurately
@@ -1267,10 +1267,10 @@ public:
         // running->stopped edge itself is detected. See that block's own
         // comment.
 
-        // Tasks 2.2-2.5 (Tier 1/Tier 2 per-unit recovery): see
+        // Tier 1/Tier 2 per-unit recovery: see
         // RecoverPoisonedUnitState()'s own header comment for the full
         // design/trace. Runs once per block, after the per-sample loop, over
-        // every unit Item 2 gave a Reset() to -- this IS the mechanism that
+        // every unit with a Reset() -- this IS the mechanism that
         // fixes "audio never comes back": before this call existed, nothing
         // anywhere in this file ever reset audioVcos_[0]/[1]/[2]/
         // driveBlendPhase_/drive_'s sub-units/filterChain_'s sub-units, so a
@@ -1390,7 +1390,7 @@ public:
     // as `TestOutputLimiter()` above, but for the independently-tuned
     // second instance rather than the master.
     dsp::OutputLimiter& TestFilterPeakLimiter() { return filterChain_.peakLimiter; }
-    // Item 3: test/inspection access to the MASTER output limiter, same
+    // Test/inspection access to the MASTER output limiter, same
     // convention as the accessors above -- lets tests call Process()/
     // Reset() directly and read `envelope` without going through the full
     // RouteAudioSample chain, e.g. to prove the bit-identical-passthrough
@@ -1537,7 +1537,7 @@ private:
     // ExpMapCompute(0.25,4,knob) idiom, unity at knob==0.5, see each
     // unit's own SetFeedbackDrive()/TankDriveFromKnob()/this file's
     // Filter-slot-7 comment for the citation) and Freeze (Delay slot
-    // 4, dsp::DelayParams::dfrz, resolves to 0.0f) -- WITHOUT writing to
+    // 5, dsp::DelayParams::dfrz, resolves to 0.0f) -- WITHOUT writing to
     // the parameter model, exactly as kStopFadeReleaseKnob's release
     // override above never writes the Release knob. Play resumes
     // bit-identical because the commanded value was never touched: the
@@ -1589,16 +1589,13 @@ private:
     static constexpr float kStopUnityDriveKnob = 0.5f;  // ExpMapCompute(0.25,4,0.5) == 1.0 (unity) -- shared by all three drive pre-gains.
     static constexpr float kStopFreezeKnob = 0.0f;
     static constexpr float kStopGritKnob = 0.0f;  // Mangle(x,0,0) - Mangle(0,0,0) == x (dsp/Reverb.hpp:526-527) -- exact bit-identical bypass, same as Grit's own registered default.
-    // The floor on dry signal shared by every wet/dry crossfade -- Reverb's
-    // and Delay's are the same `(1-mix)*dry + mix*wet` expression, so they
-    // get the same ceiling from the same place rather than two constants
-    // that happen to agree. 0.6 leaves at least 40% dry at any knob
-    // position (operator 2026-07-29 "clamp the reverb wetness down, it's
-    // too fucking quiet", tightened again 2026-08-26), so turning a wet
-    // control up adds processed signal instead of trading away the source.
-    // Applied to the mapped value, not the knob range, so each control
-    // still sweeps its whole travel.
-    static constexpr float kMaxWetMix = 0.6f;
+    // The dry floor shared by Delay's and Reverb's wet/dry crossfades is
+    // `dsp::kMinDryLevel` (dsp/Limiter.hpp) -- see that declaration for the
+    // equal-power law it feeds and the guarantee it makes. It is applied
+    // inside `dsp::StereoDelay::ToStereo`/`dsp::Reverb::Process`, AFTER
+    // `WetAuthority()` has scaled the routed knob there, not here: this
+    // class only routes the raw 0..1 knob down to those two calls (see
+    // RouteDelayBank/RouteReverbBank below).
 
     float StoppedKnob(FroggersBankId bank, std::size_t slot, float stoppedValue) {
         return TransportTeardownActive(wasTransportRunning_) ? stoppedValue : RoutedKnob(bank, slot);
@@ -1685,31 +1682,35 @@ private:
     }
 
     // -- Drive bank -> dsp::FrogBlock + DriveBlendPhase ------
-    // FroggersEngine.hpp:290-297 order: Drive (SetGain) before Shape
+    // FroggersEngine.hpp:290-297 order: Gain (SetGain) before Shape
     // (SetCoefs, which reads the just-set gain target -- Drive.hpp's own
-    // comment), then SRR1/SRR2/XOR/BitDepth/Fuzz; Blend/Phase (slots 7-8)
+    // comment), then SRR1/SRR2/XOR/BitDepth/Fuzz; Wet/Dry/Phase (slots 0, 8)
     // are the authored DriveBlendPhase stage, crossfading dry (chainIn)
     // against wet (FrogBlock's output).
     float RouteDriveBank(float chainIn) {
-        drive_.polynomialDrive.SetGain(RoutedKnob(FroggersBankId::Drive, 0));
-        // D2 (Drive slot 10, "Link"): must precede SetCoefs, which reads `link`.
+        drive_.polynomialDrive.SetGain(RoutedKnob(FroggersBankId::Drive, 1));
+        // Link (Drive slot 10) must precede SetCoefs, which reads `link`.
         drive_.polynomialDrive.SetLink(RoutedKnob(FroggersBankId::Drive, 10));
-        drive_.polynomialDrive.SetCoefs(RoutedKnob(FroggersBankId::Drive, 1));
+        drive_.polynomialDrive.SetCoefs(RoutedKnob(FroggersBankId::Drive, 2));
         drive_.sampleRateReducer1.SetFreq(
-            1e-2f + dsp::ZeroedExpCompute(10.0f, 1.0f - RoutedKnob(FroggersBankId::Drive, 2)));
-        drive_.sampleRateReducer2.SetFreq(
             1e-2f + dsp::ZeroedExpCompute(10.0f, 1.0f - RoutedKnob(FroggersBankId::Drive, 3)));
-        drive_.digitalReorganizer.SetFlip(RoutedKnob(FroggersBankId::Drive, 4));
-        drive_.digitalReorganizer.SetHash(RoutedKnob(FroggersBankId::Drive, 5));
-        drive_.fuzz = RoutedKnob(FroggersBankId::Drive, 6);
+        drive_.sampleRateReducer2.SetFreq(
+            1e-2f + dsp::ZeroedExpCompute(10.0f, 1.0f - RoutedKnob(FroggersBankId::Drive, 4)));
+        drive_.digitalReorganizer.SetFlip(RoutedKnob(FroggersBankId::Drive, 5));
+        drive_.digitalReorganizer.SetHash(RoutedKnob(FroggersBankId::Drive, 6));
+        drive_.fuzz = RoutedKnob(FroggersBankId::Drive, 7);
         // -- Drive slots 9, 11-13 -----
         drive_.oversampler.SetAntiAliasBrightness(RoutedKnob(FroggersBankId::Drive, 9));
         drive_.SetFold(RoutedKnob(FroggersBankId::Drive, 11));
         drive_.SetTone(RoutedKnob(FroggersBankId::Drive, 12));
         drive_.SetBias(RoutedKnob(FroggersBankId::Drive, 13));
         const float driveWet = drive_.Process(chainIn);
+        // Wet/Dry carries no dry floor -- unlike Delay's and Reverb's wet
+        // controls, this crossfade is allowed to reach fully wet (see
+        // dsp::kMinDryLevel's own comment, dsp/Limiter.hpp, for why the
+        // other two pages are floored and this one is not).
         const float driveOut = driveBlendPhase_.Process(
-            chainIn, driveWet, RoutedKnob(FroggersBankId::Drive, 7), RoutedKnob(FroggersBankId::Drive, 8));
+            chainIn, driveWet, RoutedKnob(FroggersBankId::Drive, 0), RoutedKnob(FroggersBankId::Drive, 8));
         return driveOut;
     }
 
@@ -1886,7 +1887,7 @@ private:
     // `processInsert`'s own shape is `delay.process(bumpIn, params)` then
     // `delay.toReverbMono(bumpIn, wet, params.dmix)`, reproduced
     // identically below.
-    // row4Freeze (the Freeze KNOB, dsp::DelayParams::dfrz) goes
+    // The Freeze KNOB (Delay bank slot 5, dsp::DelayParams::dfrz) goes
     // through stoppedKnob too -- kStopFreezeKnob (0.0f) while stopped,
     // regardless of the commanded knob -- distinct from the Freeze
     // BUTTON's latch (dfrzLatched, set just below: that latch stays a no-op
@@ -1899,18 +1900,22 @@ private:
     // function, freshly constructed every sample (this file's own
     // dfrzLatched comment, below).
     dsp::StereoSample RouteDelayBank(float filterOut) {
-        const float delayFreezeKnobEffective = StoppedKnob(FroggersBankId::Delay, 4, kStopFreezeKnob);
+        const float delayFreezeKnobEffective = StoppedKnob(FroggersBankId::Delay, 5, kStopFreezeKnob);
         lastDelayFreezeKnobEffective_ = delayFreezeKnobEffective;
-        // The same kMaxWetMix the Reverb bank uses; see its declaration.
-        // Delay needs a second protection Reverb does not: its wet path is fed
-        // only through Send, which defaults to zero, so ToReverbMono also
-        // scales the mix by what that path actually holds. The cap bounds a
-        // fed path; the authority handles an unfed one.
-        const float delayWetMixEffective = kMaxWetMix * RoutedKnob(FroggersBankId::Delay, 6);
+        // The routed knob, passed down unscaled: dsp::kMinDryLevel's dry
+        // floor (dsp/Limiter.hpp, same constant the Reverb bank uses below)
+        // is applied inside dsp::StereoDelay::ToStereo, to theta AFTER
+        // WetAuthority() has scaled this value there -- not here, and not
+        // by multiplying the knob. Delay needs a second protection Reverb
+        // does not: its wet path is fed only through Send, which defaults
+        // to zero, so ToStereo also scales the mix by what that path
+        // actually holds. The dry floor bounds a fed path; the authority
+        // handles an unfed one.
+        const float delayWetMixEffective = RoutedKnob(FroggersBankId::Delay, 0);
         lastDelayWetMixEffective_ = delayWetMixEffective;
         dsp::DelayParams delayParams = dsp::MapRowsToDelayParams(
-            RoutedKnob(FroggersBankId::Delay, 0), RoutedKnob(FroggersBankId::Delay, 1), RoutedKnob(FroggersBankId::Delay, 2),
-            RoutedKnob(FroggersBankId::Delay, 3), delayFreezeKnobEffective, RoutedKnob(FroggersBankId::Delay, 5),
+            RoutedKnob(FroggersBankId::Delay, 2), RoutedKnob(FroggersBankId::Delay, 1), RoutedKnob(FroggersBankId::Delay, 3),
+            RoutedKnob(FroggersBankId::Delay, 4), delayFreezeKnobEffective, RoutedKnob(FroggersBankId::Delay, 6),
             delayWetMixEffective, RoutedKnob(FroggersBankId::Delay, 7), RoutedKnob(FroggersBankId::Delay, 8));
         // The Freeze BUTTON's override, applied where the
         // freeze mapping resolves the encoder's value -- MapRowsToDelayParams
@@ -1938,10 +1943,11 @@ private:
     // Last stage, matching FroggersEngine.hpp:617-618's wet/dry blend
     // (folded into Reverb::Process's own return -- see that struct's
     // header comment).
-    // The wet/dry ceiling is kMaxWetMix, shared with the Delay bank; see
-    // its declaration for why the value is what it is. Reverb's blend
-    // lives in dsp/Reverb.hpp, folded into Process's own return, so what
-    // is capped here is the mix handed to it.
+    // The dry floor is dsp::kMinDryLevel (dsp/Limiter.hpp), shared with the
+    // Delay bank; see its declaration for why the value is what it is.
+    // Reverb's blend, and the floor's application to it, both live in
+    // dsp/Reverb.hpp, folded into Process's own return -- this class passes
+    // the routed knob straight through, unscaled.
     // stoppedKnob overrides Tank drive (slot 10) to
     // kStopUnityDriveKnob while stopped, same idiom as the Filter comb
     // drive and Delay feedback drive above. Reverb::Process computes
@@ -1963,24 +1969,30 @@ private:
         // Process has no member to read gritKnob01's use back from either).
         const float reverbGritKnobEffective = StoppedKnob(FroggersBankId::Reverb, 11, kStopGritKnob);
         lastReverbGritKnobEffective_ = reverbGritKnobEffective;
-        // Reverb slots 9-13 (R1-R5: Mod rate/Tank
+        // Reverb slots 9-13 (Hold/Tank
         // drive/Grit/Tilt/Tuned) -- passed as Process()'s own trailing
-        // arguments, mirroring how slots 7-8 (Mod depth/Hold) are already
+        // arguments, mirroring how slot 8 (Mod) is already
         // wired here, rather than via separate Set*() calls (dsp::Reverb's
         // own established convention differs from dsp::StereoDelay's, which
         // does use separate setters -- see dsp/Reverb.hpp's own comment on
-        // each of these five).
-        const float reverbWetMixEffective = kMaxWetMix * RoutedKnob(FroggersBankId::Reverb, 0);
+        // each of these).
+        const float reverbWetMixEffective = RoutedKnob(FroggersBankId::Reverb, 0);
         lastReverbWetMixEffective_ = reverbWetMixEffective;
+        // Reverb slot 8 ("Mod") is the collapsed Mod depth/Mod rate control
+        // -- Mod rate no longer has a live knob of its own (dsp::Reverb::
+        // Process's modRateKnob01 parameter is [[maybe_unused]] now; see its
+        // own comment), so the fixed 0.5f default is passed explicitly here
+        // rather than reading Reverb slot 9, which is Hold now.
         const dsp::StereoSample reverbOut = reverb_.Process(
             delayOut,
             reverbWetMixEffective,
-            RoutedKnob(FroggersBankId::Reverb, 1), RoutedKnob(FroggersBankId::Reverb, 2),
-            RoutedKnob(FroggersBankId::Reverb, 3), RoutedKnob(FroggersBankId::Reverb, 4), RoutedKnob(FroggersBankId::Reverb, 5),
-            RoutedKnob(FroggersBankId::Reverb, 6), sampleRate_,
-            RoutedKnob(FroggersBankId::Reverb, 7), RoutedKnob(FroggersBankId::Reverb, 8),
-            RoutedKnob(FroggersBankId::Reverb, 9), reverbTankDriveKnobEffective, reverbGritKnobEffective,
-            RoutedKnob(FroggersBankId::Reverb, 12), RoutedKnob(FroggersBankId::Reverb, 13));
+            RoutedKnob(FroggersBankId::Reverb, 2), RoutedKnob(FroggersBankId::Reverb, 3),
+            RoutedKnob(FroggersBankId::Reverb, 4), RoutedKnob(FroggersBankId::Reverb, 5), RoutedKnob(FroggersBankId::Reverb, 6),
+            RoutedKnob(FroggersBankId::Reverb, 7), sampleRate_,
+            RoutedKnob(FroggersBankId::Reverb, 8), RoutedKnob(FroggersBankId::Reverb, 9),
+            /*modRateKnob01=*/0.5f, reverbTankDriveKnobEffective, reverbGritKnobEffective,
+            RoutedKnob(FroggersBankId::Reverb, 12), RoutedKnob(FroggersBankId::Reverb, 13),
+            /*sendKnob01=*/RoutedKnob(FroggersBankId::Reverb, 1));
         return reverbOut;
     }
 
@@ -2186,10 +2198,10 @@ private:
     // click before recovery, not an audible dropout.
     static constexpr float kSustainedOverCeilingSeconds = 0.01f;
 
-    // Tasks 2.2-2.5: one unit's worth of Tier 1 (finiteness) + Tier 2
+    // One unit's worth of Tier 1 (finiteness) + Tier 2
     // (sustained magnitude) recovery, called once per block per unit from
     // RecoverPoisonedUnitState() below. `Unit` is any of the dsp:: structs
-    // Item 2 gave `StateFinite()`/`StateMagnitude()`/`Reset()` to (dsp::Vco,
+    // that carry `StateFinite()`/`StateMagnitude()`/`Reset()` (dsp::Vco,
     // dsp::ResonantBump, dsp::Comb, dsp::Oversampler2x,
     // dsp::SampleRateReducer, dsp::DriveBlendPhase) -- templated rather than
     // duplicated 10 times over, since the recovery POLICY (finiteness first,

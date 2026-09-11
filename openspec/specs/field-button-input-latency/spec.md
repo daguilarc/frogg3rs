@@ -49,8 +49,8 @@ Firmware builds SHALL use `APP_TYPE=BOOT_NONE`, `OPT_LEVEL=-Os`, `USE_LTO=1`, an
 
 #### Scenario: Release build flags
 
-- **WHEN** `make` runs in `src/FroggersTiga` without overrides
-- **THEN** the effective compile flags match the proto baseline documented in the change design (no accidental `-O0`, no `BOOT_SRAM` default)
+- **WHEN** `make` runs in `src/FroggersSolo` or `src/FroggersGuitar` without overrides
+- **THEN** the effective compile flags are the ones `src/mk/config.mk` sets (no accidental `-O0`, no `BOOT_SRAM` default)
 
 ### Requirement: Acceptance bench for button latency
 

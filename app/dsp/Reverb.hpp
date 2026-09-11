@@ -26,15 +26,20 @@
 //     x_rvSize-length ring buffers, and m_rvDampFilter's type OPLowPassFilter,
 //     ported here as the shared dsp::OnePoleLowPass).
 //
-// Pre-delay note: the firmware's ExpMap divides both endpoints by sampleRate
-// (`ExpMap(1.0f/sr, 100.0f/sr, knob)`) and ProcessReverb then re-multiplies
+// Pre-delay note: the firmware's ExpMap divided both endpoints by sampleRate
+// (`ExpMap(1.0f/sr, 100.0f/sr, knob)`) and ProcessReverb then re-multiplied
 // the result by sampleRate to get a sample count (:305 `preNorm *
-// m_sampleRate`). That double division/multiplication is unusual (it is
-// NOT simply "1 to 100 samples" pre-scaled) but the sampleRate terms are
-// exact algebraic inverses of one another around the exponential map, so
-// it is ported verbatim rather than "simplified" -- an exponential map is
-// not linear, so cancelling the /sr and *sr naively would change the
-// result.
+// m_sampleRate`). Those sampleRate terms are exact algebraic inverses of
+// one another around the exponential map, so the round trip always
+// cancelled back to a range of 1 to 100 SAMPLES (0.02ms to 2.08ms at
+// 48kHz) -- a range that reads as milliseconds but is not one: it moves
+// the tail's arrival by about two milliseconds across the WHOLE knob,
+// inside the window where a listener fuses a pre-delay with its own tail
+// rather than hearing it as separate. `PreDelayNormFromKnob` below instead
+// maps the knob across an absolute millisecond range, converted to samples
+// by the ACTUAL sampleRate at each call so the map still returns a time
+// (in seconds) that `Process()` multiplies back into a sample count --
+// the exponential shape is unchanged, only what its endpoints mean is.
 //
 // Smoothing NOT ported: FroggersEngine.hpp reads every one of these seven
 // knobs through a RuntimeParam (a one-pole smoothing filter on the raw
@@ -130,10 +135,11 @@ static_assert(kReverbWetLimiterThreshold < kReverbWetLimiterCeiling,
 inline constexpr float kReverbWetLimiterAttackSeconds = 2.0e-6f;   // 2 microseconds -- see comment above.
 inline constexpr float kReverbWetLimiterReleaseSeconds = kSharedReleaseSeconds;  // shared; see Limiter.hpp.
 
-// Reverb slots 9-13 ("MdRt"/"TkDv"/"Grit"/
-// "Tilt"/"Tund"): these five parameters were registered
-// (FroggersParameters.hpp) but never read -- every knob defaulted
-// 0.0f and had no effect. No Froggers original exists for any of
+// Reverb slots 10-13 ("TkDv"/"Grit"/"Tilt"/"Tund"), plus the rate half of
+// the collapsed Mod control ("MdRt", no live slot of its own any more --
+// see modLfoHz's own comment in Process(), below): these five parameters
+// were registered (FroggersParameters.hpp) but never read -- every knob
+// defaulted 0.0f and had no effect. No Froggers original exists for any of
 // them (same footing as Mod depth/Hold above -- a "newly
 // authored" category), so each mapping below is authored, with its own
 // derivation noted at its call site/setter.
@@ -148,16 +154,16 @@ struct Reverb
     // the delay-line indexing.
     static constexpr float kModMaxOffsetSamples = 24.0f;
 
-    // (slot 9, "Mod rate" / "MdRt"): replaces the fixed 0.35 Hz baked
-    // into modLfoPhase's own increment below. Range [0.07, 1.75] Hz chosen
-    // so the geometric mean lands exactly on today's 0.35 Hz (0.07*1.75 ==
-    // 0.1225 == 0.35^2), the SAME "geometric-mean range" idiom
-    // Delay's own Mod rate knob already established
-    // (dsp::StereoDelay::SetModRate, dsp/Delay.hpp: range [0.05, 1.25],
-    // 25x ratio, geometric mean 0.25 Hz) -- reused directly, including the
-    // 25x lo/hi ratio (0.07*25 == 1.75), not invented fresh. Default knob
-    // 0.5f reproduces exactly 0.35 Hz: ExpMapCompute(0.07,1.75,0.5) ==
-    // sqrt(0.07*1.75) == sqrt(0.1225) == 0.35.
+    // Range [0.07, 1.75] Hz for the LFO underneath Mod depth's wow: the
+    // geometric mean lands exactly on 0.35 Hz (0.07*1.75 == 0.1225 ==
+    // 0.35^2), the SAME "geometric-mean range" idiom Delay's own Mod rate
+    // knob already established (dsp::StereoDelay::SetModRate, dsp/
+    // Delay.hpp: range [0.05, 1.25], 25x ratio, geometric mean 0.25 Hz) --
+    // reused directly, including the 25x lo/hi ratio (0.07*25 == 1.75),
+    // not invented fresh. Mod depth and Mod rate collapsed to one control
+    // (see modLfoHz's own comment in Process(), below) -- this range is
+    // now read at a fixed knob of 0.5f, ExpMapCompute(0.07,1.75,0.5) ==
+    // sqrt(0.07*1.75) == sqrt(0.1225) == 0.35 Hz, rather than swept live.
     static constexpr float kModLfoHzMin = 0.07f;
     static constexpr float kModLfoHzMax = 1.75f;
 
@@ -240,6 +246,21 @@ struct Reverb
     // the tuning and its measurement.
     OutputLimiter wetLimiter;
 
+    // `WetAuthorityFollower` (Limiter.hpp) is the same unit
+    // `dsp::StereoDelay::wetAuthority` owns (dsp/Delay.hpp) -- one shared
+    // definition of the attack/release coefficients and full-authority
+    // level, so Reverb's Send gets exactly Delay's protection against
+    // crossfading the dry signal away against a wet path nothing feeds,
+    // rather than a second copy that happens to agree.
+    //
+    // Reverb now has its own Send (`sendKnob01`, Process() below): the tank
+    // is fed `send * input`, exactly the way `StereoDelay::Process` feeds its
+    // line `inSignal = bumpIn * send` (dsp/Delay.hpp), so this follower
+    // starts at 0.0f -- the same "a just-cleared wet path has earned
+    // nothing" default `WetAuthorityFollower::Reset()` documents -- and
+    // tracks what the tank is actually producing from here on.
+    WetAuthorityFollower wetAuthority;
+
     // Unlike `dsp::StereoDelay` (which is always `SetSampleRate()`'d
     // before any `Process()` call, dsp/Delay.hpp), `Reverb` has no such
     // entry point of its own -- every caller passes `sampleRate` directly
@@ -268,6 +289,10 @@ struct Reverb
     {
         wetLimiter.Configure(sampleRate, kReverbWetLimiterThreshold, kReverbWetLimiterCeiling,
                               kReverbWetLimiterAttackSeconds, kReverbWetLimiterReleaseSeconds);
+        // Same "configure before any Process() call" rule wetLimiter's own
+        // line just above follows -- see wetAuthority's own field comment
+        // for what these coefficients now govern.
+        wetAuthority.Configure(sampleRate);
     }
 
     // (Stop-transport reset, app/FroggersAppCore.hpp's ProcessBlock
@@ -314,6 +339,11 @@ struct Reverb
         // both routed through this same Reset() -- resets it too, the same
         // treatment `StereoDelay::wetLimiterL`/`R` gets (dsp/Delay.hpp).
         wetLimiter.Reset();
+        // Same "must reset them too" rule the wetLimiter line just above
+        // already follows -- `WetAuthorityFollower::Reset()`'s own 0.0f
+        // default is correct here: a just-cleared tank has earned nothing,
+        // the same starting point `StereoDelay::wetAuthority` resets to.
+        wetAuthority.Reset();
     }
 
     // (Tier 1 recovery, app/FroggersAppCore.hpp): Reverb has NO
@@ -343,6 +373,13 @@ struct Reverb
         // calls this StateFinite()/the Reset() above uniformly, so a
         // poisoned limiter envelope must be visible here.
         if (!wetLimiter.StateFinite())
+        {
+            return false;
+        }
+        // Same "aggregate finiteness" rule the wetLimiter check just above
+        // already follows -- the wet-authority follower's own level must be
+        // visible here too.
+        if (!wetAuthority.StateFinite())
         {
             return false;
         }
@@ -384,10 +421,22 @@ struct Reverb
     // :457 Decay.
     static float DecayFeedbackFromKnob(float knob01) { return ExpMapCompute(0.1f, 0.98f, knob01); }
 
-    // :458 Pre-delay (see file-header note on the /sr, *sr round trip).
+    // :458 Pre-delay (see file-header note on the /sr, *sr round trip that
+    // used to leave this a samples range dressed up as a time computation).
+    // Floor is 1ms -- the port's own "1.0" literal, freed of the erroneous
+    // /sr that turned it into one sample. Ceiling is derived from what the
+    // pre-delay line (`preLine[kSize]`) can actually hold: `kSize - 1`
+    // samples at whatever sampleRate this call runs at, converted to
+    // milliseconds, so the knob's top position lands exactly on the
+    // buffer's own capacity rather than on a guessed number -- at 48kHz
+    // that ceiling is 4095/48000*1000 = 85.3125ms. Process()'s own
+    // `preDelay >= kSize` clamp (immediately below) still guards the
+    // rounding at the top of the sweep, but never needs to engage.
     static float PreDelayNormFromKnob(float knob01, float sampleRate)
     {
-        return ExpMapCompute(1.0f / sampleRate, 100.0f / sampleRate, knob01);
+        constexpr float kPreDelayFloorMs = 1.0f;
+        const float ceilingMs = 1000.0f * static_cast<float>(kSize - 1) / sampleRate;
+        return ExpMapCompute(kPreDelayFloorMs / 1000.0f, ceilingMs / 1000.0f, knob01);
     }
 
     // :459, :574 Damping -- the ExpMap output IS the damping filter's alpha.
@@ -404,7 +453,10 @@ struct Reverb
     // onto moves.
     static float DampAlphaFromKnob(float knob01) { return ExpMapCompute(0.02f, 0.2f, 1.0f - knob01); }
 
-    // (slot 9, Mod rate) -- see kModLfoHzMin/Max's own comment above.
+    // No live slot any more -- Mod rate collapsed into the single Mod
+    // control (slot 8) alongside Mod depth; this is now only ever called
+    // at the fixed knob 0.5f (see modLfoHz's own comment in Process(),
+    // below). See kModLfoHzMin/Max's own comment above.
     static float ModRateHzFromKnob(float knob01) { return ExpMapCompute(kModLfoHzMin, kModLfoHzMax, knob01); }
 
     // (slot 10, Tank drive) -- see kTankDriveMin/Max's own comment above.
@@ -440,13 +492,28 @@ struct Reverb
                    // behavior bit-for-bit when a caller omits them (see
                    // each default's own derivation at its constant's
                    // comment above) -- so every existing call site in this
-                   // file's own tests, which never pass these five, is
+                   // file's own tests, which never pass these six, is
                    // unaffected.
-                   float modRateKnob01 = 0.5f,
+                   //
+                   // modRateKnob01 is kept in the signature so every
+                   // existing call site still compiles and every existing
+                   // test still passes, but Mod depth and Mod rate now
+                   // collapse to the ONE Mod control (modDepthKnob01) --
+                   // see modLfoHz's own comment below for why and for the
+                   // measurement that chose the fixed rate.
+                   [[maybe_unused]] float modRateKnob01 = 0.5f,
                    float tankDriveKnob01 = 0.5f,
                    float gritKnob01 = 0.0f,
                    float tiltKnob01 = 0.5f,
-                   float tunedKnob01 = 0.5f)
+                   float tunedKnob01 = 0.5f,
+                   // Reverb slot 1 ("Send"): gates how much of `input`
+                   // reaches the tank feed below, the same job
+                   // `StereoDelay::Process`'s own `send` plays
+                   // (`inSignal = bumpIn * send`, dsp/Delay.hpp). Default
+                   // 1.0f reproduces today's exact prior behavior -- the
+                   // tank fully fed, bit-for-bit -- for every existing call
+                   // site in this file's own tests, which never pass it.
+                   float sendKnob01 = 1.0f)
     {
         // :458, :497-504 -- pre-delay tap.
         const float preNorm = PreDelayNormFromKnob(preKnob01, sampleRate);
@@ -455,11 +522,16 @@ struct Reverb
         {
             preDelay = kSize - 1;
         }
-        // The tank's SEND is mono: it is one pre-delay line into a two-line
-        // network, and giving it two inputs would be a different reverb, not
-        // the same one plumbed through. Only the send folds -- the dry path
-        // below keeps its pair, and the tank's own output is already stereo.
-        preLine[preIndex] = 0.5f * (input.l + input.r);
+        const float send = std::min(std::max(sendKnob01, 0.0f), 1.0f);
+        // The tank's feed is mono: it is one pre-delay line into a
+        // two-line network, and giving it two inputs would be a different
+        // reverb, not the same one plumbed through. Only the feed folds --
+        // the dry path below keeps its pair, and the tank's own output is
+        // already stereo. Scaled by Send, the page's own feed into the
+        // tank -- at Send's default-closed 0.0f this write is exactly 0.0f
+        // every call, the same "no signal in the tank" starting point
+        // `StereoDelay`'s own closed Send leaves its delay line at.
+        preLine[preIndex] = send * 0.5f * (input.l + input.r);
         const size_t preRead = (preIndex + kSize - preDelay) % kSize;
         const float preOut = preLine[preRead];
         preIndex = (preIndex + 1) % kSize;
@@ -474,11 +546,30 @@ struct Reverb
         // Authored Mod depth: a small sinusoidal wow on the read taps.
         // modDepthKnob01 == 0 -> modOffset == 0 -> dA/dB unchanged, so this
         // never disturbs the parity case.
-        // modLfoHz is knob-driven (replacing the fixed kModLfoHz == 0.35f
-        // literal) -- modRateKnob01 == 0.5f reproduces exactly 0.35 Hz (see
-        // kModLfoHzMin/Max's own comment), so this alone never disturbs the
-        // parity case either.
-        const float modLfoHz = ModRateHzFromKnob(modRateKnob01);
+        //
+        // Mod rate no longer has its own knob: it was measurably inert
+        // whenever Mod depth sat at zero (the multiply just below), so the
+        // two controls served one capability. MEASURED (fully wet, a
+        // steady 300 Hz tone, 90 seconds rendered per point so even the
+        // slowest rate completes several cycles, the tail's short-time RMS
+        // envelope as the sideband proxy): envelope DEPTH tracks
+        // modDepthKnob01 and stays within 0.02 dB of its own row's mean
+        // across every rate (measured rows at depth 0/0.25/0.5/0.75/1.0:
+        // 0.000/0.129/0.191/0.222/0.242 dB), while the envelope's energy
+        // AT the rate-predicted frequency stays within 0.3 dB of its own
+        // column's mean across every depth once depth is nonzero -- the
+        // two axes are close to orthogonal. A single depth knob at a
+        // FIXED rate therefore reaches nearly the full depth range the
+        // two-knob grid reaches (0.000-0.240 dB against the grid's own
+        // 0.000-0.263 dB ceiling), while tying rate to depth instead (the
+        // other candidate law) forces every shallow setting to also be
+        // slow and every deep setting to also be fast, losing the
+        // deep-but-slow and shallow-but-fast corners today's two knobs
+        // reach together. Fixed at ModRateHzFromKnob(0.5f) -- 0.35 Hz, the
+        // geometric mean of the range and already the exact value the
+        // ported parity case assumes, so modRateKnob01's own default
+        // continues to reproduce it, now unconditionally.
+        const float modLfoHz = ModRateHzFromKnob(0.5f);
         modLfoPhase = WrapPhase(modLfoPhase + modLfoHz / sampleRate);
         const float modOffset = modDepthKnob01 * kModMaxOffsetSamples * Sine01(modLfoPhase);
         // Tuned adds a static (non-LFO) offset through this SAME
@@ -592,9 +683,45 @@ struct Reverb
         // mathematically inert: with mid == 0.5(aOut+bOut), wetL + wetR is
         // 2*mid at every width, so the knob could not change what was heard.
         // Keeping the pair is what makes it a control.
-        const float mix = mixKnob01;  // :455, direct passthrough
-        const float mixedL = (1.0f - mix) * input.l + mix * wetL;  // :846
-        const float mixedR = (1.0f - mix) * input.r + mix * wetR;
+        // Scaled by what the wet path has earned, the same protection
+        // `StereoDelay::ToStereo` already applies (dsp/Delay.hpp). The
+        // ADVANCE TARGET mirrors `StereoDelay::Process`'s own two exits: a
+        // closed Send drops the target to 0.0f at once -- Wet/dry goes
+        // inert immediately rather than fading out with whatever the tank
+        // still holds on Hold/Decay's own feedback -- and an open Send
+        // tracks the level the tank is actually producing (`wetL`/`wetR`
+        // just above), so a Send that has not yet earned the mix its full
+        // travel does not get it.
+        const float wetAuthorityTarget = (send <= 0.0001f) ? 0.0f : std::fabs(0.5f * (wetL + wetR));
+        wetAuthority.Advance(wetAuthorityTarget);
+        const float mix = mixKnob01 * wetAuthority.Authority();  // :455, direct passthrough
+        // Equal-power crossfade, not linear: :846's `(1-mix)*dry + mix*wet`
+        // only holds level when the two legs are correlated, and the tank's
+        // tail is largely uncorrelated with the dry input. MEASURED worst
+        // dip across the control's whole travel under the old linear law:
+        // -1.55 dB at 220 Hz, -2.06 dB at 440 Hz, -4.47 dB at 880 Hz.
+        // cos/sin quadrant weights hold level regardless of that
+        // correlation, the same fix dsp::DriveBlendPhase::Process
+        // (Drive.hpp) already applies to the Drive page's own Wet/Dry.
+        //
+        // theta is capped at acos(kMinDryLevel) rather than a full quarter
+        // turn (dsp::kMinDryLevel's own comment, Limiter.hpp), so mix == 1.0
+        // reaches this stage's dry floor, not silence -- the dry signal's
+        // own gain never drops below kMinDryLevel no matter where Wet/dry
+        // sits.
+        //
+        // The law itself lives in dsp::EqualPowerWetDry (Limiter.hpp), shared
+        // with the Drive page, whose only difference from this one is the
+        // floor it passes. A nonzero floor is also why this page needs no
+        // exact case at the top of its travel: thetaMax sits well short of
+        // pi/2, the one place std::cos stops landing on an exact value. The
+        // zero endpoint the helper does hold exactly, because mix == 0 has to
+        // return `input` bit-for-bit here and an existing pin depends on it.
+        const WetDryGains gains = EqualPowerWetDry(mix, kMinDryLevel);
+        const float dryGain = gains.dry;
+        const float wetGain = gains.wet;
+        const float mixedL = dryGain * input.l + wetGain * wetL;
+        const float mixedR = dryGain * input.r + wetGain * wetR;
 
         // (slot 12, Tilt): bipolar post-tank tone shave, applied to
         // mixedOut BEFORE wetLimiter.Process() below. tiltLowPass/

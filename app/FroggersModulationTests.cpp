@@ -799,7 +799,7 @@ TEST_CASE(randomize_page_on_mod_detail_grid_changes_only_that_parameters_own_dep
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);
     synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
-    synth::Parameter& sibling = fx.model.PageParameter(FroggersBankId::Reverb, 1);
+    synth::Parameter& sibling = fx.model.PageParameter(FroggersBankId::Reverb, 2);
 
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
     drillIn.PressEncoder(0);  // -> level 1 on `focused`
@@ -1331,10 +1331,25 @@ TEST_CASE(default_patch_shape_defaults_are_exact) {
     REQUIRE_NEAR(fx.model.PageParameter(FroggersBankId::Audio, 5).SceneCenter(0), 1.0f, 1e-6f);  // VCO3 Shape = max
 }
 
-TEST_CASE(default_patch_drive_is_20_percent) {
+TEST_CASE(default_patch_gain_is_20_percent) {
     Fixture fx;
     ApplyFroggersDefaultPatch(fx.model);
-    REQUIRE_NEAR(fx.model.PageParameter(FroggersBankId::Drive, 0).SceneCenter(0), 0.2f, 1e-6f);
+    REQUIRE_NEAR(fx.model.PageParameter(FroggersBankId::Drive, 1).SceneCenter(0), 0.2f, 1e-6f);
+}
+
+// Follows ApplyDriveBankOverlay's own literal to Gain's slot -- Wet/Dry
+// (slot 0) is a DIFFERENT control since the rename, and the overlay must
+// not spill onto it: a default patch that left Wet/Dry at any nonzero value
+// would ship the Drive page 20% wet instead of bypassed. Read the
+// REGISTERED default straight off FroggersBankLayouts() rather than
+// hardcoding 0.0f here, so this stays correct if that default is ever
+// deliberately changed.
+TEST_CASE(default_patch_wet_dry_reads_its_own_registered_default) {
+    Fixture fx;
+    ApplyFroggersDefaultPatch(fx.model);
+    const float registeredDefault =
+        FroggersBankLayouts()[static_cast<std::size_t>(FroggersBankId::Drive)].params[0].defaultValue;
+    REQUIRE_NEAR(fx.model.PageParameter(FroggersBankId::Drive, 0).SceneCenter(0), registeredDefault, 1e-6f);
 }
 
 TEST_CASE(default_patch_cross_vco_pitch_depths_have_correct_sign_and_source) {
@@ -1428,12 +1443,12 @@ TEST_CASE(default_patch_touches_no_parameter_outside_the_enumerated_set) {
 
     // Every top-level parameter's OWN scene-center value must match the
     // baseline exactly, except the three enumerated Shape controls and the
-    // one enumerated Drive control.
+    // one enumerated Gain control.
     for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
         const auto bankId = static_cast<FroggersBankId>(bankIx);
         for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
             const bool isEnumeratedShape = bankId == FroggersBankId::Audio && paramIx >= 3 && paramIx <= 5;
-            const bool isEnumeratedDrive = bankId == FroggersBankId::Drive && paramIx == 0;
+            const bool isEnumeratedDrive = bankId == FroggersBankId::Drive && paramIx == 1;
             const float baseline = baselineFx.model.PageParameter(bankId, paramIx).SceneCenter(0);
             const float patched = patchedFx.model.PageParameter(bankId, paramIx).SceneCenter(0);
             if (isEnumeratedShape || isEnumeratedDrive) {
@@ -1880,7 +1895,7 @@ TEST_CASE(reset_page_drilled_in_acts_on_only_the_selected_parameters_own_depths)
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);
     synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
-    synth::Parameter& sibling = fx.model.PageParameter(FroggersBankId::Reverb, 1);
+    synth::Parameter& sibling = fx.model.PageParameter(FroggersBankId::Reverb, 2);
 
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
 
@@ -1893,7 +1908,7 @@ TEST_CASE(reset_page_drilled_in_acts_on_only_the_selected_parameters_own_depths)
     // Give `sibling` its OWN real, materialized, non-neutral depths, via the
     // SAME drillIn (never two concurrent drill-ins on one Bank -- Bank's
     // selection state is shared, app-side level tracking is not).
-    drillIn.PressEncoder(1);  // -> level 1 on `sibling`
+    drillIn.PressEncoder(2);  // -> level 1 on `sibling`
     RandomizePage(fx.manager, drillIn);
     drillIn.Back();
     REQUIRE_TRUE(drillIn.Level() == 0);
