@@ -162,4 +162,5 @@ modified sources carry no executable change.
       its invocation trace into the proposal. Per §9 this revision is itself
       unaudited; postflight reads the revision, not the draft.
 - [x] 9.2 First postflight pass run in a fresh context. Sections 1, 3, 4 and 6 clean -- every `[x]` task verified against the tree, zero excluded-bucket citations touched, seven commit pins spot-checked against `git show` and all seven accurate, no hygiene residue. Sections 2 and 5 produced the four findings recorded as group 10, all repaired inside the change. A second, scoped pass covers the repairs, since a postflight whose findings are acted on has produced an unaudited change.
-- [ ] 9.3 One commit pushed to `main`.
+- [x] 9.3 Pushed to `main` as `ab90924`. No Sheaf file is touched, so the submodule stays pinned at `ba3898e4` and there is no PR to raise upstream. `frogg3rs-midi-controller-resilience` is left open and untouched.
+
