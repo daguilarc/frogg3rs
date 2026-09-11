@@ -927,7 +927,7 @@ TEST_CASE(grace_active_pending_release_reaches_release_within_bounded_completion
             REQUIRE_TRUE(static_cast<double>(samplesUntilReleaseStarts) <= graceSamples + 8.0);
             // Preserved (not cut short): Release does NOT start meaningfully
             // before grace's own countdown elapses -- the minimum-hold
-            // guarantee this task exists to pin, from the Hold side.
+            // guarantee pinned here, from the Hold side.
             REQUIRE_TRUE(static_cast<double>(samplesUntilReleaseStarts) >= graceSamples - 8.0);
         }
     }
@@ -990,7 +990,7 @@ TEST_CASE(grace_countdown_with_float_inexact_values_expires_within_grace_plus_a_
 
         // The fix asks for expiry "within grace + 1 sample"; the enforced
         // tolerance is +/-2 samples (corrected 2026-08-17 -- the comment
-        // previously quoted the task's "+1" while the assertion below has
+        // previously quoted a stale "+1" while the assertion below has
         // always allowed 2). Two samples is the honest bound: the countdown
         // decrements by exactly 1.0f/sample from a non-integer start, so
         // ceil-style rounding can land either side by one. Still a
@@ -1047,7 +1047,7 @@ TEST_CASE(short_gate_with_long_attack_and_active_grace_completes_attack_and_deca
         // ...and Decay then runs on to settle at Hold (two consecutive
         // identical readings -- see StepUntilLevelStabilizes's own comment)
         // rather than being pre-empted by Release -- the "and Decay" half
-        // of this task's name. Read off the real object, not an
+        // of this test's name. Read off the real object, not an
         // independently-recomputed sustainLevel (RuntimeFloat's own
         // comment). Settling strictly below the Attack peak and strictly
         // above 0 rules out both failure shapes: still-finishing Attack
@@ -1407,7 +1407,7 @@ TEST_CASE(random_sh_reseed_redraws_the_bag_and_the_same_seed_reproduces_it) {
 namespace {
 // Reference re-derivation of the FIRMWARE's sh formula only (Parameter.hpp
 // :143), isolated from the rest of the scramble, so the regression test
-// pins exactly the bit this task is about: sh = 1 + (row % 256) at
+// pins exactly the bit that matters: sh = 1 + (row % 256) at
 // mask == 255 (knob >= 0.9375), with NO row % 0 anywhere.
 uint8_t ReferenceShAt256(uint8_t row) {
     return static_cast<uint8_t>(1u + static_cast<uint8_t>(row % 256u));
@@ -1461,7 +1461,7 @@ TEST_CASE(fuegoize_zero_knob_is_passthrough) {
 }
 
 TEST_CASE(fuego_stack_apply_musical_row_warps_crispy_by_crunchy_first) {
-    // The retired simulator's V2FuegoStack.hpp:14-23: crispy is itself Crunchy-warped before use.
+    // The retired simulator's f236915^:sim/V2FuegoStack.hpp:14-23: crispy is itself Crunchy-warped before use.
     const float value = 0.6f;
     const float globalCrunchy = 0.7f;
     const float crispyPreFuego = 0.2f;
@@ -1766,8 +1766,8 @@ TEST_CASE(comb_process_matches_in_plus_fb_sat_lp_delay_formula) {
 // divide-by-1.0 introduces no rounding for any finite operand, so
 // "bit-for-bit" is a hard requirement here, not an aspiration. Unity is
 // reached at the knob's centre (0.5, this field's own default) and, while
-// the transport is stopped, at kStopUnityDriveKnob
-// (FroggersAppCore.hpp:1645, 0.5f) -- the latter is a RouteAudioSample-
+// the transport is stopped, at FroggersAppCore.hpp's `kStopUnityDriveKnob`
+// (0.5f) -- the latter is a RouteAudioSample-
 // local constant, unreachable by name from this DSP-only TU (this file's
 // own header comment restricts it to app/dsp/*.hpp), but it is fed through
 // the exact same `ExpMapCompute(0.25, 4.0, .)` call as the knob path, so
@@ -1804,8 +1804,8 @@ TEST_CASE(comb_drive_compensated_form_matches_uncompensated_form_bit_exact_at_un
 // saturation-depth metric -- compression, in dB, of the saturator stage
 // alone (`Saturate(combDrive*x)/combDrive` against the pre-saturator `x`)
 // at a full-scale reference level (x==1.0f) -- isolating exactly the
-// quantity this task's compensation targets, independent of the comb's
-// unrelated delay/lowpass/feedback dynamics (unchanged by this task, and
+// quantity combDrive's compensation targets, independent of the comb's
+// unrelated delay/lowpass/feedback dynamics (unchanged by combDrive, and
 // otherwise just noise on this measurement). Chosen over a harmonic-band-
 // energy metric because this file has no FFT/spectral fixture to reuse
 // and compression-in-dB is directly computable from the same
@@ -1824,7 +1824,7 @@ TEST_CASE(comb_drive_compensated_form_matches_uncompensated_form_bit_exact_at_un
 // 2.183, 0.139, 0.000} dB: a mirror image, largest where the old knob was
 // actually just quiet (knob 0) and ~0 where it was already clipping a
 // signal at exactly this reference level (knob 1), which is the "useless
-// until the very end" bug this task fixes, not a metric artifact -- the
+// until the very end" bug the compensated form fixes, not a metric artifact -- the
 // two curves agree exactly at knob 0.5 (2.183 dB either way), since that
 // is combDrive's unity point where the two formulas coincide bit-for-bit
 // (see comb_drive_compensated_form_matches_uncompensated_form_bit_exact_
@@ -2181,7 +2181,7 @@ TEST_CASE(filter_fx_chain_zero_scoop_mix_is_unaffected_by_scoop_notch_settings) 
     }
 }
 
-// Independent replica of the PRE-Task-8 FilterFxChain::Process -- scoop
+// Independent replica of FilterFxChain::Process from before the scoop path was added -- scoop
 // blended in AFTER the comb/peak mix, at the return, rather than shaping
 // the shared input before either branch. This file's own established
 // convention for a regression pin (filter_fx_chain_parallel_matches_
@@ -2238,7 +2238,7 @@ double GoertzelPower(const std::vector<float>& samples, double freqHz, double sa
 // regardless of where the scoop sits. Height is therefore NOT the knob
 // that distinguishes old topology from new here.
 //
-// What DOES distinguish them: under the OLD (pre-Task-8) topology the peak
+// What DOES distinguish them: under the topology before the scoop path was added, the peak
 // branch -- and its own `peakLimiter` -- always saw the RAW, un-scooped
 // input, even with Scoop at its maximum; under the NEW topology it only
 // ever sees the already-scooped material. Feeding the limiter a needlessly
@@ -2692,7 +2692,7 @@ TEST_CASE(peak_branch_output_respects_computed_bound_under_audio_rate_height_mod
     const float inputAmplitude = 1.0f;  // A: filter input is bounded |A| <= 1 (Drive output, W2.1-MATH).
     const float freqNormalized = 0.05f;
     const float kMaxHeight = dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, 1.0f);
-    const float bound = inputAmplitude;  // the computed bound this task targets -- never a literal.
+    const float bound = inputAmplitude;  // the computed bound the test targets -- never a literal.
     // Held-in comb-branch contribution the floored blend adds (this
     // TEST_CASE's own header comment).
     const float combFloorGain = std::sin(0.025f * static_cast<float>(M_PI));  // ~0.0785; FilterFx.hpp's floor.
@@ -2892,11 +2892,11 @@ TEST_CASE(peak_ceiling_candidate_limiter_measurement) {
 // run's own numbers, not assumed: pre- and post-limiter worst-case land at
 // the same order of magnitude precisely because that single sample passes
 // both chains almost unattenuated, not because the limiter is broken.
-// Reproducible under the OLD (pre-Task-8) topology too, at a comparably
+// Reproducible under the topology before the scoop path was added too, at a comparably
 // extreme magnitude -- this is a pre-existing biquad coefficient-
 // modulation property, not a regression the scoop-topology change introduces or a defect its
-// topology change is positioned to fix, so per this task's own brief
-// ("no new defensive branch without a demonstrated failing input") it is
+// topology change is positioned to fix, so per the standing rule of no new
+// defensive branch without a demonstrated failing input, it is
 // reported here, not treated as a bug to close out inline. Hence: assert
 // ONLY the finiteness/limiter-ceiling invariants this test asks for (per
 // sample, below) and PRINT the worst-case numbers rather than bounding
@@ -2979,7 +2979,7 @@ TEST_CASE(peak_ceiling_scoop_modulation_limiter_measurement) {
               << " -- no magnitude bound asserted here, see this test's own header comment.\n";
     // Finiteness and the limiter's own envelope invariant were already
     // asserted per-sample, above, inside the seed loop -- those are the
-    // finiteness/limiter-ceiling invariants this task asks for. No
+    // finiteness/limiter-ceiling invariants this test asks for. No
     // magnitude bound on the worst-case numbers themselves: see this
     // test's own header comment for why one would be asserting a property
     // this run has just shown does not hold.
@@ -2992,7 +2992,7 @@ TEST_CASE(peak_ceiling_scoop_modulation_limiter_measurement) {
 // deleted rather than kept beside the new `topology` morph. No replacement
 // test: there is
 // no longer a distinct series code path to pin, and topology's behaviour
-// across [0,1] is covered by Task F's headroom sweep test below plus
+// across [0,1] is covered by the topology-morph headroom sweep test below plus
 // filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend at
 // topology==0.
 
@@ -3012,8 +3012,8 @@ TEST_CASE(peak_ceiling_scoop_modulation_limiter_measurement) {
 // branch) with a full-scale sine at the peak's own resonant
 // frequency, comb feedback pinned at its own maximum (the worst case for
 // how far combPath can depart from the raw input), and RECORDS the
-// measured peak absolute output at each topology -- printed below, per
-// this task's own brief that a bare pass/fail is not a result.
+// measured peak absolute output at each topology -- a bare pass/fail is
+// not a result here, so the measured figures are printed below.
 // -----------------------------------------------------------------------
 TEST_CASE(topology_morph_peak_branch_headroom_across_full_range) {
     constexpr float sampleRate = 48000.0f;
@@ -3023,10 +3023,10 @@ TEST_CASE(topology_morph_peak_branch_headroom_across_full_range) {
     const float maxFeedback = dsp::Comb::GetFeedback(1.0f);  // +0.95, kMaxFeedbackMagnitude.
 
     // Not just the endpoints -- the midpoint (0.5) mixes both paths and is
-    // its own case, per this task's own brief.
+    // worth checking as its own case.
     const float topologies[] = {0.0f, 0.1f, 0.25f, 0.5f, 0.75f, 0.9f, 1.0f};
 
-    std::cout << "  [Task F] topology sweep, peak-branch-isolated (combPeakBlend=0, scoopMix=0), "
+    std::cout << "  [topology sweep] peak-branch-isolated (combPeakBlend=0, scoopMix=0), "
                  "full-scale sine at peak freq, comb feedback pinned at max magnitude:\n";
 
     float overallMax = 0.0f;
@@ -3057,11 +3057,11 @@ TEST_CASE(topology_morph_peak_branch_headroom_across_full_range) {
             maxLevel = std::max(maxLevel, std::fabs(level));
         }
         overallMax = std::max(overallMax, maxLevel);
-        std::cout << "  [Task F]   topology=" << topology << "  peak abs output=" << maxLevel << "\n";
+        std::cout << "  [topology sweep]   topology=" << topology << "  peak abs output=" << maxLevel << "\n";
     }
 
     // Safety net only, deliberately NOT a tight "topology must never exceed
-    // topology==0's own level" assertion: this task's own brief is that a
+    // topology==0's own level" assertion: the standing rule is that a
     // measurement showing topology's new operating point running hotter
     // than topology==0 must be REPORTED plainly (see the numbers printed
     // above), not hidden behind a bound tuned to pass regardless of what
@@ -3502,7 +3502,7 @@ TEST_CASE(reverb_mod_depth_and_rate_collapse_to_one_control) {
 // -----------------------------------------------------------------------
 // Pins the property that nothing upstream of the master
 // output limiter used to bound -- this stage's own finding: Hold pushes
-// `fb` to ~0.99998 (Reverb.hpp:494), ~50,000x steady-state gain, so the
+// `fb` to ~0.99998 (Reverb.hpp's `Reverb::Process`), ~50,000x steady-state gain, so the
 // master limiter was the only thing standing between Hold-at-max and the
 // output. This test pins the STAGE's own escape bound instead:
 // `wetLimiter` (dsp/Reverb.hpp), applied to the fully mixed dry/wet output
@@ -3643,7 +3643,7 @@ TEST_CASE(reverb_tuned_sweeps_never_raise_the_peak_above_the_stage_ceiling) {
 
 // =========================================================================
 // Reverb tank in-loop saturator. `dsp::Reverb::Process` now writes
-// `preOut + fb * PadeSaturator::Saturate(aFb)` (dsp/Reverb.hpp:545-546),
+// `preOut + fb * PadeSaturator::Saturate(aFb)` (dsp/Reverb.hpp's `Reverb::Process`),
 // the SAME saturator in the SAME in-loop position the delay's own fix uses
 // (dsp/Delay.hpp), because an unsaturated recursive loop settles at
 // `in/(1-fb)` and Hold pushes `fb` to ~0.99998.
@@ -3979,7 +3979,7 @@ TEST_CASE(reverb_quiet_ordinary_level_tail_matches_unsaturated_control_at_max_ho
 //
 // The wetLimiter fix (added above) had to prove it capped the tail's LEVEL
 // without touching Hold's PERSISTENCE -- "fixed the level by breaking the
-// feature." The in-loop `PadeSaturator` fix (dsp/Reverb.hpp:545-546) has
+// feature." The in-loop `PadeSaturator` fix (dsp/Reverb.hpp's `Reverb::Process`) has
 // to prove exactly the same thing about exactly the same tail. Same knobs,
 // same burst, same measurement: one test.
 //
@@ -4111,7 +4111,7 @@ TEST_CASE(reverb_hold_at_max_tail_stays_audible_and_decays_gradually_not_pinned)
 //     0.306814, constant from ~n=72000 (1.5s) through the full window.
 //   - at Grit forced to 0.0f (the fix -- its own exact bit-identical
 //     bypass by construction, Mangle(x,0,0) - Mangle(0,0,0) == x,
-//     dsp/Reverb.hpp:526-527): the SAME seed decays to 1.98e-7 by the same
+//     dsp/Reverb.hpp's `Reverb::Process`): the SAME seed decays to 1.98e-7 by the same
 //     checkpoint.
 // =========================================================================
 TEST_CASE(reverb_tank_grit_zero_lets_the_measured_pass_d_seed_decay_where_grit_0p8094_locked_forever) {
@@ -4155,7 +4155,7 @@ TEST_CASE(reverb_tank_grit_zero_lets_the_measured_pass_d_seed_decay_where_grit_0
     const float decayedMagnitude = runArm(0.0f);
     std::cout << "  [grit decay] Grit=0.0 (stopped-state override): FINAL mag=" << decayedMagnitude
               << " (measured: 1.98e-7, decayed)\n";
-    // Task's own bound: decays below 1e-4 within the window.
+    // The measured bound: decays below 1e-4 within the window.
     REQUIRE_TRUE(decayedMagnitude < 1.0e-4f);
 }
 
@@ -4165,7 +4165,7 @@ TEST_CASE(reverb_tank_grit_zero_lets_the_measured_pass_d_seed_decay_where_grit_0
 // Froggers original -- GetParam(7)/(8) unread).
 // =========================================================================
 
-// Every knob RouteDriveBank (app/FroggersAppCore.hpp:1692-1713) drives,
+// Every knob FroggersAppCore.hpp's `RouteDriveBank` drives,
 // gathered so each TEST_CASE below only names the ones it moves off their
 // FroggersParameters.hpp default.
 struct DriveBankKnobs {
@@ -5012,7 +5012,7 @@ TEST_CASE(stereo_delay_clear_buffers_resets_to_silence) {
         wetBeforeClear = delay.Process(std::sin(0.2f * static_cast<float>(i)), p);
     }
     // Positive control: the line holds signal and the read head has reached
-    // it (dtim=0.4 -> ~1003 samples at 48kHz, dsp/Delay.hpp:863), so the
+    // it (dtim=0.4 -> ~1003 samples at 48kHz, dsp/Delay.hpp's `StereoDelay::Process`), so the
     // silence asserted below actually comes from ClearBuffers().
     REQUIRE_TRUE(std::abs(wetBeforeClear.l) + std::abs(wetBeforeClear.r) > 0.0f);
     delay.ClearBuffers();
@@ -5025,7 +5025,7 @@ TEST_CASE(stereo_delay_clear_buffers_resets_to_silence) {
 // Pins a latent defect nobody has heard: the delay was
 // the only unsaturated feedback stage. Pre-fix, `StereoDelay::Process`
 // wrote `inSignal + fbL * fbk` -- a linear, unsaturated loop. `fbk` clamps
-// to 0.98 (dsp/Delay.hpp:844), so the loop's steady
+// to 0.98 (dsp/Delay.hpp's `StereoDelay::Process`), so the loop's steady
 // state is `in*send / (1 - 0.98)` == 50x input, unbounded by anything
 // short of that 50x ceiling. Post-fix, the fed-back term is wrapped in the
 // SAME `PadeSaturator::Saturate` the comb's own in-loop feedback already
@@ -5095,7 +5095,7 @@ TEST_CASE(delay_feedback_loop_stays_bounded_at_max_feedback) {
 // found the worst-case overshoot inside.
 //
 // MEASURED (scratch harness, this exact scenario, run against the code
-// before this task existed): WITHOUT wetLimiterL/R (raw `dL`/`dR` tap),
+// before this fix was added): WITHOUT wetLimiterL/R (raw `dL`/`dR` tap),
 // worst case over this run = 1.962235 -- clears the 1.0 ceiling easily,
 // the failing case this test pins. WITH wetLimiterL/R at their measured
 // tuning (threshold 0.9, attack 2 microseconds, release 100ms --
@@ -6942,12 +6942,12 @@ TEST_CASE(stereo_delay_freeze_midpoint_differs_from_both_endpoints) {
 }
 
 // =========================================================================
-// Ring Mod (Audio slots 9-11, task A), PM rate (Audio slot 12, task B),
-// VCO balance (Audio slot 13, task C).
+// Ring Mod (Audio slots 9-11), PM rate (Audio slot 12),
+// VCO balance (Audio slot 13).
 // =========================================================================
 
 TEST_CASE(ring_mod_depth_scale_zero_off_gate_and_smoothstep_uses_own_floor) {
-    // Task A2: Ring Mod's OWN floor/ramp -- not PM's kPmLfoFloor/
+    // Ring Mod's OWN floor/ramp -- not PM's kPmLfoFloor/
     // kPmLfoRampWidth, confirmed distinct, then the same taper shape check
     // vco_pm_depth_scale_zero_off_gate_and_smoothstep above runs for PM.
     REQUIRE_TRUE(dsp::Vco::kRingModFloor != dsp::Vco::kPmLfoFloor ||
@@ -6961,7 +6961,7 @@ TEST_CASE(ring_mod_depth_scale_zero_off_gate_and_smoothstep_uses_own_floor) {
 }
 
 TEST_CASE(ring_mod_phase_increment_uses_its_own_range_not_pitch_range) {
-    // Task A1: same ExpMapCompute shape PitchToPhaseIncrement uses, but
+    // Same ExpMapCompute shape PitchToPhaseIncrement uses, but
     // NOT its kPitchMinHz/kPitchMaxHz literals.
     const float sr = 48000.0f;
     REQUIRE_NEAR(dsp::Vco::RingModPhaseIncrement(0.0f, sr), dsp::Vco::kRingModMinHz / sr, 1e-9);
@@ -6970,7 +6970,7 @@ TEST_CASE(ring_mod_phase_increment_uses_its_own_range_not_pitch_range) {
 }
 
 TEST_CASE(ring_mod_at_default_zero_is_bit_identical_to_no_ring_mod_at_all) {
-    // Task A3: Ring Mod's default (0.0f, FroggersParameters.hpp, at/below
+    // Ring Mod's default (0.0f, FroggersParameters.hpp, at/below
     // kRingModFloor) must leave a fresh launch sounding exactly as it did
     // before Ring Mod existed -- same structure as
     // vco_pm_zero_at_or_below_floor_leaves_carrier_unmodulated above.
@@ -6996,7 +6996,7 @@ TEST_CASE(ring_mod_above_floor_actually_modulates_and_stays_within_unit_bound) {
     for (int i = 0; i < 64; ++i) {
         const float a = withRingMod.Process(0.3f, 0.4f, 0.0f, 0.0f, /*ringModKnob=*/1.0f, sr);
         const float b = withoutRingMod.Process(0.3f, 0.4f, 0.0f, 0.0f, /*ringModKnob=*/0.0f, sr);
-        REQUIRE_TRUE(a >= -1.0f - 1e-5f && a <= 1.0f + 1e-5f);  // convex-blend bound (task A2).
+        REQUIRE_TRUE(a >= -1.0f - 1e-5f && a <= 1.0f + 1e-5f);  // convex-blend bound.
         if (std::fabs(a - b) > 1e-4f) {
             sawDifference = true;
         }
@@ -7005,7 +7005,7 @@ TEST_CASE(ring_mod_above_floor_actually_modulates_and_stays_within_unit_bound) {
 }
 
 TEST_CASE(ring_mod_carrier_is_internal_never_reads_another_vco) {
-    // Task A1's own binding requirement: the carrier is generated INSIDE
+    // The binding requirement: the carrier is generated INSIDE
     // each Vco instance. Same proof shape as
     // vco_zero_cross_vco_terms_independent_of_other_instances above,
     // isolated to Ring Mod: driving a second, differently-tuned Vco (with a
@@ -7084,7 +7084,7 @@ TEST_CASE(pm_rate_knob_midpoint_matches_sqrt_of_floor_times_ceiling) {
 }
 
 TEST_CASE(pm_rate_is_shared_across_vcos_and_decoupled_from_each_vcos_own_depth_knob) {
-    // Task B's binding shape: ONE rate knob feeds all three VCOs'
+    // PM rate's binding shape: ONE rate knob feeds all three VCOs'
     // StepPmLfo calls; each VCO's own PM knob still controls only depth.
     const float sr = 48000.0f;
 
@@ -7223,7 +7223,7 @@ TEST_CASE(vco_balance_weights_sum_to_one_and_stay_within_bounds_across_full_swee
 }
 
 TEST_CASE(mix_osc_voices_default_balance_knob_reproduces_original_equal_thirds_average) {
-    // Task C's own "default = centre, exactly the equal-thirds mix it
+    // VCO balance's own "default = centre, exactly the equal-thirds mix it
     // replaces" requirement, verified through the actual production call
     // path (MixOscVoices), not just the weight helper in isolation.
     dsp::VcoAdsrState adsrOld;
@@ -7374,7 +7374,7 @@ TEST_CASE(drive_xor_mid_sweep_collapses_energy_below_1khz_leaving_the_top_octave
 }
 
 // SetCoefs adds `link * (gain - 1.0f)` inside the coefficient's Sine01
-// argument (dsp/Drive.hpp:115); SetGain maps knob 0 to gain exactly 1.0
+// argument (dsp/Drive.hpp's `PolynomialDrive::SetCoefs`); SetGain maps knob 0 to gain exactly 1.0
 // (`ExpMapCompute(1,5,0) == 1` by construction), so at Drive 0 that term is
 // multiplied by exactly zero regardless of what Link is set to -- Link
 // becomes cosmetically live but functionally inert. The positive control
@@ -7447,7 +7447,7 @@ TEST_CASE(drive_link_is_inert_at_zero_drive_and_moves_the_output_once_driven) {
 
 // With Shape at 0 the polynomial's ONLY populated even-power terms
 // (coefs[1]/coefs[3], on input^2/input^4) come from `link * (gain - 1.0f)`
-// (dsp/Drive.hpp:115); at Drive 0, gain is exactly 1.0 so those terms
+// (dsp/Drive.hpp's `PolynomialDrive::SetCoefs`); at Drive 0, gain is exactly 1.0 so those terms
 // vanish too and the whole polynomial is exactly `y = gain * x`. For an
 // exactly linear stage, `Process(in + bias) - Process(bias)` is `gain*in`
 // regardless of bias -- Bias cancels by construction. The positive control

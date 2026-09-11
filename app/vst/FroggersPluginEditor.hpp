@@ -42,9 +42,9 @@
 //     `mainComponent_` (the sidebar-COMPOSED surface) only because that is
 //     what the STANDALONE launcher wants rendered -- not because
 //     PortableComponent requires that particular Surface implementation.
-//   - synth_froggers::FroggersApp::PortableSurface() (app/Froggers.hpp:52)
+//   - synth_froggers::FroggersApp::PortableSurface() (app/Froggers.hpp's `PortableSurface`)
 //     already returns a plain `synth::ui::Surface&` over `ui_`, a
-//     `FroggersUiSurface` member (Froggers.hpp:55) -- the SAME instance
+//     `FroggersUiSurface` member (Froggers.hpp's `ui_`) -- the SAME instance
 //     FroggersPluginProcessor's own DispatchAction()/TestStartTransport()/
 //     PumpHostParameterBridge() calls already drive (see that file's own
 //     header comment).
@@ -84,14 +84,14 @@
 // called `processor.EditorSurface().SetActionHandler(...)` at all. Every
 // dispatched action (an encoder drag, a click) still applies to the CORE
 // immediately (FroggersUiSurface::DispatchAction calls HandleAction()
-// synchronously, app/FroggersUiSurface.hpp:905-910), but with no action
+// synchronously, app/FroggersUiSurface.hpp's `DispatchAction`), but with no action
 // handler registered, this editor's OWN redraw was capped at the fixed 30Hz
 // timer tick -- visibly stepped dragging, not the smooth per-action tracking
 // the SAME surface gives the standalone launcher, whose MainPane wires
 // exactly this seam (Sheaf runtime/MainPane.hpp:36-48, `mainComponent_.
 // SetActionHandler(...)`) and refreshes from it, not (only) from a timer.
 //
-// FroggersUiSurface::SetActionHandler (app/FroggersUiSurface.hpp:901-903)
+// FroggersUiSurface::SetActionHandler (app/FroggersUiSurface.hpp's `SetActionHandler`)
 // is part of the generic synth::ui::Surface interface (`ActionHandler`,
 // Sheaf include/synth/PortableUI.hpp:282-289) -- EditorSurface() already
 // returns that interface, so registering needs no new accessor.

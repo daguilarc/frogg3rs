@@ -2074,9 +2074,9 @@ TEST_CASE(reset_all_drilled_into_audio_pitch_restores_its_default_patch_detent_n
 // pitch is pinned near the top of its kPitchMinHz-kPitchMaxHz exponential
 // map (dsp/Vco.hpp's `PitchToPhaseIncrement`): at 48 kHz and pitch==1.0 that
 // is kPitchMaxHz/48000 ~= 0.104 cycles/sample, so a handful of `Step()`
-// calls sweeps the source's full excursion -- the same live-modulation shape the
-// proposal's own repro used, built here from public API instead of the
-// whole running instrument. `fx.manager.ComputeAllParameters()` is the
+// calls sweeps the source's full excursion -- the same live-modulation shape
+// a whole running instrument would show, built here from public API instead.
+// `fx.manager.ComputeAllParameters()` is the
 // immediate (non-smoothed) resync -- see that method's own comment -- so
 // the depth's commanded value is fully converged into `GetRaw()` before the
 // caller reads anything.
@@ -2171,7 +2171,7 @@ TEST_CASE(lane_six_visualizer_omits_the_full_node_background_but_still_draws_its
     // The bare fixture never calls PrepareBlockClock() (that is
     // FroggersAppCore::ProcessBlock's job), so source #6's round shape
     // stays at its defensive fallback (waiting mu=3.0s, moving mu=1.5s,
-    // FroggersModulation.hpp:689-693) -- tens of thousands of samples at
+    // FroggersModulation.hpp's `PrepareBlockClock`) -- tens of thousands of samples at
     // the 48kHz this fixture prepares at. A handful of Step() calls leaves
     // the round well short of completing: both a nonzero past trace and a
     // still-open future remain, the state a running instrument is in

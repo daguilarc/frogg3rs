@@ -118,7 +118,8 @@ struct FroggersBankLayout {
 // Audio (hostPage 0) instead comes from kAudioRowLabels (:101-103, 7
 // entries: rows 0-5 used, row 6 is Audio's own dead local Crispy) with the
 // three Shape (VCO morph) controls added as ordinary on-grid slots
-// (they are a separate global axis in v2, FroggersV2AppManifest.hpp:118-125,
+// (they are a separate global axis in v2,
+// b9a8199^:desktop-v2/Source/manifest/FroggersV2AppManifest.hpp:118-125,
 // folded onto the grid here -- a different parameter from Drive's own
 // "Shape" wavefolder control). Envelope (hostPage 5) comes from
 // kEnvelopeRowLabels (:81-86, 10 entries: rows 0-8 used, row 9 is Envelope's
@@ -546,7 +547,7 @@ private:
         // Global
         // Crunchy receives NO fuego stage at all. It is the source of the
         // warp, and warping Crunchy by Crunchy is self-referential; the
-        // cascade (the retired simulator's V2FuegoStack.hpp:9-23) only defines the treatment of
+        // cascade (the retired simulator's f236915^:sim/V2FuegoStack.hpp:9-23) only defines the treatment of
         // ordinary parameters (both stages) and of a Crispy control (global
         // stage only, src/core/Page.hpp:203-207) -- it says nothing about
         // Crunchy itself now that it is on the grid at slot 15. This
@@ -563,7 +564,7 @@ private:
 
             // A Crispy control receives ONLY the global stage --
             // it is itself Crunchy-warped before use as the per-bank
-            // cascade key below (the retired simulator's V2FuegoStack.hpp:9-23's ApplyGlobal
+            // cascade key below (the retired simulator's f236915^:sim/V2FuegoStack.hpp:9-23's ApplyGlobal
             // call on crispyKnobPreFuego; v2 wiring proof at
             // src/core/Page.hpp:203-207). This is also exactly the value a
             // DSP/UI consumer of the Crispy parameter itself would read.
@@ -573,7 +574,7 @@ private:
 
             // Ordinary (page) parameters get both stages -- global
             // Crunchy then this bank's Crispy -- via the full musical-row
-            // cascade (the retired simulator's V2FuegoStack.hpp:14-23). Passing crispyPreFuego
+            // cascade (the retired simulator's f236915^:sim/V2FuegoStack.hpp:14-23). Passing crispyPreFuego
             // (not crispyAfterCrunchy) matches ApplyMusicalRow's own
             // signature: it re-derives the Crunchy-warped Crispy value
             // internally from the pre-fuego knob, identically to the

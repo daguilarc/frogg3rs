@@ -10,7 +10,7 @@ WHEN a Drive page control is mapped from its knob to the coefficient it drives, 
 
 - **WHEN** a 220 Hz tone is driven with Drive at 0.5 and Blend at 0.25, and Phase is swept from 0 to 1
 - **THEN** the output level changes progressively across the sweep rather than only in its last tenth
-- Check: `app/FroggersDspParityTests.cpp`, the Phase-travel case.
+- Check: `app/FroggersDspParityTests.cpp`, `drive_phase_sweep_moves_output_meaningfully_across_each_quarter_of_travel`, the Phase-travel case.
 
 #### Scenario: The anti-alias control rejects aliasing
 
@@ -18,13 +18,13 @@ WHEN a Drive page control is mapped from its knob to the coefficient it drives, 
 - **THEN** the loudest inharmonic partial, measured against the fundamental, falls monotonically by at least 15 dB across the sweep
 - **AND** the in-band level moves by no more than 3 dB between the ends, so the sweep trades grit for cleanliness rather than trading tone for tone
 - **AND** the test tone SHALL NOT divide the sample rate, and SHALL sit inside the range the chosen oversampling factor serves: at a tone dividing the sample rate every fold-image lands on a bin a genuine harmonic occupies, so no measurement can separate them, and above roughly 2 kHz the harmonics that matter have passed the 4x domain's own Nyquist where no decimation filter reaches them
-- Check: `app/FroggersDspParityTests.cpp`, the alias-sweep case, at 1487 Hz, read through a Hann-windowed bin measurement — measured 23.3 dB of travel with the in-band level moving 2.46 dB.
+- Check: `app/FroggersDspParityTests.cpp`, `drive_anti_alias_crossfade_falls_monotonically_and_the_old_one_pole_barely_moved_it`, the alias-sweep case, at 1487 Hz, read through a Hann-windowed bin measurement — measured 23.3 dB of travel with the in-band level moving 2.46 dB.
 
 #### Scenario: A quantized control spends no travel on steps that do nothing
 
 - **WHEN** the Bit depth control is swept from its floor
 - **THEN** the first hundredth of its travel already scrambles a number of bits an operator can hear, rather than the first fifth resting on counts that are inaudible
-- Check: `app/FroggersDspParityTests.cpp`, the knob-threshold case.
+- Check: `app/FroggersDspParityTests.cpp`, `drive_bit_depth_first_audible_knob_value_falls_from_0_19_to_a_hundredth`, the knob-threshold case.
 
 #### Scenario: The knob's default reproduces what shipped before it
 
@@ -37,7 +37,7 @@ WHEN a Drive page control is mapped from its knob to the coefficient it drives, 
 - **WHEN** the Drive page's Link is read at Drive 0, or its Waveshaper offset at Drive 0 and Shape 0
 - **THEN** each is bit-identical across its own range, because the polynomial it modifies is linear there
 - **AND** the manual says which control has to be raised for it to act
-- Check: `app/FroggersDspParityTests.cpp`, the inert-at-default cases.
+- Check: `app/FroggersDspParityTests.cpp`, the inert-at-default cases: `drive_link_is_inert_at_zero_drive_and_moves_the_output_once_driven` and `drive_bias_cancels_at_zero_drive_and_moves_the_output_once_driven`.
 
 ### Requirement: An insert effect page's master returns the dry signal at its floor
 
@@ -51,14 +51,14 @@ A page's gain stage SHALL be named Gain and SHALL govern the stage it drives rat
 
 - **WHEN** an insert effect page's wet/dry control sits at its floor
 - **THEN** that page's output is its input, sample for sample
-- Check: `app/FroggersDspParityTests.cpp`'s dry-at-floor pin for the Drive page, which passes today at -240 dB; `app/dsp/Reverb.hpp`'s mix and `app/dsp/Delay.hpp`'s are the same crossfade expression.
+- Check: `app/FroggersDspParityTests.cpp`'s `drive_blend_phase_authored_zero_blend_is_exact_passthrough`, the dry-at-floor pin for the Drive page, which passes today at -240 dB; `app/dsp/Reverb.hpp`'s mix and `app/dsp/Delay.hpp`'s are the same crossfade expression.
 
 #### Scenario: The master does not lose level partway through its travel
 
 - **WHEN** an insert effect page's wet/dry master is swept from its floor to its top
 - **THEN** the page's output level does not dip below its dry level by more than a small margin anywhere on that travel, rather than notching partway and recovering
 - **AND** this holds across notes and across the page's own gain settings, not at one tested frequency
-- Check: `app/FroggersDspParityTests.cpp`, the Drive page's blend-travel case, which measures a worst dip of -1.15 dB where the linear law it replaced measured -4.10 dB.
+- Check: `app/FroggersDspParityTests.cpp`, `drive_blend_travel_holds_level_within_1_2_db_across_gain_and_frequency`, the Drive page's blend-travel case, which measures a worst dip of -1.15 dB where the linear law it replaced measured -4.10 dB.
 
 #### Scenario: A tone control's level change is documented rather than compensated
 

@@ -166,7 +166,7 @@ inline constexpr float kBandSilenceFloorLinear = 1.0e-3f;
 // LONG to wait before measuring (settleSeconds); sample rate, block size,
 // the trailing check-window length, and the silence floor are the same
 // fixed values at all 3 call sites (FroggersApp::Config() sets 48 kHz/
-// 256-sample blocks, FroggersAppCore.hpp:196-197; -60 dBFS: 20*log10(x) =
+// 256-sample blocks, FroggersAppCore.hpp; -60 dBFS: 20*log10(x) =
 // -60 -> x = 1.0e-3), so only settleSeconds is a parameter here.
 //
 // Deliberately does NOT also fold in the RunBlocks/ClearOutput/PeakAbs/
@@ -309,7 +309,7 @@ TEST_CASE(default_patch_has_audible_band_energy_above_150hz) {
     RequireFiniteStereo(output);
 
     const std::vector<float> left = ExtractChannel(output, 0);
-    // FroggersApp::Config() (app/FroggersAppCore.hpp:196) sets
+    // FroggersApp::Config() (app/FroggersAppCore.hpp) sets
     // preferredSampleRate = 48000.0, and this Rig() ctor call above passes
     // no override AudioSettings, so SynthRig negotiates that same rate
     // (SynthRig.hpp:68-70).
@@ -705,7 +705,7 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
     // PLUS the operator's stated repro on top: Filter bank Crispy at max
     // scrambles all 8 bits of every Filter parameter per read. NOTE the
     // accessor -- Crispy is NOT in pageParameters_ (9 wide); it lives in its
-    // own `crispy_` array (FroggersParameters.hpp:413-414), and
+    // own `crispy_` array (FroggersParameters.hpp's `crispy_`), and
     // PageParameter(Filter, 14) throws std::out_of_range.
     model.Crispy(synth_froggers::FroggersBankId::Filter).SceneCenter(0) = 1.0f;
     // A SceneCenter write is only ~81% applied after one block
@@ -759,8 +759,9 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
 // per-sample-random noise source (NoiseModulatorProcessor::Process() ->
 // random_.UniformOpen01(), DspNoise.hpp:69-71) structurally cannot produce
 // periodic coincidence. kModSlotVco1Audio (vco1AudioSource_ =
-// NormalizeBipolarToUnit(vco1Raw), FroggersModulation.hpp:384, registered
-// at :535-536) IS periodic at the note frequency and locked to the note's
+// NormalizeBipolarToUnit(vco1Raw), FroggersModulation.hpp's
+// `FroggersModulationSlate::Step`, registered at
+// `FroggersModulationSlate::RegisterSources`) IS periodic at the note frequency and locked to the note's
 // period by construction -- it IS the note passing through DriveBlendPhase,
 // so the coincidence that earlier measurement captured is exact rather
 // than approximate. This is the corrected source for both
@@ -771,16 +772,16 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
 // `Parameter* EnsureModulationDepth(std::size_t modIx)` is public, returns
 // nullptr at storage capacity (checked below, not dereferenced blindly), and
 // PageParameter() returns synth::Parameter& (confirmed at
-// FroggersModulation.hpp:1192,1207-1208's existing call sites), so it is
+// FroggersModulation.hpp's `ApplyAudioPitchDetent`'s existing call sites), so it is
 // reachable as PageParameter(...).EnsureModulationDepth(...) directly, no
-// intermediate pointer needed. kModSlotVco1Audio (FroggersModulation.hpp:163,
+// intermediate pointer needed. kModSlotVco1Audio (FroggersModulation.hpp's `FroggersModulatorSlot`,
 // synth_froggers namespace) is registered `connected = true` unconditionally
-// in ModulatorGroup's constructor (FroggersModulation.hpp:535-536), so it
+// in FroggersModulation.hpp's `FroggersModulationSlate::RegisterSources`, so it
 // needs no extra wiring here. Depth centers are confirmed BIPOLAR by
 // ModulationDepthTargetFromKnob (ParameterModulation.hpp:115-122): knob 0.5
 // maps to bipolar 0 (zero depth), knob 1.0 maps to bipolar +1 (full
 // positive) -- matching kNeutralModulationDepthCenter = 0.5f
-// (FroggersModulation.hpp:832). SceneCenter(0) = 1.0f below is therefore
+// (FroggersModulation.hpp's `kNeutralModulationDepthCenter`). SceneCenter(0) = 1.0f below is therefore
 // full-positive depth, not a mid-scale value.
 TEST_CASE(master_limiter_stays_at_unity_under_live_modulation) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("b7_5_live_mod"));
@@ -1255,8 +1256,8 @@ TEST_CASE(missing_clock_plan_does_not_fault_and_leaves_gate_closed) {
 // (silent_while_transport_is_stopped above) but the delay and
 // reverb are feedback structures that keep ringing on their own: the Delay
 // bank's feedback runs up to 0.98 (dsp::StereoDelay::Process's own clamp,
-// Delay.hpp:135) and the Reverb bank's Hold control pushes its internal
-// feedback arbitrarily close to 1.0 (dsp::Reverb::Process, Reverb.hpp:174).
+// Delay.hpp) and the Reverb bank's Hold control pushes its internal
+// feedback arbitrarily close to 1.0 (dsp::Reverb::Process, Reverb.hpp).
 // This pushes both to that self-sustaining extreme (mirroring the pattern
 // self_oscillating_comb_and_near_unity_reverb_hold_stays_finite_and_bounded
 // above uses to reach a self-sustaining state), confirms it is actually
@@ -1273,7 +1274,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb) {
     model.PageParameter(synth_froggers::FroggersBankId::Drive, 1).SceneCenter(0) = 0.8f;  // nonzero Gain.
 
     // Delay bank slots: 1=Send, 3=Feedback, 0=Wet/dry. Feedback at 1.0
-    // clamps to 0.98 inside StereoDelay::Process (Delay.hpp:818), the
+    // clamps to 0.98 inside StereoDelay::Process (Delay.hpp), the
     // near-unity extreme the defect report cites.
     model.PageParameter(synth_froggers::FroggersBankId::Delay, 1).SceneCenter(0) = 1.0f;  // Send.
     model.PageParameter(synth_froggers::FroggersBankId::Delay, 3).SceneCenter(0) = 1.0f;  // Feedback -> 0.98.
@@ -1338,7 +1339,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb) {
     // whole span (which would also catch that brief opening transient and
     // never read as silent regardless of how well the fix works).
     // (FroggersApp::Config() sets 48 kHz/256-sample blocks,
-    // FroggersAppCore.hpp:196-197). -60 dBFS: 20*log10(x) = -60 -> x = 1.0e-3.
+    // FroggersAppCore.hpp). -60 dBFS: 20*log10(x) = -60 -> x = 1.0e-3.
     const auto [settleLeadBlocks, checkWindowBlocks, kBandSilenceFloorLinear] =
         ComputeSilenceSettleWindow(/*settleSeconds=*/0.25);
 
@@ -1380,18 +1381,18 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb) {
 // above is silent on arrival.
 //
 // This test instead pushes Envelope Release (bank rows 2/5/8, "Release
-// VCO1-3" -- FroggersParameters.hpp:160-162) to 1.0, mapping through
-// VcoAdsrState::mapRelease (VoiceEnvelope.hpp:94-98) to ~kMaxReleaseSeconds
-// (2.5f, VoiceEnvelope.hpp:84) -- so closing the gate on Stop moves every
-// voice to Stage::Release (VoiceEnvelope.hpp:139) and keeps it producing a
+// VCO1-3" -- FroggersParameters.hpp's `FroggersBankLayouts`) to 1.0, mapping through
+// VcoAdsrState::mapRelease (VoiceEnvelope.hpp) to ~VoiceEnvelope.hpp's
+// `kMaxReleaseSeconds` (2.5f) -- so closing the gate on Stop moves every
+// voice to VoiceEnvelope.hpp's `Stage::Release` and keeps it producing a
 // slowly-decaying signal for ~2.5 real seconds, feeding delay_/reverb_ well
 // after the one-shot reset already fired.
 //
 // Delay Time (row 0) is additionally pinned to 0.6 (baseSeconds =
-// ExpMapCompute(0.001, 2.0, 0.6) ~= 0.0957s per delay cycle -- Delay.hpp:111)
+// ExpMapCompute(0.001, 2.0, 0.6) ~= 0.0957s per delay cycle -- Delay.hpp's `StereoDelay::Process`)
 // rather than left at its own 0.0f default (~0.001s/cycle, too short to
 // demonstrate the bug within a boundable test window): with feedback
-// clamped to 0.98 (Delay.hpp:135), decaying 60 dB unaided takes
+// clamped to 0.98 (Delay.hpp's `StereoDelay::Process`), decaying 60 dB unaided takes
 // ln(1e-3)/ln(0.98) ~= 342 delay cycles, ~= 342 * 0.0957s ~= 32.7s here --
 // squarely the "tens of seconds" the operator's Randomize All report
 // describes -- so a settle window shortly after the ~2.5s
@@ -1408,7 +1409,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
     model.PageParameter(synth_froggers::FroggersBankId::Drive, 1).SceneCenter(0) = 0.8f;  // nonzero Gain.
 
     // Envelope bank: interleaved ADSR, slot = 4*vco + {0:Attack, 1:Decay,
-    // 2:Sustain, 3:Release} (FroggersParameters.hpp:162-164), so rows 3/7/11
+    // 2:Sustain, 3:Release} (FroggersParameters.hpp's `FroggersBankLayouts`), so rows 3/7/11
     // are Release VCO1-3. Sustain (rows 2/6/10) already defaults to 1.0f;
     // Attack (rows 0/4/8) stays at its fast ~0 default.
     model.PageParameter(synth_froggers::FroggersBankId::Envelope, 3).SceneCenter(0) = 1.0f;  // Release VCO1 -> ~2.5s.
@@ -1603,7 +1604,7 @@ TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes
     REQUIRE_TRUE(dsp::Reverb::TankDriveFromKnob(rig.Application().TestLastReverbTankDriveKnobEffective()) == 1.0f);
     REQUIRE_TRUE(rig.Application().TestLastDelayFreezeKnobEffective() == 0.0f);
     // Grit's effective value reads 0.0f (its own exact bit-identical
-    // bypass by construction, dsp/Reverb.hpp:526-527), not the commanded
+    // bypass by construction, dsp/Reverb.hpp's `Reverb::Process`), not the commanded
     // MAX -- same override, joining the four above.
     REQUIRE_TRUE(rig.Application().TestLastReverbGritKnobEffective() == 0.0f);
 
@@ -2328,7 +2329,7 @@ TEST_CASE(encoder_edit_while_frozen_changes_the_output_measurably) {
     // transport_stopped's own comment, above in this file): that helper
     // writes CachedKnobValue() directly, bypassing parameters_.
     // ProcessSample()'s smoothed per-sample Compute entirely -- so it would
-    // still pass even if THIS task's actual claim (ProcessSample() itself
+    // still pass even if THIS test's actual claim (ProcessSample() itself
     // stays ungated by transport state) were broken. A plain SceneCenter
     // write exercises the real path an operator's encoder turn uses.
     model.PageParameter(FroggersBankId::Delay, 0).SceneCenter(0) = 0.0f;  // Wet/dry: fully wet -> fully dry.

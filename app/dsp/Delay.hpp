@@ -16,7 +16,7 @@
 //     DelayWetPair to avoid any collision), and StereoDelay::{setSampleRate,
 //     clearBuffers, process, toReverbMono, readAt, writeSample, wrapIndex,
 //     advanceWrite}, verbatim.
-//   - the retired simulator's DelayState.hpp:165-198 (processInsert) -- specifically the
+//   - the retired simulator's f236915^:sim/DelayState.hpp:165-198 (processInsert) -- specifically the
 //     row -> DelayParams mapping at :180-186 (dtim/dsnd/dfbk/dwid/ddet/
 //     dmod/dmix <- rows 0-6) and the Color/Halo folding at :187-193
 //     (`params.ddet = clamp(0.5*(ddet+color))`,
@@ -137,7 +137,7 @@ inline constexpr float kDelayWetLimiterReleaseSeconds = kSharedReleaseSeconds;  
 // for the tuning
 // derivation.
 
-// the retired simulator's StereoDelay.hpp:10-19, plus three fields added later that
+// the retired simulator's f236915^:sim/StereoDelay.hpp:10-19, plus three fields added later that
 // are not present in that frozen source -- see each field's own comment.
 struct DelayParams
 {
@@ -159,7 +159,7 @@ struct DelayParams
                         // per-channel DelayDiffuser on the wet tap -- see StereoDelay::Process() below.
 };
 
-// the retired simulator's StereoDelay.hpp:21-25 (WetPair). The same shape the
+// the retired simulator's f236915^:sim/StereoDelay.hpp:21-25 (WetPair). The same shape the
 // rest of the chain now carries, so it is that type under its own name rather
 // than a second declaration of it.
 using DelayWetPair = StereoSample;
@@ -405,7 +405,7 @@ struct DelayReverser
     float StateMagnitude() const { return std::fabs(elapsed); }
 };
 
-// the retired simulator's StereoDelay.hpp:27-157 (StereoDelay), verbatim.
+// the retired simulator's f236915^:sim/StereoDelay.hpp:27-157 (StereoDelay), verbatim.
 struct StereoDelay
 {
     static constexpr float kMaxDelaySeconds = 2.0f;
@@ -1080,7 +1080,7 @@ private:
     // construction/clear), `readPos` is negative, and casting a negative
     // float straight to `size_t` is a negative-float-to-unsigned
     // conversion the standard leaves unspecified/UB when the value is out
-    // of range -- identical to the retired simulator's frozen StereoDelay.hpp:120.
+    // of range -- identical to the retired simulator's frozen f236915^:sim/StereoDelay.hpp:120.
     //
     // FIX, NOT A REPRODUCTION: as
     // with DigitalReorganizer::Process (Drive.hpp), there is no correct
@@ -1244,7 +1244,7 @@ private:
     float lfoInc = 0.0f;
 };
 
-// the retired simulator's DelayState.hpp:165-198 (processInsert): originally the row ->
+// the retired simulator's f236915^:sim/DelayState.hpp:165-198 (processInsert): originally the row ->
 // DelayParams mapping (:180-186) and the Color/Halo fold (:187-193).
 // REMOVED: the fold is gone -- every one of the nine arguments below now
 // maps to exactly one DelayParams field, no two are combined, and the

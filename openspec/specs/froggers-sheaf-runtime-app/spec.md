@@ -386,12 +386,12 @@ A text node SHALL be allocated a box wide enough for the text it renders, and ad
 - **WHEN** the Encoders editor's Turn or Push group header is presented
 - **THEN** every column label is fully legible
 - **AND** a gap separates the last column from the Add button
-- Check: the text-fit criterion, extended to the row-expanded/Encoders-open state and to a sub-pixel measurement, proven to fail on the 58px `BlockStartPos` allocation and the zero gap before they are corrected; and the operator on the deployed build.
+- Check: `browser/tests/visual-criteria.spec.ts`, the text-fit criterion, extended to the row-expanded/Encoders-open state and to a sub-pixel measurement, proven to fail on the 58px `BlockStartPos` allocation and the zero gap before they are corrected; and the operator on the deployed build.
 
 #### Scenario: A rounding-width overrun is not reported as fitting
 - **WHEN** a label's rendered text exceeds its allocated box by less than one pixel
 - **THEN** the text-fit criterion reports a violation
-- Check: the same criterion. `scrollWidth` and `clientWidth` are integers and both read 58 for the 58.3px "Start Pos" label, so the integer comparison this replaces reports no violation on a live defect.
+- Check: `browser/tests/visual-criteria.spec.ts`, the same criterion. `scrollWidth` and `clientWidth` are integers and both read 58 for the 58.3px "Start Pos" label, so the integer comparison this replaces reports no violation on a live defect.
 
 ### Requirement: A preset's port aliases are per direction and name what the host reports
 
@@ -402,15 +402,14 @@ Each device preset this application offers SHALL carry its input aliases and its
 - **WHEN** a Launchpad Mini MK3 is connected and the Controllers page enumerates its ports as "Launchpad Mini MK3 LPMiniMK3 MIDI Out" and "Launchpad Mini MK3 LPMiniMK3 MIDI In"
 - **THEN** the page pairs it with the Launchpad Mini MK3 preset
 - **AND** the unit's DAW ports pair with no preset
-- Check: `app/FroggersControllersPageTests.cpp`,
-  `launchpad_presets_pair_with_the_port_names_a_host_reports`.
+- Check: `app/FroggersControllersPageTests.cpp`, `launchpad_presets_pair_with_the_port_names_a_host_reports`.
 
 #### Scenario: The name a host reports is read from the host
 
 - **WHEN** an alias is written for a unit
 - **THEN** it is the name the host enumerates, read from that host rather than
   constructed from a manual
-- Check: `app/FroggersControllersPageTests.cpp`, the same case; the Mini MK3's
+- Check: `app/FroggersControllersPageTests.cpp`, `launchpad_presets_pair_with_the_port_names_a_host_reports`; the Mini MK3's
   rows of its table were read by calling `getAvailableDevices()` through this
   application's own JUCE with the unit connected, the other two models' rows
   are the same construction and are unconfirmed.

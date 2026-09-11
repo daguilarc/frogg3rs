@@ -26,9 +26,9 @@
 //     engine_.ProcessBlock(block, timestamp); StartAt/StopAt :174-184 push
 //     synth::MessageIn::Start/Stop
 //     on engine_.UiBus(), the exact message FroggersUiSurface::HandleAction's
-//     Play/Stop branches push (app/FroggersUiSurface.hpp:1838,1874), paired
+//     Play/Stop branches push (app/FroggersUiSurface.hpp's `HandleAction`), paired
 //     with FroggersApp::SetDesiredTransportRunning(true/false)
-//     (FroggersUiSurface.hpp:1845,1887-1888) -- the UI-thread seam
+//     (FroggersUiSurface.hpp's `LatchThenTransport`) -- the UI-thread seam
 //     PrepareToPlay() re-asserts across a MasterClock::Prepare() reset,
 //     see FroggersAppCore.hpp's own PrepareToPlay() comment).
 //
@@ -43,7 +43,7 @@
 //
 // Data path: reuses the SAME "frogg3rs" stable app id and shared
 // ~/Library/Sheaf data root FroggersMain.cpp's direct-launch app uses
-// (app/FroggersMain.cpp:19,48,53 cites this reasoning: "so existing saved
+// (app/FroggersMain.cpp's `FroggersMainApplication::initialise` cites this reasoning: "so existing saved
 // patches ... are not orphaned"), via the same tiny data-path helper
 // (synth_runtime::SheafUserApplicationDataRoot(), HostDataPaths.cpp) rather
 // than duplicating its logic -- that helper depends only on juce_core (a
@@ -65,7 +65,7 @@
 // behaviour ... multithreading issues if it's not called on the audio
 // thread"), while `engine_.UiBus()` (the same bus
 // FroggersUiSurface::PushMessage/HandleAction write from the UI/message
-// thread, FroggersUiSurface.hpp:2061-2065) is an SPSC ring buffer
+// thread, FroggersUiSurface.hpp's `PushMessage`) is an SPSC ring buffer
 // (MessageInBus::Push, ParameterModulation.cpp:3995-4005: an unsynchronized
 // read-modify-write of `tail_`, safe for exactly one producer) already
 // claimed by that same thread's Push calls in every other host of this
@@ -233,7 +233,7 @@ public:
 
     // --- Test seam (retained) ---------------------------------------------
     // Dispatches the exact same kPlay/kStop actions
-    // (FroggersUiSurface.hpp:1826-1876, via
+    // (FroggersUiSurface.hpp's `HandleAction`, via
     // engine_.Application().PortableSurface().DispatchAction()) the real
     // Play/Stop buttons dispatch -- see this file's header comment and
     // timerCallback()'s own comment for why this goes through
@@ -363,7 +363,7 @@ public:
     // The exact synth::ui::Surface& FroggersPluginEditor renders through
     // synth_juce::PortableComponent -- the SAME instance DispatchAction()/
     // TestStartTransport()/PumpHostParameterBridge() already drive via
-    // Application().PortableSurface() (Froggers.hpp:52), so the editor
+    // Application().PortableSurface() (Froggers.hpp's `PortableSurface`), so the editor
     // observes/drives the live production surface with no second copy and
     // no new plumbing. Named for its real caller (NOT "...ForTest()", unlike
     // ApplicationForTest() above) because this IS the production accessor;
@@ -416,7 +416,7 @@ private:
     // header comment) -- so it records at most one pending edge here, a
     // single-slot atomic exactly like FroggersAppCore's own
     // pendingBankSelect_/pendingEncoderPress_ idiom
-    // (FroggersAppCore.hpp:557-568's own comment: "a single-slot pending
+    // (FroggersAppCore.hpp's own comment on `RequestBankSelect`: "a single-slot pending
     // request; a later write ... simply coalesces (acceptable: ...
     // control-rate, human-paced actions, never a data stream)" -- a host
     // transport toggle is exactly that kind of action). timerCallback()

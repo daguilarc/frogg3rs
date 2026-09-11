@@ -72,7 +72,7 @@
 //      StatusText while the host clock is engaged -- proving production
 //      code actually calls SetPluginHostMode(true) (section 4's own test
 //      never constructs a real processor, so it cannot see that call at
-//      all), combined with item 3's host-tempo-slaving.
+//      all), combined with the Tempo-follow section's own host-tempo-slaving.
 
 #include "FroggersPluginProcessor.hpp"
 
@@ -100,7 +100,7 @@
 namespace {
 
 // Same self-contained TEST_CASE/REQUIRE_TRUE idiom every app/*Tests.cpp file
-// already defines locally (e.g. app/FroggersSurfaceTests.cpp:54-82) --
+// already defines locally (e.g. app/FroggersSurfaceTests.cpp's `TestCase`) --
 // mirrored here rather than shared via a new header, matching that
 // per-file-self-contained convention.
 struct TestCase {
@@ -1231,7 +1231,7 @@ TEST_CASE(operator_selecting_a_bank_does_move_the_visible_page) {
 
     constexpr std::size_t kOperatorTargetBank = 4;
     // The exact same public seam FroggersUiSurface.hpp's own bank buttons
-    // call (app/FroggersUiSurface.hpp:2012/2030/2041).
+    // call (app/FroggersUiSurface.hpp's `HandleAction`).
     processor.ApplicationForTest().RequestBankSelect(kOperatorTargetBank);
     runBlock();  // ProcessFrame() drains the pending request -- ActiveBankIndex() itself moves this block.
     REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == kOperatorTargetBank);
@@ -1364,7 +1364,7 @@ TEST_CASE(editor_surface_renders_real_parameter_values_before_any_process_block_
 
     // The only pump this test ever runs -- no processBlock() call anywhere
     // in this test. PumpMessageThreadForTest() is timerCallback() itself
-    // (this file's own header comment, item 1), which fires
+    // (this file's own header comment's "Transport edges" section), which fires
     // engine_.MessageThreadTick() first, the claim-and-publish seam under
     // test here.
     processor.PumpMessageThreadForTest();
@@ -2075,7 +2075,7 @@ TEST_CASE(state_information_round_trips_the_visible_bank_when_non_default) {
     constexpr std::size_t kOperatorBank = 4;
     REQUIRE_TRUE(source.ApplicationForTest().ActiveBankIndex() == 0);
     // The exact same public seam FroggersUiSurface.hpp's own bank buttons
-    // call (app/FroggersUiSurface.hpp:2012/2030/2041) -- the OPERATOR
+    // call (app/FroggersUiSurface.hpp's `HandleAction`) -- the OPERATOR
     // selecting a page, not a direct MessageIn::SelectParamBank push.
     source.ApplicationForTest().RequestBankSelect(kOperatorBank);
     PumpAndSettle(source, sourceBuffer, midi);

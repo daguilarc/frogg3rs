@@ -28,7 +28,7 @@ namespace frogg3rs_vst {
 
 namespace {
 
-// Mirrors app/FroggersMain.cpp:48,53's dataRoot_/SheafPatchDataPathsForApp
+// Mirrors app/FroggersMain.cpp's `FroggersMainApplication::initialise`'s dataRoot_/SheafPatchDataPathsForApp
 // pair (same stable app id -- see that file's own header comment on why:
 // "so existing saved patches ... are not orphaned"), so a patch saved from
 // the standalone Frogg3rs app and one saved from this plugin land in, and
@@ -191,9 +191,9 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     // dynamic_cast: engine_ is concretely synth::Engine<synth_froggers::
     // FroggersApp> (this class's own member type above), so
     // engine_.Application() is concretely FroggersApp&, and
-    // FroggersApp::PortableSurface() (Froggers.hpp:52) is defined as
+    // FroggersApp::PortableSurface() (Froggers.hpp's `PortableSurface`) is defined as
     // `return ui_;` over its own declared-concrete-type member
-    // (`FroggersUiSurface ui_;`, Froggers.hpp:55) -- so the object
+    // (`FroggersUiSurface ui_;`, Froggers.hpp's `ui_`) -- so the object
     // PortableSurface() returns a reference to is ALWAYS, provably, a
     // FroggersUiSurface; a runtime check here would guard a branch that
     // cannot exist without an edit to Froggers.hpp itself -- protect only
@@ -296,7 +296,7 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     //
     // juce::Timer::startTimer() (which startTimerHz() calls) itself asserts
     // JUCE_ASSERT_MESSAGE_MANAGER_EXISTS in Debug builds
-    // (juce_Timer.cpp:372-377, "If you're calling this before (or after)
+    // (JUCE's own juce_Timer.cpp, "If you're calling this before (or after)
     // the MessageManager is running, then you're not going to get any
     // timer callbacks!") -- true for every headless CTest binary in this
     // app/vst/ test suite (FroggersVstSmokeTest.cpp/
@@ -596,7 +596,7 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
                 // Single-slot, coalescing store -- same "control-rate,
                 // human-paced action" idiom FroggersAppCore::
                 // RequestBankSelect/RequestEncoderPress already use
-                // (FroggersAppCore.hpp:550-556's own comment), applied here
+                // (FroggersAppCore.hpp's own comment on `RequestBankSelect`), applied here
                 // because pushing directly from this thread is not an
                 // option (see this file's header comment).
                 pendingTransportEdge_.store(
@@ -749,11 +749,11 @@ void FroggersPluginProcessor::timerCallback() {
 
     // -- drain the pending host transport edge, if any -----------------
     // Routed through the SAME production seam the Play/Stop buttons use --
-    // FroggersApp::PortableSurface() (Froggers.hpp:52) returns the exact
+    // FroggersApp::PortableSurface() (Froggers.hpp's `PortableSurface`) returns the exact
     // FroggersUiSurface instance already Attach()-ed to this engine
-    // (Froggers.hpp:49, run once during engine_.Initialize() above), so
+    // (Froggers.hpp's `FroggersApp::Init`, run once during engine_.Initialize() above), so
     // DispatchAction() here runs the literal HandleAction kPlay/kStop
-    // branches (FroggersUiSurface.hpp:2169-2187) -- including their
+    // branches (FroggersUiSurface.hpp's `HandleAction`) -- including their
     // LatchThenTransport call, which disarms the latch and pushes the
     // transport message in happens-before order -- rather than a
     // hand-mirrored copy of that logic that could drift from it. No editor
@@ -796,7 +796,8 @@ void FroggersPluginProcessor::timerCallback() {
     // this class. grep across app/ and the runtime shell turned up no
     // OTHER production caller of RequestSyncConfiguration at all: this
     // plugin is the first thing that ever engages external-clock slaving
-    // outside a test rig (FroggersSurfaceTests.cpp:2095's SetSyncConfig is
+    // outside a test rig (FroggersSurfaceTests.cpp's
+    // `bpm_slider_is_read_only_and_shows_recovered_tempo_while_externally_clocked`'s SetSyncConfig is
     // a synchronous test-only bypass), so there is no existing "how
     // MIDI-clock slaving engages" production call site to defer to beyond
     // this mechanism itself.
@@ -902,7 +903,7 @@ void FroggersPluginProcessor::timerCallback() {
         // path alone would never fire. And even when it DOES fire, it only
         // resets `acquisitionState_`/`source_`, never `syncConfig_.
         // receiveClock` itself (ClearExternalSource, :350-367) -- so
-        // TempoExternallyClocked() (FroggersAppCore.hpp:1267, reads
+        // TempoExternallyClocked() (FroggersAppCore.hpp's `ProcessBlock`, reads
         // SyncConfiguration().receiveClock directly) would stay stuck true,
         // permanently suppressing the BPM slider with no live source
         // driving it. There is no existing production disengage call site
@@ -955,7 +956,7 @@ void FroggersPluginProcessor::TestStartTransport() {
     // timerCallback()'s own comment) rather than pushing
     // MessageIn::Start/SetDesiredTransportRunning directly: a direct push
     // would miss the Freeze-latch disarm the real Play button's
-    // LatchThenTransport call performs (FroggersUiSurface.hpp:2169-2180),
+    // LatchThenTransport call performs (FroggersUiSurface.hpp's `HandleAction`),
     // and hand-mirroring that fix a
     // second time would let this seam and the real transport-edge-trigger
     // producer independently drift from HandleAction's actual kPlay

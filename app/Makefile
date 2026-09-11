@@ -144,7 +144,7 @@ DSP_HEADERS := $(wildcard $(APP_DIR)/dsp/*.hpp)
 DSP_TEST_SOURCES := $(APP_DIR)/FroggersDspParityTests.cpp
 DSP_TEST_BIN := $(BUILD_DIR)/froggers_dsp_parity_tests
 
-.PHONY: all clean check-no-juce check-no-firmware-includes check-catalog-covers-screen-actions test force
+.PHONY: all clean check-no-juce check-no-firmware-includes check-catalog-covers-screen-actions check-spec-checks-resolve check-citations-resolve check-no-planning-history test force
 
 all: check-no-firmware-includes $(APP)
 
@@ -189,6 +189,30 @@ check-microphone-usage:
 # the script's own header for the entry grammar it parses.
 check-docs-match-parameter-table:
 	@python3 $(APP_DIR)/check_docs_match_parameter_table.py "$(APP_DIR)"
+
+# A spec's `Check:` line is evidence that a requirement is backed by something
+# real. It is also the cheapest false claim in the repository, because nothing
+# else reads prose -- one ADDED requirement shipped naming a test that existed
+# nowhere. This resolves every such name against the tree's real test cases and
+# files, and accepts `none` / `operator step` so an honest gap stays sayable.
+check-spec-checks-resolve:
+	@python3 $(APP_DIR)/check_spec_checks_resolve.py "$(APP_DIR)"
+
+# A comment that cites a path and line is making a claim about where something
+# lives. This fails when the path exists nowhere, and when a citation into this
+# tree still carries a line number -- line numbers into a tree under edit are
+# wrong by the next commit, and one change left 14 of 24 stale. Citations into
+# External/Sheaf and src/, and any citation carrying a commit pin, are out of
+# scope by construction; the script's header records why.
+check-citations-resolve:
+	@python3 $(APP_DIR)/check_citations_resolve.py "$(APP_DIR)"
+
+# Comments explain behaviour, never which task or numbered item produced them:
+# a reader has never seen the planning document and cannot check anything
+# against it. The rule predates this check, was acted on twice, and was
+# re-violated twice.
+check-no-planning-history:
+	@python3 $(APP_DIR)/check_no_planning_history.py "$(APP_DIR)"
 
 # --- no-JUCE-in-app-core target ---------------------------------------------
 $(NO_JUCE_CHECK): $(NO_JUCE_CHECK_SRC) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(DSP_HEADERS) | $(BUILD_DIR)
@@ -270,7 +294,7 @@ check-catalog-covers-screen-actions:
 	@bash $(APP_DIR)/check_catalog_covers_screen_actions.sh "$(APP_DIR)" \
 	    kSceneBlend kEncoderPress kEncoderDrag kInputSelect kViewportNarrow
 
-test: check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions check-docs-match-parameter-table $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN) $(CONTROLLERS_PAGE_BIN)
+test: check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions check-docs-match-parameter-table check-spec-checks-resolve check-citations-resolve check-no-planning-history $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN) $(CONTROLLERS_PAGE_BIN)
 	$(TEST_BIN)
 	$(MONO_VALIDATION_BIN)
 	$(DSP_TEST_BIN)

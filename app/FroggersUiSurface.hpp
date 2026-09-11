@@ -53,9 +53,9 @@
 // any other bank parameter (Crunchy is unreachable while a modulation view
 // is open, since slot 15 is then Target/Back). Crunchy (slot 15) is GLOBAL
 // -- one shared `Parameter` aliased into all six banks
-// (`FroggersParameters.hpp:323-328, 428-437`) carrying its own
+// (`FroggersParameters.hpp`'s `FroggersParameterModel::Init`) carrying its own
 // fixed Yellow rather than the bank colour, and excluded from drill-in/
-// randomize dispatch (`FroggersModulation.hpp:113-119`). That colour already
+// randomize dispatch (`FroggersModulation.hpp`'s `RandomizeAll`). That colour already
 // flows through `Parameter::UIState.color` into
 // `EncoderDrawStateFromParameter` with no special-casing needed here -- this
 // file's one encoder-cell code path renders slot 14 (Crispy, per-bank
@@ -953,8 +953,8 @@ public:
         synth::ui::Builder builder;
         builder.Root(FroggersNodeIds::kRoot, root);
         // The on-canvas "Frogg3rs Synth" title label is removed --
-        // `config.appName` (FroggersAppCore.hpp:183) and
-        // `FroggersManifest().displayName` (FroggersRegistration.hpp:24)
+        // `config.appName` (FroggersAppCore.hpp's `Config`) and
+        // `FroggersManifest().displayName` (FroggersRegistration.hpp's `FroggersManifest`)
         // already cover launcher/window-title naming. The freed space is
         // left for a future logo,
         // deferred pending upstream `DrawCommand::Image`.
@@ -1998,7 +1998,7 @@ private:
                     // ring instead of early-returning `{}`
                     // (EncoderDraw.hpp:653-656). `AdjustBrightness` is this
                     // app's existing dimming idiom
-                    // (FroggersModulation.hpp:604 et al.). An unavailable
+                    // (FroggersModulation.hpp's `FroggersModulationSlate::RegisterSources` et al.). An unavailable
                     // source cannot be affecting anything, so both
                     // indicator bitmasks AND the colour vectors they index
                     // into are cleared together -- leaving stale colours
@@ -2360,7 +2360,7 @@ private:
         // node-presence check, so without this gate a synthetic dispatch
         // while drilled would still switch banks and, via the ProcessFrame
         // drain reconstructing drillIn_ on any bank change
-        // (FroggersAppCore.hpp:627-641), silently exit the drill -- even
+        // (FroggersAppCore.hpp's `ProcessFrame`), silently exit the drill -- even
         // though no arrow node exists in the tree to click.
         if (action.name == FroggersActions::kBankPrevious) {
             if (app_->DrillLevel() == 0) {

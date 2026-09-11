@@ -466,7 +466,7 @@ struct Comb
     // comment above for why both placements are load-bearing.
     float Process(float input)
     {
-        // PureDelay's own frac/idx0/idx1 idiom (FilterFx.hpp:598-608),
+        // PureDelay's own frac/idx0/idx1 idiom (FilterFx.hpp's `PureDelay::Process`),
         // reused verbatim: the two adjacent taps, linearly interpolated by
         // delaySamples's fractional part. The weight is exactly zero at an
         // integer delaySamples (lowExact is then an exact integer, so

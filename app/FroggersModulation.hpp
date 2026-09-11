@@ -1261,7 +1261,7 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
 // `ParameterManager::HandleSetAbsolute(slotIx, position, ...)`'s
 // GetCurrentModifier()-gate, an overload this app never calls (app-side
 // absolute/encoder input goes through `MessageIn::ParamIncDec` instead,
-// FroggersUiSurface.hpp:1677); (3) `SelectBankForSlot`/`NavigateBankForSlot`'s
+// FroggersUiSurface.hpp's `FroggersUiSurface::HandleAction`); (3) `SelectBankForSlot`/`NavigateBankForSlot`'s
 // bank-wide-randomize branch, not invoked from inside this function; (4) the
 // `randomHeld` mirror `PopulateUIState` publishes for UI rendering -- this
 // app never reads `RandomHeld()` or that mirror anywhere (no "modifier held"
@@ -1490,7 +1490,7 @@ inline void ApplyBankDefaultPatch(FroggersParameterModel& model, FroggersBankId 
 }
 
 // Crunchy is a single Parameter registered before the per-bank loop and
-// shared into every bank's slot 15 (FroggersParameters.hpp:331-338,
+// shared into every bank's slot 15 (FroggersParameters.hpp's `FroggersParameterModel::Init`,
 // reached here through FroggersParameterModel::Crunchy()) -- it belongs to
 // no one bank, so it is not part of ApplyBankDefaultPatch above; this is its
 // own default-patch slice, the "plus the globals" a bank-addressable default

@@ -139,9 +139,9 @@ struct VcoAdsrState
     // different stages. 5 ms, same as kMinReleaseSeconds.
     static constexpr float kMinDecaySeconds = 0.005f;
     // (Envelope slot 13, Grace). Another
-    // implementer judgment call ("needs its own design pass
-    // at implementation time -- this proposal does not fully specify it").
-    // 1.0f matches kMaxDecaySeconds's own scale (a generous but bounded
+    // implementer judgment call: no governing specification fully pins this
+    // ceiling, so it needed its own design consideration at implementation
+    // time. 1.0f matches kMaxDecaySeconds's own scale (a generous but bounded
     // per-note floor, not an open-ended hang). This comment used
     // to also claim a match with kMaxAttackSeconds; halving attack to 0.5f
     // broke that mirror -- Grace's own ceiling was not part of that

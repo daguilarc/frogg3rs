@@ -490,9 +490,10 @@ public:
 
     // Arms/stops a bounded mono capture of
     // what the operator hears. UI-thread call. Refuses while the transport
-    // is stopped -- v1 precedent for the wording (desktop/Source/
-    // MainComponent.cpp:201, reference only, not ported): exactly "Press
-    // Play before recording." via RecordRefusalReason() below. All
+    // is stopped -- v1 precedent for the wording
+    // (b9a8199^:desktop/Source/MainComponent.cpp:201, reference only, not
+    // ported): exactly "Press Play before recording." via
+    // RecordRefusalReason() below. All
     // allocation happens here, on the UI thread, never on the audio thread
     // -- `capacityFramesOverride` lets tests bound the buffer far below the
     // real kMaxRecordSeconds*sampleRate_ cap (~345 MB at 30 minutes/48kHz);
@@ -527,7 +528,7 @@ public:
     // Captured data stays readable afterward via RecordedAudio()/
     // RecordedFrameCount() below (v1 precedent for the truncation wording,
     // reference only: "Recording stopped at the 30-minute limit.",
-    // desktop/Source/MainComponent.cpp:219).
+    // b9a8199^:desktop/Source/MainComponent.cpp:219).
     void StopRecording() { recordArmed_.store(false, std::memory_order_release); }
 
     // Read-back for the capture (UI thread). Safe to call while still armed
@@ -1094,8 +1095,8 @@ public:
                     // stage comparisons) so the expensive part (every
                     // unit's own Reset(), O(its own state size) each) still
                     // runs exactly once for the whole release, not once per
-                    // block for up to kMaxReleaseSeconds (2.5s,
-                    // VoiceEnvelope.hpp:84) the way the old policy did.
+                    // block for up to VoiceEnvelope.hpp's `kMaxReleaseSeconds`
+                    // (2.5s) the way the old policy did.
                     clearDelayReverb();
                 }
             }
@@ -1141,7 +1142,7 @@ public:
             // already stops their Increment() regardless of this outer gate
             // (RandomShLane::Process() itself still glides a further few
             // samples toward an already-fixed target, then holds bit-exact --
-            // a transient, not free-running; an earlier draft of this task
+            // a transient, not free-running; an earlier draft
             // named the lanes here instead, which was wrong). Sources HOLD
             // rather than reset: RegisterSources() hands Sheaf raw pointers
             // to the member variables Step() writes, and
@@ -1354,7 +1355,7 @@ public:
     std::size_t ActiveBankIndex() const { return activeBankIx_; }
     FroggersModulationDrillIn& ActiveDrillIn() { return *drillIn_; }
 
-    // Test/inspection access to tasks 2.2-2.5's per-unit recovery targets --
+    // Test/inspection access to the per-unit recovery targets --
     // the exact dsp:: unit instances RecoverPoisonedUnitState() watches, so
     // tests can inject a poisoned (non-finite or over-ceiling) state
     // directly into ONE unit and observe (a) that unit's own recovery
@@ -1548,7 +1549,7 @@ private:
     // the same list -- a third mechanism found by direct measurement.
     // With W1+W2 in place the pass-D 20-trial repro
     // still reproduced 20/20 -- measured cause: Grit's stage
-    // (dsp::DigitalReorganizer::Mangle, dsp/Drive.hpp:363-382) sits
+    // (dsp::DigitalReorganizer::Mangle, dsp/Drive.hpp) sits
     // INSIDE the tank feedback path ahead of the loop's own
     // PadeSaturator::Saturate bound, and Mangle's 8-bit-bucket
     // quantize-then-XOR has UNBOUNDED local gain across a bucket
@@ -1559,7 +1560,7 @@ private:
     // locks at 0.306814 forever at the drawn Grit 0.8094; decays to
     // 1.98e-7 at Grit 0). Grit 0.0f is its own exact bit-identical
     // bypass by construction (Mangle(x,0,0) - Mangle(0,0,0) == x,
-    // dsp/Reverb.hpp:526-527), so this override is silent by
+    // dsp/Reverb.hpp's `Reverb::Process`), so this override is silent by
     // construction too, same as the others.
     //
     // One shared lookup, not a sixth independent ternary --
@@ -1588,7 +1589,7 @@ private:
     // bypass/unity values.
     static constexpr float kStopUnityDriveKnob = 0.5f;  // ExpMapCompute(0.25,4,0.5) == 1.0 (unity) -- shared by all three drive pre-gains.
     static constexpr float kStopFreezeKnob = 0.0f;
-    static constexpr float kStopGritKnob = 0.0f;  // Mangle(x,0,0) - Mangle(0,0,0) == x (dsp/Reverb.hpp:526-527) -- exact bit-identical bypass, same as Grit's own registered default.
+    static constexpr float kStopGritKnob = 0.0f;  // Mangle(x,0,0) - Mangle(0,0,0) == x (dsp/Reverb.hpp's `Reverb::Process`) -- exact bit-identical bypass, same as Grit's own registered default.
     // The dry floor shared by Delay's and Reverb's wet/dry crossfades is
     // `dsp::kMinDryLevel` (dsp/Limiter.hpp) -- see that declaration for the
     // equal-power law it feeds and the guarantee it makes. It is applied
@@ -1658,9 +1659,9 @@ private:
         // Envelope layout), plus slot 12 Curve and slot 13 Grace, shared
         // across all three voices. MixOscVoices now reads Decay (slots
         // 1/5/9), Curve (slot 12) and Grace (slot 13) too -- see
-        // VoiceEnvelope.hpp's own task A/B/C comments for the ramp-shape and
+        // VoiceEnvelope.hpp's own comments for the ramp-shape and
         // deferred-release mechanisms these drive.
-        // Task C: Audio slot 13 (VBal) drives the mixed-average's crossfade
+        // VCO balance (Audio slot 13, VBal) drives the mixed-average's crossfade
         // weights (dsp::ComputeVcoBalanceWeights); outGated's raw per-voice
         // values (scope tap below) are unaffected by balance.
         const float chainIn = dsp::MixOscVoices(
@@ -1788,7 +1789,7 @@ private:
         // 08b5fd3:src/core/FroggersEngine.hpp:561-564, restored 2026-07-27. These three
         // setters were dropped in the port even though `FilterFxChain`
         // kept the scoop blend, so `scoopNotch` ran forever on
-        // `ResonantBump`'s default `freq = 1000.0f` (FilterFx.hpp:133) --
+        // `ResonantBump`'s default `freq = 1000.0f` (FilterFx.hpp's `ResonantBump::freq`) --
         // an unnormalized value in a cycles/sample convention, i.e.
         // thousands of times past Nyquist, giving a marginally stable
         // biquad. Under a self-oscillating comb (Randomize All pins the
@@ -1851,20 +1852,19 @@ private:
                                                RoutedKnob(FroggersBankId::Filter, 6));
         // FroggersEngine.hpp:245-247 (Alpha): 1 - exp(-2*pi*natFreq).
         filterChain_.comb.SetCutoffAlpha(1.0f - std::exp(-2.0f * static_cast<float>(M_PI) * cmlp));
-        // Task C (Filter slot 7, "Comb drive", "CDrv"): knob-driven
+        // Comb drive (Filter slot 7, "CDrv"): knob-driven
         // pre-gain on the comb saturator's argument (dsp::Comb::Process,
         // FilterFx.hpp), exponential map (dsp::ExpMapCompute, same shape
         // used throughout this method), range 0.25x-4.0x so unity (1.0x)
         // is reachable exactly at knob==0.5 -- ExpMapCompute(0.25, 4.0,
         // 0.5) == 0.25 * sqrt(16) == 1.0. The Filter slot-7 default
-        // (FroggersParameters.hpp) is set to 0.5f for exactly this reason
-        // (Task E).
+        // (FroggersParameters.hpp) is set to 0.5f for exactly this reason.
         // stoppedKnob (defined above, beside kStopFadeReleaseKnob)
         // overrides this to kStopUnityDriveKnob (0.5, i.e. unity post-map)
         // while the transport is stopped, regardless of the commanded knob.
         filterChain_.comb.SetDrive(
             dsp::ExpMapCompute(0.25f, 4.0f, StoppedKnob(FroggersBankId::Filter, 7, kStopUnityDriveKnob)));
-        // Task A (Filter slot 13, "Topology", "Topo"): continuous morph
+        // Topology (Filter slot 13, "Topo"): continuous morph
         // replacing the old `useParallel` bool -- see FilterFxChain::Process's
         // own comment (FilterFx.hpp) for why topology==0 is bit-identical to
         // the old always-true `useParallel` behaviour.
@@ -2154,7 +2154,7 @@ private:
     // already comfortably above the tighter figures too, so there was
     // nothing to retune):
     //   - The filter chain's input is bounded to +-1.0 by
-    //     `PadeSaturator::Saturate` (FilterFx.hpp:94-99, `std::max(-1.0f,
+    //     `PadeSaturator::Saturate` (FilterFx.hpp, `std::max(-1.0f,
     //     std::min(1.0f, output))`) before it ever reaches a recursive
     //     stage this recovery watches.
     //   - `ResonantBump`'s peak gain is `A^2 == height`, `height ==
@@ -2254,7 +2254,7 @@ private:
         }
     }
 
-    // Tasks 2.2-2.5 (design: per-unit, never global -- see this class's
+    // Per-unit recovery, never global -- see this class's
     // header comment on why a global reset is wrong: it would cut the
     // reverb tail and delay repeats every time one unrelated filter
     // misbehaved). Called once per block, after ProcessBlock()'s per-sample

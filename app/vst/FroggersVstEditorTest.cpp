@@ -56,7 +56,7 @@
 //      uiState->sceneBlend, published from inside Engine::ProcessBlock,
 //      throttled to once every uiPublishInterval_ blocks -- Engine.hpp:
 //      292-298 computes round(sampleRate / (uiFrameHz(30) * blockSize)) = 6
-//      at this test's 48kHz/256 setup, FroggersAppCore.hpp:247 sets
+//      at this test's 48kHz/256 setup, FroggersAppCore.hpp's `Config` sets
 //      uiFrameHz=30) -- so the test drains processBlock() in a bounded loop
 //      and asserts the SURFACE's own BuildTree() actually observed the new
 //      value BEFORE drawing any conclusion from the renderer's silence.
@@ -165,14 +165,14 @@ const synth::ui::Node* FindNodeById(const synth::ui::NodeTree& tree, const std::
 // real host's event loop. NOT juce::MessageManager::runDispatchLoopUntil():
 // that method only exists when JUCE_MODAL_LOOPS_PERMITTED is set, and it
 // defaults to 0 for every JUCE target that does not explicitly opt in
-// (juce_core/system/juce_PlatformDefs.h:320-329) -- this project never does,
+// (JUCE's own juce_PlatformDefs.h) -- this project never does,
 // and flipping that flag would have to happen on FroggersVst, the SAME
 // shared-code target the real VST3/AU plugin ships from, for a test-only
 // need. Instead this pumps the exact underlying primitive
 // runDispatchLoopUntil's own body uses
-// (juce_events/native/juce_MessageManager_mac.mm:378-407): a callAsync
+// (JUCE's own juce_MessageManager_mac.mm): a callAsync
 // message is signalled onto the MessageQueue member's own captured run loop
-// (juce_events/native/juce_MessageQueue_mac.h:47-48: `CFRunLoopGetMain()` on
+// (JUCE's own juce_MessageQueue_mac.h: `CFRunLoopGetMain()` on
 // macOS, captured once when JUCE's AppDelegate -- and its MessageQueue
 // member -- are first constructed, inside
 // MessageManager::doPlatformSpecificInitialisation()). This test binary
@@ -276,7 +276,7 @@ TEST_CASE(editor_constructs_and_destructs_cleanly_twice_headless) {
 }
 
 // -- 2. Action-handler wiring ---------------------------------------------------
-// See this file's own header comment, item 2, for the full trace and the
+// See this file's own header comment's "Action-handler wiring" section for the full trace and the
 // positive-control reasoning. Short version: dispatch a real action through
 // the real surface, prove the surface's OWN state actually changed (so a
 // later renderer mismatch cannot be blamed on the action never landing),
@@ -388,7 +388,8 @@ TEST_CASE(dispatching_an_action_refreshes_the_renderer_through_the_action_handle
 
 // -- 3. Headless AffineTransform coordinate inversion -------------------------
 // Guards the drag-coordinate bug class FroggersPluginEditor::resized()'s
-// scale-to-fit transform opens up (see this file's header comment, item 3).
+// scale-to-fit transform opens up (see this file's header comment's
+// "Headless AffineTransform coordinate inversion" section).
 // Mirrors that method's own shape exactly: a design-space child fixed at
 // position (0,0), transformed into a differently-sized parent via
 // AffineTransform::scale(...).translated(...). Ground truth is computed via

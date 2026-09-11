@@ -28,7 +28,7 @@ struct VcoEnvelopeFollowers
     float attackCoeff = 0.05f;
     float releaseCoeff = 0.01f;
 
-    // The retired simulator's V2EnvelopeFollowerBank.hpp:19-26 (setSampleRate). This struct's
+    // The retired simulator's f236915^:sim/V2EnvelopeFollowerBank.hpp:19-26 (setSampleRate). This struct's
     // only production caller is FroggersModulationSlate::Prepare(), itself
     // only ever called from FroggersAppCore::PrepareToPlay(), which
     // validates the host's sample rate ONCE before any downstream use --
@@ -43,7 +43,7 @@ struct VcoEnvelopeFollowers
         releaseCoeff = 1.0f - std::exp(-1.0f / (kReleaseSeconds * sampleRate));
     }
 
-    // The retired simulator's V2EnvelopeFollowerBank.hpp:28-45 (Process), restricted to taps
+    // The retired simulator's f236915^:sim/V2EnvelopeFollowerBank.hpp:28-45 (Process), restricted to taps
     // 3-5 (|v1|, |v2|, |v3|); the pair-sum taps 6-7 are not computed at all.
     // Returns {|v1| follower, |v2| follower, |v3| follower}.
     void Process(float v1, float v2, float v3, float (&out)[kNumTaps])
@@ -62,7 +62,7 @@ struct VcoEnvelopeFollowers
 // Feeds the "external audio envelope follower" modulation source (slot 14).
 // The external-audio source is a single channel, so it needs exactly one of
 // VcoEnvelopeFollowers's three identical per-tap formulas, not all three --
-// this is that same formula (the retired simulator's V2EnvelopeFollowerBank.hpp:19-35),
+// this is that same formula (the retired simulator's f236915^:sim/V2EnvelopeFollowerBank.hpp:19-35),
 // generalized to one channel instead of duplicating VcoEnvelopeFollowers's
 // 3-wide array for a single tap or wastefully feeding one signal into all
 // three of its lanes.

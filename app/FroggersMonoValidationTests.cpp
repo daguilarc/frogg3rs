@@ -223,8 +223,8 @@ TEST_CASE(mono_group_parameter_registers_and_resolves) {
 TEST_CASE(mono_group_populate_ui_state_publishes_single_voice) {
     // Check 2: PopulateUIState publishes a single voice.
     // PopulateUIState is throttled by uiPublishInterval_
-    // (include/synth/Engine.hpp:413) -- pump enough blocks, per the task
-    // note, before reading the published state (rig.UIState() also forces an
+    // (include/synth/Engine.hpp:413) -- pump enough blocks
+    // before reading the published state (rig.UIState() also forces an
     // immediate synchronous populate, but pumping blocks first exercises the
     // real audio-thread publish path too).
     synth_rig::SynthRig<synth_froggers_validation::MonoValidationApp> rig(

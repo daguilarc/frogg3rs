@@ -1,11 +1,14 @@
 # Build output (object files, libsynth.a copies, and the linked binary) is
 # reproducible from source via `nice make -j2 all` and must never be
-# tracked — this repo already carries real pain from tracked build
-# artifacts under src/FroggersTiga/build/ (see tasks.md 12.4); do not repeat
-# it here.
+# tracked — this repo has carried real pain from tracked build artifacts
+# before; do not repeat it here.
 build/
 
 # Direct-launch (Frogg3rs) build output -- app/build-launcher.sh points
 # APP_BUILD_DIR here so it lands in our own tree instead of the
 # External/Sheaf submodule; reproducible from source, never tracked.
 build-launcher/
+
+# Bytecode cached when one check script imports check_common.py. Reproducible,
+# machine-specific, and never useful to another reader.
+__pycache__/

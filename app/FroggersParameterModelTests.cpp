@@ -161,8 +161,8 @@ TEST_CASE(crispy_and_crunchy_identity_stable_when_active_bank_changes) {
     for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
         // Simulate switching the active bank on the shared slot; identity of
         // slot 14/15 is a property of each Bank object, not of which bank is
-        // currently selected, but exercise the switch anyway per the task's
-        // literal wording.
+        // currently selected, but exercise the switch anyway, as production
+        // code does.
         model.Slot().SelectBank(&model.BankAt(bankIx));
 
         REQUIRE_TRUE(model.BankAt(bankIx).VisibleParameter(

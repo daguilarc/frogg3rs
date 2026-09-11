@@ -198,7 +198,7 @@ std::optional<std::string> DrillBadgeText(const synth::ui::NodeTree& tree, const
     return command.has_value() ? std::optional<std::string>(command->text) : std::nullopt;
 }
 
-// STEP 1 (2026-08-09) removal guards: "BACK L<N>" must never be drawn
+// Removal guards: "BACK L<N>" must never be drawn
 // anywhere again -- not just absent from whichever node happened to carry
 // it. Unlike DrillBadgeText above (which finds THE ONE indicator text on a
 // node known to carry at most one), a Target/Back-style encoder cell can
@@ -217,7 +217,7 @@ bool CommandsContainText(const std::vector<synth::ui::DrawCommand>& commands, co
     return false;
 }
 
-// Scoped guard: the task's literal ask ("nothing reading 'BACK' is drawn on
+// Scoped guard: the operator's literal ask ("nothing reading 'BACK' is drawn on
 // the Target/Back cell").
 bool NodeDrawnTextContains(const synth::ui::NodeTree& tree, const std::string& nodeId, const std::string& needle) {
     const synth::ui::Node* node = FindNodeById(tree, nodeId);
@@ -481,7 +481,7 @@ TEST_CASE(every_encoder_cell_lies_fully_inside_the_grid_region) {
 // `FroggersPageLayout::kDefaultHeight`/`FroggersAppCore::Config().uiHeight`
 // BY HAND (a plain literal, same convention those two use with each other --
 // see their own comments for why no cross-check test exists for that pair).
-// 632 -> 712 with this task's window growth; the small/large cases below are
+// 632 -> 712 as the window grew; the small/large cases below are
 // deliberately untouched (arbitrary probe sizes, not tied to the default).
 TEST_CASE(surface_resolves_without_overflow_at_the_default_window_size) {
     const std::string diagnostic = FroggersResolutionDiagnostic([] {
@@ -750,7 +750,7 @@ TEST_CASE(clicking_the_active_bank_while_drilled_in_exits_to_the_top_level_grid)
 // (as a "BACK L<N>" badge) -- reachable, but
 // rejected on SUBSTANCE, not visibility: "i don't know why you thought i
 // wanted the header to be 'Back' and by the back button... nothing needs to
-// be labeled 'back' there, that implementation sucks." STEP 1 (2026-08-09)
+// be labeled 'back' there, that implementation sucks." This
 // moves it a second time, to its own dedicated, non-interactive header row
 // (`FroggersNodeIds::kModulationHeader`). Same content/styling
 // properties, same test identity (renamed to match), new carrying node --
@@ -865,14 +865,14 @@ TEST_CASE(modulation_header_shown_only_while_drilled_in_and_matches_the_level) {
     REQUIRE_TRUE(DrillBadgeText(surface.BuildTree(), titleId).value_or("") == "Modulation Level 3");
 }
 
-// STEP 1 (operator, 2026-08-09, fourth session on the same complaint -- see
-// AppendModulationHeaderRow's own comment, FroggersUiSurface.hpp, for the
-// full history: the header first sat on kVcoScope, unreachable; a later attempt
-// relocation-1 moved it to the Target/Back cell as a "BACK L<N>" badge,
-// which the operator rejected on SUBSTANCE, not visibility -- "i don't know
-// why you thought i wanted the header to be 'Back' and by the back button,
-// instead of a HEADER above all the modulation parameters, below the bank
-// button row?? ... nothing needs to be labeled 'back' there"). Their spec is
+// Documented in full in AppendModulationHeaderRow's own comment
+// (FroggersUiSurface.hpp): the header first sat on kVcoScope, unreachable;
+// a later attempt relocation-1 moved it to the Target/Back cell as a
+// "BACK L<N>" badge, which the operator rejected on SUBSTANCE, not
+// visibility -- "i don't know why you thought i wanted the header to be
+// 'Back' and by the back button, instead of a HEADER above all the
+// modulation parameters, below the bank button row?? ... nothing needs to
+// be labeled 'back' there". Their spec is
 // unambiguous and geometric: a header BAR spanning the grid's width, BELOW
 // the bank tabs row, ABOVE the first row of parameter cells. This test
 // computes (not eyeballs) exactly that claim against the real resolved
@@ -887,7 +887,7 @@ TEST_CASE(modulation_header_shown_only_while_drilled_in_and_matches_the_level) {
 // coincidentally-empty geometry: the bank tabs row and a populated
 // parameter cell (kModSlotRandomSh6, "Random S&H 6" -- the one modulation
 // source registered `/*connected=*/true` unconditionally,
-// FroggersModulation.hpp:549-550, so it is guaranteed to be a live,
+// FroggersModulation.hpp's `FroggersModulationSlate::RegisterSources`, so it is guaranteed to be a live,
 // rendering cell in the drilled-in grid with no patch setup needed) both
 // resolve to real, populated, in-region geometry, AND the header itself is
 // checked for its actual "Modulation Level 1" text, not merely for having
@@ -970,8 +970,8 @@ TEST_CASE(modulation_header_sits_below_bank_row_and_above_parameter_cells) {
 
     // Removal guards. The operator's actual complaint was about a "back"
     // label appearing where they were looking, not about one specific
-    // pre-named node, so this checks both: scoped exactly to the task's own
-    // wording (the Target/Back cell) and, strictly stronger, the whole tree.
+    // pre-named node, so this checks both: scoped exactly to the operator's
+    // own wording (the Target/Back cell) and, strictly stronger, the whole tree.
     const std::string backId = synth_froggers::FroggersNodeIds::Encoder(
         synth_froggers::FroggersEncoderGridLayout::kEncoderCount - 1);
     REQUIRE_TRUE(!NodeDrawnTextContains(tree, backId, "BACK"));
@@ -1221,7 +1221,7 @@ TEST_CASE(bank_carousel_arrow_actions_are_rejected_while_drilled_in) {
     // change neither the active bank nor the drill level --
     // an ungated branch would accept this and, via the ProcessFrame drain's
     // reconstruct-drillIn_-on-bank-change behaviour
-    // (FroggersAppCore.hpp:627-641), silently exit the drill.
+    // (FroggersAppCore.hpp's `ProcessFrame`), silently exit the drill.
     surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kBankNext));
     rig.RunBlocks(4);
     REQUIRE_TRUE(rig.Application().ActiveBankIndex() == activeBankBeforeDrill);
@@ -1433,7 +1433,7 @@ TEST_CASE(encoder_cell_never_emits_a_frame_draw_command) {
         /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("encoder_no_frame"));
     rig.RunBlocks(4);
     // Pre-existing gap found while verifying this test (it was never
-    // confirmed against a real build -- see this task's own history):
+    // confirmed against a real build):
     // without this call, slots[0].cellCapacity stays 0 and
     // AppendEncoderCell's `state` stays default-constructed (disconnected,
     // zero voices), so BuildEncoderDrawCommands legitimately emits NOTHING
@@ -1995,7 +1995,7 @@ TEST_CASE(every_rendered_label_matches_the_approved_list_verbatim) {
 // that no approved label is longer than `kApprovedLabelGridColumns` -- over
 // every one of the 86 entries, not a hand-picked sample. Supersedes
 // `every_parameter_label_fits_the_two_line_grid` (the old 2-row/10-column
-// grid this task retires along with `SplitFourteenSegmentLines`).
+// grid retired along with `SplitFourteenSegmentLines`).
 TEST_CASE(every_approved_label_fits_the_single_row_grid) {
     std::size_t longest = 0;
     std::string longestText;
@@ -2018,7 +2018,7 @@ TEST_CASE(every_approved_label_fits_the_single_row_grid) {
     checkOne(synth_froggers::FroggersApprovedGlobalLabel(synth_froggers::kFroggersCrunchySlot));
 
     std::cout << "[OBSERVED] longest approved label: \"" << longestText << "\" (" << longest << " chars)\n";
-    // The task brief's own claim, checked rather than assumed: the longest
+    // Checked rather than assumed: the longest
     // of all 86 approved entries ("Stereo width", Delay/Reverb) is exactly
     // kApprovedLabelGridColumns characters.
     REQUIRE_TRUE(longest == static_cast<std::size_t>(synth_froggers::kApprovedLabelGridColumns));
@@ -2089,13 +2089,13 @@ TEST_CASE(scene_buttons_push_scene_blend_to_the_correct_extremes) {
 // UNAFFECTED, which does not hold once the CELL MAP amendment is applied --
 // see FroggersUiSurface.hpp's `AppendSceneBlendGroup()` comment for the same
 // note. The amendment is the more specific, more recently affirmed
-// instruction and governs; this rewrite is flagged in the task report as a
-// place the traced table was wrong.
+// instruction and governs; this rewrite corrects a place the traced table
+// was wrong.
 //
 // This test asserts the Label NODE exists, carries the expected text, and
 // sits immediately AFTER the Slider in `tree.nodes` order. It does NOT and
 // CANNOT prove the text is actually painted on screen -- that requires a
-// human looking at the running app; a previous task was closed on exactly
+// human looking at the running app; a previous fix was closed on exactly
 // that false equivalence (asserting the label field was set) and this
 // comment exists so it isn't repeated.
 TEST_CASE(scene_blend_slider_has_an_adjacent_label_node_carrying_its_text) {
