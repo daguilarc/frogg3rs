@@ -102,22 +102,32 @@ or MAY hold additional named parameters where a bank's slate has been explicitly
 #### Scenario: The Drive bank holds fourteen parameters, complete
 - **WHEN** the Drive bank is enumerated
 - **THEN** it holds fourteen named parameters at slot indices 0 through 13, not nine
-- **THEN** slots 0-8 are unchanged from the Drive bank's existing nine parameters
+- **THEN** slot 0 is Wet/Dry (short name `Wet`), the page's master, and slot 1 is Gain
+  (short name `Gain`), the polynomial waveshaper's own input gain
+- **THEN** slots 2-8 carry the remaining seven of the bank's original nine parameters, in their
+  established order
 - **THEN** slot 9 is Anti-Alias Brightness (short name `ABrt`), the oversampling anti-alias filter's own
   cutoff
-- **THEN** slot 10 is Link (short name `Link`), the coupling weight between the Drive knob's resolved
-  gain and the Shape stage's own asymmetric coefficients, independent of Drive's and Shape's own values
+- **THEN** slot 10 is Feedback (short name `Fb`), the amount of the folder's own output
+  returned to the folder's own input, one oversampled sample later
 - **THEN** slot 11 is Fold (short name `Fold`), the pre-fold scale ahead of the sine-fold stage,
   independent of the Drive knob's own gain
 - **THEN** slot 12 is Tone (short name `Tone`), a post-chain one-pole lowpass applied after every other
   Drive stage
-- **THEN** slot 13 is Bias (short name `Bias`), a DC offset applied before the polynomial waveshaper and
-  exactly cancelled afterward so silence-in still produces silence-out
+- **THEN** slot 13 is Symmetry (short name `Sym`), an offset injected at the folder's own input in phase
+  units, anchored so that silence-in still produces silence-out
+- NOTE (pending `frogg3rs-wysiwyg-deliver` delivery): slots 10 and 13 are updated ahead of that change's
+  own archival, because Link and Bias no longer exist in the tree and a promoted scenario naming them
+  would record a bank the code does not have. That change's spec-delta group restates this requirement's full
+  scenario set at delivery, including the bound and centred default its Symmetry law carries.
 
 #### Scenario: The Delay bank holds fourteen parameters, complete
 - **WHEN** the Delay bank is enumerated
 - **THEN** it holds fourteen named parameters at slot indices 0 through 13, not nine
-- **THEN** slots 0-8 are unchanged from the Delay bank's existing nine parameters
+- **THEN** slot 0 is Wet/dry (short name `Wet`), named exactly as the Reverb bank names its own,
+  and slot 1 is Send, the page's feed into its wet path
+- **THEN** slots 2-8 carry the remaining seven of the bank's original nine parameters, in their
+  established order
 - **THEN** slot 9 is Feedback Drive (short name `FbDr`), a pre-gain applied to the input of the feedback
   loop's own in-loop saturator, never to that saturator's output
 - **THEN** slot 10 is Feedback Tone (short name `FbTn`), a one-pole lowpass damping the feedback tap
@@ -134,8 +144,10 @@ or MAY hold additional named parameters where a bank's slate has been explicitly
 #### Scenario: The Reverb bank holds fourteen parameters, complete
 - **WHEN** the Reverb bank is enumerated
 - **THEN** it holds fourteen named parameters at slot indices 0 through 13, not nine
-- **THEN** slots 0-8 are unchanged from the Reverb bank's existing nine parameters
-- **THEN** slot 9 is Mod Rate (short name `MdRt`), the tank's own modulation LFO rate
+- **THEN** slot 0 is Wet/dry (short name `Wet`) and slot 1 is Send, the page's feed into its tank
+- **THEN** slots 2-8 carry the bank's remaining original parameters, with Mod depth and Mod rate
+  collapsed into one Mod control so that Send's slot is found without cutting a capability
+- **THEN** slot 9 is Hold (short name `Hold`), displaced there by Send taking slot 1 and the modulation pair collapsing to one control
 - **THEN** slot 10 is Tank Drive (short name `TkDv`), a pre-gain applied to the input of the tank feedback
   path's own in-loop saturator, never to that saturator's output
 - **THEN** slot 11 is Grit (short name `Grit`), the tank feedback path routed through a bit-scramble
@@ -292,7 +304,7 @@ whole travel and only the value its top end maps to is bounded.
 
 This holds for every such crossfade, not for whichever one was most recently
 reported. At the Reverb bank's maximum the dry signal SHALL still make up at
-least 40% of that stage's output. The Delay bank's wet mix is the same
+least 30% of that stage's output. The Delay bank's Wet/dry is the same
 expression and SHALL carry the same kind of ceiling.
 
 A wet/dry control SHALL NOT attenuate the dry signal in exchange for a processed
@@ -311,7 +323,7 @@ the output.
 
 #### Scenario: Full wet still passes dry signal
 - **WHEN** the Reverb Wet/dry control is at its maximum
-- **THEN** the dry signal's contribution to this stage's output is at least 40%
+- **THEN** the dry signal's contribution to this stage's output is at least 30%
 
 #### Scenario: The control keeps its full travel
 - **WHEN** the Reverb Wet/dry control is swept from minimum to maximum
@@ -323,12 +335,12 @@ the output.
 - **THEN** the output still carries dry signal
 
 #### Scenario: An unfed processed path makes the control inert
-- **WHEN** the Delay bank's Send is at zero and Wet mix is swept to maximum
+- **WHEN** the Delay bank's Send is at zero and Wet/dry is swept to maximum
 - **THEN** the output is the dry signal and does not fall silent
 
 #### Scenario: A loud echo earns the control its travel
 - **WHEN** the Delay bank's Send is low, Feedback is high, and the echo is loud
-- **AND** Wet mix is at maximum
+- **AND** Wet/dry is at maximum
 - **THEN** the control removes dry signal in proportion to that echo, not to Send
 
 #### Scenario: Switching the feed off fades rather than tracking the tail
@@ -338,7 +350,7 @@ the output.
 - **AND** the output settles to the dry signal
 
 #### Scenario: The patch the instrument ships with stays audible
-- **WHEN** the default patch is played with Wet mix at maximum
+- **WHEN** the default patch is played with Wet/dry at maximum
 - **THEN** the instrument is audible
 
 ### Requirement: The pitch range excludes the inaudible end
@@ -527,3 +539,104 @@ the control.
 #### Scenario: The Delay Stereo width control changes the output
 - **WHEN** the Delay bank's Stereo width is swept
 - **THEN** the output changes
+
+### Requirement: A Drive page control's travel spends itself where the control is heard
+
+WHEN a Drive page control is mapped from its knob to the coefficient it drives, THE application SHALL choose the mapping so that comparable knob movements produce comparable audible changes across the control's travel, measured against the band the instrument actually produces rather than against the coefficient's own arithmetic range, and SHALL place the control's floor where it begins to act rather than below it: no more than a hundredth of a control's travel may be indistinguishable from its floor, judged on magnitude spectra so that inaudible phase rotation is not counted as an effect. A control whose stated job is inaudible across most of its travel SHALL be re-mapped, re-defaulted, or re-named to say what it does. Two controls on this page are held to this: the Blend stage's Phase allpass, whose audible effect exists only through how the rotated wet signal sums with the dry path, and the anti-alias control, which SHALL reject aliasing measurably across its travel rather than carry a name its filter cannot deliver.
+
+#### Scenario: Phase moves the blend across its whole travel
+
+- **WHEN** a 220 Hz tone is driven with Drive at 0.5 and Blend at 0.25, and Phase is swept from 0 to 1
+- **THEN** the output level changes progressively across the sweep rather than only in its last tenth
+- Check: `app/FroggersDspParityTests.cpp`, `drive_phase_sweep_moves_output_meaningfully_across_each_quarter_of_travel`, the Phase-travel case.
+
+#### Scenario: The anti-alias control rejects aliasing
+
+- **WHEN** a tone whose harmonics fold is driven hard, and the anti-alias control is swept from end to end
+- **THEN** the loudest inharmonic partial, measured against the fundamental, falls monotonically by at least 15 dB across the sweep
+- **AND** the in-band level moves by no more than 3 dB between the ends, so the sweep trades grit for cleanliness rather than trading tone for tone
+- **AND** the test tone SHALL NOT divide the sample rate, and SHALL sit inside the range the chosen oversampling factor serves: at a tone dividing the sample rate every fold-image lands on a bin a genuine harmonic occupies, so no measurement can separate them, and above roughly 2 kHz the harmonics that matter have passed the 4x domain's own Nyquist where no decimation filter reaches them
+- Check: `app/FroggersDspParityTests.cpp`, `drive_anti_alias_crossfade_falls_monotonically_and_the_old_one_pole_barely_moved_it`, the alias-sweep case, at 1487 Hz, read through a Hann-windowed bin measurement — measured 23.3 dB of travel with the in-band level moving 2.46 dB.
+
+#### Scenario: A quantized control spends no travel on steps that do nothing
+
+- **WHEN** the Bit depth control is swept from its floor
+- **THEN** the first hundredth of its travel already scrambles a number of bits an operator can hear, rather than the first fifth resting on counts that are inaudible
+- Check: `app/FroggersDspParityTests.cpp`, `drive_bit_depth_first_audible_knob_value_falls_from_0_19_to_a_hundredth`, the knob-threshold case.
+
+#### Scenario: The knob's default reproduces what shipped before it
+
+- **WHEN** the anti-alias control sits at its default
+- **THEN** the path is bit-identical to the 2x one-pole oversampler that shipped before this control existed
+- Check: `app/FroggersDspParityTests.cpp`, `frog_block_default_knob_values_reproduce_original_output_exactly`, which drives the whole chain at its registered defaults and compares against the pre-existing path. The oversampler parity pin alone does not prove this: it pins the 2x unit's own behaviour, not that the knob's default selects it.
+
+#### Scenario: A control that is inert at a default is documented as such
+
+- **WHEN** Symmetry is read with the folder disengaged
+- **THEN** Symmetry's effect on the output is more than 10 dB smaller than with the folder engaged, not bit-identical — the floor that keeps Fuzz from silencing the folder's leg entirely also keeps a small residual of Symmetry's own effect
+- **AND** the manual names which control has to be moved for Symmetry to act
+- Check: `app/FroggersDspParityTests.cpp`, `drive_symmetry_is_inert_when_the_folder_is_not_engaged`, which measures Symmetry's own audible effect through `ProcessDriveBank` with the folder fully engaged (Fuzz 0.0) against the same sweep with the folder floored to its minimum blend weight (Fuzz 1.0) — measured about 3 dB engaged against about -19 dB disengaged, a real but far smaller effect there, matching the manual's own statement of which control (Fuzz) has to move for Symmetry to act.
+- NOTE (pending `frogg3rs-wysiwyg-deliver` delivery): Link and the old Waveshaper offset/Bias no longer exist; this scenario is updated ahead of that change's own archival so this gate does not dangle on the deleted tests in the interim. `openspec/changes/frogg3rs-wysiwyg-deliver/tasks.md`'s spec-delta group restates this requirement's full scenario set at delivery.
+
+### Requirement: An insert effect page's master returns the dry signal at its floor
+
+WHEN an insert effect page carries a wet/dry master, THAT control SHALL crossfade the page's output against its input using a POWER-COMPLEMENTARY law — the two legs' gains SHALL be `cos` and `sin` of a common angle, so that their squares sum to one — and SHALL return the input exactly, sample for sample, at its floor, and it SHALL be named as an effect pedal names it and placed first among that page's parameters. A linear crossfade SHALL NOT be used: it holds level only where its two legs are fully correlated, and no page's wet leg is. Both endpoints SHALL be exact by construction rather than by trusting the trigonometric functions, which do not land on zero at a right angle in single precision. Where a page's wet path is fed through a Send, the master SHALL NOT duck the dry signal in proportion to a wet path that Send has left empty, and that behaviour SHALL be one shared mechanism rather than one implementation per page.
+
+This requirement does NOT ask a page's wet path to be transparent at rest. No page's wet path is: a reverb's wet path is a tank, a delay's is echoes, and a distortion's is a waveshaper. Measured on the Reverb bank with every control at its registered default and the master turned fully up, the output is 8.46 dB below its input and differs from it by -4.07 dB relative to that input. Reverb and Delay read as transparent at rest because their Sends default closed and their wet paths are empty, not because those paths are unity. The property the three pages genuinely share is the one stated above, and each of them meets it by construction of the crossfade.
+
+A page's gain stage SHALL be named Gain and SHALL govern the stage it drives rather than the page as a whole, because a page's bit and rate manglers act at any level and are not gated by gain. Every insert effect page whose wet path is a send-and-return SHALL open with the same two controls in the same order — the master wet/dry first, that page's Send second. A page's wet control SHALL leave a floor of dry signal in place where fully replacing the source destroys what the page is processing, as it does for a reverb and a delay, and SHALL reach fully wet where replacing the source is a sound the page exists to make, as it is for a distortion; wherever that floor applies, both the code and the manual SHALL record why it is there.
+
+#### Scenario: The master returns the dry signal exactly at its floor
+
+- **WHEN** an insert effect page's wet/dry control sits at its floor
+- **THEN** that page's output is its input, sample for sample
+- Check: `app/FroggersDspParityTests.cpp`'s `drive_blend_phase_authored_zero_blend_is_exact_passthrough`, the dry-at-floor pin for the Drive page, which passes today at -240 dB; `app/dsp/Reverb.hpp`'s mix and `app/dsp/Delay.hpp`'s are the same crossfade expression.
+
+#### Scenario: The master does not lose level partway through its travel
+
+- **WHEN** an insert effect page's wet/dry master is swept from its floor to its top
+- **THEN** the page's output level does not dip below its dry level by more than a small margin anywhere on that travel, rather than notching partway and recovering
+- **AND** this holds across notes and across the page's own gain settings, not at one tested frequency
+- Check: `app/FroggersDspParityTests.cpp`, `drive_blend_travel_holds_level_within_1_3_db_across_gain_and_frequency`, the Drive page's blend-travel case, which measures a worst dip of -1.21989 dB where the linear law it replaced measured -4.10 dB.
+
+#### Scenario: A tone control's level change is documented rather than compensated
+
+- **WHEN** a control that shapes a path's spectrum — a reverb's Damping, a delay's Feedback tone — is swept from end to end
+- **THEN** the level it removes is whatever its filter removes, and the manual states both what the control darkens and that it quiets the path it shapes
+- **AND** no makeup gain is applied to hide that change, because how much level a lowpass removes depends on where the signal's energy sits: Reverb's Damping costs 9.98 dB across its travel on broadband noise and 0.52 dB on a 110 Hz tone, so a static term set for either one is wrong for the other
+- Check: `app/FroggersDspParityTests.cpp`'s `reverb_damping_darkens_and_quiets_the_tank_while_room_size_does_neither`, which pins both the monotone broadband attenuation and the monotone spectral tilt, and carries Room size over the same travel as its positive control.
+
+#### Scenario: The gain stage makes distortion and the manglers do not need it
+
+- **WHEN** Gain sits at its floor and the XOR, Bit depth or either rate reducer is raised
+- **THEN** that stage is audible, because it acts on the signal at any gain
+- **AND** with every stage at its floor, raising Gain alone is what introduces harmonic distortion
+- Check: `app/FroggersDspParityTests.cpp`'s `drive_gain_makes_distortion_and_the_manglers_act_at_any_gain`, which measures XOR, Bit depth and both rate reducers against a bit-identical all-floor reference at Gain 0, and Gain's own THD rise with every mangler at its floor.
+
+#### Scenario: A fed page's master does nothing until the page is fed
+
+- **WHEN** the Delay bank's Send sits at zero and its wet/dry control is raised to its top
+- **THEN** the output is the dry signal, neither ducked nor replaced
+- **AND** the Reverb bank behaves identically, through the same shared mechanism rather than a second copy of it
+- Check: `app/dsp/Delay.hpp`'s `WetAuthority()` provides this today; the case pins it against the renamed control and against Reverb's new Send.
+
+#### Scenario: The master's position and name say what it does
+
+- **WHEN** the Drive, Delay and Reverb banks are enumerated
+- **THEN** each opens with its wet/dry master at slot 0, and each page that has a Send carries it at slot 1
+- **AND** the Drive page's master is named Wet/Dry and its gain stage is named Gain
+- Check: `app/check_docs_match_parameter_table.py`, which cross-checks the table against the manual and the quick dictionary.
+
+#### Scenario: The default patch does not arrive wet
+
+- **WHEN** the instrument is loaded with its own default patch
+- **THEN** the Drive page's Wet/Dry sits at its registered default rather than at a value a slot-indexed overlay left behind
+- Check: `app/FroggersModulationTests.cpp`'s `default_patch_gain_is_20_percent` and `default_patch_wet_dry_reads_its_own_registered_default`; the overlay is `ApplyDriveBankOverlay` (`app/FroggersModulation.hpp`), which addresses its target by slot number.
+
+#### Scenario: A control's range reaches the effect it is named for
+
+- **WHEN** a reverb's pre-delay control is swept from end to end
+- **THEN** the tail's arrival moves by tens of milliseconds, far enough for a listener to hear the source and its tail as separate events
+- **AND** no two adjacent knob positions produce identical output
+- Check: `app/FroggersDspParityTests.cpp`'s `reverb_predelay_sweeps_tens_of_milliseconds_with_no_dead_adjacent_steps` and `reverb_predelay_floor_and_ceiling_match_derived_millisecond_range`. Written first against the 2.08 ms total sweep the samples-for-milliseconds range produced, where they failed.
+

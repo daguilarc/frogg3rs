@@ -142,7 +142,7 @@ const synth::ui::Node* FindNodeById(const synth::ui::NodeTree& tree, const std::
 // LAST match, not first: kept for the reason it was added -- an encoder
 // cell (still used below by the Target/Back-cell REMOVAL guards, which now
 // assert ABSENCE of any "BACK" text rather than presence of the old badge)
-// can carry its own unrelated `AppendBadge` (EncoderDraw.hpp:607)
+// can carry its own unrelated `AppendBadge` (External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:607)
 // `DrawCommand::Text` entries (e.g. "M1") for any connected, modulated
 // parameter, so "the first Kind::Text command" on such a cell finds a badge
 // label, not this file's own indicator. `kModulationHeader` itself never
@@ -241,8 +241,8 @@ bool AnyDrawnTextContains(const synth::ui::NodeTree& tree, const std::string& ne
 // coordinates (PortableUI.hpp's coordinate contract): "every node's
 // bounds are relative to its parent's origin," and a backend's rendered
 // position is that node's own bounds "folded over the accumulated origins of
-// its ancestor chain" (PortableUI.hpp:44-46; the JUCE backend's own fold is
-// `PortableJuceBackend.hpp:737-753`'s `resolve()`). The rewritten
+// its ancestor chain" (External/Sheaf/projects/synth/include/synth/PortableUI.hpp:44-46; the JUCE backend's own fold is
+// `External/Sheaf/projects/synth/juce/PortableJuceBackend.hpp:737-753`'s `resolve()`). The rewritten
 // geometry tests below compare nodes that do not share an immediate parent
 // (e.g. an encoder cell several containers deep vs. the scope, or two
 // encoder cells in different grid rows), so they need the SAME fold this
@@ -301,7 +301,7 @@ std::optional<std::size_t> FindNodeIndexById(const synth::ui::NodeTree& tree, co
 
 // A context-free surface build at an arbitrary size: the layout claims below
 // are about the resolver, not about any particular engine/parameter state
-// (mirrors `BuildBraid4TreeAt`, portable_ui_tests.cpp:476-485).
+// (mirrors `BuildBraid4TreeAt`, External/Sheaf/projects/synth/tests/portable_ui_tests.cpp:476-485).
 synth::ui::NodeTree BuildFroggersTreeAt(float width, float height) {
     synth::RuntimeConfig config = synth_froggers::FroggersApp::Config();
     config.uiWidth = static_cast<int>(width);
@@ -319,8 +319,8 @@ synth::ui::NodeTree BuildFroggersTreeAtDefaultSize() {
 }
 
 // try/catch around a resolve, exactly the pattern
-// `tests/portable_ui_tests.cpp:1558-1568` and
-// `tests/braid4_system_tests.cpp:476-485` use -- own local implementation
+// `External/Sheaf/projects/synth/tests/portable_ui_tests.cpp:1558-1568` and
+// `External/Sheaf/projects/synth/tests/braid4_system_tests.cpp:476-485` use -- own local implementation
 // since those files live under the read-only External/Sheaf submodule.
 std::string FroggersResolutionDiagnostic(const std::function<void()>& build) {
     try {
@@ -473,7 +473,7 @@ TEST_CASE(every_encoder_cell_lies_fully_inside_the_grid_region) {
 // list it never checked against the real tree). Its FUNCTION --
 // proving the surface fits -- is taken over by these three, a strictly
 // stronger guarantee: they resolve the real declarative grid and let
-// `RequireContainerHoldsItsChildren` (PortableUILayout.hpp:267-316) itself
+// `RequireContainerHoldsItsChildren` (External/Sheaf/projects/synth/include/synth/PortableUILayout.hpp:267-316) itself
 // report any overflow, at the three sizes the preflight gate pinned
 // (900x632 default, 640x480 small, 1440x900 large) -- not an invented check.
 
@@ -551,7 +551,7 @@ TEST_CASE(scene_blend_and_bpm_sliders_resolve_to_the_same_width) {
 
 // At the pinned Sheaf version,
 // Draw/DrawInteractive nodes dispatch only on double-click
-// (RetainedDrawComponent, PortableJuceBackend.hpp:549-555 -- no plain-click
+// (RetainedDrawComponent, External/Sheaf/projects/synth/juce/PortableJuceBackend.hpp:549-555 -- no plain-click
 // path), which cost single-click bank switching when bank buttons were
 // briefly Draw nodes. Reverted back to plain
 // `Button` nodes: this replaces the former
@@ -581,7 +581,7 @@ TEST_CASE(bank_buttons_are_button_kind_with_selected_flag_and_no_marker_characte
             REQUIRE_TRUE(node->label == layouts[bankIx].name);
             REQUIRE_TRUE(node->label.find('*') == std::string::npos);
             // Button nodes carry their action directly on `node.action`
-            // (Builder::Button, PortableUIBuilders.hpp:300-308) -- not
+            // (Builder::Button, External/Sheaf/projects/synth/include/synth/PortableUIBuilders.hpp:300-308) -- not
             // `doubleClickAction`, which only Draw/DrawInteractive nodes use.
             REQUIRE_TRUE(node->action.has_value());
             REQUIRE_TRUE(node->action->name == synth_froggers::FroggersActions::kBankSelect);
@@ -916,7 +916,7 @@ TEST_CASE(modulation_header_sits_below_bank_row_and_above_parameter_cells) {
     // drilled in. Its own nonzero command count is real, load-bearing
     // evidence, not an assumption -- AppendEncoderCell emits zero ring
     // commands for a hidden/disconnected cell (BuildEncoderDrawCommands
-    // returns {} when !state.connected, EncoderDraw.hpp:653-656).
+    // returns {} when !state.connected, External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:653-656).
     const std::string sourceId = synth_froggers::FroggersNodeIds::Encoder(
         static_cast<std::size_t>(synth_froggers::kModSlotRandomSh6));
     const synth::ui::Node* sourceRing = FindNodeById(tree, sourceId);
@@ -1311,10 +1311,10 @@ TEST_CASE(pressing_target_back_cell_through_the_surface_pops_exactly_one_drill_l
 // --- 10.5: the encoder ring renders the fuegoized value, never rawKnobValue --
 
 // The ring matches Braid -- processed value only.
-// `EncoderDrawStateFromParameter` (EncoderDraw.hpp:306-364) reads
+// `EncoderDrawStateFromParameter` (External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:306-364) reads
 // `Parameter::UIState.values[]` (the UIDisplayCenter chain) and its return
 // type, `synth::ui::EncoderDrawState`/`EncoderVoiceDrawState`
-// (EncoderDraw.hpp:279-304), has NO rawKnobValue field at all -- there is no
+// (External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:279-304), has NO rawKnobValue field at all -- there is no
 // way for FroggersUiSurface's one call site (AppendEncoderGrid(), the only
 // place this surface reads a Parameter::UIState) to read it even by
 // accident. This test proves the runtime consequence: after fuego
@@ -1393,7 +1393,7 @@ TEST_CASE(encoder_ring_renders_fuegoized_value_not_raw_scene_center) {
 // NOT "any StrokeRoundedRect": a later pass (2026-08-08), after wiring
 // wantsFrame=false actually made this test inspect a populated cell (see
 // the "pre-existing gap" comment below), found it still red. Root cause was
-// this test, not the fix: AppendBadge (EncoderDraw.hpp:586-608, the
+// this test, not the fix: AppendBadge (External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:586-608, the
 // modulator/gesture badge chips, e.g. "M1"/"M2") emits its own
 // unconditional StrokeRoundedRect outline, entirely unrelated to
 // wantsFrame, and legitimate chrome the operator never asked to remove --
@@ -1402,7 +1402,7 @@ TEST_CASE(encoder_ring_renders_fuegoized_value_not_raw_scene_center) {
 // (braid-4/miniapp call sites are unrelated apps), and it
 // sets `state.wantsFrame = false` unconditionally for every cell, before
 // that one call, so the
-// wantsFrame-gated rect (EncoderDraw.hpp:691-698) is provably dead code on
+// wantsFrame-gated rect (External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:691-698) is provably dead code on
 // this path -- what was still firing was the badge outline.
 //
 // Geometry tells the two apart cleanly. Traced against a live encoder(0)
@@ -1410,12 +1410,12 @@ TEST_CASE(encoder_ring_renders_fuegoized_value_not_raw_scene_center) {
 // across repeated runs -- the default patch's modulator routing is fixed,
 // not randomized): the card frame would be `{bounds.x+1, bounds.y+1,
 // bounds.width-2, bounds.height-2}` off a `bounds` inset from the node
-// extent by a flat 4px on each side (EncoderDraw.hpp:658-664, 691-698) --
+// extent by a flat 4px on each side (External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:658-664, 691-698) --
 // 126.33x78.33, i.e. 92.7%/88.7% of the cell's own extent. A badge side
 // length is `radius * badgeLengthFraction`, `radius = min(bounds.width,
 // bounds.height) * 0.43 * 0.72`, `badgeLengthFraction =
 // 1/sqrt(1 + total*total/4)` (EncoderGeometry::GetBadgePosition,
-// EncoderDraw.hpp:249-275), which is LARGEST at total==1
+// External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:249-275), which is LARGEST at total==1
 // (badgeLengthFraction ~= 0.894) -- an upper bound of ~27.7% of the cell's
 // SMALLER dimension at any cell size, since every factor is a fixed
 // fraction of a cell dimension, never a flat pixel inset. The two
@@ -1464,7 +1464,7 @@ TEST_CASE(encoder_cell_never_emits_a_frame_draw_command) {
         if (command.kind == synth::ui::DrawCommand::Kind::StrokeRoundedRect) {
             const bool spansCell = command.bounds.width > encoder->bounds.width * kFrameSpanFraction &&
                                     command.bounds.height > encoder->bounds.height * kFrameSpanFraction;
-            // A badge chip's own outline (AppendBadge, EncoderDraw.hpp:602)
+            // A badge chip's own outline (AppendBadge, External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:602)
             // is legitimate chrome, not the operator's complaint, and must
             // NOT be caught here -- only a cell-spanning stroke counts as
             // the card frame.
@@ -1571,7 +1571,7 @@ TEST_CASE(disconnected_modulation_source_draws_a_dimmed_disabled_cell_not_a_blan
         }
         // The 14-segment label glyphs are the ONLY FillPolygon commands
         // BuildEncoderDrawCommands ever emits (FourteenSegment::
-        // AppendCharacter, EncoderDraw.hpp:488-531) -- every other layer
+        // AppendCharacter, External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:488-531) -- every other layer
         // (body, ring, badges, frame) uses a different DrawCommand kind, so
         // this is a direct, count-independent test of "no readout drawn"
         // rather than an inference from a command total.
@@ -1584,7 +1584,7 @@ TEST_CASE(disconnected_modulation_source_draws_a_dimmed_disabled_cell_not_a_blan
     REQUIRE_TRUE(sawBody);
     // No value arc, and that is correct rather than missing: every Arc
     // BuildEncoderDrawCommands emits comes from a per-voice layer
-    // (EncoderDraw.hpp:736-760, indexing state.voices), and a disconnected
+    // (External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:736-760, indexing state.voices), and a disconnected
     // source publishes no voices. A disabled cell shows the knob body and
     // frame with no value drawn on it. Do not "fix" this by synthesising a
     // voice: an arc on an unavailable source would be reporting a value it
@@ -1605,7 +1605,7 @@ TEST_CASE(disconnected_modulation_source_draws_a_dimmed_disabled_cell_not_a_blan
     // publishes `Color::Off` for a disconnected source, so that "connected"
     // reference is black and nothing can read as dimmer than it.
     // The body outline (StrokeEllipse, `ScaleAlpha(state.baseColor, 0.9f)`,
-    // EncoderDraw.hpp:687) is a pure function of `baseColor`, so it isolates
+    // External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:687) is a pure function of `baseColor`, so it isolates
     // colour from geometry.
     const std::string connectedId =
         synth_froggers::FroggersNodeIds::Encoder(static_cast<std::size_t>(synth_froggers::kModSlotVco1Audio));
@@ -1935,7 +1935,7 @@ TEST_CASE(every_rendered_label_matches_the_approved_list_verbatim) {
             {{"Peak freq", "Peak gain", "Peak Q", "Comb offset", "Comb delay", "Comb FB", "Comb LP",
               "Comb drive", "Scoop mix", "Scoop freq", "Scoop width", "Scoop depth", "Comb/Peak", "Topology"}},
             {{"Wet/Dry", "Gain", "Shape", "SRR 1", "SRR 2", "XOR", "Bit depth", "Fuzz", "Phase", "Anti-alias",
-              "Link", "Fold", "Tone", "Bias"}},
+              "Feedback", "Fold", "Tone", "Symmetry"}},
             {{"Wet/dry", "Send", "Delay time", "Feedback", "Stereo width", "Freeze", "Mod depth", "Reverse",
               "Diffusion", "FB drive", "FB tone", "Mod rate", "Width bal", "Crush"}},
             {{"Wet/dry", "Send", "Room size", "Decay", "Pre-delay", "Damping", "Stereo width",
@@ -2077,7 +2077,7 @@ TEST_CASE(scene_buttons_push_scene_blend_to_the_correct_extremes) {
 // scene-blend uses a hand-rolled label, placed under the slider.
 //
 // `NodeKind::Slider` routes `node.label` to `juce::Slider::setName()` only
-// (PortableJuceBackend.hpp:1229-1232) -- no `juce::Label` is attached, so
+// (External/Sheaf/projects/synth/juce/PortableJuceBackend.hpp:1229-1232) -- no `juce::Label` is attached, so
 // nothing ever draws it; some adjacent Label node is required regardless of
 // which mechanism produces it. That mechanism was once
 // `ControlStyle::caption` (a sibling Label BEFORE the control); scene-blend
@@ -2232,7 +2232,7 @@ TEST_CASE(bpm_slider_is_read_only_and_shows_recovered_tempo_while_externally_clo
     REQUIRE_TRUE(rig.Application().TempoExternallyClocked());
 
     // SetTempoBpm returns false and does nothing while slaved
-    // (src/MasterClock.cpp:963-965) -- attempting to set 222 must not move
+    // (External/Sheaf/projects/synth/src/MasterClock.cpp:963-965) -- attempting to set 222 must not move
     // the active tempo, and the surface must not even forward the request
     // (FroggersUiSurface's own belt-and-suspenders guard).
     const double tempoBeforeAttempt = rig.Application().DisplayTempoBpm();
@@ -2320,7 +2320,7 @@ TEST_CASE(bpm_label_is_constant_across_transport_state) {
 //
 // NEITHER this pair NOR its scene-blend neighbour is a `ControlStyle::
 // caption`, and for the same single reason: `Builder::FinishControl`
-// (PortableUIBuilders.hpp:428-465) always emits a caption BEFORE its control
+// (External/Sheaf/projects/synth/include/synth/PortableUIBuilders.hpp:428-465) always emits a caption BEFORE its control
 // with no option to place it after, and since that change BOTH
 // labels sit BELOW their slider. Filed upstream (caption
 // placement); when it lands, both collapse into captions together.
@@ -3317,7 +3317,7 @@ TEST_CASE(truncated_capture_queues_its_export_without_a_stop_press) {
     constexpr std::uint64_t kCapacityFrames = 256;
 
     // Observe the export the way a real host does -- through the engine's
-    // own per-tick drain (Engine::MessageThreadTick, Engine.hpp:622-636),
+    // own per-tick drain (Engine::MessageThreadTick, External/Sheaf/projects/synth/include/synth/Engine.hpp:622-636),
     // which hands every queued export to whatever handler is installed here
     // and drops it otherwise. Installed before arming so the drain that
     // follows the cap has somewhere to deliver it.
@@ -3332,7 +3332,7 @@ TEST_CASE(truncated_capture_queues_its_export_without_a_stop_press) {
     // thread disarms itself the instant it hits the cap (FroggersAppCore::
     // ProcessBlock, :1186-1194) -- no Record dispatch follows here, so the
     // handler above is only ever reached through the engine's own per-tick
-    // TakePendingFileExport() poll (Engine.hpp:628), driven automatically by
+    // TakePendingFileExport() poll (External/Sheaf/projects/synth/include/synth/Engine.hpp:628), driven automatically by
     // every RunBlocks() call's MessageThreadTick.
     rig.RunBlocks(16);
     REQUIRE_TRUE(app.RecordedFrameCount() == kCapacityFrames);

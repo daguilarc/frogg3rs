@@ -1,6 +1,6 @@
 // Shared selectors/helpers for the site e2e suite. Node ids
-// mirror FroggersUiSurface.hpp's `FroggersNodeIds` (app/FroggersUiSurface.hpp
-// :109-206) exactly, which is what Sheaf's browser UI backend publishes as
+// mirror `FroggersNodeIds` in app/FroggersUiSurface.hpp exactly, which is what
+// Sheaf's browser UI backend publishes as
 // each element's `data-synth-node-id` (External/Sheaf/projects/synth/
 // browser/src/ui.ts, `updateNode()`).
 import { expect } from "@playwright/test";

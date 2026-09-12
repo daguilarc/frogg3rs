@@ -18,7 +18,7 @@
 //     always has an ASR state (VcoAdsrState is unconditional here, unlike
 //     the firmware engine's optional m_vcoAdsr pointer), so control permanently
 //     takes the 08b5fd3:src/core/FroggersEngine.hpp:774-784 branch and then the plain-average return at
-//     FroggersEngine.hpp:528 -- the exact code path the citation says to keep.
+//     src/core/FroggersEngine.hpp:528 -- the exact code path the citation says to keep.
 
 #include "DspMath.hpp"
 

@@ -41,8 +41,8 @@ namespace synth_froggers::dsp {
 //
 // DISCREPANCY FLAGGED: the firmware RGen's
 // xorshift32 state is a **static** class member --
-// `static uint32_t s_state;` (RGen.hpp:12), defined out-of-line as
-// `inline uint32_t RGen::s_state = 0xa341316cu;` (RGen.hpp:66). It is NOT
+// `static uint32_t s_state;` (src/core/RGen.hpp:12), defined out-of-line as
+// `inline uint32_t RGen::s_state = 0xa341316cu;` (src/core/RGen.hpp:66). It is NOT
 // per-instance. Every `RGen` object anywhere in the firmware codebase (both
 // of Marbles' channels, 08b5fd3:src/core/FroggersEngine.hpp:311, 08b5fd3:src/core/Parameter.hpp:197/207/214,
 // 08b5fd3:src/core/AudioPairArState.hpp:117, and every ad-hoc `RGen()` temporary) reads
@@ -60,7 +60,7 @@ struct RGen
 {
     explicit RGen(uint32_t seed) : state_(seed != 0u ? seed : 0x6d2b79f5u) {}
 
-    // RGen.hpp:14-27 (NextUInt), same xorshift32 recurrence, per-instance state.
+    // src/core/RGen.hpp:14-27 (NextUInt), same xorshift32 recurrence, per-instance state.
     uint32_t NextUInt()
     {
         uint32_t x = state_;
@@ -71,11 +71,11 @@ struct RGen
         return x;
     }
 
-    // RGen.hpp:45-53 (UniGen/UniGenRange), verbatim formulas.
+    // src/core/RGen.hpp:45-53 (UniGen/UniGenRange), verbatim formulas.
     float UniGen() { return static_cast<float>(NextUInt() >> 8) * (1.0f / 16777216.0f); }
     float UniGenRange(float min, float max) { return min + (max - min) * UniGen(); }
 
-    // RGen.hpp:55-63 (RangeGen), verbatim formula.
+    // src/core/RGen.hpp:55-63 (RangeGen), verbatim formula.
     size_t RangeGen(size_t max)
     {
         if (max == 0)
@@ -175,8 +175,8 @@ struct RandomShLane
         }
     }
 
-    // Marbles.hpp:67-96 (Increment) at width one; the deja-vu branch is
-    // Marbles.hpp:76 (`if (0.5 < m_dejaVuKnob[i])`).
+    // src/core/Marbles.hpp:67-96 (Increment) at width one; the deja-vu branch is
+    // src/core/Marbles.hpp:76 (`if (0.5 < m_dejaVuKnob[i])`).
     void Increment()
     {
         ++tickCount_;
@@ -204,7 +204,7 @@ struct RandomShLane
     // Ticks received since construction; a reseed does not reset it.
     uint32_t TickCount() const { return tickCount_; }
 
-    // Marbles.hpp:115-121 (Process): the current slot, shaped, snapped,
+    // src/core/Marbles.hpp:115-121 (Process): the current slot, shaped, snapped,
     // slewed.
     float Process()
     {

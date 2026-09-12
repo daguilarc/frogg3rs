@@ -26,9 +26,9 @@
 // ResonantBump and Comb each gain a
 // `struct UIState : synth::TransferFunction` (the interface TYPE; the
 // header is named DspTransferFunction.hpp,
-// include/synth/DspTransferFunction.hpp:7,9,10), mirroring the exact
+// External/Sheaf/projects/synth/include/synth/DspTransferFunction.hpp:7,9,10), mirroring the exact
 // in-struct placement Sheaf's own filters use (`OnePoleLowPass::UIState`,
-// include/synth/DspFilters.hpp:22; `OnePoleHighPass::UIState`, :85;
+// External/Sheaf/projects/synth/include/synth/DspFilters.hpp:22; `OnePoleHighPass::UIState`, :85;
 // `ClassicStateVariableFilter::UIState`, :143) rather than a separate
 // wrapper. As with app/dsp/Vco.hpp's own scope UIState, this is a
 // deliberate, minimal widening of this file's "no Sheaf dependency"
@@ -377,7 +377,7 @@ struct Comb
     // -- captured state is exactly what that closed form needs: the
     // feedback coefficient, the lowpass's alpha (OnePoleLowPass::alpha, the
     // same state Sheaf's own OnePoleLowPass::UIState captures,
-    // DspFilters.hpp:22-23), and the integer delay length.
+    // External/Sheaf/projects/synth/include/synth/DspFilters.hpp:22-23), and the integer delay length.
     struct UIState : synth::TransferFunction
     {
         std::atomic<float> feedback{0.0f};
@@ -867,9 +867,12 @@ struct FilterFxChain
         // trim leaves behind, not instead of the trim (the trim stays;
         // this is additive).
         const float peakPath = peakLimiter.Process(peakTrimmed);
-        const float flooredBlend = 0.05f + 0.90f * combPeakBlend;
-        const float halfPi = 0.5f * static_cast<float>(M_PI);
-        const float mixed = peakPath * std::cos(flooredBlend * halfPi) + combPath * std::sin(flooredBlend * halfPi);
+        // Floored equal-power blend, single-sourced with FrogBlock's own
+        // Fold/Fuzz blend (dsp/Drive.hpp) rather than a second copy of the
+        // same floor/span/angle law -- see dsp::FlooredEqualPowerBlend's own
+        // comment (dsp/Limiter.hpp).
+        const FloorBlendGains blendGains = FlooredEqualPowerBlend(combPeakBlend);
+        const float mixed = peakPath * blendGains.legA + combPath * blendGains.legB;
         return mixed;
     }
 };

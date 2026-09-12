@@ -10,7 +10,7 @@
 // stayed 0, so every Write()
 // overwrote slot 0 and Publish() always republished index 0; ScopeReader's
 // no-marker fallback then computed endIndex_ == startIndex_ == 0
-// (DspScope.hpp:266-267), making Empty() permanently true (:270,298), so
+// (External/Sheaf/projects/synth/include/synth/DspScope.hpp:266-267), making Empty() permanently true (:270,298), so
 // BuildScopePolylines returned early and the scope panel drew only
 // background fill + midline.
 //

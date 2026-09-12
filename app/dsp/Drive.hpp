@@ -43,9 +43,9 @@
 //     confirming FrogBlock is the whole unit's entry point.
 //
 // TanhSaturator<false> reduces to PadeSaturator: FrogBlock's fuzz path
-// (PolynomialDrive.hpp:195) reads `m_tanhSaturator.Process(out)`, where
+// (src/core/PolynomialDrive.hpp:195) reads `m_tanhSaturator.Process(out)`, where
 // m_tanhSaturator's input gain is set exactly once, in FrogBlock's own
-// constructor (`m_tanhSaturator.SetInputGain(1.0f)`, PolynomialDrive.hpp:184)
+// constructor (`m_tanhSaturator.SetInputGain(1.0f)`, src/core/PolynomialDrive.hpp:184)
 // and never touched again anywhere in FroggersEngine.hpp (confirmed by
 // grep) -- so `TanhSaturator<false>::Process(x)` always evaluates
 // `Saturate(1.0f * x)` with Normalize=false, i.e. exactly
@@ -82,47 +82,39 @@
 
 namespace synth_froggers::dsp {
 
-// PolynomialDrive.hpp:12-67.
+// src/core/PolynomialDrive.hpp:12-67.
 struct PolynomialDrive
 {
     float gain = 1.0f;
     float coefs[5] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 
-    // (Drive slot 10, "Link"): knob-driven
-    // scalar replacing the hardcoded 0.25f coefs[1]/coefs[3] coupling term
-    // below (see SetLink). Default 0.25f -- matches today's literal for any
-    // instance that never calls SetLink (e.g. the existing
-    // polynomial_drive_set_coefs_matches_space_filling_curve_formula parity
-    // test, which pins the OLD hardcoded-0.25f formula directly).
-    float link = 0.25f;
-
-    // PolynomialDrive.hpp:32-36 (SetGain).
+    // src/core/PolynomialDrive.hpp:32-36 (SetGain).
     void SetGain(float gainKnob01) { gain = ExpMapCompute(1.0f, 5.0f, gainKnob01); }
 
-    // linkScalar = knob * 0.5f, linear -- default knob 0.5f reproduces
-    // exactly 0.25f (today's hardcoded literal: 0.5*0.5==0.25). Doubling to
-    // 0.5f at knob==1 is the "pairing unlocked" case already measured
-    // externally (worst-case |Process| 200.5
-    // today vs 212.1 unlocked, +0.5 dB) -- no further headroom work
-    // required. Call before SetCoefs, which reads `link`.
-    void SetLink(float linkKnob01) { link = linkKnob01 * 0.5f; }
-
-    // PolynomialDrive.hpp:38-66 (SetCoefs). Uses the CURRENT `gain` (the
+    // src/core/PolynomialDrive.hpp:38-66 (SetCoefs). Uses the CURRENT `gain` (the
     // firmware code's m_gain.m_target, i.e. the un-smoothed target) -- call
     // SetGain before SetCoefs, same order as 08b5fd3:src/core/FroggersEngine.hpp:489-490.
+    //
+    // `kGainCouplingScalar` is a fixed coupling constant, not a knob:
+    // `coefs[1]`/`coefs[3]` gain `kGainCouplingScalar * (computedGain -
+    // 1.0f)`, and that coupling is not a control a player can hear as
+    // anything but a second Shape/Gain trim, so it stays fixed rather than
+    // exposed on the panel. 0.25f reproduces every existing coefficient
+    // parity pin and the default-reproduction test exactly.
     void SetCoefs(float shapeKnob01)
     {
         const float computedGain = gain;
         const float coefsKnob = ZeroedExpCompute(30.0f, shapeKnob01);
+        constexpr float kGainCouplingScalar = 0.25f;
 
         coefs[0] = 1.0f + 10.0f * Sine01(coefsKnob * 1.0f);
-        coefs[1] = 10.0f * Sine01(coefsKnob * 1.618f + link * (computedGain - 1.0f));
+        coefs[1] = 10.0f * Sine01(coefsKnob * 1.618f + kGainCouplingScalar * (computedGain - 1.0f));
         coefs[2] = 10.0f * Sine01(coefsKnob * 2.718f);
-        coefs[3] = 10.0f * Sine01(coefsKnob * 3.141f + link * (computedGain - 1.0f));
+        coefs[3] = 10.0f * Sine01(coefsKnob * 3.141f + kGainCouplingScalar * (computedGain - 1.0f));
         coefs[4] = 10.0f * Sine01(coefsKnob * 4.669f);
     }
 
-    // PolynomialDrive.hpp:23-30 (Process).
+    // src/core/PolynomialDrive.hpp:23-30 (Process).
     float Process(float input) const
     {
         const float input2 = input * input;
@@ -133,23 +125,17 @@ struct PolynomialDrive
                         + input4 * coefs[3] + input5 * coefs[4]);
     }
 
-    // (Drive slot 13, "Waveshaper offset" / "Bias"): subtract-after-shift
-    // construction, generalized from
-    // DigitalReorganizer::Process's own `Mangle(input) - Mangle(0)` shape
-    // above in this file (same "compute fresh every call, don't cache"
-    // idiom -- `gain`/`coefs` are public fields that can be reassigned
-    // directly, bypassing SetGain()/SetCoefs()). Closes f(0)==0 exactly at
-    // every bias setting: Process(0.0f) is always exactly 0.0f for any
-    // gain/coefs (every polynomial term multiplies by an increasing power
-    // of the input), so at bias==0 this reduces to Process(input) - 0.0f,
-    // bit-identical to the original call site.
-    float ProcessBiased(float input, float bias) const
-    {
-        return Process(input + bias) - Process(bias);
-    }
+    // Deliberately no offset/bias input here: shifting this stage's own
+    // input by a DC offset and subtracting that offset's own output back
+    // out before the signal reaches the folder would cancel exactly the
+    // asymmetry a Symmetry control needs the folder to see (Sine01 wraps
+    // phase, so a DC offset downstream of such a subtraction is a phase
+    // rotation, not a duty-cycle skew -- see
+    // dsp::FrogBlock::symmetryOffsetCycles below). The offset is injected
+    // directly at the folder's own input instead, in FrogBlock::Process.
 };
 
-// PolynomialDrive.hpp:69-123 (Oversampler2x), using dsp::OnePoleLowPass
+// src/core/PolynomialDrive.hpp:69-123 (Oversampler2x), using dsp::OnePoleLowPass
 // (DspMath.hpp) as the anti-alias filter -- identical to OPLowPassFilter.
 struct Oversampler2x
 {
@@ -263,7 +249,24 @@ struct Oversampler2x
     // FroggersParameters.hpp) is ALL grit -- bit-identical to what shipped
     // before this change, `cleanMix` at its own default of 0.0 -- and
     // knob01 == 0 is the fully clean 4x path.
-    void SetAntiAliasBrightness(float knob01) { cleanMix = 1.0f - knob01; }
+    //
+    // `kAntiAliasKnobExponent` warps the knob before it reaches `cleanMix`,
+    // replacing a plain `cleanMix = 1 - knob01`. MEASURED (a standalone
+    // sweep against this file's own Oversampler2x/PolynomialDrive, 1487 Hz,
+    // Hann-windowed loudest-inharmonic-partial vs. fundamental, same
+    // methodology as FroggersDspParityTests.cpp's
+    // drive_anti_alias_crossfade_falls_monotonically_and_the_old_one_pole_
+    // barely_moved_it): the plain map left alias reduction bunched at the
+    // END of the travel closest to fully clean (quarter-turn reductions
+    // -3.16 / -4.11 / -6.55 / -9.45 dB, each turn doing visibly more work
+    // than the last). Exponent 1.5 spreads that far more evenly
+    // (-4.65 / -5.96 / -7.70 / -4.96 dB) without moving either endpoint:
+    // `1 - knob01^p` still reaches exactly 0.0 at knob01 == 1 and exactly
+    // 1.0 at knob01 == 0 for any p, so both bit-identity claims this
+    // control already carries (all-grit default, fully-clean floor) are
+    // unaffected by this remap.
+    static constexpr float kAntiAliasKnobExponent = 1.5f;
+    void SetAntiAliasBrightness(float knob01) { cleanMix = 1.0f - std::pow(knob01, kAntiAliasKnobExponent); }
 
     template <typename ProcessFunc>
     float Process(float input, ProcessFunc processFunc)
@@ -314,7 +317,17 @@ struct Oversampler2x
 
         prevInput = input;
         firstSample = false;
-        return gritOutput * (1.0f - cleanMix) + cleanOutput * cleanMix;
+        // Equal-power crossfade, not linear -- the same law
+        // `dsp::EqualPowerWetDry` gives every master mix on the instrument
+        // (Limiter.hpp), reused directly rather than a second copy: it
+        // serves this call site exactly, with a zero floor (this crossfade
+        // reaches both fully-grit and fully-clean, so no page-specific
+        // minimum applies). `cleanMix <= 0.0f` returns exactly
+        // `{dry=1, wet=0}`, so `cleanMix == 0.0` (this struct's own
+        // constructor default, and knob01 == 1's mapped value) still
+        // reproduces the grit-only path bit-for-bit.
+        const WetDryGains gains = EqualPowerWetDry(cleanMix, 0.0f);
+        return gritOutput * gains.dry + cleanOutput * gains.wet;
     }
 
     // (Per-unit recovery, app/FroggersAppCore.hpp): zeros only the
@@ -422,19 +435,19 @@ struct SampleRateReducer
     float StateMagnitude() const { return std::max(std::fabs(phase), std::fabs(output)); }
 };
 
-// PolynomialDrive.hpp:125-163 (DigitalReorganizer). NOTE: :138's
+// src/core/PolynomialDrive.hpp:125-163 (DigitalReorganizer). NOTE: :138's
 // `std::round(inputUp)` assigned to a uint8_t is float-to-integer
 // narrowing that is well-defined only while `inputUp` (== (input+1)*128)
 // stays within [0,255] -- i.e. input in roughly [-1, 0.9921875]. At
 // input==1.0 exactly, inputUp==256 and the cast is undefined behavior in
-// the firmware source too (confirmed by reading PolynomialDrive.hpp:135-151
+// the firmware source too (confirmed by reading src/core/PolynomialDrive.hpp:135-151
 // directly).
 //
 // FIX, NOT A REPRODUCTION: unlike
 // the fuegoize UB (the retired simulator's Fuegoize.hpp), which is carried forward
 // because the firmware tree also contains a *correct* reference (the
 // firmware's 08b5fd3:src/core/Parameter.hpp:142) to port instead, there is no such correct
-// reference here -- both PolynomialDrive.hpp:138 in the `src/core/`
+// reference here -- both src/core/PolynomialDrive.hpp:138 in the `src/core/`
 // tree and this port hit the same undefined cast at input==1.0. This is
 // newly written code this app owns, and reproducing UB has no parity
 // value, so this port clamps the rounded value to the uint8_t-representable
@@ -569,7 +582,7 @@ struct DigitalReorganizer
 // 08b5fd3:src/core/TanhSaturator.hpp:25-30 already ported as
 // dsp::PadeSaturator (FilterFx.hpp) -- reused directly, see file-header note.
 
-// PolynomialDrive.hpp:165-203 (FrogBlock).
+// src/core/PolynomialDrive.hpp:165-203 (FrogBlock).
 struct FrogBlock
 {
     PolynomialDrive polynomialDrive;
@@ -592,16 +605,60 @@ struct FrogBlock
     // as an exact identity, matching today's FrogBlock exactly.
     OnePoleLowPass tone{1.0f};
 
-    // (Drive slot 13, "Waveshaper offset" / "Bias"): default 0.0f
-    // (no offset) -- see SetBias /
-    // PolynomialDrive::ProcessBiased above.
-    float bias = 0.0f;
+    // (Drive slot 13, "Symmetry"): default 0.0f (no offset) -- see
+    // SetSymmetry below. Applied directly at the FOLDER's own input, in
+    // phase units, rather than at the polynomial's -- see SetSymmetry and
+    // Process() below for why.
+    float symmetryOffsetCycles = 0.0f;
+
+    // (Drive slot 10, "Feedback"): the fraction of the
+    // folder's own PREVIOUS output fed back into its own input -- see
+    // SetFeedback and Process() below. Default 0.0f: no feedback, the
+    // folder reduces to today's plain `Sine01(out / foldDivisor)`.
+    float feedbackCoefficient = 0.0f;
+
+    // The folder's own (DC-corrected) output from the previous call, held
+    // for exactly one sample so `feedbackCoefficient` has something to feed
+    // back INTO the next call's phase argument -- the one-sample delay a
+    // feedback loop needs to be a loop rather than an algebraic
+    // self-reference. A dedicated struct rather than a bare float purely so
+    // it can join the ForEachStatefulUnit/RecoverPoisonedUnitState
+    // enumeration below, which visits TYPES carrying their own
+    // Reset()/StateFinite()/StateMagnitude(), the same shape
+    // SampleRateReducer/Oversampler2x already are.
+    //
+    // Bounded to [-2, 2] in ordinary operation, because it is always
+    // assigned the difference of two Sine01 calls (see Process() below),
+    // each of which never leaves [-1, 1] regardless of its argument's
+    // magnitude -- this keeps the feedback loop's amplitude bounded no
+    // matter how large `feedbackCoefficient` or the signal driving it gets.
+    // Boundedness alone does not make the loop STABLE, though -- see
+    // `kMaxFeedbackCoefficient`'s own comment for the analysis that does.
+    // This state still needs the ordinary finite-state guard below: a
+    // NaN/Inf reaching `out` upstream would propagate through Sine01 into
+    // this state and then regenerate itself forever afterward (Sine01(NaN)
+    // is NaN), the same "poisoned state that never recovers on its own"
+    // shape every other recursive unit in this file already carries a guard
+    // for.
+    struct FolderFeedbackState
+    {
+        float value = 0.0f;
+        void Reset() { value = 0.0f; }
+        bool StateFinite() const { return std::isfinite(value); }
+        float StateMagnitude() const { return std::fabs(value); }
+    };
+    FolderFeedbackState folderFeedback;
 
     // This struct's own contribution to the "every stateful unit in the
     // audio path" enumeration -- lists ONLY the members declared above that
     // RecoverPoisonedUnitState ever watched (not polynomialDrive/
     // digitalReorganizer/fuzz -- see app/FroggersAppCore.hpp's own
     // RecoverPoisonedUnitState comment for which units that was and why).
+    // `folderFeedback` joins the list at Tier 1 (FiniteOnly) rather than
+    // Tier 2 (Magnitude): it has no meaningful "sustained over ceiling"
+    // reading of its own (its value is always within [-1, 1] by
+    // construction whenever it is finite at all), so only the finite-state
+    // guard applies.
     // Composed, not re-listed, by FroggersAppCore::ForEachStatefulUnit below.
     template <typename Visitor>
     void ForEachStatefulUnit(Visitor&& visit)
@@ -609,19 +666,26 @@ struct FrogBlock
         visit(sampleRateReducer1, Magnitude{});
         visit(sampleRateReducer2, Magnitude{});
         visit(oversampler, Magnitude{});
+        visit(folderFeedback, FiniteOnly{});
     }
 
-    // ExpMapCompute range [1.0, 16.0] -- strictly positive by
-    // construction (ExpMapCompute's floor is `min`, here 1.0, and a
-    // positive min raised to any finite power stays strictly positive, so
-    // the divisor can never reach or cross zero) -- crucial, since
+    // Knob rises -> divisor FALLS, from 16.0 at knob 0 down to 1.0 at knob
+    // 1 -- `out / foldDivisor` is what actually enters the folder below, so
+    // a smaller divisor sends more of `out`'s own swing through Sine01's
+    // wrap per cycle, i.e. more folds. Divisor 1.0 (knob 1) is maximum
+    // folding, not "no folding"; there is no knob position that turns
+    // folding off.
+    // Strictly positive by construction regardless of which argument is
+    // larger (ExpMapCompute's own `min * pow(max/min, value)`, and a
+    // positive `min` raised to any finite power stays strictly positive,
+    // so the divisor can never reach or cross zero) -- crucial, since
     // `out / 0` would be +-inf, and Sine01's own
     // `phase - std::floor(phase)` turns that into NaN, which this codebase
     // has already been silenced permanently by once. Default knob 0.5f
-    // reproduces exactly 4.0f: ExpMapCompute(1,16,0.5) == sqrt(16) == 4
-    // (16 == 4^2 by choice of range, same trick as SetAntiAliasBrightness
-    // above).
-    void SetFold(float foldKnob01) { foldDivisor = ExpMapCompute(1.0f, 16.0f, foldKnob01); }
+    // reproduces exactly 4.0f either way the endpoints are named:
+    // ExpMapCompute(16,1,0.5) == sqrt(16) == 4 (16 == 4^2 by choice of
+    // range, same trick as SetAntiAliasBrightness above).
+    void SetFold(float foldKnob01) { foldDivisor = ExpMapCompute(16.0f, 1.0f, foldKnob01); }
 
     // Alpha fed directly (Reverb.hpp's own damping-filter idiom -- "the
     // ExpMap output IS the alpha", not run through SetAlphaFromNatFreq).
@@ -630,28 +694,131 @@ struct FrogBlock
     // Feedback tone is the same control and reads the same function.
     void SetTone(float toneKnob01) { tone.alpha = ToneAlphaFromKnob(toneKnob01); }
 
-    // Bias in [-0.02, 0.02] -- MEASURED: sweeping bias
-    // across candidate ranges against PolynomialDrive::Process's own
-    // worst-case |output| (several gain/shape settings, representative
-    // +-1.2 input) shows peak swing rises with ANY nonzero bias (it cannot
-    // stay at or below the bias==0 ceiling for bias != 0 -- the polynomial
-    // is unbounded and DC cancellation does not bound peak swing, only
-    // f(0)==0). +-0.02 is the largest tested range keeping the worst-case
-    // increase in the low single digits over the bias==0 baseline (+6.1%
-    // measured) rather than silently widening past it. Default knob 0.5f
-    // reproduces bias == 0.0f exactly (2*0.5-1 == 0).
-    void SetBias(float biasKnob01) { bias = 0.02f * (2.0f * biasKnob01 - 1.0f); }
+    // Symmetry offset, in PHASE units (cycles), injected directly at the
+    // FOLDER's own input rather than at the polynomial's -- Sine01 wraps
+    // phase, so a DC offset placed there (the old Bias's placement) is a
+    // phase ROTATION, and phase is circular: a full-cycle offset is
+    // bit-identical to no offset at all (measured,
+    // `sum|Sine01(x) - Sine01(x+1.0)|` over 4800 samples reads 0.0005,
+    // float noise).
+    //
+    // BIPOLAR, centred on the knob's own midpoint: knob 0.5 reproduces
+    // offset == 0.0f exactly, matching no offset at all, and the two halves
+    // of the travel skew the wave in opposite directions from there. A
+    // one-directional (0 to positive) mapping looks appealing on a bare
+    // sine folder, where the asymmetry it produces rises monotonically with
+    // the offset -- but through this chain the folder shares the output
+    // with `PolynomialDrive`'s own even harmonics, whose sign swings with
+    // Gain, so a one-directional offset that starts at zero REVERSES which
+    // way the wave skews as Gain changes: the higher end of its travel can
+    // read as LESS asymmetric than a setting closer to its floor. Centring
+    // the travel does not remove that interaction, but it means the control
+    // moves through it symmetrically from both sides rather than sitting
+    // pinned at one edge of it.
+    //
+    // Bounded to +-0.02 cycles -- measured (across Symmetry x Shape x Gain x
+    // Fold x input amplitude) as the widest bound at which the signed
+    // asymmetry statistic never reverses direction anywhere in that grid;
+    // widening it re-admits the same reversal this bound exists to avoid,
+    // in exchange for more travel. Do not widen it without re-measuring.
+    // Also, coincidentally, the same range the ported Bias control already
+    // used, so this keeps that range rather than choosing a new one.
+    //
+    // Deliberately NOT scaled by `foldDivisor` here: the offset is already
+    // expressed directly in the same phase units Sine01's argument is in,
+    // so adding it AFTER the `out / foldDivisor` divide in Process() below
+    // is exactly what does the scaling -- it lands as the same number of cycles
+    // regardless of what Fold's own divisor is currently set to, which is
+    // what keeps Fold from changing what Symmetry means.
+    void SetSymmetry(float symmetryKnob01) { symmetryOffsetCycles = 0.02f * (2.0f * symmetryKnob01 - 1.0f); }
 
-    // PolynomialDrive.hpp:187-202 (FrogBlock::Process), same order as
-    // before; bias is applied to polynomialDrive's own input
-    // (via ProcessBiased), foldDivisor replaces the old literal
-    // divisor, and the tone stage is appended after the ported chain.
+    // The maximum feedback coefficient the knob can reach. With the input
+    // silent, `out` is exactly 0 (every term of PolynomialDrive::Process
+    // multiplies a positive power of its input), so the folder's own
+    // recursion reduces to `x[n+1] = Sine01(symmetryOffsetCycles +
+    // feedbackCoefficient * x[n])`, i.e. `sin(2*pi*(c + a*x[n]))`. That map's
+    // local slope at its own fixed point never exceeds `2*pi*a` in
+    // magnitude (`|cos| <= 1`, reaching exactly 1 -- the worst case -- at
+    // `c == 0`, Symmetry off), so the fixed point is stable only while
+    // `a < 1 / (2*pi)`; past it the loop does not diverge (Sine01 stays in
+    // [-1, 1] regardless), but it also does not decay -- it latches onto a
+    // nonzero fixed point, a period-2 cycle, or broadband chaos depending on
+    // how far past the bound `a` sits. `kFeedbackStabilityMargin` reuses the
+    // exact pole-margin factor `DriveBlendPhase::kPhaseCoeffMargin` already
+    // applies to a different pole in this file (0.98) rather than a fresh
+    // round number, so the coefficient sits proportionally as far inside the
+    // stable region at every Symmetry setting as that other pole sits inside
+    // the unit circle.
+    static constexpr float kFeedbackStabilityMargin = 0.98f;
+    static constexpr float kTwoPi = 6.28318530717958647692f;
+    static constexpr float kMaxFeedbackCoefficient = kFeedbackStabilityMargin / kTwoPi;
+    // Default knob 0.0f reproduces feedbackCoefficient == 0.0f exactly --
+    // no feedback, folderFeedback.value's own contribution to `sinIn` below
+    // multiplies out to zero regardless of its history.
+    void SetFeedback(float feedbackKnob01) { feedbackCoefficient = kMaxFeedbackCoefficient * feedbackKnob01; }
+
+    // src/core/PolynomialDrive.hpp:187-202 (FrogBlock::Process), same order
+    // as before, with three changes: the polynomial no longer sees a
+    // biased input (Symmetry moved downstream, see SetSymmetry above);
+    // `sinIn` gains the Symmetry offset and the folder's own one-sample-
+    // delayed feedback; and the Fold/Fuzz blend is now a floored
+    // equal-power crossfade (`dsp::FlooredEqualPowerBlend`, the same law
+    // `FilterFxChain::Process` uses for its own Comb/Peak blend,
+    // dsp/Limiter.hpp) rather than a linear one that could reach a hard zero
+    // on the folder's leg -- see this struct's own class-level notes above
+    // for why. `foldDivisor` still replaces
+    // the old literal divisor, and the tone stage is still appended after
+    // the ported chain.
     float Process(float input)
     {
-        float output = oversampler.Process(input, [this](float in) -> float {
-            const float out = polynomialDrive.ProcessBiased(in, bias);
-            const float sinIn = out / foldDivisor;
-            return Sine01(sinIn) * (1.0f - fuzz) + fuzz * PadeSaturator::Saturate(out);
+        // The same floored equal-power law FilterFxChain::Process uses for
+        // its own Comb/Peak blend, single-sourced as
+        // `dsp::FlooredEqualPowerBlend` (dsp/Limiter.hpp) rather than a
+        // second copy: neither leg of a blend built this way is ever fully
+        // silent -- at either extreme the held-back leg still sits at
+        // `sin(0.05*halfPi)` gain (about -22 dB), so Fold can no longer be
+        // multiplied by exactly zero the way the old linear blend let Fuzz
+        // do at its own maximum.
+        const FloorBlendGains fuzzBlendGains = FlooredEqualPowerBlend(fuzz);
+        const float folderGain = fuzzBlendGains.legA;
+        const float saturatorGain = fuzzBlendGains.legB;
+
+        float output = oversampler.Process(input, [this, folderGain, saturatorGain](float in) -> float {
+            const float out = polynomialDrive.Process(in);
+            // Feedback re-enters at the FOLDER's own input alone, not the
+            // polynomial's -- Sine01's output is bounded to [-1, 1]
+            // regardless of its argument's magnitude, so no matter how
+            // large `feedbackCoefficient` or `out` gets, this term can only
+            // ever add at most `feedbackCoefficient` cycles of phase, never
+            // an unbounded amount of amplitude. Boundedness alone does not
+            // keep the loop from self-oscillating, though -- a bounded map
+            // can still settle on a nonzero fixed point, a period-2 cycle or
+            // broadband chaos instead of decaying, which is exactly what an
+            // unmargined coefficient does (see `kMaxFeedbackCoefficient`'s
+            // own comment above for the analysis that bounds it against
+            // that, not merely against runaway amplitude).
+            const float sinIn =
+                out / foldDivisor + symmetryOffsetCycles + feedbackCoefficient * folderFeedback.value;
+            // Sine01's response to the Symmetry offset alone (zero drive,
+            // zero feedback contribution) is not silence, so a phase offset
+            // sitting ahead of it would otherwise leave a DC term at the
+            // output whenever the folder is driven -- the same
+            // response-to-nothing anchor `DigitalReorganizer::Process`
+            // already subtracts above (`Mangle(input) - Mangle(0)`),
+            // applied here instead of before the fold, which is what lets
+            // the offset still reach Sine01 as a genuine phase shift (see
+            // SetSymmetry's own comment for why it has to). Subtracting it
+            // from the value fed back, not only from this call's own
+            // output, makes silence a fixed point of the feedback recursion
+            // itself at every Symmetry setting: with `out` and `folded`
+            // both driven to 0, `Sine01(symmetryOffsetCycles) -
+            // Sine01(symmetryOffsetCycles) == 0` exactly, regardless of
+            // `feedbackCoefficient`, so a silenced input decays to true
+            // silence rather than to the offset's own quiescent level.
+            const float folded = Sine01(sinIn) - Sine01(symmetryOffsetCycles);
+            folderFeedback.value = folded;
+            const float saturated = PadeSaturator::Saturate(out);
+            return folded * folderGain + saturated * saturatorGain;
         });
 
         output = digitalReorganizer.Process(output);

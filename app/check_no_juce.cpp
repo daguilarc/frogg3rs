@@ -11,7 +11,7 @@
 // every JUCE header sets (JUCE_MAJOR_VERSION, set by
 // juce_core/system/juce_TargetPlatform.h) is still undefined afterwards.
 // Modelled on the same pattern Sheaf's own
-// tests/miniapp_system_tests.cpp:15-17 uses to guard MiniAppCore.
+// External/Sheaf/projects/synth/tests/miniapp_system_tests.cpp:15-17 uses to guard MiniAppCore.
 
 #include "Froggers.hpp"
 

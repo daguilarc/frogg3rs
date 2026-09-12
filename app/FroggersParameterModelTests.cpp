@@ -119,7 +119,7 @@ TEST_CASE(bank_layouts_have_nine_named_parameters_plus_fixed_crispy_and_crunchy)
             REQUIRE_TRUE(param != nullptr);
             // Name() is bank-qualified ("<Bank> <label>") to satisfy
             // ParameterManager::RegisterParameter's global name-uniqueness
-            // check (src/ParameterModulation.cpp:3069-3071) -- some page
+            // check (External/Sheaf/projects/synth/src/ParameterModulation.cpp:3069-3071) -- some page
             // labels genuinely repeat across banks (e.g. "Stereo width" on
             // both Reverb and Delay). ShortName() stays the authentic,
             // possibly-repeated, page-local label.
@@ -283,7 +283,7 @@ TEST_CASE(shared_crunchy_resolves_and_moves_identically_from_any_bank) {
     // from bank Audio, then again from bank Reverb; the second edit
     // accumulates onto the first rather than resetting or diverging (scene
     // blend is 0 throughout, so HandleIncDec's ApplySceneDistribution adds
-    // delta straight onto SceneCenter(0), src/ParameterModulation.cpp:376-378
+    // delta straight onto SceneCenter(0), External/Sheaf/projects/synth/src/ParameterModulation.cpp:376-378
     // in External/Sheaf).
     rig.SelectBank(0, static_cast<std::size_t>(synth_froggers::FroggersBankId::Audio));
     rig.RunBlocks(4);
@@ -546,7 +546,7 @@ TEST_CASE(global_crunchy_itself_receives_no_fuego_stage) {
 // uiPublishInterval_), so "pump enough blocks" here is about letting
 // ProcessLitePhase2's UIDisplayCenter slew (uiDisplayCenterAlpha, an
 // intentionally slow ~10 Hz one-pole) catch up to the fuegoized cached
-// value, not about the publish throttle itself (Engine.hpp:413).
+// value, not about the publish throttle itself (External/Sheaf/projects/synth/include/synth/Engine.hpp:413).
 TEST_CASE(fuegoized_value_is_published_to_ui_state_values) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(64, UseScratchRuntimeDataPaths("fuego_ui_publish"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
@@ -596,7 +596,7 @@ TEST_CASE(fuegoized_value_is_published_to_ui_state_values) {
 // --- Envelope short names survive EncoderDraw's 4-char truncation
 // ---------------------------------------------------------------------------
 // EncoderDraw renders UpperShortLabel(shortLabel) with a hard 4-char cap
-// (EncoderDraw.hpp:571-582). The envelope bank's short names are the only
+// (External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:571-582). The envelope bank's short names are the only
 // place the VCO-distinguishing digit lives, so this asserts both that every
 // short name already fits in 4 chars (nothing silently truncated) and that
 // the three VCO variants of each stage (Attack/Sustain/Release) stay
@@ -641,14 +641,14 @@ TEST_CASE(envelope_bank_short_names_survive_four_char_truncation_distinctly) {
 //
 // Sheaf's parameter-smoothing constants (kDefaultProcessLiteAlpha,
 // kDefaultTargetComputeIntervalSamples, kDefaultUiDisplayCenterAlpha,
-// kDefaultUiDisplaySpreadAlpha -- ParameterModulation.hpp:170-174) are
+// kDefaultUiDisplaySpreadAlpha -- External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:170-174) are
 // defined at a 48 kHz reference (their own comments), and
 // ParameterGroupConfig initialises to exactly those raw values
-// (ParameterModulation.hpp:199-203) -- ConfigureProcessingTiming
-// (ParameterModulation.cpp:859-865) is the only thing that ever replaces
+// (External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:199-203) -- ConfigureProcessingTiming
+// (External/Sheaf/projects/synth/src/ParameterModulation.cpp:859-865) is the only thing that ever replaces
 // them. Braid 4 calls it from its sample-rate hook, converting each
 // constant with ConvertOnePoleAlpha/ConvertSampleInterval against its own
-// internal (oversampled) rate (Braid4Core.hpp:207-220). This app has no
+// internal (oversampled) rate (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:207-220). This app has no
 // oversampling at the parameter tier (FroggersAppCore.hpp's own
 // PrepareToPlay sets sampleRate_ straight from the host rate, no
 // internalSampleRate_ concept anywhere in this class), so the fix converts
@@ -671,7 +671,7 @@ TEST_CASE(configure_processing_timing_is_wired_at_96khz_prepare) {
     const synth::ParameterGroupConfig& config = rig.Application().Parameters().Group().Config();
 
     // Expected values: the exact conversion Braid 4's own PrepareToPlay
-    // performs (Braid4Core.hpp:207-217), substituting the host rate
+    // performs (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:207-217), substituting the host rate
     // (96000.0) for Braid 4's internalSampleRate_ per this app's own
     // no-oversampling-at-parameter-tier design.
     const float expectedProcessLiteAlpha =
@@ -696,7 +696,7 @@ TEST_CASE(configure_processing_timing_is_wired_at_96khz_prepare) {
     REQUIRE_NEAR(config.uiDisplaySpreadAlpha, expectedUiDisplaySpreadAlpha, 1.0e-6f);
 
     // targetCenterAlpha is deliberately NOT part of
-    // synth::ParameterProcessingTiming (ParameterModulation.hpp:179-184) --
+    // synth::ParameterProcessingTiming (External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:179-184) --
     // ConfigureProcessingTiming never touches it, so it must stay at its
     // own untouched default regardless of host sample rate.
     REQUIRE_NEAR(config.targetCenterAlpha, synth::kDefaultTargetCenterAlpha, 1.0e-6f);

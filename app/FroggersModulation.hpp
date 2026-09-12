@@ -13,14 +13,14 @@
 // Registration, in a load-bearing order
 // ============================================================================
 // `StandardModulators` is NOT used: `kRandomCount = 4` is a
-// hard `static constexpr` (include/synth/StandardModulators.hpp:27) with four
+// hard `static constexpr` (External/Sheaf/projects/synth/include/synth/StandardModulators.hpp:27) with four
 // hardcoded visualizers (:46-49,188-191), so it cannot yield six S&H sources,
 // and with slots 0-5 already taken by the six Random S&H sources there is
 // nowhere left to put its four randoms anyway. All 15 sources are registered
 // directly via `Modulators::SetModulationSource`
-// (src/ParameterModulation.cpp:552-572, reached here through
+// (External/Sheaf/projects/synth/src/ParameterModulation.cpp:552-572, reached here through
 // `ParameterGroup::SetModulationSource`, the same public wrapper). Standalone
-// Sheaf pieces reused: `NoiseModulatorProcessor` (DspNoise.hpp:48-54),
+// Sheaf pieces reused: `NoiseModulatorProcessor` (External/Sheaf/projects/synth/include/synth/DspNoise.hpp:48-54),
 // `NoiseWaveformVisualizer`, `GangedRandomLfoVisualizer` (:247-248).
 //
 // Slot order -- SetModulationSource bounds-checks only
@@ -53,17 +53,17 @@
 // one full move-cycle spans 16 quarter notes (four bars), clamping to
 // a safe fallback (120 BPM-equivalent) when no clock plan is available so
 // `GangedRandomLfoProcessor::Process`'s `ValidateRandomTimingConfig` never
-// throws (`DspRandomLfo.hpp:26-30`).
+// throws (`External/Sheaf/projects/synth/include/synth/DspRandomLfo.hpp:26-30`).
 //
 // ============================================================================
 // Source-value convention: normalized [0,1], matching Sheaf's own modulator
 // sources
 // ============================================================================
 // Verified, not invented: `GangedRandomLfoProcessor`'s targets are drawn via
-// `DefaultRandomDrawSource::Uniform01()` (DspRandomLfo.hpp:277-279,
+// `DefaultRandomDrawSource::Uniform01()` (External/Sheaf/projects/synth/include/synth/DspRandomLfo.hpp:277-279,
 // std::uniform_real_distribution<float>{0.0f,1.0f}) and
 // `NoiseModulatorProcessor::Process()` writes `random_.UniformOpen01()`
-// (DspNoise.hpp:69-71) -- both already [0,1]. `apps/braid-4/Braid4Core.hpp`
+// (External/Sheaf/projects/synth/include/synth/DspNoise.hpp:69-71) -- both already [0,1]. `apps/braid-4/Braid4Core.hpp`
 // renormalizes its own bipolar audio/LFO sources into [0,1] before
 // registering them (`NormalizeMatrixOutput`, `0.5 + 0.5*clamp(x,-1,1)`,
 // :420-422,367-378) rather than passing raw bipolar signal through. This
@@ -77,7 +77,7 @@
 // Drill-in level cap
 // ============================================================================
 // Sheaf's `Bank` has no level concept at all: one `Parameter* selected_`
-// (ParameterModulation.hpp:661) plus one bool computed from it
+// (External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:661) plus one bool computed from it
 // (`ShowingModulation()`, :2710-2712); `Bank::HandlePress` opens a
 // modulation view for ANY non-selected pressed cell regardless of how deep
 // the current view already is (`OpenModulationView`, :2813-2859), so it will
@@ -97,7 +97,7 @@
 // Randomize: Sheaf remains the only mutator
 // ============================================================================
 // `Bank::RandomizeModulationDepths` and the `Modifier::Random`/`RandomMod`
-// dispatch inside `Bank::HandlePress` (src/ParameterModulation.cpp:2633-2650,
+// dispatch inside `Bank::HandlePress` (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2633-2650,
 // :2861-2913) are PRIVATE to `Bank` -- there is no public API to invoke them
 // on an arbitrary parameter directly. The sanctioned public path (also how
 // `ParameterManager::SelectBankForSlot`/`NavigateBankForSlot` themselves
@@ -121,7 +121,7 @@
 //
 // The paragraph above does not hold for the VALUE path.
 // `Parameter::RandomizeVisibleValue` (called by `Bank::ApplyModifierToParameter`
-// under a held `Modifier::Random` press, src/ParameterModulation.cpp:1723-1731)
+// under a held `Modifier::Random` press, External/Sheaf/projects/synth/src/ParameterModulation.cpp:1723-1731)
 // computes its delta against `TargetValue(0)`, the MODULATION-RESOLVED value --
 // so under live audio-rate modulation each press ratchets the commanded value
 // into the [0,1] clamp (measured 20/20 at exactly 1.0000 after 5
@@ -182,7 +182,7 @@ enum FroggersModulatorSlot : std::size_t {
 inline constexpr std::size_t kFroggersNumRandomShLanes = 5;  // sources 1-5; #6 is the GangedRandomLfo
 
 // 0.5 + 0.5*clamp(x,-1,1): the same renormalization apps/braid-4 uses for its
-// own bipolar audio/LFO modulation sources (Braid4Core.hpp:420-422), so a
+// own bipolar audio/LFO modulation sources (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:420-422), so a
 // genuinely-bipolar signal (VCO audio, external audio) matches this
 // framework's established [0,1] modulator-source convention (see this file's
 // header comment).
@@ -195,11 +195,11 @@ inline float NormalizeBipolarToUnit(float bipolar)
 // Bank::HandlePress's single-argument overload derives its own physical
 // layout from `Bank::CompactPhysicalLayout()`, which returns only the
 // encoder ids this bank has actually registered a parameter at
-// (topLevel_.size(), src/ParameterModulation.cpp:2935-2941) -- 11 for every
+// (topLevel_.size(), External/Sheaf/projects/synth/src/ParameterModulation.cpp:2935-2941) -- 11 for every
 // Froggers bank (9 page params + Crispy + Crunchy; this bank's slots 9-13
 // are deliberately left empty). `Bank::OpenModulationView` requires
 // `physicalLayout.size() >= numModulators + 1` = 16
-// (ParameterModulation.cpp:2838-2841), so the single-arg overload throws
+// (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2838-2841), so the single-arg overload throws
 // ("modulation view has more modulators than slot depth positions") the
 // first time any parameter here is pressed. The two-arg overload takes an
 // EXPLICIT layout instead; `BankSlot::PhysicalEncoders()` (public) already
@@ -319,7 +319,7 @@ public:
     void PrepareBlockClock(std::optional<double> quarterNotesPerSample) {
         // Fallback: MasterClock::kDefaultTempoBpm (120 BPM)'s quarter-note
         // duration, so the config below stays valid (Process() below throws
-        // on invalid input, DspRandomLfo.hpp:26-30) even with no clock plan
+        // on invalid input, External/Sheaf/projects/synth/include/synth/DspRandomLfo.hpp:26-30) even with no clock plan
         // at all (transport never started, or a rejected/zero-frame
         // callback) -- input to `GangedRandomLfoInput` must stay finite and
         // positive before it reaches the audio thread.
@@ -383,7 +383,7 @@ public:
         // TransportQuarterNotesAt() helper produced for the ASR gate --
         // reusing that one value here, rather than re-deriving the
         // null-check/guard/Try-call sequence a second time. `Phasor2Tick::Input` rejects
-        // `multiplier <= 0` (DspPhasor2Tick.hpp:17-22), so rate
+        // `multiplier <= 0` (External/Sheaf/projects/synth/include/synth/DspPhasor2Tick.hpp:17-22), so rate
         // MULTIPLICATIONS use `multiplier` (source 1 = 3, source 2 = 2,
         // source 3 = 1) and the two rate DIVISIONS (source 4 once per two
         // quarter notes, source 5 once per four) pre-scale `time` with
@@ -461,7 +461,7 @@ public:
 
     // The cell stays pushed with a null parameter whenever this is false
     // (Sheaf's own OpenModulationView/EnsureModulationDepthParameter
-    // behavior, ParameterModulation.cpp:2804-2806,2843-2852), so the slate
+    // behavior, External/Sheaf/projects/synth/src/ParameterModulation.cpp:2804-2806,2843-2852), so the slate
     // never changes size or order regardless of cabling. Called once at
     // startup and once per routing transition (FroggersAppCore.hpp's
     // Init()/ProcessFrame()) -- never per sample; a test wanting
@@ -558,7 +558,7 @@ private:
         // quarter note (x1), #4 once per two quarter notes, #5 once per four
         // (the DIVISIONS pre-scale `time` rather than using `multiplier`,
         // per Phasor2Tick's own `multiplier <= 0` rejection,
-        // DspPhasor2Tick.hpp:17-22). The period is the one axis of each
+        // External/Sheaf/projects/synth/include/synth/DspPhasor2Tick.hpp:17-22). The period is the one axis of each
         // source's character set here; the rest are in RandomShLane.hpp's
         // factories, and the ordering is the same one: source 1 the
         // fastest, source 5 the slowest.
@@ -599,7 +599,7 @@ private:
         {
             // Mirrors Sheaf's own StandardModulators::Init, which
             // calls SetVoiceColor on every GangedRandomLfoProcessor it owns
-            // before registering it (StandardModulators.hpp:126-130).
+            // before registering it (External/Sheaf/projects/synth/include/synth/StandardModulators.hpp:126-130).
             // gangedRandomLfo6_ is this app's own standalone instance (not
             // one of StandardModulators' processors -- source #6 is resolved
             // outside that shared machinery), so nothing else
@@ -607,7 +607,7 @@ private:
             // (what GangedRandomLfoVisualizer actually draws,
             // GangedRandomLfoVisualizer.hpp's `voice.color`) stays at
             // GangedRandomLfoAtomicColor's own default, Color::Grey
-            // (DspRandomLfo.hpp:165), even though the ModulatorMetadata
+            // (External/Sheaf/projects/synth/include/synth/DspRandomLfo.hpp:165), even though the ModulatorMetadata
             // below already carries the correct LaneColor(5).
             gangedRandomLfo6_.SetVoiceColor(0, LaneColor(5));
             const std::array<float*, 1> src{&randomSh6Output_};
@@ -802,8 +802,8 @@ public:
         // pre-press view afterward.
         //
         // This is the exact, and ONLY, distinguishing signal, verified by
-        // reading Sheaf's complete Bank::HandlePress body (External/Sheaf/
-        // projects/synth/src/ParameterModulation.cpp:2628-2650, pinned):
+        // reading Sheaf's complete Bank::HandlePress body
+        // (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2628-2650, pinned):
         // its one and only branch that sets `selected_` to nullptr is
         // `if (ShowingModulation() && cell->parameter == selected_) {
         // Deselect(); return; }` (:2643-2646) -- OpenModulationView
@@ -897,13 +897,13 @@ private:
 // ============================================================================
 // Depth randomize does not dispatch a held Modifier::RandomMod press into
 // Bank::HandlePress, which calls the PRIVATE Bank::RandomizeModulationDepths
-// (src/ParameterModulation.cpp:2901-2933). That function's own loop --
+// (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2901-2933). That function's own loop --
 //     while (manager_->NextRandomCoin() < 0.5f) { ... one depth touched ... }
 // (:2894) -- is a geometric distribution over the count of depths touched
 // STARTING AT ZERO: P(k) = 0.5^(k+1) for k = 0, 1, 2, ..., mean 1.0. A single
 // press typically changed only ~1 depth, and was a complete no-op exactly
 // 50% of the time. That constant is Sheaf's, private, and out of scope to
-// change upstream (src/ParameterModulation.cpp:2914).
+// change upstream (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2914).
 //
 // `detail::RandomizeParameterModulationDepths` below (used by all four call
 // sites: RandomizeBankLevel1Depths, RandomizePage's drill-in branch, and
@@ -944,7 +944,7 @@ namespace detail {
 
 // The only reliable externally-observable signal that
 // Bank::EnsureModulationDepthParameter's private CanAllocate() early return
-// (ParameterModulation.cpp:2811-2813) is ABOUT to fire for the next press:
+// (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2811-2813) is ABOUT to fire for the next press:
 // `ParameterGroup::CanAllocate()` (public) is already false. Checking a
 // per-parameter "does every connected modulator have a materialized depth"
 // count instead would be wrong -- the draw below is geometric from a
@@ -963,7 +963,7 @@ inline bool CapacityExhausted(const synth::ParameterGroup& group) {
 // of these two FIXED scene poles directly, never the live (possibly
 // mid-blend) `manager.Scene()`. leftScene==rightScene on each, so
 // `ApplySceneDistribution`'s own `&left==&right` special case
-// (ParameterModulation.cpp:369-374) applies the write to exactly that one
+// (External/Sheaf/projects/synth/src/ParameterModulation.cpp:369-374) applies the write to exactly that one
 // scene index regardless of blend -- the same pattern
 // `ApplyFroggersDefaultPatch`'s own `kScene` constant already relies on for
 // pole 0 (this file, further down). Matches `FroggersParameterModel::
@@ -986,7 +986,7 @@ static_assert(kScenePoles.size() == FroggersParameterModel::kNumScenes,
               "kScenePoles must enumerate exactly kNumScenes scene poles");
 
 // The bipolar-neutral commanded value, named once. Sheaf's own
-// `kNeutralModulationDepthCenter` (ParameterModulation.cpp:258) is
+// `kNeutralModulationDepthCenter` (External/Sheaf/projects/synth/src/ParameterModulation.cpp:258) is
 // file-private and not reachable from here, so this is a legitimate
 // separate definition -- but it must exist exactly once on this side, not
 // as a bare `0.5f` repeated at every call site: depths are
@@ -1034,8 +1034,8 @@ inline constexpr float kModulationNeutralEpsilon = 0.000001f;
 //  1. Semantics: a neutral depth modulates nothing, so sub-modulating IT is
 //     meaningless work on a value that has no audible effect.
 //  2. It is directly visible. Sheaf's badge criterion is
-//     `Parameter::ModulatorsAffectingMask()` (External/Sheaf/projects/synth/
-//     src/ParameterModulation.cpp:2356-2365), which sets a bit when the depth
+//     `Parameter::ModulatorsAffectingMask()`
+//     (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2356-2365), which sets a bit when the depth
 //     is non-null AND `HasNonZeroState()`. `HasNonZeroState()` (:2367) returns
 //     true if the depth's OWN `currentDepths_`/`targetDepths_` are non-zero --
 //     so a depth counts as "affecting" merely because it has SUB-modulation,
@@ -1126,7 +1126,7 @@ inline std::size_t SwapInRandomPick(synth::ParameterManager& manager, std::span<
 // the same source twice, which this does not reproduce), and
 // for each chosen source calls the exact same two public calls Sheaf's own
 // loop makes internally: `Parameter::EnsureModulationDepth` then
-// `Parameter::RandomizeVisibleValue` (ParameterModulation.cpp:2926-2931).
+// `Parameter::RandomizeVisibleValue` (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2926-2931).
 // Sheaf performs every write; only the count and the source set are chosen
 // here. Does NOT dispatch through Bank::HandlePress at
 // all -- no press, no modifier-hold, no selection/level state touched -- so
@@ -1227,7 +1227,7 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
 // A single-cell
 // VALUE randomize of whatever parameter is currently VISIBLE at `encoderId`
 // on `bank` -- `bank.VisibleParameter(encoderId)` is exactly
-// `FindVisibleCell(encoderId)->parameter` (src/ParameterModulation.cpp:2729-
+// `FindVisibleCell(encoderId)->parameter` (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2729-
 // 2732), the same lookup `Bank::HandlePress`'s modifier branch uses
 // internally, so this targets the identical cell a press-based path
 // would (top-level or drilled-in, whichever is visible), with no dependency
@@ -1235,7 +1235,7 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
 //
 // Dispatching a press under a held `Modifier::Random`, which
 // routes into Sheaf's `Parameter::RandomizeVisibleValue`
-// (ParameterModulation.cpp:1723-1731), does not work here: that function deltas against
+// (External/Sheaf/projects/synth/src/ParameterModulation.cpp:1723-1731), does not work here: that function deltas against
 // `TargetValue(0)`, the MODULATION-RESOLVED value, so under live audio-rate
 // modulation repeated presses ratchet the commanded value into the [0,1]
 // clamp instead of landing the drawn value (measured 20/20 at
@@ -1252,7 +1252,7 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
 // literally true regardless of scene-slider position.
 // `manager.NextRandomValue()` is the same RNG source Sheaf's own
 // `RandomizeVisibleValue` call site draws from (`Bank::ApplyModifierToParameter`,
-// ParameterModulation.cpp:2893), so seeded/reproducible randomize is
+// External/Sheaf/projects/synth/src/ParameterModulation.cpp:2893), so seeded/reproducible randomize is
 // unaffected.
 //
 // `ParameterManager::SetRandomHeld` is deliberately no longer called here --

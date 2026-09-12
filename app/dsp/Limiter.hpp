@@ -243,6 +243,31 @@ inline WetDryGains EqualPowerWetDry(float mix01, float minDryLevel)
     return WetDryGains{std::cos(theta), std::sin(theta)};
 }
 
+// A second equal-power law, distinct from the one above: EqualPowerWetDry
+// floors the DRY leg only, so an unfloored page still reaches a hard zero on
+// one side. This one floors BOTH legs identically, for a blend where neither
+// side may ever be multiplied by exactly zero -- `FilterFxChain::Process`'s
+// Comb/Peak blend (dsp/FilterFx.hpp) and `FrogBlock::Process`'s Fold/Fuzz
+// blend (dsp/Drive.hpp) both need this shape, and before this was extracted
+// each carried its own copy of the identical floor/span/angle constants.
+// Named for what both call sites do with it -- knob01 == 0 favours legA,
+// knob01 == 1 favours legB, and neither ever reaches the other's gain of
+// exactly 1.0 or 0.0.
+struct FloorBlendGains
+{
+    float legA;
+    float legB;
+};
+
+inline FloorBlendGains FlooredEqualPowerBlend(float knob01)
+{
+    constexpr float kBlendFloor = 0.05f;
+    constexpr float kBlendSpan = 0.90f;
+    constexpr float kHalfPi = 1.57079632679489661923f;
+    const float flooredKnob = kBlendFloor + kBlendSpan * knob01;
+    return FloorBlendGains{std::cos(flooredKnob * kHalfPi), std::sin(flooredKnob * kHalfPi)};
+}
+
 // The per-stage THRESHOLDS did NOT collapse into one shared value: peak
 // (0.7, dsp/FilterFx.hpp) and Drive's output limiter (0.7, dsp/Drive.hpp)
 // were already measured strictly below the new ceiling and are unchanged;

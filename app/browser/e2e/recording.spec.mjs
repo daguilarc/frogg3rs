@@ -2,8 +2,9 @@
 // inside the AudioWorklet's process callback while the runtime is armed
 // (main.ts's `offerDownload`, called once the runtime hands back the
 // recorded bytes), the same worklet callback whose block counts Sheaf's own
-// audio-flow.spec.ts already asserts render (External/Sheaf/projects/synth/
-// browser/tests/audio-flow.spec.ts:904 and :987) -- this spec depends on
+// audio-flow.spec.ts already asserts render
+// (External/Sheaf/projects/synth/browser/tests/audio-flow.spec.ts:904 and :987)
+// -- this spec depends on
 // that same rendering happening under Playwright's Chromium, and treats a
 // downloaded, non-trivial RIFF/WAV file as proof the capture ran end to end
 // rather than re-deriving worklet block counts itself.

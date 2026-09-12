@@ -41,3 +41,25 @@ def walk_all(root):
 def read(path):
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
         return fh.read()
+
+
+def path_index(repo, roots):
+    """Every file's repo-relative path under `roots`, and only that -- the one
+    spelling a citation may use to name a file.
+
+    Basenames are deliberately not indexed: a bare filename with no directory
+    says nothing about WHICH file of that name is meant, and this tree reuses
+    names freely -- every vendored example keeps its own `Makefile`, and common
+    script and document names repeat across unrelated directories. The index is
+    also the only way a path is accepted; asking the filesystem instead would
+    accept directories, paths that climb out of the tree, and everything inside
+    the build and `.git` trees this walk excludes.
+    """
+    paths = set()
+    for base in roots:
+        root_dir = os.path.join(repo, base)
+        if not os.path.isdir(root_dir):
+            continue
+        for full in walk_all(root_dir):
+            paths.add(os.path.relpath(full, repo))
+    return paths

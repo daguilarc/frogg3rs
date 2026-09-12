@@ -2,8 +2,8 @@
 // Local serving path. Serves one or
 // more directories on loopback HTTP with permissive CORS and correct
 // media types (wasm -> application/wasm, js -> text/javascript), matching
-// sbac-7 (External/Sheaf/openspec/specs/synth-browser-app-catalog/spec.md
-// :95-106) and the froggers-browser-package spec's "Public hosting
+// sbac-7 (External/Sheaf/openspec/specs/synth-browser-app-catalog/spec.md:95-106)
+// and the froggers-browser-package spec's "Public hosting
 // suitable for cross-origin loading" requirement.
 //
 // Reuses Sheaf's generic `contentTypeForPath`

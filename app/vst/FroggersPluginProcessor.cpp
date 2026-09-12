@@ -147,7 +147,7 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     , engine_([this] { return NowMicros(); }) {
     // Runtime.hpp Start() order (:223,230, this file's header comment):
     // SetRuntimeDataPaths() BEFORE Initialize() -- startup patch/config
-    // discovery reads dataPaths_ during Initialize() (Engine.hpp:213-222's
+    // discovery reads dataPaths_ during Initialize() (External/Sheaf/projects/synth/include/synth/Engine.hpp:213-222's
     // own doc comment on step 8).
     engine_.SetRuntimeDataPaths(std::move(dataPathsForTest));
     // Wires this plugin's own InputRoutingSignal into the AppContext
@@ -168,7 +168,7 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     // may call repeatedly (sample-rate/block-size renegotiation). Mirrors
     // Runtime::Start() calling engine_.Initialize() once, before any audio
     // device exists, separately from the per-negotiation engine_.Prepare()
-    // in audioDeviceAboutToStart (Runtime.hpp:230,594-599).
+    // in audioDeviceAboutToStart (External/Sheaf/projects/synth/runtime/Runtime.hpp:230,594-599).
     engine_.Initialize();
 
     // This is SetPluginHostMode()'s first PRODUCTION
@@ -288,11 +288,11 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     }
 
     // Pump engine_.MessageThreadTick() from a message-thread juce::Timer,
-    // same as Sheaf Runtime.hpp (Runtime.hpp:343 starts it at
+    // same as Sheaf Runtime.hpp (External/Sheaf/projects/synth/runtime/Runtime.hpp:343 starts it at
     // `config.uiFrameHz > 0 ? ... : 30`; this plugin has no equivalent
     // config knob, so 30Hz directly). Started once, here, in the
     // constructor -- mirrors Runtime::Start() calling startTimerHz() once
-    // (Runtime.hpp:343), not per prepareToPlay().
+    // (External/Sheaf/projects/synth/runtime/Runtime.hpp:343), not per prepareToPlay().
     //
     // juce::Timer::startTimer() (which startTimerHz() calls) itself asserts
     // JUCE_ASSERT_MESSAGE_MANAGER_EXISTS in Debug builds
@@ -682,11 +682,11 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
     // documents it as "hosts set this explicitly from immutable
     // RuntimeConfig" -- the requested CEILING, independent of how many
     // channels this callback actually delivers -- and Engine::ProcessBlock
-    // asserts it equals config_.numAudioInputs exactly (Engine.hpp:410), so
+    // asserts it equals config_.numAudioInputs exactly (External/Sheaf/projects/synth/include/synth/Engine.hpp:410), so
     // it is read from the engine's own already-negotiated config rather
     // than a second, independent literal that could drift out of sync with
     // it. startSample/clockPlan are OUT params the engine sets itself
-    // during ProcessBlock (Engine.hpp:402-405) -- left default-constructed
+    // during ProcessBlock (External/Sheaf/projects/synth/include/synth/Engine.hpp:402-405) -- left default-constructed
     // here, exactly as SynthRig does.
     synth::AudioBlock block;
     block.inputs = haveResolvedInput ? resolvedInputChannelPointers.data() : nullptr;
@@ -744,7 +744,7 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
 
 void FroggersPluginProcessor::timerCallback() {
     // Tick order mirrors Sheaf Runtime.hpp's own timerCallback()
-    // (Runtime.hpp:974-984): the engine's message-thread tick runs first.
+    // (External/Sheaf/projects/synth/runtime/Runtime.hpp:974-984): the engine's message-thread tick runs first.
     engine_.MessageThreadTick();
 
     // -- drain the pending host transport edge, if any -----------------
@@ -774,7 +774,7 @@ void FroggersPluginProcessor::timerCallback() {
     // while `syncConfig_.receiveClock` is true (src/MasterClock.cpp:
     // 963-965) -- that suppression is a property of the flag, not of HOW
     // the tempo estimate itself gets updated. MasterClock::
-    // HandleExternalClock (src/MasterClock.cpp:1097-1193) is the only path
+    // HandleExternalClock (External/Sheaf/projects/synth/src/MasterClock.cpp:1097-1193) is the only path
     // that updates `activeBpm_` while slaved, and it derives that estimate
     // from the MEASURED INTERVAL between successive external-origin
     // MessageIn::Clock ticks (recoveredBpm = 60e6 / (ppqn *
@@ -789,10 +789,10 @@ void FroggersPluginProcessor::timerCallback() {
     //
     // Zero core edits either way: RouteRealtimeBatch already routes any
     // Origin::ExternalMidi MessageIn::Clock to
-    // MasterClock::HandleExternalClock (Engine.hpp:907-916), and
+    // MasterClock::HandleExternalClock (External/Sheaf/projects/synth/include/synth/Engine.hpp:907-916), and
     // Engine::RequestSyncConfiguration is an existing lock-free atomic
     // request already applied once per block by ProcessBlock's own
-    // ApplySyncConfig call (Engine.hpp:346-349, 489-495) -- both pre-date
+    // ApplySyncConfig call (External/Sheaf/projects/synth/include/synth/Engine.hpp:346-349, 489-495) -- both pre-date
     // this class. grep across app/ and the runtime shell turned up no
     // OTHER production caller of RequestSyncConfiguration at all: this
     // plugin is the first thing that ever engages external-clock slaving
@@ -869,7 +869,7 @@ void FroggersPluginProcessor::timerCallback() {
         // bpm even though every tick pushed in a given pump actually
         // arrives in one batch -- MessageInBus::Pop gates on the message's
         // OWN timestamp field, not wall-clock delivery time
-        // (ParameterModulation.cpp:4007-4020), so a burst of correctly-
+        // (External/Sheaf/projects/synth/src/ParameterModulation.cpp:4007-4020), so a burst of correctly-
         // spaced-by-timestamp ticks estimates tempo exactly as a real,
         // evenly-spaced hardware clock would.
         constexpr int kHostClockPpqn = synth::SyncConfig{}.ppqn;
@@ -898,7 +898,7 @@ void FroggersPluginProcessor::timerCallback() {
         // (ExpireExternalSource/ClearExternalSource, src/MasterClock.cpp:
         // 350-393) is reactive, not ambient: it only runs from inside
         // AcceptExternalSource, itself only reached when ANOTHER clock/
-        // transport message arrives (src/MasterClock.cpp:395-419) -- if the
+        // transport message arrives (External/Sheaf/projects/synth/src/MasterClock.cpp:395-419) -- if the
         // host truly vanishes, no such message ever arrives again, so that
         // path alone would never fire. And even when it DOES fire, it only
         // resets `acquisitionState_`/`source_`, never `syncConfig_.

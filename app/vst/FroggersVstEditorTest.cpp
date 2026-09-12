@@ -21,8 +21,8 @@
 // below needs juce::MessageManager::callAsync's posted lambda to actually be
 // DELIVERED (via PumpPendingCallAsync(), this file's own helper -- see its
 // comment for why that is not simply MessageManager::runDispatchLoopUntil()),
-// a stronger requirement than construction alone; External/Sheaf/projects/
-// synth/juce/PortableJuceBackendTests.cpp:1649 (Sheaf's own PortableComponent
+// a stronger requirement than construction alone;
+// External/Sheaf/projects/synth/juce/PortableJuceBackendTests.cpp:1649 (Sheaf's own PortableComponent
 // test binary, read-only precedent, NOT modified by this file) already
 // establishes that this initialiser is safe and sufficient for real
 // juce::Component use in this exact headless environment, so it is used
@@ -52,7 +52,7 @@
 //      value at all (see PortableJuceBackend.hpp's RetainedDrawComponent,
 //      a private nested class not even nameable from outside).
 //      Positive control: kSceneBlend's value is DSP-engine-
-//      owned (ParameterModulation.cpp:3700 is the ONLY writer of
+//      owned (External/Sheaf/projects/synth/src/ParameterModulation.cpp:3700 is the ONLY writer of
 //      uiState->sceneBlend, published from inside Engine::ProcessBlock,
 //      throttled to once every uiPublishInterval_ blocks -- Engine.hpp:
 //      292-298 computes round(sampleRate / (uiFrameHz(30) * blockSize)) = 6

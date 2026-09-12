@@ -20,7 +20,7 @@
 // Driven end-to-end through synth_rig::SynthRig<App> (the same JUCE-free
 // harness Sheaf's own miniapp/braid-4 system tests use), so parameter
 // registration, drill-in press routing, and PopulateUIState's real
-// block-count throttle (include/synth/Engine.hpp:413) are all exercised
+// block-count throttle (External/Sheaf/projects/synth/include/synth/Engine.hpp:413) are all exercised
 // through the production message/audio-thread path, not called directly.
 //
 // If any of the four checks below come back second-class, this test must
@@ -57,7 +57,7 @@ class MonoValidationApp {
 public:
     static constexpr std::size_t kNumModulators = 1;
     // Drill-in needs >= numModulators + 1 physical encoders
-    // (Bank::OpenModulationView, src/ParameterModulation.cpp:2818-2821): one
+    // (Bank::OpenModulationView, External/Sheaf/projects/synth/src/ParameterModulation.cpp:2818-2821): one
     // depth cell for the single modulator, one for the Target/Back cell.
     static constexpr std::size_t kNumPhysicalEncoders = kNumModulators + 1;
 
@@ -223,7 +223,7 @@ TEST_CASE(mono_group_parameter_registers_and_resolves) {
 TEST_CASE(mono_group_populate_ui_state_publishes_single_voice) {
     // Check 2: PopulateUIState publishes a single voice.
     // PopulateUIState is throttled by uiPublishInterval_
-    // (include/synth/Engine.hpp:413) -- pump enough blocks
+    // (External/Sheaf/projects/synth/include/synth/Engine.hpp:413) -- pump enough blocks
     // before reading the published state (rig.UIState() also forces an
     // immediate synchronous populate, but pumping blocks first exercises the
     // real audio-thread publish path too).

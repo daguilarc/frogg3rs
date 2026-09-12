@@ -13,13 +13,13 @@
 // ============================================================================
 //   - app/FroggersMain.cpp's launcher session builds a
 //     synth_runtime::RuntimeShellSession<FroggersApp> (Sheaf
-//     runtime/Shell.hpp:73-108), which owns a synth_runtime::Runtime<App>
+//     External/Sheaf/projects/synth/runtime/Shell.hpp:73-108), which owns a synth_runtime::Runtime<App>
 //     (runtime/Runtime.hpp -- the AudioDeviceManager/MIDI-connection-manager/
 //     window/timer machinery a STANDALONE app needs) PLUS a
-//     synth_runtime::ShellComponent<App> (Shell.hpp:51-71), itself a thin
+//     synth_runtime::ShellComponent<App> (External/Sheaf/projects/synth/runtime/Shell.hpp:51-71), itself a thin
 //     juce::Component host for ONE synth_runtime::MainPane<App>
 //     (runtime/MainPane.hpp).
-//   - MainPane<App>'s constructor (MainPane.hpp:36-48) builds THREE things:
+//   - MainPane<App>'s constructor (External/Sheaf/projects/synth/runtime/MainPane.hpp:36-48) builds THREE things:
 //     a JuceRuntimeMainServices<App> (device-manager/MIDI-connection glue
 //     the Audio/Controllers/Sync/File SIDEBAR pages need), a
 //     synth::runtime_ui::RuntimeMainComponent<App, Services>
@@ -31,14 +31,14 @@
 //     -- the actual JUCE-side renderer that walks a synth::ui::NodeTree and
 //     creates/lays out real juce::Component controls for it.
 //   - THE SEPARABILITY FINDING: synth_juce::PortableComponent's constructor
-//     (PortableJuceBackend.hpp:221-224, `explicit PortableComponent(synth::
+//     (External/Sheaf/projects/synth/juce/PortableJuceBackend.hpp:221-224, `explicit PortableComponent(synth::
 //     ui::Surface& surface)`) takes EXACTLY ONE dependency: a bare
 //     `synth::ui::Surface&`. Nothing in that class's ~1450 lines references
 //     Runtime<App>, MainPane<App>, RuntimeMainComponent, or the sidebar --
 //     it only ever calls `surface.BuildTree()` (RefreshFromSurface(),
 //     :226-233) and `surface.DispatchAction(...)` (DispatchBackendAction(),
 //     :817-824), both members of the GENERIC synth::ui::Surface interface
-//     (Sheaf include/synth/PortableUI.hpp:280-289). MainPane hands it
+//     (Sheaf External/Sheaf/projects/synth/include/synth/PortableUI.hpp:280-289). MainPane hands it
 //     `mainComponent_` (the sidebar-COMPOSED surface) only because that is
 //     what the STANDALONE launcher wants rendered -- not because
 //     PortableComponent requires that particular Surface implementation.
@@ -88,15 +88,15 @@
 // handler registered, this editor's OWN redraw was capped at the fixed 30Hz
 // timer tick -- visibly stepped dragging, not the smooth per-action tracking
 // the SAME surface gives the standalone launcher, whose MainPane wires
-// exactly this seam (Sheaf runtime/MainPane.hpp:36-48, `mainComponent_.
+// exactly this seam (Sheaf External/Sheaf/projects/synth/runtime/MainPane.hpp:36-48, `mainComponent_.
 // SetActionHandler(...)`) and refreshes from it, not (only) from a timer.
 //
 // FroggersUiSurface::SetActionHandler (app/FroggersUiSurface.hpp's `SetActionHandler`)
 // is part of the generic synth::ui::Surface interface (`ActionHandler`,
-// Sheaf include/synth/PortableUI.hpp:282-289) -- EditorSurface() already
+// Sheaf External/Sheaf/projects/synth/include/synth/PortableUI.hpp:282-289) -- EditorSurface() already
 // returns that interface, so registering needs no new accessor.
 //
-// Safety split, replicated from MainPane (MainPane.hpp:113-159,
+// Safety split, replicated from MainPane (External/Sheaf/projects/synth/runtime/MainPane.hpp:113-159,
 // RefreshRendererAfterAction/NeedsDeferredRendererRefresh/callAsync/
 // FlushDeferredRendererRefresh), NOT called synchronously from the handler:
 // DispatchAction runs INSIDE the currently-firing juce::Component callback
@@ -106,8 +106,8 @@
 // dispatched action ever changes which nodes exist (a drill-in/out, e.g.).
 // This class deliberately does NOT reimplement MainPane's conditional
 // NeedsDeferredRendererRefresh(action) classification --
-// RuntimeMainComponent::NeedsDeferredDispatch (Sheaf include/synth/
-// RuntimeMainComponent.hpp:235-238) is `IsControllersAction(action.name) &&
+// RuntimeMainComponent::NeedsDeferredDispatch
+// (External/Sheaf/projects/synth/include/synth/RuntimeMainComponent.hpp:235-238) is `IsControllersAction(action.name) &&
 // controllersSurface_.NeedsDeferredDispatch(action)` -- tied to
 // RuntimeMainComponent's OWN sidebar/Controllers-page composition, which
 // FroggersUiSurface (a bare, single, non-composed Surface) has no
@@ -169,7 +169,7 @@ public:
     // after this body returns) is destroyed -- see the .cpp definition's
     // own comment for the full ordering contract, which mirrors
     // synth_runtime::RuntimeShellSession::~RuntimeShellSession (Sheaf
-    // runtime/Shell.hpp:91-95) exactly for both hooks.
+    // External/Sheaf/projects/synth/runtime/Shell.hpp:91-95) exactly for both hooks.
     ~FroggersPluginEditor() override;
 
     FroggersPluginEditor(const FroggersPluginEditor&) = delete;
@@ -196,7 +196,7 @@ private:
     // header comment, "Refresh cadence" section): schedules AT MOST ONE
     // pending juce::MessageManager::callAsync refresh at a time, mirroring
     // MainPane::RefreshRendererAfterAction/FlushDeferredRendererRefresh
-    // (Sheaf runtime/MainPane.hpp:134-159) minus its conditional
+    // (Sheaf External/Sheaf/projects/synth/runtime/MainPane.hpp:134-159) minus its conditional
     // NeedsDeferredRendererRefresh classification (unconditional defer,
     // justified in this file's header comment).
     void ScheduleDeferredRefresh();

@@ -260,7 +260,7 @@ TEST_CASE(no_random_sh_behaviour_parameter_exists_in_any_bank_and_no_seventh_ban
 }
 
 // "Depth encoders are unaffected -- assert they are bipolar and default to
-// neutral/off" (ModulationDepthConfig, src/ParameterModulation.cpp:1869-1870:
+// neutral/off" (ModulationDepthConfig, External/Sheaf/projects/synth/src/ParameterModulation.cpp:1869-1870:
 // range=Bipolar, defaultValue=kNeutralModulationDepthCenter=0.5).
 TEST_CASE(random_sh_depth_encoders_are_bipolar_and_default_neutral) {
     Fixture fx;
@@ -275,26 +275,26 @@ TEST_CASE(random_sh_depth_encoders_are_bipolar_and_default_neutral) {
 
 // Sheaf's own StandardModulators::Init
 // calls SetVoiceColor(voice, color) for every GangedRandomLfoProcessor it
-// owns (StandardModulators.hpp:126-130) before registering it as a
+// owns (External/Sheaf/projects/synth/include/synth/StandardModulators.hpp:126-130) before registering it as a
 // modulation source. gangedRandomLfo6_ is this app's OWN standalone
 // GangedRandomLfoProcessor<1> instance (FroggersModulation.hpp,
 // source #6's own resolution, NOT one of StandardModulators' processors), so
 // nothing was ever calling SetVoiceColor on it -- its one voice's color
 // stays at GangedRandomLfoAtomicColor's own default, Color::Grey
-// (DspRandomLfo.hpp:165), even though the registered ModulatorMetadata
+// (External/Sheaf/projects/synth/include/synth/DspRandomLfo.hpp:165), even though the registered ModulatorMetadata
 // already carries the correct LaneColor(5)
 // (FroggersModulation.hpp's LaneColor(), same formula as lanes 1-5). The
 // GangedRandomLfoVisualizer reads its plotted color from the LFO's own
-// per-voice UiState (GangedRandomLfoVisualizer.hpp:222/243/252's
+// per-voice UiState (External/Sheaf/projects/synth/include/synth/GangedRandomLfoVisualizer.hpp:222/243/252's
 // `voice.color`, populated by GangedRandomLfoProcessor::PublishUiState
-// from `m_voiceColors`, DspRandomLfo.hpp:337-342/369), NOT from
+// from `m_voiceColors`, External/Sheaf/projects/synth/include/synth/DspRandomLfo.hpp:337-342/369), NOT from
 // ModulatorMetadata::sourceColor -- so before the fix the metadata says
 // LaneColor(5) but the actual rendered lane is Grey.
 //
 // Drives the LFO forward one round (SampleAndResetRound runs on the very
 // first Process() call, since every voice starts in State::Done -- see
 // GangedRandomLfoProcessor::Process's `allDone` check, DspRandomLfo.hpp:
-// 311-325) so ComputeTiming (GangedRandomLfoVisualizer.hpp:77-94) has a
+// 311-325) so ComputeTiming (External/Sheaf/projects/synth/include/synth/GangedRandomLfoVisualizer.hpp:77-94) has a
 // valid nonzero waitingIncrement/movingIncrement to draw from, then reads
 // the color back out through the SAME public Draw() path the real UI uses
 // (Visualizer::Draw() -> DrawVisible() -> BuildGangedRandomLfoCommands),

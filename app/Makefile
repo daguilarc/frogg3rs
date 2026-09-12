@@ -144,7 +144,7 @@ DSP_HEADERS := $(wildcard $(APP_DIR)/dsp/*.hpp)
 DSP_TEST_SOURCES := $(APP_DIR)/FroggersDspParityTests.cpp
 DSP_TEST_BIN := $(BUILD_DIR)/froggers_dsp_parity_tests
 
-.PHONY: all clean check-no-juce check-no-firmware-includes check-catalog-covers-screen-actions check-spec-checks-resolve check-citations-resolve check-no-planning-history test force
+.PHONY: all clean check-no-juce check-no-firmware-includes check-catalog-covers-screen-actions check-spec-checks-resolve check-citations-resolve check-modified-requirements-restate-promoted check-no-planning-history test force
 
 all: check-no-firmware-includes $(APP)
 
@@ -206,6 +206,19 @@ check-spec-checks-resolve:
 # scope by construction; the script's header records why.
 check-citations-resolve:
 	@python3 $(APP_DIR)/check_citations_resolve.py "$(APP_DIR)"
+
+# A MODIFIED requirement replaces the promoted requirement's whole body, so a
+# clause the delta fails to restate is deleted at archive time and nothing says
+# so: openspec's strict validator counts neither scenarios nor clauses. One
+# delta dropped "anchored so that silence-in still produces silence-out" from a
+# scenario whose title and clause count both matched, and it passed the
+# validator, this directory's other gates, and two audits by contexts that had
+# not written it. This fails when a restated scenario loses a promoted clause
+# that the delta does not declare -- and declaring one requires saying what the
+# replacement still keeps, because a declaration that only says "changed" tells
+# the gate to stop reading exactly where the defect lives.
+check-modified-requirements-restate-promoted:
+	@python3 $(APP_DIR)/check_modified_requirements_restate_promoted.py "$(APP_DIR)"
 
 # Comments explain behaviour, never which task or numbered item produced them:
 # a reader has never seen the planning document and cannot check anything
@@ -294,7 +307,7 @@ check-catalog-covers-screen-actions:
 	@bash $(APP_DIR)/check_catalog_covers_screen_actions.sh "$(APP_DIR)" \
 	    kSceneBlend kEncoderPress kEncoderDrag kInputSelect kViewportNarrow
 
-test: check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions check-docs-match-parameter-table check-spec-checks-resolve check-citations-resolve check-no-planning-history $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN) $(CONTROLLERS_PAGE_BIN)
+test: check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions check-docs-match-parameter-table check-spec-checks-resolve check-citations-resolve check-modified-requirements-restate-promoted check-no-planning-history $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN) $(CONTROLLERS_PAGE_BIN)
 	$(TEST_BIN)
 	$(MONO_VALIDATION_BIN)
 	$(DSP_TEST_BIN)

@@ -144,13 +144,13 @@ WHEN a recording stops with captured audio, THE app SHALL encode it as a WAV fil
 - **WHEN** Play, Record and Record are dispatched with the transport running
 - **THEN** exactly one file export is pending, named for today with `.wav`, whose bytes begin with the RIFF header and decode to the captured frame count
 - **AND** taking it leaves none pending
-- Check: `FroggersSurfaceTests.cpp: record_action_stop_with_data_queues_one_named_wav_export`
+- Check: `app/FroggersSurfaceTests.cpp: record_action_stop_with_data_queues_one_named_wav_export`
 
 #### Scenario: A truncated capture carries its note and needs no stop press
 - **WHEN** a capture stops at its length limit
 - **THEN** the engine's next tick hands the host one export whose note says the recording stopped at the limit
 - **AND** arming a new take before that tick hands it over first
-- Check: `FroggersSurfaceTests.cpp: truncated_capture_queues_its_export_without_a_stop_press`, `arming_after_an_unpolled_truncated_capture_flushes_it_first`
+- Check: `app/FroggersSurfaceTests.cpp: truncated_capture_queues_its_export_without_a_stop_press`, `arming_after_an_unpolled_truncated_capture_flushes_it_first`
 
 #### Scenario: The standalone dialog opens on today's date
 - **WHEN** the operator presses Record, Play, then Record on the standalone
@@ -160,7 +160,7 @@ WHEN a recording stops with captured audio, THE app SHALL encode it as a WAV fil
 #### Scenario: The browser downloads the recording
 - **WHEN** Play, Record and Record are clicked in the browser build
 - **THEN** the page offers a download whose suggested name is today's date followed by `.wav` and whose body is a WAV file
-- Check: `app/browser/e2e/recording.spec.mjs`
+- Check: `app/browser/e2e/recording.spec.mjs`, `a stopped recording downloads under today's date`
 
 ### Requirement: A refused Record says why, on screen, on every host
 WHEN Record is pressed while the transport is stopped, THE app SHALL show the refusal ("Press Play before recording.") as a label beneath its own transport plates, on every host that shows Record, and SHALL clear it when a recording arms or Play is pressed. The app SHALL NOT depend on a host-registered callback or a modal dialog to show it.
@@ -170,10 +170,10 @@ WHEN Record is pressed while the transport is stopped, THE app SHALL show the re
 - **THEN** the surface tree holds a transport notice reading "Press Play before recording." beneath the transport plates, inside the transport cell, with the plates where they were
 - **WHEN** Play is dispatched
 - **THEN** the notice is gone
-- Check: `FroggersSurfaceTests.cpp: record_action_refused_while_stopped_shows_the_transport_notice`
+- Check: `app/FroggersSurfaceTests.cpp: record_action_refused_while_stopped_shows_the_transport_notice`
 
 #### Scenario: The browser shows it
 - **WHEN** Record is clicked in the browser build with the transport stopped
 - **THEN** the transport notice node reads "Press Play before recording."
-- Check: `app/browser/e2e/recording.spec.mjs`
+- Check: `app/browser/e2e/recording.spec.mjs`, `Record with the transport stopped shows the notice`
 

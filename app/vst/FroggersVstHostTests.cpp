@@ -565,7 +565,7 @@ TEST_CASE(plugin_mode_transport_row_thins_to_freeze_and_label_only) {
     const synth::ui::Node* label = FindNodeById(tree, synth_froggers::FroggersNodeIds::kFreezeLabel);
     REQUIRE_TRUE(label != nullptr);
     // Builder::Label() stores its text in Node::text, not Node::label
-    // (PortableUIBuilders.hpp:184-190) -- Node::label is per-kind CAPTION
+    // (External/Sheaf/projects/synth/include/synth/PortableUIBuilders.hpp:184-190) -- Node::label is per-kind CAPTION
     // text for controls that render their own (buttons/sliders/etc, see
     // that struct's own comment); a Label node's displayed text is `text`.
     REQUIRE_TRUE(label->text == "FREEZE");
@@ -961,8 +961,8 @@ TEST_CASE(host_automation_in_a_non_visible_bank_lands_there_and_leaves_the_opera
     // -- The REAL selection authority (BankSlot::SelectedBank(), published
     // via ParameterManager::PopulateUIState to uiState->banks[].selected)
     // agrees too, and this is SPECIFICALLY what the editor renders:
-    // FroggersUiSurface::CurrentBankIndex() (app/FroggersUiSurface.hpp:
-    // 1872-1882) reads this live state directly, never ActiveBankIndex().
+    // FroggersUiSurface::CurrentBankIndex() (app/FroggersUiSurface.hpp)
+    // reads this live state directly, never ActiveBankIndex().
     // Read via the SAME BuildTree() call the editor's PortableComponent
     // makes every refresh.
     const synth::ui::NodeTree tree = processor.ApplicationForTest().PortableSurface().BuildTree();
@@ -1269,8 +1269,8 @@ TEST_CASE(operator_selecting_a_bank_does_move_the_visible_page) {
 // that gap, and combines it with an ENGAGED host clock (EngagedClockFixture,
 // already defined above for the teardown tests) to additionally prove the
 // BPM control's "display-only while slaved" rendering (governed entirely by
-// TempoExternallyClocked(), AppendBpmControl() -- app/FroggersUiSurface.hpp:
-// 1272-1300 -- independent of pluginHostMode_ itself) still works correctly
+// TempoExternallyClocked(), AppendBpmControl() in app/FroggersUiSurface.hpp,
+// independent of pluginHostMode_ itself) still works correctly
 // for a plugin-hosted surface. Extends, not duplicates, the branching-logic
 // coverage above.
 TEST_CASE(production_processor_surface_is_plugin_mode_with_bpm_display_only_while_host_tempo_engaged) {

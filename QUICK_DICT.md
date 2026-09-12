@@ -59,13 +59,13 @@ Six banks — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 - **SRR 2** (slot 4) — Second sample-rate reducer stage, in series after SRR 1; same off-at-the-bottom mapping.
 - **XOR** (slot 5) — 8-bit XOR mask on the sample; the mid-travel plateau strips the low end and leaves the top.
 - **Bit depth** (slot 6) — How many low bits the digital reorganizer scrambles.
-- **Fuzz** (slot 7) — Blend from sine-fold to tanh-style hard saturation.
+- **Fuzz** (slot 7) — Floored equal-power blend from sine-fold (bottom, the default) to tanh-style saturation (soft below |x| = 3, hard only because of the level fed to it); about −22 dB down at either extreme, so the default is not bit-identical to before this floor.
 - **Phase** (slot 8) — Allpass on the wet signal before Wet/Dry; silent effect at Wet/Dry 0.
 - **Anti-alias brightness** (`Anti-alias`, slot 9) — Crossfade between a clean oversampled shaper path and today's gritty one; top of travel is what shipped before.
-- **Link** (slot 10) — How strongly Gain amount skews Shape's coefficients.
-- **Fold** (slot 11) — Sine-fold divisor, 1×–16×; lower folds harder.
+- **Feedback** (slot 10) — Folder output fed back into its own input, one sample later; 0 = no feedback, bounded below self-oscillation across the whole travel, though the margin — and the ring's decay time — shrinks toward the top.
+- **Fold** (slot 11) — Sine-fold divisor, 1×–16×; fold density rises as the knob rises.
 - **Tone** (slot 12) — Low-pass at the end of the chain, ~800 Hz to bypass; bypass at default.
-- **Waveshaper offset** (`Bias`, slot 13) — Small DC offset (±0.02) into the waveshaper, removed after; zero at default.
+- **Symmetry** (slot 13) — Bipolar phase offset into the folder, centred at default (middle of travel = no offset, the two halves skew opposite sides of the wave); inert when the folder is barely present in the sound; silence in is always silence out, but a driven, sustained tone picks up a DC offset, small at the page's default settings and up to about three-quarters of full scale at some other Gain/Shape/Fold combinations.
 
 ## Delay
 

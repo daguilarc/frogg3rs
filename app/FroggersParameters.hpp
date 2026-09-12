@@ -14,7 +14,7 @@
 // ApplyFuegoSeam() below is called from
 // ProcessSample() between ParameterGroup::ProcessSamplePhase1() and
 // ProcessSamplePhase2() -- the exact seam Braid uses for its own per-sample
-// filtering (apps/braid-4/Braid4Core.hpp:457-459 ProcessParameterPhase1 ->
+// filtering (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:457-459 ProcessParameterPhase1 ->
 // FilterParameterCaches -> ProcessParameterPhase2, filtering implementation
 // :569-627). This is the ONE fuego application point: see ApplyFuegoSeam()'s
 // own comment.
@@ -238,20 +238,26 @@ inline const std::array<FroggersBankLayout, kFroggersBankCount>& FroggersBankLay
             {"Phase", "Phase", 0.86f},
             // Anti-alias brightness default knob 1.0f -- the crossfade's
             // ALL-GRIT end (dsp/Drive.hpp's Oversampler2x::SetAntiAliasBrightness,
-            // cleanMix = 1 - knob), bit-identical to what shipped before the
+            // cleanMix = 1 - knob^1.5), bit-identical to what shipped before the
             // knob was repurposed into a clean/grit crossfade, so no
             // existing preset changes until it is moved off this end.
-            // Default knob 0.5f for
-            // each of the other three -- Link's knob*0.5f, Fold's
-            // ExpMapCompute(1,16,·), and Bias's 0.02f*(2*knob-1) mappings
-            // all reproduce a fixed literal (0.25f / 4.0f / 0.0f
-            // respectively) exactly at knob==0.5f -- see each setter's own
-            // comment in dsp/Drive.hpp.
-            {"Anti-alias brightness", "ABrt", 1.0f}, {"Link", "Link", 0.5f}, {"Fold", "Fold", 0.5f},
+            // Feedback default knob 0.0f -- SetFeedback's
+            // `kMaxFeedbackCoefficient * knob` mapping reproduces exactly
+            // 0.0f (no feedback) there -- see FrogBlock::SetFeedback's own
+            // comment (dsp/Drive.hpp).
+            {"Anti-alias brightness", "ABrt", 1.0f}, {"Feedback", "Fb", 0.0f},
+            // Fold default knob 0.5f -- ExpMapCompute(16,1,·) reproduces
+            // the fixed 4.0f divisor literal exactly at knob==0.5f -- see
+            // SetFold's own comment (dsp/Drive.hpp).
+            {"Fold", "Fold", 0.5f},
             // Default knob 1.0f -- ExpMapCompute(0.02,1.0,1.0) == 1.0
             // exactly, an exact-identity (bypass) alpha, see SetTone's own
             // comment (dsp/Drive.hpp).
-            {"Tone", "Tone", 1.0f}, {"Waveshaper offset", "Bias", 0.5f},
+            // Symmetry default knob 0.5f -- SetSymmetry's bipolar
+            // `0.02f * (2*knob - 1)` mapping reproduces exactly 0.0f (no
+            // offset) at the knob's own CENTRE, not its floor -- see
+            // FrogBlock::SetSymmetry's own comment (dsp/Drive.hpp).
+            {"Tone", "Tone", 1.0f}, {"Symmetry", "Sym", 0.5f},
         }}},
         {FroggersBankId::Delay, "Delay", synth::Color::Rgb(255, 105, 180), {{
             {"Wet/dry", "Wet"}, {"Send", "Send"}, {"Delay time", "DlyTm"},
@@ -301,10 +307,10 @@ inline synth::Color FroggersCrunchyColor() { return synth::Color::Yellow; }
 class FroggersParameterModel {
 public:
     // ParameterGroupConfig{numVoices=1, numModulators=15,
-    // numScenes=..., maxParameters=...} (ParameterModulation.hpp:195-198).
+    // numScenes=..., maxParameters=...} (External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:195-198).
     static constexpr std::size_t kNumVoices = 1;
     static constexpr std::size_t kNumModulators = 15;  // The slate's source count (FroggersModulationSlate registers all 15).
-    // Two scenes, matching apps/braid-4's convention (Braid4Core.hpp:125,137)
+    // Two scenes, matching apps/braid-4's convention (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:125,137)
     // and the single scene-blend slider the surface uses for
     // the chrome band -- one scene *pair*.
     //
@@ -367,7 +373,7 @@ public:
         // matching Braid4Core's wiring order (create slot -> add physical
         // encoders before any Bank::RegisterParameters call, since that call
         // requires an associated slot with a full physical layout already
-        // present -- src/ParameterModulation.cpp:2559-2566 in
+        // present -- External/Sheaf/projects/synth/src/ParameterModulation.cpp:2559-2566 in
         // External/Sheaf).
         slot_ = &manager.CreateBankSlot();
         for (synth::PhysicalEncoderId encoderId = 0; encoderId < kFroggersSlotsPerBank; ++encoderId) {
@@ -383,7 +389,7 @@ public:
             // BankSlot::SelectBank associates a bank with this slot the
             // first time it is selected (Bank::AssociateSlot, idempotent for
             // repeated association with the same slot -- it throws only on
-            // a *different* slot, src/ParameterModulation.cpp:2776-2781)
+            // a *different* slot, External/Sheaf/projects/synth/src/ParameterModulation.cpp:2776-2781)
             // without permanently making it the *active* bank -- the final
             // SelectBank call after this loop sets the real default.
             slot_->SelectBank(&bank);
@@ -395,7 +401,7 @@ public:
             //
             // STRUCTURAL FACT: ParameterManager::RegisterParameter
             // enforces GLOBAL name uniqueness across the whole manager
-            // (`parameterNames_`, src/ParameterModulation.cpp:3069-3071 in
+            // (`parameterNames_`, External/Sheaf/projects/synth/src/ParameterModulation.cpp:3069-3071 in
             // External/Sheaf) -- a stricter check than Bank::RegisterParameters's
             // own per-call-only duplicate check
             // (:2572-2578). The per-page labels are page-LOCAL in the
@@ -408,7 +414,7 @@ public:
             // "Wet/dry". Resolution: qualify the internal, global-namespace
             // Name() with the bank name ("Reverb Stereo width" / "Delay
             // Stereo width"), while leaving ShortName() -- the field the
-            // encoder grid actually renders (EncoderDraw.hpp:322) -- as the
+            // encoder grid actually renders (External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:322) -- as the
             // authentic, page-local, possibly-repeated label the original
             // product uses. This changes no on-screen text and no
             // parameter's identity/semantics; it only disambiguates the
@@ -464,7 +470,7 @@ public:
             // The SAME Crunchy Parameter* at slot 15 in every
             // bank. Bank::RegisterParameters's duplicate-visible-name check
             // only looks within the span passed to a single call
-            // (src/ParameterModulation.cpp:2572-2578 in External/Sheaf), so
+            // (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2572-2578 in External/Sheaf), so
             // one call per bank registering this shared pointer never
             // collides with itself, and there is no Parameter->Bank
             // back-pointer anywhere to object to the same Parameter
@@ -486,7 +492,7 @@ public:
 
         // Scenes wired, two endpoints matching kNumScenes above.
         // Blend defaults to 0.0 (pure left/scene-0), matching
-        // ParameterManager::UIState's own default (ParameterModulation.hpp:769).
+        // ParameterManager::UIState's own default (External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:769).
         manager.SetSceneEndpoints(0, 1);
     }
 
@@ -495,7 +501,7 @@ public:
     // published ring state), plus the fuego seam
     // between the two group-wide phases -- mirroring Braid's
     // ProcessParameterPhase1() -> FilterParameterCaches() ->
-    // ProcessParameterPhase2() (Braid4Core.hpp:457-459). Safe to call every
+    // ProcessParameterPhase2() (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:457-459). Safe to call every
     // sample regardless of how many of the 15 modulation sources are
     // connected,
     // because UpdateModValues()/route processing are no-ops for unconnected
@@ -529,7 +535,7 @@ private:
     // modulated value into its cached-knob slot via ProcessLitePhase1's
     // `currentKnobValues_[v] = GetRaw(v)`) and group_->ProcessSamplePhase2()
     // (which slews UIDisplayCenter toward whatever the cache holds now).
-    // Mirrors Braid's FilterParameterCaches() (Braid4Core.hpp:569-627): read
+    // Mirrors Braid's FilterParameterCaches() (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:569-627): read
     // Parameter::CachedKnobValue(), transform, write back with
     // Parameter::ReplaceCachedKnobValue() -- so the fuegoized value is what
     // both a future DSP consumer and the UI-display slew inherit, with

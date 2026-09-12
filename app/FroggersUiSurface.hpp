@@ -23,7 +23,7 @@
 //
 // `StandardAppLayout` (`PortableUIStandardLayout.hpp`) is NOT used: it is
 // Braid4's OWN topology (an empty second-visualizer slot does not collapse,
-// `PortableUIStandardLayout.hpp:89-99`), not a neutral scaffold, and this
+// `External/Sheaf/projects/synth/include/synth/PortableUIStandardLayout.hpp:89-99`), not a neutral scaffold, and this
 // app's topology is its own, not Braid4's.
 //
 // Window size: the surface still resolves against
@@ -192,7 +192,7 @@ inline constexpr const char* kBpm = "froggers.bpm";
 inline constexpr const char* kBpmGroup = "froggers.bpm.group";
 // A hand-rolled Label node rather than `ControlStyle::caption`, exactly like
 // scene-blend's (kSceneBlendLabel above). Both sit BELOW their slider.
-// `Builder::FinishControl` (PortableUIBuilders.hpp:442-484) always wraps a
+// `Builder::FinishControl` (External/Sheaf/projects/synth/include/synth/PortableUIBuilders.hpp:442-484) always wraps a
 // caption and its control together in one implicit `Row` (:456);
 // `CaptionPlacement::After` only reorders the caption after the control
 // inside that row -- it never stacks them, so a label sitting below its
@@ -323,7 +323,7 @@ struct FroggersPageLayout {
     //
     // Deliberately a FRACTION, not a pixel count. `Extent::Fraction(f)`
     // resolves as `contentExtent * f` (ResolveCrossExtent,
-    // PortableUILayout.hpp:318-347, Fraction case :333-335, with ClampExtent
+    // External/Sheaf/projects/synth/include/synth/PortableUILayout.hpp:318-347, Fraction case :333-335, with ClampExtent
     // applying Min/Max at :346), so this tracks the left block's real
     // resolved width and keeps working if that ever changes. A pixel width
     // would have to be re-tuned for each.
@@ -384,7 +384,7 @@ struct FroggersEncoderGridLayout {
     // the SUM of the two constants above, never a separately hand-typed
     // literal -- AppendEncoderRow passes this as an `Extent::Weight` value
     // (not a later multiply) specifically so `AllocateExtents`
-    // (PortableUILayout.hpp:165-241)'s `remaining * weight / totalWeight`
+    // (External/Sheaf/projects/synth/include/synth/PortableUILayout.hpp:165-241)'s `remaining * weight / totalWeight`
     // resolves EXACTLY (bit-for-bit, no float rounding) at the default
     // window: `kDefaultHeight` above is chosen so that `remaining` there
     // exactly equals the total weight (BankTabs/Randomize/Reset at
@@ -627,7 +627,7 @@ inline std::vector<synth::ui::DrawCommand> BuildStopDrawCommands(synth::ui::Boun
 //
 // WHY A Draw NODE AND NOT A Button: `StateColourFor` renders
 // `ControlStyle::selected` as `brighter(0.14f)` on
-// the background and `TextColourForNode` (PortableJuceBackend.hpp:1036-1042)
+// the background and `TextColourForNode` (External/Sheaf/projects/synth/juce/PortableJuceBackend.hpp:1036-1042)
 // branches on `enabled` only -- text colour never changes on selection, so a
 // genuine colour INVERSION is not available from the library's own
 // selected-state handling. A Draw node emits its own commands, so the
@@ -821,10 +821,12 @@ FroggersApprovedLabels() {
         // Filter -- slot 5 shortened ("Comb feedback" -> "Comb FB").
         {{"Peak freq", "Peak gain", "Peak Q", "Comb offset", "Comb delay", "Comb FB", "Comb LP",
           "Comb drive", "Scoop mix", "Scoop freq", "Scoop width", "Scoop depth", "Comb/Peak", "Topology"}},
-        // Drive -- slot 9 shortened ("Anti-alias brightness" -> "Anti-alias"),
-        // slot 13 shortened ("Waveshaper offset" -> "Bias").
+        // Drive -- slot 9 shortened ("Anti-alias brightness" -> "Anti-alias").
+        // Slots 10 and 13 render their full registered names ("Feedback",
+        // "Symmetry") verbatim, same as every other unshortened slot on
+        // this row.
         {{"Wet/Dry", "Gain", "Shape", "SRR 1", "SRR 2", "XOR", "Bit depth", "Fuzz", "Phase",
-          "Anti-alias", "Link", "Fold", "Tone", "Bias"}},
+          "Anti-alias", "Feedback", "Fold", "Tone", "Symmetry"}},
         // Delay -- slot 7 ("Reverse blend" -> "Reverse"), slot 9
         // ("Feedback drive" -> "FB drive"), slot 10 ("Feedback tone" ->
         // "FB tone"), slot 12 ("Width balance" -> "Width bal").
@@ -1473,7 +1475,7 @@ private:
                          synth::ui::Action::Named(FroggersActions::kSceneBlend), sliderStyle);
                 // Label-visibility fix (2026-07-28): `NodeKind::Slider` routes
                 // `node.label` to `juce::Slider::setName()` only
-                // (PortableJuceBackend.hpp:1163-1166) -- no `juce::Label` is
+                // (External/Sheaf/projects/synth/juce/PortableJuceBackend.hpp:1163-1166) -- no `juce::Label` is
                 // attached, so the slider's own label argument never draws;
                 // this adjacent Label node is what actually renders the text.
                 b.Label(FroggersNodeIds::kSceneBlendLabel, "Scene blend", synth::ui::ControlStyle{});
@@ -1492,8 +1494,8 @@ private:
     }
 
     // Read-only/inert (a StatusText) while slaved to external MIDI clock, an
-    // interactive Slider otherwise (see MasterClock.hpp:318/:321,
-    // MasterClock.cpp:963-965/:1182). Both states
+    // interactive Slider otherwise (see External/Sheaf/projects/synth/include/synth/MasterClock.hpp:318/:321,
+    // External/Sheaf/projects/synth/src/MasterClock.cpp:963-965/:1182). Both states
     // display TempoBpm(). Unchanged in substance from before the CELL MAP --
     // only its container moved (from the old auto-flowed chrome band into
     // this row's own group, see AppendBpmGroup() above).
@@ -1517,7 +1519,7 @@ private:
         constexpr const char* kLabel = "BPM";
         // Still a hand-rolled adjacent Label rather than
         // `ControlStyle::caption`, for the same reason as scene-blend's:
-        // `Builder::FinishControl` (PortableUIBuilders.hpp:442-484) always
+        // `Builder::FinishControl` (External/Sheaf/projects/synth/include/synth/PortableUIBuilders.hpp:442-484) always
         // wraps a caption and its control together in one implicit `Row`
         // (:456); `CaptionPlacement::After` only reorders the caption after
         // the control inside that row -- it never stacks them, and both
@@ -1631,7 +1633,7 @@ private:
     // kLeftBlockWeight/kRightBlockWeight/kSliderWidthFraction are untouched.
     // Inserting one more FIXED-size sibling simply leaves less remaining
     // space for the six pre-existing weighted rows to divide
-    // (AllocateExtents, PortableUILayout.hpp:165-241: `remaining =
+    // (AllocateExtents, External/Sheaf/projects/synth/include/synth/PortableUILayout.hpp:165-241: `remaining =
     // contentExtent - totalGaps - nonWeighted`, then split by weight) -- an
     // arithmetic CONSEQUENCE of the insertion, not a declared change.
     // ARITHMETIC RESTATED 2026-08-17 (the numbers below were computed for a
@@ -1797,7 +1799,7 @@ private:
     // RESEQUENCING the remaining cells on every drill-in change. Always
     // emitting the node keeps the grid geometry stable and is the
     // established Sheaf idiom this surface's own header comment points at
-    // (Braid4UI.hpp:154-160). What that node draws is a separate question: a
+    // (External/Sheaf/projects/synth/apps/braid-4/Braid4UI.hpp:154-160). What that node draws is a separate question: a
     // disconnected cell now draws a dimmed, disabled encoder (below) rather
     // than nothing, so an unavailable source reads as present-but-inert
     // instead of a blank gap in the grid. It stays unreachable either way --
@@ -1845,7 +1847,7 @@ private:
         // `disabledCell` names the (now independent) drawing decision --
         // true for every disconnected cell, in or out of the modulation
         // view, since `BuildEncoderDrawCommands` itself early-returns `{}`
-        // for `!connected` (EncoderDraw.hpp:653-656) and this app now
+        // for `!connected` (External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:653-656) and this app now
         // overrides that with a dimmed render instead.
         const bool unreachableWhileDisconnected = showingModulationView && !state.connected;
         const bool disabledCell = !state.connected;
@@ -1855,12 +1857,12 @@ private:
         // Operator screenshot (2026-08-07): the parameter card's frame
         // outline visibly crossed the encoder's own modulation ring. Both the
         // frame and every ring/arc layer are emitted by ONE Sheaf function,
-        // BuildEncoderDrawCommands (External/Sheaf/projects/synth/include/
-        // synth/EncoderDraw.hpp:649-800), from geometry this app does not
+        // BuildEncoderDrawCommands
+        // (External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:649-800), from geometry this app does not
         // own: the ring's radius is `baseRadius = min(bounds.width,
-        // bounds.height) * 0.43f` (EncoderDraw.hpp:669) while the frame is
+        // bounds.height) * 0.43f` (External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:669) while the frame is
         // `bounds` inset by a fixed 1px with a 6px corner radius
-        // (EncoderDraw.hpp:691-698) -- two different linear functions of the
+        // (External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:691-698) -- two different linear functions of the
         // SAME cell bounds this app supplies, so at this app's actual cell
         // size they collide (operator-measured: ring outer edge 38.057px
         // from centre vs. frame inner edge 36.257px, a 1.80px overlap). The
@@ -1868,8 +1870,8 @@ private:
         // this collision, never closes it, so shrinking the bounds this app
         // passes into BuildEncoderDrawCommands is not a usable fix. The one
         // app-facing lever is `EncoderDrawState::wantsFrame`
-        // (EncoderDraw.hpp:293, defaults true) -- the same field Sheaf's own
-        // MiniAppUI.hpp sets per-visualizer (apps/miniapp/MiniAppUI.hpp:111);
+        // (External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:293, defaults true) -- the same field Sheaf's own
+        // MiniAppUI.hpp sets per-visualizer (External/Sheaf/projects/synth/apps/miniapp/MiniAppUI.hpp:111);
         // Froggers never set it, so the frame always drew here. Operator
         // decision: drop the box entirely rather than live with the overlap.
         // Set once, unconditionally, for every encoder cell -- this is the
@@ -1882,7 +1884,7 @@ private:
             // Bump/comb transfer-function underlays and
             // modulation-source underlays render here automatically. The
             // underlay is deferred to the resolved bounds of its SIBLING
-            // encoder cell via `overlayOf` (PortableUILayout.hpp:672-683,
+            // encoder cell via `overlayOf` (External/Sheaf/projects/synth/include/synth/PortableUILayout.hpp:672-683,
             // 743-752) -- the same mechanism Braid4UI.hpp's own
             // EmitEncoderCell uses, needed here because the cell's own
             // bounds are not known until the layout resolves.
@@ -1905,7 +1907,7 @@ private:
         // draws, as a dimmed disabled encoder (below), but has no signal
         // to press, drag, or underlay.
         // `Draw` has no case in `metrics::IntrinsicFor`
-        // (PortableUIMetrics.hpp:36-53, `default: {0,0,0,0}`) -- an in-flow
+        // (External/Sheaf/projects/synth/include/synth/PortableUIMetrics.hpp:36-53, `default: {0,0,0,0}`) -- an in-flow
         // Draw node needs an explicit `layout.main` or it resolves to zero
         // size (this file's header comment makes the same point about the
         // transport plates). `Weight(1)` makes the cell fill its equal share
@@ -1929,7 +1931,7 @@ private:
         // the ring's drawn arc. `EncoderDrawState` has no field
         // to change Sheaf's own trailing block, but `BuildEncoderDrawCommands`
         // returns its command vector BY VALUE with that block appended LAST
-        // (EncoderDraw.hpp:793-796) and `BuildFourteenSegmentCommands` is
+        // (External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:793-796) and `BuildFourteenSegmentCommands` is
         // public/inline -- so this app strips Sheaf's trailing block by its
         // exact, deterministic size and appends its own single-row strip
         // instead, same mechanism as before the label band was added, just
@@ -1945,7 +1947,7 @@ private:
                 // `BuildEncoderDrawCommands` the FULL extent would grow the
                 // ring too (it derives `baseRadius`/`centerY` from
                 // `min(width,height)` of whatever extent it is given,
-                // EncoderDraw.hpp:664-669) -- so this app instead hands it a
+                // External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:664-669) -- so this app instead hands it a
                 // SUB-extent, anchored at the cell's own top-left origin
                 // (unaffected by growth, since the label band is added
                 // BELOW, not above), whose height is `extent.height` minus
@@ -1971,12 +1973,12 @@ private:
                 // Sheaf's trailing block size is exactly
                 // kSheafLabelCommandsPerChar (15: 14 AppendCharacter
                 // segment polygons -- 4 horizontal/G-bar + 6 vertical + 4
-                // diagonal, EncoderDraw.hpp:495-526, every one of which
+                // diagonal, External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:495-526, every one of which
                 // returns a non-empty polygon at any real display size --
                 // plus 1 unconditional decimal-point FillEllipse,
-                // EncoderDraw.hpp:528-531) times kSheafLabelDefaultChars
+                // External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:528-531) times kSheafLabelDefaultChars
                 // (4, BuildFourteenSegmentCommands's own numChars default,
-                // EncoderDraw.hpp:540) = 60 commands, always, whenever
+                // External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:540) = 60 commands, always, whenever
                 // `BuildEncoderDrawCommands` is handed a `connected` state
                 // -- both branches below force `connected` true (the
                 // connected branch already has it; the disabled branch
@@ -1996,7 +1998,7 @@ private:
                     // reused after this branch returns -- with `connected`
                     // forced true so `BuildEncoderDrawCommands` draws the
                     // ring instead of early-returning `{}`
-                    // (EncoderDraw.hpp:653-656). `AdjustBrightness` is this
+                    // (External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:653-656). `AdjustBrightness` is this
                     // app's existing dimming idiom
                     // (FroggersModulation.hpp's `FroggersModulationSlate::RegisterSources` et al.). An unavailable
                     // source cannot be affecting anything, so both
@@ -2004,7 +2006,7 @@ private:
                     // into are cleared together -- leaving stale colours
                     // published while clearing only the masks would still
                     // satisfy `BuildEncoderDrawCommands`'s own bounds
-                    // assert (EncoderDraw.hpp:705), but a disabled source
+                    // assert (External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:705), but a disabled source
                     // must not still look wired to specific modulators or
                     // gestures.
                     // A disconnected source has no colour to dim. The slate
@@ -2018,7 +2020,7 @@ private:
                     // makes it visible as a control and flat enough to read
                     // as unavailable.
                     // Deliberately NOT `pagestyle::kDisabledText` or
-                    // `kDisabledButton` (RuntimePageStyle.hpp:14,20). Those
+                    // `kDisabledButton` (External/Sheaf/projects/synth/include/synth/RuntimePageStyle.hpp:14,20). Those
                     // are the runtime chrome's palette for configuration
                     // pages; the encoder grid is a separate visual system
                     // coloured per modulation source, and this surface
@@ -2086,7 +2088,7 @@ private:
                 // `FroggersApprovedGlobalLabel` instead. A modulation
                 // drill-in view ALSO substitutes a DIFFERENT Parameter into
                 // this same physical slot index (Bank::OpenModulationView,
-                // ParameterModulation.cpp:2648/2813 -- BankSlot::
+                // External/Sheaf/projects/synth/src/ParameterModulation.cpp:2648/2813 -- BankSlot::
                 // PopulateUIState's cells[] then reflects that substituted
                 // parameter, not the bank's own page layout; this is
                 // exactly why this file's own AppendEncoderCell header

@@ -303,7 +303,7 @@ public:
 
     // Sample-rate-dependent modulation-slate setup: detected and called
     // automatically by synth::Engine via the optional HasPrepareToPlay hook
-    // (AppConcepts.hpp:28-32) once the host negotiates a real sample rate.
+    // (External/Sheaf/projects/synth/include/synth/AppConcepts.hpp:28-32) once the host negotiates a real sample rate.
     // Everything else in this class is sample-rate-independent at Init()
     // time.
     // The fallback used when the host hands this hook a non-positive sample
@@ -313,16 +313,16 @@ public:
     static constexpr double kFallbackSampleRateHz = 44100.0;
 
     void PrepareToPlay(double sampleRate, int /*blockSize*/) {
-        // `synth::Engine::Prepare()` (External/Sheaf/
-        // projects/synth/include/synth/Engine.hpp:289-311) guards
+        // `synth::Engine::Prepare()`
+        // (External/Sheaf/projects/synth/include/synth/Engine.hpp:289-311) guards
         // `sampleRate > 0.0 && blockSize > 0` before its OWN two uses
         // (MasterClock::Prepare, the uiPublishInterval_ computation) but
         // forwards this hook's `sampleRate`/`blockSize` UNCONDITIONALLY --
         // Sheaf's own engine treats a non-positive rate as real enough to
         // guard twice, then hands the raw value to the app hook regardless.
         // The real host origin is `synth_runtime::Runtime<App>::
-        // audioDeviceAboutToStart` (External/Sheaf/projects/synth/runtime/
-        // Runtime.hpp:580-593): `double sampleRate =
+        // audioDeviceAboutToStart`
+        // (External/Sheaf/projects/synth/runtime/Runtime.hpp:580-593): `double sampleRate =
         // device->getCurrentSampleRate();` straight into `engine_.Prepare(
         // sampleRate, blockSize)`, no validation of its own -- a live
         // `juce::AudioIODevice` query, not a compile-time constant. A
@@ -355,14 +355,14 @@ public:
         // Sheaf's parameter-smoothing constants
         // (kDefaultProcessLiteAlpha/kDefaultTargetComputeIntervalSamples/
         // kDefaultUiDisplayCenterAlpha/kDefaultUiDisplaySpreadAlpha,
-        // ParameterModulation.hpp:170-174) are defined at a 48 kHz
+        // External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:170-174) are defined at a 48 kHz
         // reference and ParameterGroupConfig starts out holding exactly
-        // those raw values (ParameterModulation.hpp:199-203) until
+        // those raw values (External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:199-203) until
         // ConfigureProcessingTiming replaces them
-        // (ParameterModulation.cpp:859-865) -- otherwise knob glide,
+        // (External/Sheaf/projects/synth/src/ParameterModulation.cpp:859-865) -- otherwise knob glide,
         // modulation-depth smoothing, and UI-display slew all run at the
         // wrong real-time rate at any host rate other than 48 kHz. Mirrors
-        // Braid 4's own PrepareToPlay (Braid4Core.hpp:205-219), which
+        // Braid 4's own PrepareToPlay (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:205-219), which
         // converts against internalSampleRate_ (its oversampled internal
         // parameter-tier rate); this app has no such oversampling at the
         // parameter tier (parameters_/modulation_ share the single mono
@@ -607,7 +607,7 @@ public:
     // A negative sentinel means "no
     // pending request." `MasterClock::SetTempoBpm` itself already no-ops
     // (returns false) while slaved to external MIDI clock
-    // (src/MasterClock.cpp:963-965) -- ProcessFrame() below still calls it
+    // (External/Sheaf/projects/synth/src/MasterClock.cpp:963-965) -- ProcessFrame() below still calls it
     // unconditionally when a request is pending; the surface's own
     // DispatchAction additionally never enqueues a request while slaved (see
     // FroggersUiSurface.hpp), so this is a belt-and-suspenders no-op, not the
@@ -640,7 +640,7 @@ public:
     // True when
     // the MOST RECENT Randomize All/Page operation left
     // `FroggersRandomizeResult.partial` true -- i.e. `EnsureModulationDepth`
-    // hit `!group_.CanAllocate()` (Sheaf, ParameterModulation.cpp:1825-1827)
+    // hit `!group_.CanAllocate()` (Sheaf, External/Sheaf/projects/synth/src/ParameterModulation.cpp:1825-1827)
     // and stopped that operation short of drawing its full chosen set.
     // Published from ProcessFrame() (audio thread) alongside the
     // ComputeAllParameters() reseed below, same cross-thread contract as
@@ -698,7 +698,7 @@ public:
                 activeBankIx_ = static_cast<std::size_t>(bankRequest);
                 parameters_.Slot().SelectBank(&parameters_.BankAt(activeBankIx_));
                 // `BankSlot::SelectBank` Deselect()s the OUTGOING bank
-                // (src/ParameterModulation.cpp:2944-2951 in External/Sheaf), so
+                // (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2944-2951 in External/Sheaf), so
                 // a freshly-constructed drillIn_ (level_ starts at 0) for the
                 // INCOMING bank is always consistent with that bank's real
                 // state: either it was never drilled into, or it was
@@ -818,9 +818,9 @@ public:
             // thread: ProcessFrame() only ever runs on the audio thread (this
             // method's own header comment; `synth::Engine` invokes it once per
             // block, after message drains and before ProcessBlock()), and
-            // `ComputeAllParameters()` (public, ParameterModulation.hpp:809)
+            // `ComputeAllParameters()` (public, External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:809)
             // is a full, non-lock-free graph traversal that `ParameterManager`
-            // requires to run there (ParameterModulation.hpp:484-485). It
+            // requires to run there (External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:484-485). It
             // reseeds every parameter including depth children -- ComputeAtDepth's
             // recursionDepth_>0 branch takes the instant snap-and-seed path,
             // not the smoothed one.
@@ -1213,13 +1213,13 @@ public:
                 // above, an individual `block.outputs[channelIx]` is NOT
                 // provably non-null by contract. `AudioBlock::outputs` is
                 // `float* const*` -- "Channel counts are the device's actual
-                // counts" (AppContext.hpp:92-93) says nothing about every
+                // counts" (External/Sheaf/projects/synth/include/synth/AppContext.hpp:92-93) says nothing about every
                 // slot in that count being populated, and Sheaf's own two
                 // reference apps that consume this exact contract both guard
-                // the identical way: `apps/braid-4/Braid4Core.hpp:678-689`
+                // the identical way: `External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:678-689`
                 // checks `block.outputs[0]`/`[1]`/`[channel] != nullptr`
                 // individually even after already checking `block.outputs ==
-                // nullptr`, and `apps/miniapp/MiniAppCore.hpp:358-363` does
+                // nullptr`, and `External/Sheaf/projects/synth/apps/miniapp/MiniAppCore.hpp:358-363` does
                 // `if (out == nullptr) { continue; }` per channel in the same
                 // shape as here. Two independent call sites in Sheaf's own
                 // codebase treating per-channel null as real is affirmative
@@ -1249,11 +1249,11 @@ public:
             // per-sample inside RouteAudioSample(), above, on the POST-gate
             // values -- moved off
             // dsp::Vco::Process() itself, see that struct's own comment) and
-            // AdvanceIndex() (index_ += amount, DspScope.hpp:126-128).
+            // AdvanceIndex() (index_ += amount, External/Sheaf/projects/synth/include/synth/DspScope.hpp:126-128).
             // Mirrors Braid 4's own placement: AdvanceIndex() runs at the
             // end of its per-sample work, after that sample's audio/matrix
             // outputs are computed and published but before the per-sample
-            // function returns (Braid4Core.hpp:487, immediately preceding
+            // function returns (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:487, immediately preceding
             // RecordInternalIndex()+return). Here the equivalent slot is
             // the end of this per-frame loop's body, after this sample's
             // output has been computed and written.
@@ -1301,7 +1301,7 @@ public:
         // block after the per-sample loop -- the same end-of-ProcessBlock
         // placement apps/braid-4's own ProcessBlock uses for its
         // scopeWriter_.Publish()/PopulateUIState()/PublishUiState() sequence
-        // (Braid4Core.hpp:253-263).
+        // (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:253-263).
         vcoScopeWriter_.Publish();
         audioVcos_[0].PopulateUIState(vco1ScopeUiState_);
         audioVcos_[1].PopulateUIState(vco2ScopeUiState_);
@@ -1472,9 +1472,9 @@ private:
     // site for this class. Returns the transport quarter-note position at
     // `absoluteOutputSample`, or nullopt when the transport isn't running or
     // the committed plan doesn't contain the sample. Null-checking
-    // `block.clockPlan` (`AppContext.hpp:197`) is necessary but not
+    // `block.clockPlan` (`External/Sheaf/projects/synth/include/synth/AppContext.hpp:197`) is necessary but not
     // sufficient for containment, so this calls the containment-safe
-    // `TryTransportQuarterNotesAt` (`MasterClock.hpp:200`) rather than the
+    // `TryTransportQuarterNotesAt` (`External/Sheaf/projects/synth/include/synth/MasterClock.hpp:200`) rather than the
     // precondition-carrying `TransportQuarterNotesAt` (`:198`, precondition
     // `Contains(...)`, `:192-198`) -- the same shape
     // `apps/miniapp/MiniAppCore.hpp`'s own ADSR-gate idiom follows (guard
@@ -1683,15 +1683,13 @@ private:
     }
 
     // -- Drive bank -> dsp::FrogBlock + DriveBlendPhase ------
-    // FroggersEngine.hpp:290-297 order: Gain (SetGain) before Shape
+    // src/core/FroggersEngine.hpp:290-297 order: Gain (SetGain) before Shape
     // (SetCoefs, which reads the just-set gain target -- Drive.hpp's own
     // comment), then SRR1/SRR2/XOR/BitDepth/Fuzz; Wet/Dry/Phase (slots 0, 8)
     // are the authored DriveBlendPhase stage, crossfading dry (chainIn)
     // against wet (FrogBlock's output).
     float RouteDriveBank(float chainIn) {
         drive_.polynomialDrive.SetGain(RoutedKnob(FroggersBankId::Drive, 1));
-        // Link (Drive slot 10) must precede SetCoefs, which reads `link`.
-        drive_.polynomialDrive.SetLink(RoutedKnob(FroggersBankId::Drive, 10));
         drive_.polynomialDrive.SetCoefs(RoutedKnob(FroggersBankId::Drive, 2));
         drive_.sampleRateReducer1.SetFreq(
             1e-2f + dsp::ZeroedExpCompute(10.0f, 1.0f - RoutedKnob(FroggersBankId::Drive, 3)));
@@ -1700,11 +1698,15 @@ private:
         drive_.digitalReorganizer.SetFlip(RoutedKnob(FroggersBankId::Drive, 5));
         drive_.digitalReorganizer.SetHash(RoutedKnob(FroggersBankId::Drive, 6));
         drive_.fuzz = RoutedKnob(FroggersBankId::Drive, 7);
-        // -- Drive slots 9, 11-13 -----
+        // -- Drive slots 9-13 -----
         drive_.oversampler.SetAntiAliasBrightness(RoutedKnob(FroggersBankId::Drive, 9));
+        // Feedback (Drive slot 10) carries no ordering constraint against
+        // SetCoefs: it wraps the folder leg inside FrogBlock::Process, not
+        // the polynomial's own coefficients.
+        drive_.SetFeedback(RoutedKnob(FroggersBankId::Drive, 10));
         drive_.SetFold(RoutedKnob(FroggersBankId::Drive, 11));
         drive_.SetTone(RoutedKnob(FroggersBankId::Drive, 12));
-        drive_.SetBias(RoutedKnob(FroggersBankId::Drive, 13));
+        drive_.SetSymmetry(RoutedKnob(FroggersBankId::Drive, 13));
         const float driveWet = drive_.Process(chainIn);
         // Wet/Dry carries no dry floor -- unlike Delay's and Reverb's wet
         // controls, this crossfade is allowed to reach fully wet (see
@@ -1716,7 +1718,7 @@ private:
     }
 
     // -- Filter bank -> dsp::FilterFxChain -------------------
-    // FroggersEngine.hpp:272,274-288 mapping (Comb offset -> pureDelay,
+    // src/core/FroggersEngine.hpp:272,274-288 mapping (Comb offset -> pureDelay,
     // Peak freq/gain/Q -> ResonantBump, Comb delay/feedback/LP -> Comb,
     // Comb/Peak -> blend, Scoop -> scoopMix). The old `useParallel` bool
     // (which used to mirror `SetUseV2FilterParallel(UsesV2Fuego(hostKind))`,
@@ -1850,7 +1852,7 @@ private:
         const float cmlpCeiling = 20000.0f / sampleRate_;
         const float cmlp = dsp::ExpMapCompute(std::min(4.0f * combFreq, cmlpCeiling), cmlpCeiling,
                                                RoutedKnob(FroggersBankId::Filter, 6));
-        // FroggersEngine.hpp:245-247 (Alpha): 1 - exp(-2*pi*natFreq).
+        // src/core/FroggersEngine.hpp:245-247 (Alpha): 1 - exp(-2*pi*natFreq).
         filterChain_.comb.SetCutoffAlpha(1.0f - std::exp(-2.0f * static_cast<float>(M_PI) * cmlp));
         // Comb drive (Filter slot 7, "CDrv"): knob-driven
         // pre-gain on the comb saturator's argument (dsp::Comb::Process,
@@ -1880,8 +1882,8 @@ private:
 
     // -- Delay bank -> dsp::StereoDelay ---------------------
     // Positioned exactly where the firmware engine's `m_simFxInsert` hook
-    // sits: FroggersEngine.hpp:595-598, between the filter chain
-    // (08b5fd3:src/core/FroggersEngine.hpp:824-839) and Reverb (FroggersEngine.hpp:599-618) -- confirmed by the retired
+    // sits: src/core/FroggersEngine.hpp:595-598, between the filter chain
+    // (08b5fd3:src/core/FroggersEngine.hpp:824-839) and Reverb (src/core/FroggersEngine.hpp:599-618) -- confirmed by the retired
     // simulator's `WasmSimHost`, which wired this exact ported unit's
     // frozen counterpart (`DelayState::processInsert`) into that hook.
     // `processInsert`'s own shape is `delay.process(bumpIn, params)` then
@@ -1940,7 +1942,8 @@ private:
     }
 
     // -- Reverb bank -> dsp::Reverb --------------------------
-    // Last stage, matching FroggersEngine.hpp:617-618's wet/dry blend
+    // Last stage, matching the firmware's own reverb wet/dry blend around
+    // `m_reverbWetL`/`m_reverbWetR` (src/core/FroggersEngine.hpp)
     // (folded into Reverb::Process's own return -- see that struct's
     // header comment).
     // The dry floor is dsp::kMinDryLevel (dsp/Limiter.hpp), shared with the
@@ -2004,7 +2007,7 @@ private:
     //
     // Ordering proof (verified by reading the cited source, not assumed):
     // `Parameter::GetRaw()` (External/Sheaf's
-    // projects/synth/src/ParameterModulation.cpp:1207-1215) sums the
+    // External/Sheaf/projects/synth/src/ParameterModulation.cpp:1207-1215) sums the
     // scene-blended center with `Modulators::ApplyActive()` -- i.e.
     // modulation-depth routing is already baked in there. `Parameter::
     // ProcessLitePhase1()` (:1459-1461) writes `currentKnobValues_[v] =

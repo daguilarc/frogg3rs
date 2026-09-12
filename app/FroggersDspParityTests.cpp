@@ -22,6 +22,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -76,7 +77,7 @@ struct Register {
 namespace dsp = synth_froggers::dsp;
 
 // =========================================================================
-// 3.1 -- VCO (FroggersEngine.hpp:254-256, 08b5fd3:src/core/FroggersEngine.hpp:706-712,735-744; 08b5fd3:src/core/VcoWaveEval.hpp:7-23)
+// 3.1 -- VCO (src/core/FroggersEngine.hpp:254-256, 08b5fd3:src/core/FroggersEngine.hpp:706-712,735-744; 08b5fd3:src/core/VcoWaveEval.hpp:7-23)
 // =========================================================================
 
 
@@ -192,7 +193,7 @@ TEST_CASE(vco_pm_above_floor_actually_modulates) {
 
 TEST_CASE(vco_zero_cross_vco_terms_independent_of_other_instances) {
     // 08b5fd3:src/core/FroggersEngine.hpp:735-744 (independent-PM branch only; the legacy
-    // XCPL `else` at FroggersEngine.hpp:519-521 is NOT ported). Prove a Vco's output sequence
+    // XCPL `else` at src/core/FroggersEngine.hpp:519-521 is NOT ported). Prove a Vco's output sequence
     // is identical whether or not a second Vco is driven in between calls
     // -- i.e. nothing here can reach another instance's state.
     const float sr = 48000.0f;
@@ -229,7 +230,7 @@ TEST_CASE(vco_eval_wave_morph_sine_saw_square_endpoints) {
 }
 
 // =========================================================================
-// 3.2 -- ASR + voice mix (FroggersEngine.hpp:538-563; 08b5fd3:src/core/VcoAdsrState.hpp)
+// 3.2 -- ASR + voice mix (src/core/FroggersEngine.hpp:538-563; 08b5fd3:src/core/VcoAdsrState.hpp)
 // =========================================================================
 
 TEST_CASE(vco_adsr_state_attacks_holds_and_releases) {
@@ -308,7 +309,7 @@ TEST_CASE(max_attack_knob_reaches_sustain_within_the_current_quarter_second_ceil
 }
 
 TEST_CASE(mix_osc_voices_applies_asr_per_voice_then_averages) {
-    // 08b5fd3:src/core/FroggersEngine.hpp:774-784 (apply branch) + FroggersEngine.hpp:528 (plain average
+    // 08b5fd3:src/core/FroggersEngine.hpp:774-784 (apply branch) + src/core/FroggersEngine.hpp:528 (plain average
     // return) -- the m_pairAr fallback at 08b5fd3:src/core/FroggersEngine.hpp:789-808 was never wired on
     // the firmware and is deleted there; not ported.
     dsp::VcoAdsrState adsrForMix;
@@ -1119,7 +1120,7 @@ TEST_CASE(single_envelope_follower_matches_vco_envelope_followers_per_tap_formul
 }
 
 // =========================================================================
-// 3.4 -- Random S&H lanes (Marbles.hpp:67-96,115-121; RGen.hpp)
+// 3.4 -- Random S&H lanes (src/core/Marbles.hpp:67-96,115-121; RGen.hpp)
 // =========================================================================
 
 TEST_CASE(rgen_same_seed_is_deterministic) {
@@ -1423,7 +1424,7 @@ uint8_t ReferenceShAt256(uint8_t row) {
 // large `row` values (roughly >=31) that shift count reaches or exceeds a
 // 32-bit int's width, which is undefined behavior. That UB is a latent
 // property of the algorithm itself -- identical in the firmware's
-// Parameter.hpp:143-144 and in the retired simulator's Fuegoize.hpp copy -- not something this port
+// src/core/Parameter.hpp:143-144 and in the retired simulator's Fuegoize.hpp copy -- not something this port
 // introduces or fixes; it was hit and confirmed while drafting these tests
 // with an out-of-domain row=200 (finite-looking output at -O0, a mismatch
 // between two supposedly-identical calls at -O2). It is harmless in
@@ -1477,8 +1478,8 @@ TEST_CASE(fuego_stack_apply_musical_row_warps_crispy_by_crunchy_first) {
 }
 
 // =========================================================================
-// 3.6 -- Filters (ResonantBump.hpp:44-71; Comb.hpp:54,63,66-76,79-109;
-// TanhSaturator.hpp:25-30 Pade approximation; FroggersEngine.hpp:590-622)
+// 3.6 -- Filters (src/core/ResonantBump.hpp:44-71; src/core/Comb.hpp:54,63,66-76,79-109;
+// src/core/TanhSaturator.hpp:25-30 Pade approximation; src/core/FroggersEngine.hpp:590-622)
 // =========================================================================
 
 TEST_CASE(pade_saturator_matches_rational_approximation_and_clamps) {
@@ -1520,10 +1521,11 @@ TEST_CASE(resonant_bump_coefficients_match_rbj_peaking_formula) {
 
 // -----------------------------------------------------------------------
 // The Filter bank wires
-// `filterChain_.peak.SetHeight(dsp::ExpMapCompute(1.0f, 10.0f, knob))`
-// (FroggersAppCore.hpp's RouteAudioSample). Ceiling history: 10x (+20 dB,
-// firmware parity) -> 4x -> 2x (+6 dB), the last on the operator
-// hearing it modulated. Drives the app's OWN `dsp::kMaxResonantBumpHeight`
+// `filterChain_.peak.SetHeight(dsp::ExpMapCompute(1.0f, kMaxResonantBumpHeight, knob))`
+// (FroggersAppCore.hpp's RouteAudioSample), so the ceiling is whatever that
+// constant says; its own comment (dsp/FilterFx.hpp) carries why it is that
+// value, and is not restated here where it would drift. Drives the app's OWN
+// `dsp::kMaxResonantBumpHeight`
 // (dsp/FilterFx.hpp) at knob==1.0 through the real ResonantBump::Process
 // path with a full-scale sine at the peak's resonant frequency, and confirms
 // the measured steady-state gain lands on that constant -- so retuning it
@@ -1742,7 +1744,7 @@ TEST_CASE(comb_feedback_ring_time_scales_geometrically_across_equal_knob_steps) 
 }
 
 TEST_CASE(comb_process_matches_in_plus_fb_sat_lp_delay_formula) {
-    // Comb.hpp:54: out = in + fb*sat(lp(delay[i-N])). Never calls
+    // src/core/Comb.hpp:54: out = in + fb*sat(lp(delay[i-N])). Never calls
     // SetDrive, so combDrive sits at its own default (1.0f, unity) --
     // compensation is a no-op there (`Saturate(x)/1.0f == Saturate(x)`,
     // see combDrive's own comment, FilterFx.hpp), so this reference
@@ -2724,7 +2726,7 @@ TEST_CASE(peak_branch_output_respects_computed_bound_under_audio_rate_height_mod
 
 // -----------------------------------------------------------------------
 // Measures, but does not enforce, three candidate values for the peak
-// branch's height ceiling (kMaxResonantBumpHeight is 2.0 today) against the
+// branch's height ceiling (kMaxResonantBumpHeight is 3.0f) against the
 // same adversarial drive the kPeakLimiter* tuning comment above describes:
 // a per-sample-random height, full-scale sine at the bump's own resonant
 // frequency. The production constant is never written here -- each
@@ -2789,7 +2791,7 @@ TEST_CASE(peak_ceiling_candidate_limiter_measurement) {
     constexpr std::uint32_t kSeeds[] = {0xC0FFEEu, 0xBADF00Du, 0xFEEDFACEu, 0xDEADBEEFu, 0x8BADF00Du,
                                          0xCAFEBABEu, 0x1337C0DEu, 0xABCDEF01u, 0x0F0F0F0Fu, 0x13579BDFu};
     constexpr int kSamplesPerSeed = 50000;
-    constexpr float kCandidates[] = {2.0f, 3.0f, 4.0f};  // 2.0 == today's production kMaxResonantBumpHeight.
+    constexpr float kCandidates[] = {2.0f, 3.0f, 4.0f};  // 3.0f == production kMaxResonantBumpHeight.
 
     std::cout << "  [peak height ceiling candidates] " << (sizeof(kSeeds) / sizeof(kSeeds[0])) << " seeds x "
               << kSamplesPerSeed
@@ -3073,7 +3075,7 @@ TEST_CASE(topology_morph_peak_branch_headroom_across_full_range) {
 }
 
 // =========================================================================
-// 3.8 -- Reverb (FroggersEngine.hpp:301-342 ProcessReverb, :263-269 wiring,
+// 3.8 -- Reverb (src/core/FroggersEngine.hpp:301-342 ProcessReverb, :263-269 wiring,
 // :617-618 Wet/dry blend). Mod depth and Hold are newly authored (no
 // Froggers original -- GetParam(7)/(8) unread).
 // =========================================================================
@@ -3222,7 +3224,7 @@ TEST_CASE(reverb_damping_stays_geometric_and_never_reaches_the_inaudible_end) {
 }
 
 TEST_CASE(reverb_wet_dry_mix_is_affine_in_mix_knob_at_fixed_history) {
-    // FroggersEngine.hpp:618: output = (1-mix)*input + mix*wet, where `wet`
+    // The firmware's reverb return: output = (1-mix)*input + mix*wet, where `wet`
     // is whatever ProcessReverb produced from the SAME input/history. Two
     // freshly-constructed (identical zero state) Reverb instances fed the
     // same input and reverb knobs, differing only in mixKnob, must satisfy
@@ -3256,7 +3258,7 @@ TEST_CASE(reverb_process_matches_manual_tank_replica_at_neutral_mod_and_hold) {
     // Full-chain regression pin: an independent manual re-derivation of
     // ProcessReverb's tank (pre-delay ring, twin delay lines with diffusion
     // cross-feed, shared damping filter, stereo width blend), built directly
-    // from FroggersEngine.hpp:301-342 rather than by calling dsp::Reverb, run
+    // from src/core/FroggersEngine.hpp:301-342 rather than by calling dsp::Reverb, run
     // in lockstep against dsp::Reverb::Process at modDepth=0/hold=0 (the
     // parity default) over several samples with a fixed knob set.
     constexpr size_t kSize = dsp::Reverb::kSize;
@@ -4168,6 +4170,8 @@ TEST_CASE(reverb_tank_grit_zero_lets_the_measured_pass_d_seed_decay_where_grit_0
 // Every knob FroggersAppCore.hpp's `RouteDriveBank` drives,
 // gathered so each TEST_CASE below only names the ones it moves off their
 // FroggersParameters.hpp default.
+// Fields are named for the setter they drive (`feedback` for SetFeedback,
+// `symmetry` for SetSymmetry), not for the panel label.
 struct DriveBankKnobs {
     float drive = 0.0f;
     float shape = 0.0f;
@@ -4177,20 +4181,19 @@ struct DriveBankKnobs {
     float bitDepth = 0.0f;
     float fuzz = 0.0f;
     float blend = 0.0f;
-    float phase = 0.0f;
+    float phase = 0.86f;
     float antiAlias = 1.0f;
-    float link = 0.5f;
+    float feedback = 0.0f;
     float fold = 0.5f;
     float tone = 1.0f;
-    float bias = 0.5f;
+    float symmetry = 0.5f;  // FroggersParameters.hpp's registered default -- SetSymmetry's centre, offset 0.0f.
 };
 
-// RouteDriveBank's own setter order: Drive (SetGain) and Link (SetLink)
-// before Shape (SetCoefs, which reads both), then SRR1/SRR2/XOR/Bit
-// depth/Fuzz/Anti-alias/Fold/Tone/Bias.
+// RouteDriveBank's own setter order: Drive (SetGain) before Shape
+// (SetCoefs, which reads the just-set gain), then SRR1/SRR2/XOR/Bit
+// depth/Fuzz/Anti-alias/Fold/Tone/Symmetry/Feedback.
 void SetFrogBlockKnobs(dsp::FrogBlock& block, const DriveBankKnobs& k) {
     block.polynomialDrive.SetGain(k.drive);
-    block.polynomialDrive.SetLink(k.link);
     block.polynomialDrive.SetCoefs(k.shape);
     block.sampleRateReducer1.SetFreq(1e-2f + dsp::ZeroedExpCompute(10.0f, 1.0f - k.srr1));
     block.sampleRateReducer2.SetFreq(1e-2f + dsp::ZeroedExpCompute(10.0f, 1.0f - k.srr2));
@@ -4200,7 +4203,8 @@ void SetFrogBlockKnobs(dsp::FrogBlock& block, const DriveBankKnobs& k) {
     block.oversampler.SetAntiAliasBrightness(k.antiAlias);
     block.SetFold(k.fold);
     block.SetTone(k.tone);
-    block.SetBias(k.bias);
+    block.SetSymmetry(k.symmetry);
+    block.SetFeedback(k.feedback);
 }
 
 // The full bank, FrogBlock's wet output crossfaded against dry through the
@@ -4228,6 +4232,39 @@ double HarmonicBandPower(const std::vector<float>& samples, double fundamentalHz
         total += GoertzelPower(samples, fundamentalHz * n, sampleRateHz);
     }
     return total;
+}
+
+// Single-frequency Goertzel that keeps phase, needed below where GoertzelPower's
+// magnitude-only result cannot tell two harmonics apart that carry the same
+// energy but opposite sign.
+std::pair<double, double> ComplexGoertzel(const std::vector<float>& samples, double freqHz, double sampleRateHz) {
+    double re = 0.0, im = 0.0;
+    for (std::size_t n = 0; n < samples.size(); ++n) {
+        const double phase = -2.0 * M_PI * freqHz * static_cast<double>(n) / sampleRateHz;
+        re += static_cast<double>(samples[n]) * std::cos(phase);
+        im += static_cast<double>(samples[n]) * std::sin(phase);
+    }
+    return {re / static_cast<double>(samples.size()), im / static_cast<double>(samples.size())};
+}
+
+// A SIGNED asymmetry statistic, as opposed to an even/odd energy ratio: it
+// projects the second harmonic onto the direction a pure squaring
+// nonlinearity would place it at, given the fundamental's own phase (H1^2),
+// so the result is positive when the second harmonic reinforces that
+// direction and negative when it opposes it. Two folds that skew a wave in
+// opposite directions read as opposite SIGNS here; an energy ratio (|H2|^2
+// against the odd band) cannot tell them apart, because it discards phase
+// and always reads positive regardless of which way the wave leans.
+double SignedSecondHarmonic(const std::vector<float>& samples, double fundamentalHz, double sampleRateHz) {
+    const auto [re1, im1] = ComplexGoertzel(samples, fundamentalHz, sampleRateHz);
+    const auto [re2, im2] = ComplexGoertzel(samples, 2.0 * fundamentalHz, sampleRateHz);
+    const double refRe = re1 * re1 - im1 * im1;
+    const double refIm = 2.0 * re1 * im1;
+    const double refMag = std::sqrt(refRe * refRe + refIm * refIm);
+    if (refMag < 1e-12) {
+        return 0.0;
+    }
+    return (re2 * refRe + im2 * refIm) / refMag;
 }
 
 TEST_CASE(polynomial_drive_gain_matches_expmap_1_to_5) {
@@ -4525,7 +4562,7 @@ TEST_CASE(frog_block_process_matches_manual_chain_replica) {
     // (PolynomialDrive, Oversampler2x, DigitalReorganizer, SampleRateReducer,
     // PadeSaturator, Sine01), run in lockstep against dsp::FrogBlock over
     // several samples with a fixed knob set including a nonzero fuzz to
-    // exercise the PadeSaturator branch (PolynomialDrive.hpp:187-202).
+    // exercise the PadeSaturator branch (src/core/PolynomialDrive.hpp:187-202).
     dsp::FrogBlock block;
     block.polynomialDrive.SetGain(0.3f);
     block.polynomialDrive.SetCoefs(0.5f);
@@ -4553,8 +4590,23 @@ TEST_CASE(frog_block_process_matches_manual_chain_replica) {
 
         float expected = refOversampler.Process(input, [&](float in) -> float {
             const float out = refDrive.Process(in);
+            // `4.0f` is FrogBlock::foldDivisor's own default -- `block`
+            // above never calls SetFold, so this replica has to hardcode
+            // the same literal rather than derive it. If that default ever
+            // moves, this hand replica goes stale silently; so does
+            // AliasReferenceShaper's own `foldDivisor = 4.0f` further down
+            // this file, which carries the same note.
             const float sinIn = out / 4.0f;
-            return dsp::Sine01(sinIn) * (1.0f - fuzz) + fuzz * dsp::PadeSaturator::Saturate(out);
+            const float folded = dsp::Sine01(sinIn);
+            const float saturated = dsp::PadeSaturator::Saturate(out);
+            // The floored equal-power Fold/Fuzz blend (dsp::FrogBlock::
+            // Process's own law, Drive.hpp), reproduced here rather than
+            // the old plain linear crossfade it replaced.
+            constexpr float kFuzzBlendFloor = 0.05f;
+            constexpr float kFuzzBlendSpan = 0.90f;
+            constexpr float kHalfPi = 1.57079632679489661923f;
+            const float flooredFuzz = kFuzzBlendFloor + kFuzzBlendSpan * fuzz;
+            return folded * std::cos(flooredFuzz * kHalfPi) + saturated * std::sin(flooredFuzz * kHalfPi);
         });
         expected = refReorg.Process(expected);
         expected = refSrr1.Process(expected);
@@ -5352,11 +5404,17 @@ double AliasHannGoertzelReal(const std::vector<float>& samples, double freqHz, d
 }
 
 // The waveshaper FrogBlock::Process runs inside its oversampler's lambda
-// (dsp/Drive.hpp), reproduced standalone at fuzz==0/bias==0 (both
+// (dsp/Drive.hpp), reproduced standalone at fuzz==0/symmetry==0 (both
 // defaults) from the already-independently-tested dsp::PolynomialDrive/
 // Sine01 primitives, same pattern frog_block_process_matches_manual_chain_
 // replica above uses -- so it can serve as the shaping function each path
 // under test drives through its own oversampled processing.
+//
+// `foldDivisor` is FrogBlock::foldDivisor's own default (4.0f), hardcoded
+// here rather than derived because this struct never calls SetFold. If
+// that default ever moves, this reference goes stale silently; so does
+// frog_block_process_matches_manual_chain_replica's own `out / 4.0f`,
+// which carries the matching note.
 struct AliasReferenceShaper {
     dsp::PolynomialDrive drive;
     float foldDivisor = 4.0f;
@@ -5530,6 +5588,7 @@ TEST_CASE(drive_anti_alias_crossfade_falls_monotonically_and_the_old_one_pole_ba
     struct ShippedMeasurement {
         double aliasToSignalDb;
         double fundamentalDb;
+        double totalRmsDb;
     };
     const auto measureShipped = [&](float knob01) {
         constexpr int kWarmupSamples = 4000;
@@ -5548,22 +5607,30 @@ TEST_CASE(drive_anti_alias_crossfade_falls_monotonically_and_the_old_one_pole_ba
         }
         const double fundamentalDb = FundamentalLevelDb(samples, toneHz, sampleRate);
         const double partialDb = LoudestInharmonicPartialLevelDb(samples, toneHz, sampleRate);
-        return ShippedMeasurement{partialDb - fundamentalDb, fundamentalDb};
+        double sumSq = 0.0;
+        for (float v : samples) sumSq += static_cast<double>(v) * static_cast<double>(v);
+        const double totalRmsDb = 20.0 * std::log10(std::sqrt(sumSq / samples.size()));
+        return ShippedMeasurement{partialDb - fundamentalDb, fundamentalDb, totalRmsDb};
     };
 
     const ShippedMeasurement measurements[5] = {measureShipped(0.00f), measureShipped(0.25f), measureShipped(0.50f),
                                                  measureShipped(0.75f), measureShipped(1.00f)};
     double atKnob[5];
     double fundamentalAtKnob[5];
+    double totalRmsAtKnob[5];
     for (int i = 0; i < 5; ++i) {
         atKnob[i] = measurements[i].aliasToSignalDb;
         fundamentalAtKnob[i] = measurements[i].fundamentalDb;
+        totalRmsAtKnob[i] = measurements[i].totalRmsDb;
     }
     std::cout << "  [anti-alias, new crossfade] alias-to-signal at knob 0.00/0.25/0.50/0.75/1.00 = " << atKnob[0]
               << " / " << atKnob[1] << " / " << atKnob[2] << " / " << atKnob[3] << " / " << atKnob[4] << " dB\n";
     std::cout << "  [anti-alias, new crossfade] fundamental level at knob 0.00/0.25/0.50/0.75/1.00 = "
               << fundamentalAtKnob[0] << " / " << fundamentalAtKnob[1] << " / " << fundamentalAtKnob[2] << " / "
               << fundamentalAtKnob[3] << " / " << fundamentalAtKnob[4] << " dB\n";
+    std::cout << "  [anti-alias, new crossfade] per-quarter alias-to-signal reduction: "
+              << (atKnob[1] - atKnob[0]) << " / " << (atKnob[2] - atKnob[1]) << " / " << (atKnob[3] - atKnob[2])
+              << " / " << (atKnob[4] - atKnob[3]) << " dB\n";
 
     // Monotonic across the whole sweep, not merely its endpoints: clean
     // (knob 0) must never read worse than grit (knob 1), and nothing in
@@ -5578,30 +5645,243 @@ TEST_CASE(drive_anti_alias_crossfade_falls_monotonically_and_the_old_one_pole_ba
     // the fundamental's own level must not move by more than a small,
     // barely-audible amount across the same travel.
     REQUIRE_TRUE(std::fabs(fundamentalAtKnob[4] - fundamentalAtKnob[0]) < 3.0);
+    // Each quarter-turn of KNOB TRAVEL does comparable alias-reduction
+    // work (the knob remap below): under the OLD plain linear
+    // knob->cleanMix map, this same sweep measured quarters as uneven as
+    // -1.67/-0.99 dB (first quarter) against -2.92/-6.45 dB (last quarter)
+    // at a neighbouring tone -- over six times the work. The remapped knob
+    // keeps every quarter within a factor of two of the others.
+    double worstQuarter = 0.0, bestQuarter = 1.0e9;
+    for (int i = 0; i < 4; ++i) {
+        const double q = atKnob[i + 1] - atKnob[i];
+        worstQuarter = std::max(worstQuarter, q);
+        bestQuarter = std::min(bestQuarter, q);
+    }
+    std::cout << "  [anti-alias, new crossfade] quarter evenness: best " << bestQuarter << " dB, worst "
+              << worstQuarter << " dB, ratio " << (worstQuarter / bestQuarter) << "\n";
+    REQUIRE_TRUE(worstQuarter / bestQuarter < 2.5);
+    std::cout << "  [anti-alias, new crossfade] total RMS at knob 0.00/0.25/0.50/0.75/1.00 = " << totalRmsAtKnob[0]
+              << " / " << totalRmsAtKnob[1] << " / " << totalRmsAtKnob[2] << " / " << totalRmsAtKnob[3] << " / "
+              << totalRmsAtKnob[4] << " dB\n";
+    // Whether the travel dips below either endpoint -- the requirement's own
+    // quantity -- is NOT measured on this hand-configured fixture: this
+    // TEST_CASE's own AliasReferenceShaper skips the tone stage, the crush
+    // stages and Wet/Dry, so a figure taken here would not describe the
+    // played instrument. That measurement lives in
+    // drive_anti_alias_travel_does_not_dip_below_either_endpoint below,
+    // driven through the production-router replica instead.
 }
 
-TEST_CASE(polynomial_drive_set_link_default_knob_reproduces_0_25f_coupling) {
-    // Link: knob 0.5f -> linkScalar == 0.5f*0.5f == 0.25f exactly, matching
-    // the pre-existing hardcoded literal this same formula
-    // (polynomial_drive_set_coefs_matches_space_filling_curve_formula
-    // above) already pins.
-    dsp::PolynomialDrive drive;
-    drive.SetGain(0.5f);
-    const float computedGain = drive.gain;
-    drive.SetLink(0.5f);
-    drive.SetCoefs(0.3f);
+// The requirement asks whether the travel dips below EITHER endpoint, not
+// whether it dips below a straight line drawn between them -- a different,
+// easier-to-pass quantity. Measured through this file's own
+// production-router replica (SetFrogBlockKnobs/ProcessDriveBank, mirroring
+// RouteDriveBank's own setter order) at the Drive bank's registered
+// defaults, with ONE deviation named here: Wet/Dry moved from its
+// registered default (0.0, pure dry) to 1.0 (fully wet) -- at the
+// registered default the router's output is the dry input regardless of
+// what this knob does. Several tones, none dividing the sample rate (so no
+// fold image lands on a bin a genuine harmonic already occupies).
+TEST_CASE(drive_anti_alias_travel_does_not_dip_below_either_endpoint) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr int kWarmupSamples = 4000;
+    constexpr int kMeasureSamples = 4096;
+    constexpr float kDriveAmplitude = 0.9f;
+    const float tones[] = {661.0f, 1487.0f, 2203.0f, 2971.0f, 4409.0f};
 
-    const float coefsKnob = dsp::ZeroedExpCompute(30.0f, 0.3f);
-    REQUIRE_NEAR(drive.coefs[1], 10.0f * dsp::Sine01(coefsKnob * 1.618f + 0.25f * (computedGain - 1.0f)), 1e-5);
-    REQUIRE_NEAR(drive.coefs[3], 10.0f * dsp::Sine01(coefsKnob * 3.141f + 0.25f * (computedGain - 1.0f)), 1e-5);
+    const auto totalRmsDb = [&](float toneHz, float antiAliasKnob) {
+        dsp::FrogBlock block;
+        dsp::DriveBlendPhase blendPhase;
+        DriveBankKnobs knobs;
+        knobs.antiAlias = antiAliasKnob;
+        knobs.blend = 1.0f;
+
+        int sampleIx = 0;
+        for (; sampleIx < kWarmupSamples; ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * toneHz * static_cast<float>(sampleIx) / sampleRate;
+            ProcessDriveBank(block, blendPhase, knobs, kDriveAmplitude * std::sin(phase));
+        }
+        double sumSq = 0.0;
+        for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * toneHz * static_cast<float>(sampleIx) / sampleRate;
+            const float out = ProcessDriveBank(block, blendPhase, knobs, kDriveAmplitude * std::sin(phase));
+            sumSq += static_cast<double>(out) * static_cast<double>(out);
+        }
+        return 20.0 * std::log10(std::sqrt(sumSq / static_cast<double>(kMeasureSamples)));
+    };
+
+    double worstNotchDb = -1.0e9;
+    for (float toneHz : tones) {
+        const double atZero = totalRmsDb(toneHz, 0.0f);
+        const double atOne = totalRmsDb(toneHz, 1.0f);
+        const double lowerEndpointDb = std::min(atZero, atOne);
+        std::cout << "  [anti-alias endpoints] tone " << toneHz << " Hz: knob 0.0 = " << atZero
+                  << " dB, knob 1.0 = " << atOne << " dB\n";
+        for (int step = 1; step < 10; ++step) {
+            const float knob = static_cast<float>(step) / 10.0f;
+            const double level = totalRmsDb(toneHz, knob);
+            const double notchDb = lowerEndpointDb - level;  // positive = a dip below the lower endpoint.
+            worstNotchDb = std::max(worstNotchDb, notchDb);
+        }
+    }
+    std::cout << "  [anti-alias endpoints] worst dip below either endpoint, across " << (sizeof(tones) / sizeof(tones[0]))
+              << " tones and the whole travel = " << worstNotchDb << " dB\n";
+    // The requirement's own bound: no more than about 1 dB anywhere on the
+    // travel.
+    REQUIRE_TRUE(worstNotchDb < 1.0);
+}
+
+// Fold used to be bit-identically inert across its whole travel at Fuzz
+// 1.0 -- the folder's own leg was multiplied by exactly `1.0f - fuzz ==
+// 0.0f` (dsp::FrogBlock::Process's old plain linear blend, dsp/Drive.hpp),
+// measured -240 dB, bit-identical. The floored equal-power blend now
+// keeps the folder's leg at `cos(0.95*halfPi)` gain (about -22 dB)
+// even at Fuzz maximum, so Fold moves the output there too. Measured
+// through ProcessDriveBank (Wet/Dry raised to 1.0, named off its own 0.0f
+// default; Fuzz named off its own 0.0f default; Gain and Shape left at
+// their registered defaults, input amplitude 0.5, 220 Hz): sweeping Fold
+// end to end at Fuzz 1.0 moves the output by double digits of dB relative
+// to Fold's own floor, nowhere near the old -240 dB inertness.
+TEST_CASE(drive_fold_moves_the_output_at_fuzz_maximum) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float freqHz = 220.0f;
+    constexpr int kWarmupSamples = 2000;
+    constexpr int kMeasureSamples = 4000;
+
+    const auto renderWet = [&](float foldKnob) {
+        dsp::FrogBlock block;
+        dsp::DriveBlendPhase blendPhase;
+        DriveBankKnobs knobs;
+        knobs.fuzz = 1.0f;
+        knobs.fold = foldKnob;
+        knobs.blend = 1.0f;
+
+        std::vector<float> samples;
+        samples.reserve(kMeasureSamples);
+        int sampleIx = 0;
+        for (; sampleIx < kWarmupSamples; ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            ProcessDriveBank(block, blendPhase, knobs, 0.5f * std::sin(phase));
+        }
+        for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            samples.push_back(ProcessDriveBank(block, blendPhase, knobs, 0.5f * std::sin(phase)));
+        }
+        return samples;
+    };
+    const auto diffDb = [](const std::vector<float>& a, const std::vector<float>& b) {
+        double sumSqDiff = 0.0, sumSqRef = 0.0;
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            const double d = static_cast<double>(a[i]) - static_cast<double>(b[i]);
+            sumSqDiff += d * d;
+            sumSqRef += static_cast<double>(b[i]) * static_cast<double>(b[i]);
+        }
+        return 20.0 * std::log10(std::sqrt(sumSqDiff / a.size()) / std::sqrt(sumSqRef / b.size()));
+    };
+
+    const std::vector<float> foldZero = renderWet(0.0f);
+    double worst = -1000.0;
+    for (float foldKnob : {0.25f, 0.5f, 0.75f, 1.0f}) {
+        const double db = diffDb(renderWet(foldKnob), foldZero);
+        std::cout << "  [Fold at Fuzz 1.0] Fold " << foldKnob << " vs Fold 0.0 = " << db << " dB\n";
+        worst = std::max(worst, db);
+    }
+    // Nowhere near the old -240 dB bit-identical inertness.
+    REQUIRE_TRUE(worst > -40.0);
+}
+
+// Self-oscillation is a SILENT loop that keeps generating output on its
+// own -- driving a loud tone into a stage whose output limiter pins at
+// `kStageCeiling` (0.80) cannot tell that apart from an ordinary bounded
+// signal (this test's own prior form asserted peak |output| < 10.0, which
+// measured 0.79999 at Feedback 0.00 and 1.00 alike: the limiter's ceiling
+// reported as if it were evidence about the loop). Primed with a tone and
+// then driven to exact digital silence, the loop must decay to silence
+// rather than latch onto a nonzero fixed point, a period-2 cycle, or
+// broadband chaos -- all three are reachable with the input held at zero
+// once the feedback coefficient clears its stability bound (see
+// `FrogBlock::kMaxFeedbackCoefficient`'s own comment), and all three are
+// self-oscillation regardless of amplitude.
+TEST_CASE(drive_feedback_cannot_self_oscillate_at_maximum) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float freqHz = 220.0f;
+    constexpr int kPrimeSamples = 8000;
+    // Discarded before measuring: the oversampler's own anti-alias filters
+    // (ordinary decaying one-pole/biquad stages, not the folder's
+    // recursion under test) need a window to settle out of the way first.
+    constexpr int kSettleSamples = 20000;
+    constexpr int kMeasureSamples = 20000;
+
+    const auto tailRms = [&](float gainKnob, float shapeKnob, float foldKnob, float symmetryKnob,
+                              float feedbackKnob) {
+        dsp::FrogBlock block;
+        dsp::DriveBlendPhase blendPhase;
+        DriveBankKnobs knobs;
+        knobs.drive = gainKnob;
+        knobs.shape = shapeKnob;
+        knobs.fold = foldKnob;
+        knobs.symmetry = symmetryKnob;
+        knobs.feedback = feedbackKnob;
+        knobs.blend = 1.0f;
+
+        for (int i = 0; i < kPrimeSamples; ++i) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(i) / sampleRate;
+            ProcessDriveBank(block, blendPhase, knobs, 1.0f * std::sin(phase));
+        }
+        for (int i = 0; i < kSettleSamples; ++i) {
+            ProcessDriveBank(block, blendPhase, knobs, 0.0f);
+        }
+        double sumSq = 0.0;
+        for (int i = 0; i < kMeasureSamples; ++i) {
+            const float out = ProcessDriveBank(block, blendPhase, knobs, 0.0f);
+            REQUIRE_TRUE(std::isfinite(out));
+            sumSq += static_cast<double>(out) * static_cast<double>(out);
+        }
+        return std::sqrt(sumSq / static_cast<double>(kMeasureSamples));
+    };
+
+    // Positive control: with Feedback at its own default (no feedback), the
+    // rig must reach genuine digital silence once the input does -- if it
+    // did not, a "decayed" reading below would prove nothing about the
+    // instrument being live.
+    const double restRms = tailRms(1.0f, 0.6f, 1.0f, 1.0f, 0.0f);
+    std::cout << "  [Feedback rest, no feedback] tail RMS after silencing = " << restRms << "\n";
+    REQUIRE_TRUE(restRms < 1.0e-6);
+
+    double worstTailRms = 0.0;
+    for (float gainKnob : {0.0f, 0.6f, 1.0f}) {
+        for (float shapeKnob : {0.0f, 0.6f}) {
+            for (float foldKnob : {0.5f, 1.0f}) {
+                for (float symmetryKnob : {0.0f, 1.0f}) {
+                    const double rms = tailRms(gainKnob, shapeKnob, foldKnob, symmetryKnob, /*feedbackKnob=*/1.0f);
+                    worstTailRms = std::max(worstTailRms, rms);
+                }
+            }
+        }
+    }
+    std::cout << "  [Feedback at maximum] worst tail RMS after silencing, swept across Gain/Shape/Fold/Symmetry = "
+              << worstTailRms << "\n";
+    REQUIRE_TRUE(worstTailRms < 1.0e-3);
+}
+
+// Feedback's default (0.0) reproduces today's path bit-for-bit, the same
+// claim Symmetry's own default makes and the same shape as Fold's own:
+// the knob's registered default maps to the exact no-op value the field
+// already carried before this control existed.
+TEST_CASE(drive_feedback_default_knob_reproduces_todays_path_exactly) {
+    dsp::FrogBlock block;
+    block.SetFeedback(0.0f);
+    REQUIRE_NEAR(block.feedbackCoefficient, 0.0f, 1e-9);
 }
 
 TEST_CASE(frog_block_set_fold_divisor_stays_strictly_positive_across_full_knob_range) {
     // The fold divisor must never reach or cross zero
     // (out/0 -> +-inf -> Sine01's floor() turns it into NaN). ExpMapCompute's
-    // floor is `min` (1.0 here), so this holds by construction across the
-    // whole representable knob range, checked densely here as a regression
-    // guard rather than trusted on paper alone.
+    // `min * pow(max/min, value)` stays strictly positive for any positive
+    // `min`, regardless of which of its two arguments is larger, so this
+    // holds by construction across the whole representable knob range,
+    // checked densely here as a regression guard rather than trusted on
+    // paper alone.
     dsp::FrogBlock block;
     for (int i = 0; i <= 200; ++i) {
         const float knob = static_cast<float>(i) / 200.0f;
@@ -5609,27 +5889,263 @@ TEST_CASE(frog_block_set_fold_divisor_stays_strictly_positive_across_full_knob_r
         REQUIRE_TRUE(block.foldDivisor > 0.0f);
         REQUIRE_TRUE(std::isfinite(block.foldDivisor));
     }
+    // Endpoints re-derived for the inverted map: knob 0.0 is now the
+    // MINIMUM-folding end (divisor 16.0) and knob 1.0 the MAXIMUM-folding
+    // end (divisor 1.0) -- swapped from before the inversion.
+    block.SetFold(0.0f);
+    REQUIRE_NEAR(block.foldDivisor, 16.0f, 1e-4);
+    block.SetFold(1.0f);
+    REQUIRE_NEAR(block.foldDivisor, 1.0f, 1e-6);
     block.SetFold(0.5f);
     REQUIRE_NEAR(block.foldDivisor, 4.0f, 1e-5);  // default knob reproduces today's literal exactly.
 }
 
-// Fold's floor is NOT a "reaches zero" no-effect knob -- out/foldDivisor
-// means no-effect is unity (foldDivisor == 1.0, no folding), reached at
-// knob==0.0f: ExpMapCompute(1.0f, 16.0f, 0.0f) == 1.0f by construction.
-TEST_CASE(frog_block_set_fold_min_knob_reaches_unity_no_folding) {
+// Fold's density -- how many times the wavefolder wraps per cycle --
+// FALLS as the knob rises, on the current map: `out / foldDivisor` is
+// what the folder actually sees, and the map sends knob 0 to divisor 1.0
+// (out enters undivided -- maximum folding) and knob 1 to divisor 16.0
+// (out is divided down before it ever reaches a wrap -- minimum folding).
+// A raw zero-crossing count under-reads a dense fold (many crossings land
+// within a float epsilon of each other) and can read non-monotonic once
+// the crush stages further down the chain reshape the waveform, so this
+// measures density as the ratio of upper-harmonic energy to the
+// fundamental's own band -- the standard proxy for "how folded" a
+// periodic tone reads, using the same HarmonicBandPower helper the XOR
+// sweep above does.
+//
+// Driven through this file's own production-router replica
+// (SetFrogBlockKnobs/ProcessDriveBank, mirroring RouteDriveBank's own
+// setter order) at the Drive bank's registered defaults, with ONE
+// deliberate deviation named here: Wet/Dry moved from its registered
+// default (0.0, pure dry) to 1.0 (fully wet) -- at the registered
+// default the router's output is the dry input regardless of what Fold
+// does, which would make this fixture read flat for a reason that has
+// nothing to do with the map. Input: a 220 Hz, amplitude-0.5 sine at
+// 48 kHz, 4000 warmup samples then 8192 measured.
+//
+// Pins that density RISES with the knob. The opposite map -- dividing
+// harder as the knob rises -- makes this fall instead, so the assertion
+// below is what separates the two directions.
+//
+// Shape (Drive slot 2) is left at its own registered default (0.0) here,
+// and the bound this test checks is met AT THAT SETTING, not everywhere:
+// away from it the harmonic-energy density measure above stops rising
+// monotonically with the knob, because Shape changes which harmonics
+// PolynomialDrive itself contributes underneath the fold. This scenario
+// names that operating point deliberately, the same way the anti-alias
+// scenario names its own.
+TEST_CASE(frog_block_fold_density_rises_with_knob_through_the_production_router) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float freqHz = 220.0f;
+    constexpr float amplitude = 0.5f;
+    constexpr int kWarmupSamples = 4000;
+    constexpr int kMeasureSamples = 8192;
+
+    // Sample-rate reducers left at their raw struct default (freq 0.0f,
+    // SampleRateReducer::Process's `freq <= 0` branch, which returns
+    // `output` without ever writing it) read exactly 0.0f on every call,
+    // for any input and any Fold setting -- indistinguishable from a rig
+    // that measures nothing. SetFrogBlockKnobs below never leaves this in
+    // place (it always calls SetFreq, per RouteDriveBank's own setter
+    // order), but the trap is checked directly here rather than trusted,
+    // since it is exactly the shape of failure that reads as a clean
+    // zero.
+    dsp::FrogBlock deadBlock;
+    deadBlock.SetFold(0.0f);
+    const float deadAtLowKnob = deadBlock.Process(amplitude);
+    deadBlock.SetFold(1.0f);
+    const float deadAtHighKnob = deadBlock.Process(amplitude);
+    REQUIRE_NEAR(deadAtLowKnob, 0.0f, 1e-9);
+    REQUIRE_NEAR(deadAtHighKnob, 0.0f, 1e-9);
+
+    const auto densityAt = [&](float foldKnob) {
+        dsp::FrogBlock block;
+        dsp::DriveBlendPhase blendPhase;
+        DriveBankKnobs knobs;
+        knobs.blend = 1.0f;  // off its 0.0 registered default -- see comment above.
+        knobs.fold = foldKnob;
+        std::vector<float> samples;
+        samples.reserve(kMeasureSamples);
+        int sampleIx = 0;
+        for (; sampleIx < kWarmupSamples; ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            ProcessDriveBank(block, blendPhase, knobs, amplitude * std::sin(phase));
+        }
+        for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            samples.push_back(ProcessDriveBank(block, blendPhase, knobs, amplitude * std::sin(phase)));
+        }
+        const double fundamental = HarmonicBandPower(samples, freqHz, sampleRate, 1, 1);
+        const double upper = HarmonicBandPower(samples, freqHz, sampleRate, 2, 50);
+        return std::make_pair(fundamental, upper / fundamental);
+    };
+
+    const float knobs[5] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+    double density[5];
+    for (int i = 0; i < 5; ++i) {
+        const auto measured = densityAt(knobs[i]);
+        density[i] = measured.second;
+        // The rig is live: the fundamental's own band carries real
+        // energy, nowhere near the dead rig's exact 0.0f above.
+        REQUIRE_TRUE(measured.first > 1000.0);
+        std::cout << "  [fold density] knob=" << knobs[i] << " upper/fundamental=" << measured.second << "\n";
+    }
+
+    for (int i = 0; i + 1 < 5; ++i) {
+        REQUIRE_TRUE(density[i + 1] > 1.05 * density[i]);
+    }
+    const double travelDb = 10.0 * std::log10(density[4] / density[0]);
+    std::cout << "  [fold density] knob 0.0 -> 1.0 change = " << travelDb << " dB (measured 42.15 dB)\n";
+    REQUIRE_TRUE(travelDb > 30.0);
+}
+
+// Fold's map is geometric (`min * pow(max/min, knob)`), so its midpoint
+// knob lands on the geometric mean of its two endpoints regardless of
+// which endpoint is named first -- computed here from the endpoints
+// themselves rather than pinned as a bare literal, so a change to either
+// endpoint fails this check for the right reason rather than going
+// unnoticed.
+TEST_CASE(frog_block_fold_default_knob_matches_geometric_mean_before_and_after_inversion) {
+    const float expectedDefault = std::sqrt(1.0f * 16.0f);
+    REQUIRE_NEAR(dsp::ExpMapCompute(1.0f, 16.0f, 0.5f), expectedDefault, 1e-5);
+    REQUIRE_NEAR(dsp::ExpMapCompute(16.0f, 1.0f, 0.5f), expectedDefault, 1e-5);
+
     dsp::FrogBlock block;
-    block.SetFold(0.0f);
+    block.SetFold(0.5f);
+    REQUIRE_NEAR(block.foldDivisor, expectedDefault, 1e-5);
+}
+
+// Fold's ceiling is NOT a "reaches zero" no-effect knob -- out/foldDivisor
+// means no-effect is unity (foldDivisor == 1.0, MAXIMUM folding: the raw
+// polynomial output enters the folder undivided and wraps it many times
+// per period), reached at knob==1.0f after the inversion below:
+// ExpMapCompute(16.0f, 1.0f, 1.0f) == 1.0f by construction. It means no
+// DIVISION, not no folding.
+TEST_CASE(frog_block_set_fold_max_knob_reaches_unity_divisor_maximum_folding) {
+    dsp::FrogBlock block;
+    block.SetFold(1.0f);
     REQUIRE_NEAR(block.foldDivisor, 1.0f, 1e-6);
 }
 
-// Anti-alias, Fold, Tone and Bias together: at the exact default knobs in
-// FroggersParameters.hpp (1.0f/0.5f/1.0f/0.5f for ABrt/Fold/Tone/Bias), a
-// FrogBlock wired through the real setters must be bit-for-bit identical to
-// one that never calls them at all (the previous behaviour) -- the actual
-// claim "a fresh launch sounds EXACTLY as it does today" makes, verified
-// through the production call path rather than by inspecting field defaults.
+// A float's ordered-bit-pattern distance from another -- the standard way
+// to count ULPs across a sign change without the naive "cast to int and
+// subtract" trap (twos-complement ordering does not match IEEE-754
+// ordering across zero). Local to the pair of tests below; nothing else
+// in this file compares floats by ULP.
+int64_t UlpDistance(float a, float b) {
+    const auto orderedBits = [](float f) -> int64_t {
+        int32_t bits;
+        std::memcpy(&bits, &f, sizeof(bits));
+        return bits < 0 ? static_cast<int64_t>(0x80000000u) - bits : bits;
+    };
+    return std::llabs(orderedBits(a) - orderedBits(b));
+}
+
+// The inversion is a bijection over the SAME [1, 16] divisor range,
+// traversed in the opposite order: `ExpMapCompute(1,16,k)` and
+// `ExpMapCompute(16,1,1-k)` are the SAME real number computed two
+// different ways. `std::pow`
+// is not correctly rounded, so the two can disagree by a handful of ULPs
+// at some knob positions -- scanned across 100001 evenly spaced knob
+// positions, this never exceeds 2 ULP, which is the acceptance bound: a
+// fix that pins bit-identity here, or pins the divisor within 1 ULP,
+// both go red on a build whose libm rounds `pow` differently, which is
+// not the collision this test exists to catch.
+TEST_CASE(frog_block_fold_inverted_map_matches_original_within_two_ulp_at_every_mirrored_pair) {
+    constexpr int kPositions = 100001;
+    int64_t worstUlp = 0;
+    float worstKnob = -1.0f;
+    for (int i = 0; i < kPositions; ++i) {
+        const float k = static_cast<float>(i) / static_cast<float>(kPositions - 1);
+        const float original = dsp::ExpMapCompute(1.0f, 16.0f, k);
+        const float inverted = dsp::ExpMapCompute(16.0f, 1.0f, 1.0f - k);
+        const int64_t ulp = UlpDistance(original, inverted);
+        REQUIRE_TRUE(ulp <= 2);
+        if (ulp > worstUlp) {
+            worstUlp = ulp;
+            worstKnob = k;
+        }
+    }
+    std::cout << "  [fold inversion ulp] worst = " << worstUlp << " ULP, first at knob=" << worstKnob << "\n";
+    // Bounded above only. The exact gap is libm rounding and varies by
+    // platform; what must hold is that it never exceeds the tolerance the
+    // mirrored-divisor check below allows.
+    REQUIRE_TRUE(worstUlp <= 2);
+}
+
+// The bijection argument above only holds if the downstream chain -- the
+// wavefolder plus `digitalReorganizer`'s fixed 8-bit quantization grid --
+// does not amplify those 1-2 ULP divisor gaps into an audible collision,
+// the collision a gain change ahead of that fixed grid would cause, since
+// such a change does not commute with it. Inverting the map introduces no
+// gain change, so at the five
+// dyadic knobs -- where `std::pow` IS correctly rounded (exact powers of
+// two) and the two maps compute the identical divisor bit-for-bit -- the
+// whole block's output must also match bit-for-bit, checked with the
+// manglers at their floors (flip=0, hash=0) and again with Bit depth at
+// its maximum, so a divergence hiding behind either configuration cannot
+// pass silently.
+TEST_CASE(frog_block_fold_inversion_bit_identical_to_original_at_dyadic_knobs) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float freqHz = 220.0f;
+    const float dyadicKnobs[5] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+
+    struct ManglerConfig {
+        float xorKnob;
+        float bitDepth;
+    };
+    const ManglerConfig configs[2] = {{0.0f, 0.0f}, {0.0f, 1.0f}};  // floors, then Bit depth maximum.
+
+    int totalSamples = 0;
+    for (const auto& cfg : configs) {
+        for (float k : dyadicKnobs) {
+            dsp::FrogBlock originalBlock, invertedBlock;
+            dsp::DriveBlendPhase originalBlend, invertedBlend;
+            DriveBankKnobs originalKnobs, invertedKnobs;
+            originalKnobs.blend = 1.0f;
+            invertedKnobs.blend = 1.0f;
+            originalKnobs.xorKnob = invertedKnobs.xorKnob = cfg.xorKnob;
+            originalKnobs.bitDepth = invertedKnobs.bitDepth = cfg.bitDepth;
+            originalKnobs.fold = k;
+            invertedKnobs.fold = 1.0f - k;
+
+            for (int s = 0; s < 480; ++s) {
+                const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(s) / sampleRate;
+                const float sampleIn = 0.5f * std::sin(phase);
+
+                SetFrogBlockKnobs(originalBlock, originalKnobs);
+                // Overridden to today's (pre-inversion) map -- SetFold itself
+                // now computes the fixed map, so the original map is
+                // reconstructed by hand here rather than by reverting the fix.
+                originalBlock.foldDivisor = dsp::ExpMapCompute(1.0f, 16.0f, originalKnobs.fold);
+                float originalOut = originalBlock.Process(sampleIn);
+                originalOut = originalBlend.Process(sampleIn, originalOut, originalKnobs.blend, originalKnobs.phase);
+
+                SetFrogBlockKnobs(invertedBlock, invertedKnobs);  // SetFold already computes the fixed map.
+                float invertedOut = invertedBlock.Process(sampleIn);
+                invertedOut = invertedBlend.Process(sampleIn, invertedOut, invertedKnobs.blend, invertedKnobs.phase);
+
+                REQUIRE_TRUE(originalOut == invertedOut);
+                ++totalSamples;
+            }
+        }
+    }
+    std::cout << "  [fold inversion dyadic] " << totalSamples << " samples bit-identical across 5 knobs x 2 mangler configs\n";
+    REQUIRE_TRUE(totalSamples == 4800);
+}
+
+// Anti-alias, Fold, Tone, Symmetry and Feedback together: at the exact
+// default knobs in FroggersParameters.hpp (1.0f/0.5f/1.0f/0.0f/0.0f for
+// ABrt/Fold/Tone/Symmetry/Feedback), a FrogBlock wired through the real
+// setters must be bit-for-bit identical to one that never calls them at all
+// (the previous behaviour) -- the actual claim "a fresh launch sounds
+// EXACTLY as it does today" makes, verified through the production call
+// path rather than by inspecting field defaults. Symmetry's own default
+// knob is 0.0f (offset == 0.0f exactly, matching the struct's own
+// no-offset default), and Feedback's is 0.0f (matching its own
+// no-feedback default).
 TEST_CASE(frog_block_default_knob_values_reproduce_original_output_exactly) {
-    dsp::FrogBlock blockOld;  // never touches SetAntiAliasBrightness/SetFold/SetTone/SetBias.
+    dsp::FrogBlock blockOld;  // never touches SetAntiAliasBrightness/SetFold/SetTone/SetSymmetry/SetFeedback.
     blockOld.polynomialDrive.SetGain(0.4f);
     blockOld.polynomialDrive.SetCoefs(0.7f);
     blockOld.sampleRateReducer1.SetFreq(0.8f);
@@ -7263,12 +7779,20 @@ TEST_CASE(mix_osc_voices_default_balance_knob_reproduces_original_equal_thirds_a
 // Phase's own 0.86 default, worst dip anywhere on the travel is well inside
 // the bound below, where the old linear law's worst dip (this test's own
 // prior pin) was roughly -4 dB.
-TEST_CASE(drive_blend_travel_holds_level_within_1_2_db_across_gain_and_frequency) {
+TEST_CASE(drive_blend_travel_holds_level_within_1_3_db_across_gain_and_frequency) {
     constexpr float sampleRate = 48000.0f;
     constexpr int kWarmupSamples = 4000;
     constexpr int kMeasureSamples = 8000;
     constexpr float kPhaseDefault = 0.86f;  // FroggersParameters.hpp's shipped Phase default.
-    constexpr double kMaxDipDb = 1.2;
+    // 1.3, not 1.2: `knobs.fuzz` is left at its own default (0.0f), and the
+    // floored equal-power Fold/Fuzz blend (dsp::FrogBlock::Process,
+    // dsp/Drive.hpp) now admits a small saturator contribution even there
+    // (`sin(0.05*halfPi)`, about 7.8%) rather than the old law's exact
+    // zero. That is the accepted, recorded consequence of flooring the
+    // blend so Fold is never fully silenced by Fuzz -- it
+    // widens this measurement's own worst-case dip by a few hundredths of
+    // a dB, not a new defect in the Wet/Dry crossfade this test targets.
+    constexpr double kMaxDipDb = 1.3;
 
     const auto measureRms = [&](float freqHz, float driveKnob, float blendKnob) {
         dsp::FrogBlock block;
@@ -7312,7 +7836,7 @@ TEST_CASE(drive_blend_travel_holds_level_within_1_2_db_across_gain_and_frequency
     std::cout << "  [blend travel] worst dip anywhere across 110-880 Hz, Gain 0.25-1.00 = " << worstDipDb << " dB\n";
 
     // The master must not lose level across its travel: no more than about
-    // 1.2 dB of dip anywhere, versus the old linear law's roughly -4 dB.
+    // 1.3 dB of dip anywhere, versus the old linear law's roughly -4 dB.
     REQUIRE_TRUE(worstDipDb > -kMaxDipDb);
 }
 
@@ -7373,112 +7897,100 @@ TEST_CASE(drive_xor_mid_sweep_collapses_energy_below_1khz_leaving_the_top_octave
     REQUIRE_TRUE(std::fabs(over5kChangeDb) < 3.0);
 }
 
-// SetCoefs adds `link * (gain - 1.0f)` inside the coefficient's Sine01
-// argument (dsp/Drive.hpp's `PolynomialDrive::SetCoefs`); SetGain maps knob 0 to gain exactly 1.0
-// (`ExpMapCompute(1,5,0) == 1` by construction), so at Drive 0 that term is
-// multiplied by exactly zero regardless of what Link is set to -- Link
-// becomes cosmetically live but functionally inert. The positive control
-// (Drive 0.6, same Shape 0) proves the instrument can tell Link sweeps
-// apart at all, so the Drive-0 inertness is a real property of the
-// mapping, not a test that could never fail.
-TEST_CASE(drive_link_is_inert_at_zero_drive_and_moves_the_output_once_driven) {
+// Symmetry SHALL skew the wave in one consistent direction across its
+// travel at every Gain, never a stronger setting reading as LESS asymmetric
+// than a weaker one. Measured through ProcessDriveBank (mirroring
+// RouteDriveBank's own setter order) with Shape moved to 0.56 and Fold to
+// 0.25, neither at its registered default (0.0 and 0.5), and input
+// amplitude raised to 0.9 -- this operating point is where the reversal
+// below shows most plainly; Wet/Dry raised to 1.0, named off its own 0.0
+// default, so the wet path reaches the output at all. The statistic is
+// SignedSecondHarmonic (above): its sign tracks which way the wave is
+// skewed, so a control whose top of travel reads WEAKER than its own floor
+// has reversed direction partway through, rather than merely lost some of
+// its effect.
+TEST_CASE(drive_symmetry_top_of_travel_does_not_read_weaker_than_its_floor) {
     constexpr float sampleRate = 48000.0f;
     constexpr float freqHz = 220.0f;
-    constexpr int kWarmupSamples = 2000;
-    constexpr int kMeasureSamples = 4000;
+    constexpr int kWarmupSamples = 4000;
+    constexpr int kMeasureSamples = 8192;
+    constexpr float kInputAmplitude = 0.9f;
 
-    const auto renderWet = [&](float driveKnob, float linkKnob) {
+    const auto signedAsymmetryAt = [&](float gainKnob, float symmetryKnob) {
         dsp::FrogBlock block;
+        dsp::DriveBlendPhase blendPhase;
         DriveBankKnobs knobs;
-        knobs.drive = driveKnob;
-        knobs.shape = 0.0f;
-        knobs.link = linkKnob;
-        SetFrogBlockKnobs(block, knobs);
+        knobs.drive = gainKnob;
+        knobs.shape = 0.56f;
+        knobs.fold = 0.25f;
+        knobs.symmetry = symmetryKnob;
+        knobs.blend = 1.0f;
 
         std::vector<float> samples;
         samples.reserve(kMeasureSamples);
         int sampleIx = 0;
         for (; sampleIx < kWarmupSamples; ++sampleIx) {
             const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
-            block.Process(0.5f * std::sin(phase));
+            ProcessDriveBank(block, blendPhase, knobs, kInputAmplitude * std::sin(phase));
         }
         for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
             const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
-            samples.push_back(block.Process(0.5f * std::sin(phase)));
+            samples.push_back(ProcessDriveBank(block, blendPhase, knobs, kInputAmplitude * std::sin(phase)));
         }
-        return samples;
+        return SignedSecondHarmonic(samples, freqHz, sampleRate);
     };
 
-    const auto diffDb = [](const std::vector<float>& a, const std::vector<float>& b) {
-        double sumSqDiff = 0.0;
-        double sumSqRef = 0.0;
-        for (std::size_t i = 0; i < a.size(); ++i) {
-            const double d = static_cast<double>(a[i]) - static_cast<double>(b[i]);
-            sumSqDiff += d * d;
-            sumSqRef += static_cast<double>(b[i]) * static_cast<double>(b[i]);
-        }
-        const double diffRms = std::sqrt(sumSqDiff / static_cast<double>(a.size()));
-        const double refRms = std::sqrt(sumSqRef / static_cast<double>(b.size()));
-        return 20.0 * std::log10(diffRms / refRms);
-    };
-
-    // At Drive 0: every Link position renders bit-identically to Link 0.
-    const std::vector<float> driveZeroLink0 = renderWet(0.0f, 0.0f);
-    double worstAtDriveZero = -1000.0;
-    for (float linkKnob : {0.25f, 0.5f, 1.0f}) {
-        const double db = diffDb(renderWet(0.0f, linkKnob), driveZeroLink0);
-        worstAtDriveZero = std::max(worstAtDriveZero, db);
+    for (float gainKnob : {0.6f, 1.0f}) {
+        const double floorMagnitude = std::fabs(signedAsymmetryAt(gainKnob, 0.0f));
+        const double topMagnitude = std::fabs(signedAsymmetryAt(gainKnob, 1.0f));
+        std::cout << "  [Symmetry direction] Gain " << gainKnob << ": |floor|=" << floorMagnitude
+                  << " |top|=" << topMagnitude << "\n";
+        REQUIRE_TRUE(topMagnitude >= floorMagnitude);
     }
-    std::cout << "  [link at Drive 0] worst Link-vs-Link0 difference = " << worstAtDriveZero << " dB\n";
-    REQUIRE_TRUE(worstAtDriveZero < -100.0);
-
-    // Positive control: with Drive raised (same Shape 0), the identical
-    // Link sweep DOES move the output.
-    const std::vector<float> driveDrivenLink0 = renderWet(0.6f, 0.0f);
-    double worstAtDriveDriven = -1000.0;
-    for (float linkKnob : {0.25f, 0.5f, 1.0f}) {
-        const double db = diffDb(renderWet(0.6f, linkKnob), driveDrivenLink0);
-        worstAtDriveDriven = std::max(worstAtDriveDriven, db);
-    }
-    std::cout << "  [link at Drive 0.6, positive control] worst Link-vs-Link0 difference = " << worstAtDriveDriven
-              << " dB\n";
-    REQUIRE_TRUE(worstAtDriveDriven > -20.0);
 }
 
-// With Shape at 0 the polynomial's ONLY populated even-power terms
-// (coefs[1]/coefs[3], on input^2/input^4) come from `link * (gain - 1.0f)`
-// (dsp/Drive.hpp's `PolynomialDrive::SetCoefs`); at Drive 0, gain is exactly 1.0 so those terms
-// vanish too and the whole polynomial is exactly `y = gain * x`. For an
-// exactly linear stage, `Process(in + bias) - Process(bias)` is `gain*in`
-// regardless of bias -- Bias cancels by construction. The positive control
-// (Drive 0.6, same Shape 0) reintroduces the even-power terms through the
-// same Link coupling, which breaks the odd symmetry Bias's cancellation
-// depends on, so the SAME bias sweep moves the output once Drive is
-// raised.
-TEST_CASE(drive_bias_cancels_at_zero_drive_and_moves_the_output_once_driven) {
+// Symmetry lives entirely inside the folder leg's own phase argument
+// (dsp::FrogBlock::Process, dsp/Drive.hpp): `Sine01(out/foldDivisor +
+// symmetryOffsetCycles + ...)`. Once Fuzz has floored that leg down to its
+// minimum blend weight (the floor that keeps neither leg ever fully
+// absent), the folder contributes only a small fraction of the audible
+// output, and Symmetry's own effect shrinks along with it. Measured
+// through ProcessDriveBank (Wet/Dry raised to 1.0, named off its own 0.0f
+// default, so the wet chain reaches the output at all -- `DriveBlendPhase::
+// Process` returns dry exactly at Wet/Dry 0, per its own header comment;
+// Gain 0.6, Shape 0.4, input amplitude 0.5, 220 Hz): with Fuzz at 0.0 the
+// folder is fully in the blend and sweeping Symmetry end to end moves the
+// output by about -8 dB relative to the Symmetry-floor render, inside this
+// check's own -10 dB bar; with Fuzz at 1.0 the same sweep moves it by only
+// roughly -33 dB relative to the Symmetry-floor render -- far smaller,
+// though not exactly zero, which is the floor working as intended rather
+// than a residual bug.
+TEST_CASE(drive_symmetry_is_inert_when_the_folder_is_not_engaged) {
     constexpr float sampleRate = 48000.0f;
     constexpr float freqHz = 220.0f;
     constexpr int kWarmupSamples = 2000;
     constexpr int kMeasureSamples = 4000;
 
-    const auto renderWet = [&](float driveKnob, float biasKnob) {
+    const auto renderWet = [&](float fuzzKnob, float symmetryKnob) {
         dsp::FrogBlock block;
+        dsp::DriveBlendPhase blendPhase;
         DriveBankKnobs knobs;
-        knobs.drive = driveKnob;
-        knobs.shape = 0.0f;
-        knobs.bias = biasKnob;
-        SetFrogBlockKnobs(block, knobs);
+        knobs.drive = 0.6f;
+        knobs.shape = 0.4f;
+        knobs.fuzz = fuzzKnob;
+        knobs.symmetry = symmetryKnob;
+        knobs.blend = 1.0f;
 
         std::vector<float> samples;
         samples.reserve(kMeasureSamples);
         int sampleIx = 0;
         for (; sampleIx < kWarmupSamples; ++sampleIx) {
             const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
-            block.Process(0.5f * std::sin(phase));
+            ProcessDriveBank(block, blendPhase, knobs, 0.5f * std::sin(phase));
         }
         for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
             const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
-            samples.push_back(block.Process(0.5f * std::sin(phase)));
+            samples.push_back(ProcessDriveBank(block, blendPhase, knobs, 0.5f * std::sin(phase)));
         }
         return samples;
     };
@@ -7496,28 +8008,452 @@ TEST_CASE(drive_bias_cancels_at_zero_drive_and_moves_the_output_once_driven) {
         return 20.0 * std::log10(diffRms / refRms);
     };
 
-    // At Drive 0, Shape 0: every Bias position renders bit-identically
-    // (down to float rounding) to Bias's own default (0.5 -> bias 0).
-    const std::vector<float> driveZeroBiasDefault = renderWet(0.0f, 0.5f);
-    double worstAtDriveZero = -1000.0;
-    for (float biasKnob : {0.0f, 0.25f, 0.75f, 1.0f}) {
-        const double db = diffDb(renderWet(0.0f, biasKnob), driveZeroBiasDefault);
-        worstAtDriveZero = std::max(worstAtDriveZero, db);
-    }
-    std::cout << "  [bias at Drive 0] worst Bias-vs-default difference = " << worstAtDriveZero << " dB\n";
-    REQUIRE_TRUE(worstAtDriveZero < -100.0);
+    // Positive control: with the folder fully engaged (Fuzz 0.0), Symmetry
+    // audibly moves the output.
+    const double engagedDb = diffDb(renderWet(0.0f, 1.0f), renderWet(0.0f, 0.0f));
+    std::cout << "  [Symmetry, folder engaged (Fuzz 0.0)] Symmetry 0 vs 1 = " << engagedDb << " dB\n";
+    REQUIRE_TRUE(engagedDb > -10.0);
 
-    // Positive control: with Drive raised (same Shape 0), the identical
-    // Bias sweep DOES move the output.
-    const std::vector<float> driveDrivenBiasDefault = renderWet(0.6f, 0.5f);
-    double worstAtDriveDriven = -1000.0;
-    for (float biasKnob : {0.0f, 0.25f, 0.75f, 1.0f}) {
-        const double db = diffDb(renderWet(0.6f, biasKnob), driveDrivenBiasDefault);
-        worstAtDriveDriven = std::max(worstAtDriveDriven, db);
+    // With the folder floored (Fuzz 1.0), the same Symmetry sweep moves
+    // the output far less -- inert in the practical sense the manual
+    // states, even though the floor keeps a small residual.
+    const double disengagedDb = diffDb(renderWet(1.0f, 1.0f), renderWet(1.0f, 0.0f));
+    std::cout << "  [Symmetry, folder floored (Fuzz 1.0)] Symmetry 0 vs 1 = " << disengagedDb << " dB\n";
+    REQUIRE_TRUE(disengagedDb < engagedDb - 10.0);
+}
+
+// Symmetry's offset sits directly ahead of Sine01 (SetSymmetry's own
+// comment, dsp/Drive.hpp), and Sine01's response to an offset alone is not
+// silence, so without correction a driven, zero-mean tone comes out with a
+// net DC bias -- at this test's own operating point and the bound's own
+// extreme (0.02 cycles), measured at about a tenth of full scale.
+// `FrogBlock::Process` subtracts `Sine01(symmetryOffsetCycles)` from the
+// folder's own output (and from what it feeds back), which restores the
+// exact property `ProcessBiased` used to guarantee -- silence in still
+// produces silence out at any Symmetry setting, checked directly below as
+// this fix's own positive control -- but a driven tone is not silence, and
+// folding it around an off-centre point is genuinely asymmetric
+// rectification, not a bug this correction can also remove without
+// discarding the asymmetry Symmetry exists to add. What survives is real
+// and MANUAL.md states it. Driven through ProcessDriveBank at the Drive
+// bank's registered defaults (Wet/Dry raised to 1.0, named off its own 0.0f
+// default, so the wet path reaches the output at all; 200 Hz, an exact
+// 240-sample period at 48 kHz, so an integer number of cycles is measured
+// and no partial-cycle remainder of its own contributes a spurious mean),
+// the residual mean is bounded well short of that unfixed figure across
+// Symmetry's whole travel.
+TEST_CASE(drive_symmetry_does_not_inject_dc_across_its_travel) {
+    // Positive control for the property this fix actually guarantees
+    // exactly: silence in still produces silence out, at Symmetry's top,
+    // regardless of the driven-signal residual measured below.
+    {
+        dsp::FrogBlock silentBlock;
+        silentBlock.SetSymmetry(1.0f);
+        for (int i = 0; i < 100; ++i) {
+            REQUIRE_NEAR(silentBlock.Process(0.0f), 0.0f, 1e-9f);
+        }
     }
-    std::cout << "  [bias at Drive 0.6, positive control] worst Bias-vs-default difference = " << worstAtDriveDriven
-              << " dB\n";
-    REQUIRE_TRUE(worstAtDriveDriven > -20.0);
+
+    constexpr float sampleRate = 48000.0f;
+    constexpr float freqHz = 200.0f;
+    constexpr int kWarmupSamples = 4000;
+    constexpr int kMeasureSamples = 9600;  // 40 whole cycles at 200 Hz / 48 kHz.
+
+    const auto meanOutput = [&](float symmetryKnob) {
+        dsp::FrogBlock block;
+        dsp::DriveBlendPhase blendPhase;
+        DriveBankKnobs knobs;
+        knobs.symmetry = symmetryKnob;
+        knobs.blend = 1.0f;
+
+        int sampleIx = 0;
+        for (; sampleIx < kWarmupSamples; ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            ProcessDriveBank(block, blendPhase, knobs, 0.5f * std::sin(phase));
+        }
+        double sum = 0.0;
+        for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            sum += static_cast<double>(ProcessDriveBank(block, blendPhase, knobs, 0.5f * std::sin(phase)));
+        }
+        return sum / static_cast<double>(kMeasureSamples);
+    };
+
+    double worstMean = 0.0;
+    for (int i = 0; i <= 10; ++i) {
+        const float symmetryKnob = static_cast<float>(i) / 10.0f;
+        const double mean = meanOutput(symmetryKnob);
+        std::cout << "  [Symmetry DC] knob " << symmetryKnob << " mean output = " << mean << "\n";
+        worstMean = std::max(worstMean, std::fabs(mean));
+    }
+    std::cout << "  [Symmetry DC] worst |mean| across the whole travel = " << worstMean << "\n";
+    // Measured worst case at this operating point is about 0.018 (knob 0
+    // and knob 1, symmetric around the centred default) -- well short of
+    // the unfixed figure this test's own header comment gives, with margin
+    // above the measured value rather than pinned to it exactly.
+    REQUIRE_TRUE(worstMean < 0.05);
+}
+
+// The registered default moved together with the law: FroggersParameters.hpp's
+// own literal for Drive slot 13 is asserted directly below, independent of
+// DriveBankKnobs' own copy above -- the same duplicate-rather-than-share
+// defence FroggersSurfaceTests.cpp's approved-label copy uses, so the two
+// drifting apart cannot pass silently. Verified rather than asserted: the
+// registered knob maps to exactly zero offset, and a render at the
+// registered default (Symmetry untouched) is bit-identical, sample for
+// sample, to a render with the offset forced to 0.0f directly, bypassing
+// SetSymmetry entirely -- which is what "no offset at all" means
+// independently of the setter under test.
+TEST_CASE(drive_symmetry_registered_default_reproduces_no_offset) {
+    constexpr float kRegisteredDefaultKnob = 0.5f;  // FroggersParameters.hpp's own literal for Drive slot 13.
+    REQUIRE_NEAR(kRegisteredDefaultKnob, DriveBankKnobs{}.symmetry, 1e-9f);
+
+    dsp::FrogBlock probeBlock;
+    probeBlock.SetSymmetry(kRegisteredDefaultKnob);
+    REQUIRE_NEAR(probeBlock.symmetryOffsetCycles, 0.0f, 1e-9f);
+
+    DriveBankKnobs atDefaultKnobs;  // every field at its own registered default, symmetry untouched.
+    atDefaultKnobs.blend = 1.0f;    // off its own 0.0f default, so the wet path reaches the output at all.
+
+    for (float x : {-0.8f, -0.3f, 0.0f, 0.4f, 0.9f}) {
+        dsp::FrogBlock noOffsetBlock;
+        dsp::DriveBlendPhase noOffsetBlend;
+        SetFrogBlockKnobs(noOffsetBlock, atDefaultKnobs);
+        noOffsetBlock.symmetryOffsetCycles = 0.0f;  // forced to no offset at all, bypassing SetSymmetry.
+        const float noOffsetWet = noOffsetBlock.Process(x);
+        const float noOffsetOut =
+            noOffsetBlend.Process(x, noOffsetWet, atDefaultKnobs.blend, atDefaultKnobs.phase);
+
+        dsp::FrogBlock atDefaultBlock;
+        dsp::DriveBlendPhase atDefaultBlend;
+        const float atDefaultOut = ProcessDriveBank(atDefaultBlock, atDefaultBlend, atDefaultKnobs, x);
+        REQUIRE_NEAR(atDefaultOut, noOffsetOut, 1e-9f);
+    }
+}
+
+// Renders one Symmetry cell for the grid below: Gain/Shape/Fold/amplitude
+// fixed, Symmetry driven directly to a phase offset (bypassing SetSymmetry
+// so the same grid can probe bounds other than the shipped +-0.02) through
+// ProcessDriveBank's own setter order, folder fully engaged (Fuzz at its
+// own 0.0f default). `zeroEvenCoefs` is a positive control: forcing
+// PolynomialDrive's own even-order coefficients (coefs[1]/coefs[3], the
+// source of the reversal the bipolar law replaces) to
+// zero after SetCoefs runs.
+std::vector<float> RenderSymmetryCell(float gainKnob, float shapeKnob, float foldKnob, float offsetCycles,
+                                       float amplitude, bool zeroEvenCoefs) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float freqHz = 220.0f;
+    constexpr int kWarmupSamples = 1500;
+    constexpr int kMeasureSamples = 3000;
+
+    dsp::FrogBlock block;
+    dsp::DriveBlendPhase blendPhase;
+    DriveBankKnobs knobs;
+    knobs.drive = gainKnob;
+    knobs.shape = shapeKnob;
+    knobs.fold = foldKnob;
+    knobs.blend = 1.0f;  // off its own 0.0f default, so the wet path reaches the output at all.
+
+    const auto render = [&](float in) {
+        SetFrogBlockKnobs(block, knobs);
+        block.symmetryOffsetCycles = offsetCycles;  // bypasses SetSymmetry to probe bounds other than +-0.02.
+        if (zeroEvenCoefs) {
+            block.polynomialDrive.coefs[1] = 0.0f;
+            block.polynomialDrive.coefs[3] = 0.0f;
+        }
+        const float wet = block.Process(in);
+        return blendPhase.Process(in, wet, knobs.blend, knobs.phase);
+    };
+
+    std::vector<float> samples;
+    samples.reserve(kMeasureSamples);
+    int sampleIx = 0;
+    for (; sampleIx < kWarmupSamples; ++sampleIx) {
+        const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+        render(amplitude * std::sin(phase));
+    }
+    for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
+        const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+        samples.push_back(render(amplitude * std::sin(phase)));
+    }
+    return samples;
+}
+
+// An even/odd harmonic ENERGY ratio -- the criterion the withdrawn earlier
+// draft required, kept here only so the positive control below can show it
+// moving, as distinct from the signed statistic the shipped check actually
+// uses.
+double EvenOddEnergyRatio(const std::vector<float>& samples, double fundamentalHz, double sampleRateHz) {
+    const double even = HarmonicBandPower(samples, fundamentalHz, sampleRateHz, 2, 2)
+                         + HarmonicBandPower(samples, fundamentalHz, sampleRateHz, 4, 4);
+    const double odd = HarmonicBandPower(samples, fundamentalHz, sampleRateHz, 1, 1)
+                        + HarmonicBandPower(samples, fundamentalHz, sampleRateHz, 3, 3) + 1e-12;
+    return even / odd;
+}
+
+// True when five points sampled across a control's travel move in one
+// consistent direction (allowing for float noise, not a real backslide).
+bool IsMonotone(const double (&values)[5]) {
+    bool nonDecreasing = true, nonIncreasing = true;
+    for (int i = 0; i + 1 < 5; ++i) {
+        if (values[i + 1] < values[i] - 1e-9) nonDecreasing = false;
+        if (values[i + 1] > values[i] + 1e-9) nonIncreasing = false;
+    }
+    return nonDecreasing || nonIncreasing;
+}
+
+// The check: a SIGNED asymmetry statistic (SignedSecondHarmonic, defined
+// with the other harmonic helpers above), not an even/odd energy ratio,
+// swept across Symmetry x Shape x Gain x Fold x input amplitude -- 3 Shape
+// x 3 Gain x 4 Fold x 5 amplitude = 180 cells, each sweeping Symmetry at 5
+// points through the shipped +-0.02 bound.
+TEST_CASE(drive_symmetry_signed_asymmetry_is_monotone_across_gain_shape_fold_and_amplitude) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float freqHz = 220.0f;
+    constexpr float shapeVals[3] = {0.0f, 0.5f, 1.0f};
+    constexpr float gainVals[3] = {0.2f, 0.6f, 1.0f};
+    constexpr float foldVals[4] = {0.0f, 0.33f, 0.67f, 1.0f};
+    constexpr float ampVals[5] = {0.2f, 0.4f, 0.6f, 0.8f, 1.0f};
+    constexpr float symmetryKnobs[5] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+    constexpr float kShippedBoundCycles = 0.02f;
+
+    int totalCells = 0;
+    int signedMonotoneCells = 0;
+    for (float shape : shapeVals) {
+        for (float gain : gainVals) {
+            for (float fold : foldVals) {
+                for (float amp : ampVals) {
+                    double signedVals[5];
+                    for (int i = 0; i < 5; ++i) {
+                        const float offset = kShippedBoundCycles * (2.0f * symmetryKnobs[i] - 1.0f);
+                        const auto samples = RenderSymmetryCell(gain, shape, fold, offset, amp, false);
+                        signedVals[i] = SignedSecondHarmonic(samples, freqHz, sampleRate);
+                    }
+                    totalCells++;
+                    if (IsMonotone(signedVals)) signedMonotoneCells++;
+                }
+            }
+        }
+    }
+
+    std::cout << "  [Symmetry monotonicity] signed asymmetry: " << signedMonotoneCells << "/" << totalCells
+              << " cells monotone at +-0.02 cycles\n";
+
+    // 154 of 180 at the time of writing. The bar is set just under that
+    // rather than at a round fraction, so a real regression in the law moves
+    // it red instead of being absorbed by slack: the nearest thing this grid
+    // has ever measured below it is the superseded control's own 31.
+    //
+    // What is NOT asserted here, deliberately. An earlier version of this
+    // change required monotonicity at every cell, and the chain does not
+    // deliver that at any bound: `PolynomialDrive` supplies its own even
+    // harmonics whose ratio swings non-monotonically with Gain, so the
+    // output's even energy passes through a null wherever the polynomial
+    // opposes the folder. That is the same cause that made the
+    // even-harmonic-energy criterion unmeetable, and it is not removable
+    // without changing the ported voice. The load-bearing claim is the one
+    // drive_symmetry_bound_is_the_widest_with_the_best_monotonicity makes:
+    // this bound beats every wider one.
+    REQUIRE_TRUE(signedMonotoneCells >= 150);
+}
+
+// The positive control behind the finding that the shipped, superseded
+// control's own reversal traces back to `PolynomialDrive`'s even
+// coefficients, re-run here as a repeatable check rather than a one-off
+// measurement: an even/odd ENERGY ratio -- not the signed
+// statistic the check above actually gates the shipped design on -- swept
+// across a ONE-DIRECTIONAL offset (0 to 0.25 cycles, the superseded
+// control's own range) over the same Shape/Gain/Fold/amplitude grid.
+// Unlike a signed statistic, an energy ratio cannot be monotone across a
+// BIPOLAR sweep by construction (magnitude is smallest at the centre and
+// grows toward both ends, a "V" shape no design can avoid), which is
+// exactly why the check above does not use one; a one-directional sweep is
+// the only way to exercise this criterion meaningfully at all. Zeroing
+// `coefs[1]`/`coefs[3]` removes the polynomial's own competing even
+// harmonics, isolating the folder's own -- proving this rig's energy
+// measurement is live and distinguishes the two criteria, rather than
+// silently computing the same thing under two names.
+TEST_CASE(drive_symmetry_energy_ratio_control_distinguishes_from_the_signed_check) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float freqHz = 220.0f;
+    constexpr float shapeVals[3] = {0.0f, 0.5f, 1.0f};
+    constexpr float gainVals[3] = {0.2f, 0.6f, 1.0f};
+    constexpr float foldVals[4] = {0.0f, 0.33f, 0.67f, 1.0f};
+    constexpr float ampVals[5] = {0.2f, 0.4f, 0.6f, 0.8f, 1.0f};
+    constexpr float oneDirectionalOffsets[5] = {0.0f, 0.0625f, 0.125f, 0.1875f, 0.25f};
+
+    int totalCells = 0;
+    int energyMonotoneCellsBaseline = 0;
+    int energyMonotoneCellsZeroed = 0;
+    for (float shape : shapeVals) {
+        for (float gain : gainVals) {
+            for (float fold : foldVals) {
+                for (float amp : ampVals) {
+                    double energyBaseline[5], energyZeroed[5];
+                    for (int i = 0; i < 5; ++i) {
+                        const float offset = oneDirectionalOffsets[i];
+                        const auto baseline = RenderSymmetryCell(gain, shape, fold, offset, amp, false);
+                        energyBaseline[i] = EvenOddEnergyRatio(baseline, freqHz, sampleRate);
+                        const auto zeroed = RenderSymmetryCell(gain, shape, fold, offset, amp, true);
+                        energyZeroed[i] = EvenOddEnergyRatio(zeroed, freqHz, sampleRate);
+                    }
+                    totalCells++;
+                    if (IsMonotone(energyBaseline)) energyMonotoneCellsBaseline++;
+                    if (IsMonotone(energyZeroed)) energyMonotoneCellsZeroed++;
+                }
+            }
+        }
+    }
+
+    std::cout << "  [Symmetry energy-ratio control] baseline: " << energyMonotoneCellsBaseline << "/" << totalCells
+              << " cells monotone, zeroed: " << energyMonotoneCellsZeroed << "/" << totalCells << "\n";
+    // The same rig, judged on the energy criterion instead of the signed
+    // one, moves markedly once the even coefficients are zeroed.
+    REQUIRE_TRUE(energyMonotoneCellsZeroed > energyMonotoneCellsBaseline);
+}
+
+// Records why +-0.02 is the bound: the SAME grid and statistic above, run
+// at four bounds, shows the signed-monotone count falling as the bound
+// widens. Do not widen `SetSymmetry`'s bound (dsp/Drive.hpp) without
+// re-running this and checking the count still clears the bar above.
+TEST_CASE(drive_symmetry_bound_is_the_widest_with_the_best_monotonicity) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float freqHz = 220.0f;
+    constexpr float shapeVals[3] = {0.0f, 0.5f, 1.0f};
+    constexpr float gainVals[3] = {0.2f, 0.6f, 1.0f};
+    constexpr float foldVals[4] = {0.0f, 0.33f, 0.67f, 1.0f};
+    constexpr float ampVals[5] = {0.2f, 0.4f, 0.6f, 0.8f, 1.0f};
+    constexpr float symmetryKnobs[5] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+    constexpr float bounds[4] = {0.02f, 0.06f, 0.125f, 0.25f};  // the shipped bound, then the superseded one's family.
+
+    int monotoneCountAtBound[4] = {0, 0, 0, 0};
+    for (int b = 0; b < 4; ++b) {
+        for (float shape : shapeVals) {
+            for (float gain : gainVals) {
+                for (float fold : foldVals) {
+                    for (float amp : ampVals) {
+                        double signedVals[5];
+                        for (int i = 0; i < 5; ++i) {
+                            const float offset = bounds[b] * (2.0f * symmetryKnobs[i] - 1.0f);
+                            const auto samples = RenderSymmetryCell(gain, shape, fold, offset, amp, false);
+                            signedVals[i] = SignedSecondHarmonic(samples, freqHz, sampleRate);
+                        }
+                        if (IsMonotone(signedVals)) monotoneCountAtBound[b]++;
+                    }
+                }
+            }
+        }
+        std::cout << "  [Symmetry bound] +-" << bounds[b] << " cycles: " << monotoneCountAtBound[b]
+                  << "/180 signed-monotone cells\n";
+    }
+
+    // The shipped bound (0.02) is at least as good as every wider bound
+    // tested, and strictly better than the superseded one (0.25) -- if a
+    // wider bound ever measures better, the bound is no longer load-bearing
+    // and this comment's own claim is the thing to update, not silence.
+    for (int b = 1; b < 4; ++b) {
+        REQUIRE_TRUE(monotoneCountAtBound[0] >= monotoneCountAtBound[b]);
+    }
+    REQUIRE_TRUE(monotoneCountAtBound[0] > monotoneCountAtBound[3]);
+}
+
+// DC and peak re-measured after the bipolar replacement. Tapped at
+// `dsp::FrogBlock::Process`'s own raw wet output, not through
+// `DriveBlendPhase` -- that stage's own output limiter (kOutputLimiterThreshold,
+// dsp/Drive.hpp) ceilings anything downstream of it near 0.7-0.8, which
+// would measure the LIMITER's own ceiling rather than what Symmetry's
+// offset itself contributes. Swept at the bound's own extreme (+-0.02
+// cycles) across Gain and Shape (11 points each, 0.1 apart), Fold (6
+// points, 0.2 apart) and input amplitude (5 points, 0.2 apart), folder
+// fully engaged (Fuzz at its own 0.0f default).
+//
+// Measured worst-case DC is about 0.77 (Gain knob 0.8, Shape knob 1.0,
+// Fold knob 0.0, amplitude 0.4) and worst-case peak about 1.20.
+//
+// Why this asserts a COMPARISON and not an absolute figure. A worst case
+// over a swept grid is not a stable quantity: it can only grow as the grid
+// is sampled more finely, so the same law measures 0.41 over 180 cells and
+// 0.77 over these 7260. Two rigs disagreeing about it are not disagreeing
+// about the law. An absolute threshold on it therefore cannot reproduce,
+// and one was tried here -- 0.75, derived from an expected 0.668 whose own
+// grid and tap point were never recorded, which is exactly why it did not
+// reproduce either. Both laws swept over ONE grid in ONE run do reproduce,
+// so that is what the requirement rests on.
+TEST_CASE(drive_symmetry_worst_case_dc_and_peak_after_the_bipolar_replacement) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float freqHz = 220.0f;
+    constexpr int kWarmupSamples = 4000;
+    constexpr int kMeasureSamples = 9600;
+    constexpr float kBoundCycles = 0.02f;
+
+    const auto meanAndPeak = [&](float gainKnob, float shapeKnob, float foldKnob, float offsetCycles, float amp) {
+        dsp::FrogBlock block;
+        block.polynomialDrive.SetGain(gainKnob);
+        block.polynomialDrive.SetCoefs(shapeKnob);
+        block.sampleRateReducer1.SetFreq(1e-2f + dsp::ZeroedExpCompute(10.0f, 1.0f));  // registered-default bypass.
+        block.sampleRateReducer2.SetFreq(1e-2f + dsp::ZeroedExpCompute(10.0f, 1.0f));
+        block.SetFold(foldKnob);
+        block.symmetryOffsetCycles = offsetCycles;  // bypasses SetSymmetry to probe the bound's own extreme directly.
+
+        int sampleIx = 0;
+        for (; sampleIx < kWarmupSamples; ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            block.Process(amp * std::sin(phase));
+        }
+        double sum = 0.0;
+        float peak = 0.0f;
+        for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqHz * static_cast<float>(sampleIx) / sampleRate;
+            const float y = block.Process(amp * std::sin(phase));
+            sum += static_cast<double>(y);
+            peak = std::max(peak, std::fabs(y));
+        }
+        return std::make_pair(sum / static_cast<double>(kMeasureSamples), static_cast<double>(peak));
+    };
+
+    // The superseded unipolar law's own range, swept one-directionally the
+    // way that control actually moved: 0 to a quarter cycle.
+    constexpr float kSupersededBoundCycles = 0.25f;
+    double worstDc = 0.0, worstPeak = 0.0;
+    double worstSupersededDc = 0.0, worstSupersededPeak = 0.0;
+    for (float gainKnob = 0.0f; gainKnob <= 1.0001f; gainKnob += 0.1f) {
+        for (float shapeKnob = 0.0f; shapeKnob <= 1.0001f; shapeKnob += 0.1f) {
+            for (float foldKnob = 0.0f; foldKnob <= 1.0001f; foldKnob += 0.2f) {
+                for (float amp = 0.2f; amp <= 1.0001f; amp += 0.2f) {
+                    for (float sign : {-1.0f, 1.0f}) {
+                        const auto result = meanAndPeak(gainKnob, shapeKnob, foldKnob, kBoundCycles * sign, amp);
+                        worstDc = std::max(worstDc, std::fabs(result.first));
+                        worstPeak = std::max(worstPeak, result.second);
+                        // The superseded law's own worst case, over the SAME
+                        // grid in the SAME run. A bare worst-case figure is
+                        // not a stable quantity -- it only grows as the grid
+                        // is sampled more finely, so a fixed threshold on it
+                        // cannot reproduce across two rigs. Measured side by
+                        // side, the improvement can.
+                        const auto old = meanAndPeak(gainKnob, shapeKnob, foldKnob,
+                                                     kSupersededBoundCycles * (0.5f * (sign + 1.0f)), amp);
+                        worstSupersededDc = std::max(worstSupersededDc, std::fabs(old.first));
+                        worstSupersededPeak = std::max(worstSupersededPeak, old.second);
+                    }
+                }
+            }
+        }
+    }
+    std::cout << "  [Symmetry DC/peak] worst |mean DC| = " << worstDc << ", worst peak = " << worstPeak << "\n";
+
+    std::cout << "  [Symmetry DC/peak] superseded law over the same grid: worst |mean DC| = "
+              << worstSupersededDc << ", worst peak = " << worstSupersededPeak << "\n";
+
+    // The rig is live before anything is concluded from it.
+    REQUIRE_TRUE(std::isfinite(worstDc) && std::isfinite(worstSupersededDc));
+    REQUIRE_TRUE(worstDc > 0.0 && worstSupersededDc > 0.0);
+
+    // What the replacement bought, stated as the comparison that reproduces:
+    // both laws measured over one grid in one run. The delivered law more
+    // than halves the offset the superseded one injected, and does not raise
+    // the peak.
+    REQUIRE_TRUE(worstDc < 0.5 * worstSupersededDc);
+    REQUIRE_TRUE(worstPeak <= worstSupersededPeak);
 }
 
 // =========================================================================

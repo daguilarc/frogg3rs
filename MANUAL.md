@@ -507,8 +507,10 @@ Peak freq.
 maximum). Independent of Scoop mix (slot 8), which sets how much of that notch reaches the signal at
 all.
 
-**Comb/Peak** (slot 12) — blend between the peak path and the comb path (0 = pure peak, 1 =
-pure comb).
+**Comb/Peak** (slot 12) — an equal-power blend between the peak path and the comb path. The
+blend's travel is floored, so the held-back branch is never fully absent: about −22 dB down at
+either extreme, exactly −3 dB — a true 50/50 — at the center of travel. Topology (slot 13) is the
+separate control that morphs between parallel and series.
 
 **Topology** (slot 13) — a continuous morph between running the comb path and the peak **in
 parallel** (bottom of travel, the default — the comb's output does not reach the peak) and running
@@ -565,8 +567,17 @@ full wet and audible at partial Wet/Dry, where the sign sums against the dry sig
 onto the bit counts that actually do something, so the first audible step arrives just off the
 floor rather than a fifth of the way up.
 
-**Fuzz** (slot 7) — blends between the sine-folded wet path (bottom of travel) and a
-tanh-style hard saturator (top of travel) inside the waveshaper stage.
+**Fuzz** (slot 7) — blends between the sine-folded wet path (bottom of travel, the default) and a
+tanh-style saturator (top of travel) inside the waveshaper stage. The saturator stays smooth
+until its input crosses about 3. The gain ahead of it drives well past that, so the top of the
+knob sounds hard because of the level reaching the curve rather than the curve's own shape.
+
+The blend's travel is floored the same way Comb/Peak's is, so neither path is ever fully absent:
+about −22 dB down at either extreme, exactly −3 dB — a true 50/50 — at the center of travel.
+Because the floor reaches all the way to the default, the saturator now contributes a small
+amount (about −22 dB) even at Fuzz's own floor, where it used to be silent — the Drive page's
+default sound is not bit-identical to what shipped before this floor was added, though the
+difference is small.
 
 **Phase** (slot 8) — a first-order allpass filter on the wet signal, applied *before* the Wet/Dry
 crossfade above. At Wet/Dry 0 this has no audible effect at all, since dry passes through unfiltered
@@ -594,19 +605,52 @@ ceiling, where no filter in this path can reach them. Expect no change at all on
 nothing folds down there to remove. The in-band level is not quite constant across the sweep
 either: the fundamental drops about 2.5 dB from the clean end to the grit end.
 
-**Link** (slot 10) — how strongly the Gain knob's amount skews Shape's coefficients. Turning
-it up makes Gain pull Shape's harmonic character along with it; turning it down decouples them.
+**Feedback** (slot 10) — the amount of the folder's own output fed back into its own input,
+one sample later. At 0 (the default) the folder reduces to a plain sine fold with no feedback at
+all. Turning it up makes the fold resonate and sing back on itself instead of simply getting
+louder or grittier; the coefficient stays below the point where that resonance turns into
+self-sustaining oscillation across the whole travel, so a struck note's own resonance always dies
+away once the note does, at every setting. The margin shrinks toward the top of the travel, so the
+ring after a note stops takes noticeably longer to die out up there than it does lower down the
+knob, even though it always eventually reaches silence.
 
-**Fold** (slot 11) — divisor inside the sine-fold stage (1×–16×). A lower divisor folds harder;
-a higher divisor folds more gently.
+**Fold** (slot 11) — divisor inside the sine-fold stage (1×–16×). Fold density RISES as the knob is
+turned up — the opposite of the raw divisor, which falls across the same travel — so the tone gets
+denser rather than quieter as the knob goes up.
 
 **Tone** (slot 12) — a low-pass filter at the end of the Drive chain, on the driven signal that
 Wet/Dry mixes against the dry. Fully open at the top of travel (the default), and progressively darker as
 it is turned down, to roughly an 800 Hz cutoff at the bottom.
 
-**Waveshaper offset** (`Bias`, slot 13) — shifts the waveshaper's input by a small DC offset (up to
-±0.02) before shaping, then removes the same offset from the output afterward. This biases the shaping
-asymmetrically without adding audible DC. Zero offset at the center default.
+**Symmetry** (slot 13) — shifts the folder's own input by a phase offset, bipolar around a centred
+default: the middle of the travel is no offset, and the two halves skew opposite sides of the wave
+to fold first. Inert when the folder itself is barely present in the sound — most audible with Fuzz
+low, since Fuzz's top end floors the folder's own contribution to a small residual.
+
+Silence in always produces silence out, at any Symmetry setting. A held or picked note is not
+silence, though, and skewing which half of a wave folds first is a genuine asymmetry, so a driven
+signal comes out with a DC offset. At the page's default settings the offset stays small, under two
+hundredths of full scale at either end of the travel. At some combinations of Gain, Shape and Fold
+away from those defaults it grows much larger, up to around three-quarters of full scale.
+
+### "Feedback" across the instrument
+
+The word "Feedback" names five controls across three banks. Each one is the same mechanism — a
+stage's own output returning to that same stage's input — applied to a different stage, so the
+name is reused on purpose rather than by accident:
+
+- **Filter bank, Comb feedback** — the comb delay line's own output returns to the comb delay
+  line's own input.
+- **Drive bank, Feedback** — the wavefolder's own output returns to the wavefolder's own input, one
+  sample later.
+- **Delay bank, Feedback** — the delay line's own repeated echo returns to the delay line's own
+  input.
+- **Delay bank, Feedback drive** — not a feedback path itself; sets how hard the saturator inside
+  Delay's feedback loop is driven.
+- **Delay bank, Feedback tone** — not a feedback path itself; sets the tone filter inside Delay's
+  feedback loop.
+
+Reverb has no control named Feedback — its tank uses Decay and Hold for the equivalent job instead.
 
 ---
 

@@ -10,7 +10,7 @@
 // synth::Engine<App>, both read start-to-finish before writing this file:
 //   - External/Sheaf/projects/synth/runtime/Runtime.hpp (the real JUCE host
 //     shell FroggersMain.cpp's launcher session uses under the hood, via
-//     synth_runtime::RuntimeShellSession -- Runtime.hpp:100-106 constructs
+//     synth_runtime::RuntimeShellSession -- External/Sheaf/projects/synth/runtime/Runtime.hpp:100-106 constructs
 //     synth::Engine<App> with a NowMicros() timestamp provider; Start()
 //     (:178-230) calls engine_.SetRuntimeDataPaths(...) THEN
 //     engine_.Initialize() exactly once; audioDeviceAboutToStart (:594-599)
@@ -20,7 +20,7 @@
 //   - External/Sheaf/projects/synth/tests/support/SynthRig.hpp, the
 //     headless JUCE-free harness FroggersHeadlessTests.cpp already
 //     drives FroggersApp through
-//     (SynthRig.hpp:60,93-94 constructor: Initialize() then Prepare() in
+//     (External/Sheaf/projects/synth/tests/support/SynthRig.hpp:60,93-94 constructor: Initialize() then Prepare() in
 //     that order; RunOneBlockAt :513-539 builds a synth::AudioBlock sized
 //     from FroggersAppCore::Config()'s numAudioInputs and calls
 //     engine_.ProcessBlock(block, timestamp); StartAt/StopAt :174-184 push
@@ -66,7 +66,7 @@
 // thread"), while `engine_.UiBus()` (the same bus
 // FroggersUiSurface::PushMessage/HandleAction write from the UI/message
 // thread, FroggersUiSurface.hpp's `PushMessage`) is an SPSC ring buffer
-// (MessageInBus::Push, ParameterModulation.cpp:3995-4005: an unsynchronized
+// (MessageInBus::Push, External/Sheaf/projects/synth/src/ParameterModulation.cpp:3995-4005: an unsynchronized
 // read-modify-write of `tail_`, safe for exactly one producer) already
 // claimed by that same thread's Push calls in every other host of this
 // surface -- so processBlock() must never call Push() itself, on pain of a
@@ -301,7 +301,7 @@ public:
     // TransportRunning()/RequestTempoBpm() -- all real, existing
     // FroggersAppCore API, see that file's own comments). UiBusPendingCount
     // ForTest() reads engine_.UiBus().Size() (MessageInBus::Size(),
-    // ParameterModulation.hpp:1022) -- the actual SPSC ring buffer 6.1/6.3
+    // External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:1022) -- the actual SPSC ring buffer 6.1/6.3
     // push onto, letting a test count messages AT THE BUS, without draining
     // them (draining only happens inside
     // engine_.ProcessBlock(), i.e. only when the test itself calls
@@ -372,7 +372,7 @@ public:
     synth::ui::Surface& EditorSurface() { return engine_.Application().PortableSurface(); }
 
     // Mirrors synth_runtime::Runtime<App>::SetRepaintHook (Sheaf
-    // runtime/Runtime.hpp:500) -- the SAME single-slot "the message-thread
+    // External/Sheaf/projects/synth/runtime/Runtime.hpp:500) -- the SAME single-slot "the message-thread
     // timer that already drives per-tick work also drives a UI repaint"
     // idiom this class's own timerCallback() follows for
     // engine_.MessageThreadTick() (see this file's header comment, "Tick
@@ -385,7 +385,7 @@ public:
     // destructor BEFORE any of its own members (in particular the
     // PortableComponent this hook calls into) finish tearing down -- same
     // ordering contract synth_runtime::RuntimeShellSession's destructor
-    // documents for this exact hook shape (Shell.hpp:91-95). Plain
+    // documents for this exact hook shape (External/Sheaf/projects/synth/runtime/Shell.hpp:91-95). Plain
     // std::function, no atomic: both the write (the editor's ctor/dtor) and
     // the read (timerCallback(), below) happen only ever on the message
     // thread -- editors are host-constructed/destroyed on the message
@@ -397,9 +397,9 @@ public:
 private:
     // juce::Timer override (private per the private-inheritance idiom
     // Sheaf's own Runtime.hpp uses, `class Runtime : private
-    // juce::AudioIODeviceCallback, private juce::Timer` -- Runtime.hpp:100).
+    // juce::AudioIODeviceCallback, private juce::Timer` -- External/Sheaf/projects/synth/runtime/Runtime.hpp:100).
     // Pumps engine_.MessageThreadTick() every tick, same call Runtime.hpp's
-    // own timerCallback() makes first (Runtime.hpp:975) -- non-realtime-safe
+    // own timerCallback() makes first (External/Sheaf/projects/synth/runtime/Runtime.hpp:975) -- non-realtime-safe
     // work (patch IO, serialization arena growth, MIDI-out processor pumps)
     // that must never run on the audio thread. Also the ONLY place this
     // class calls

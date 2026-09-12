@@ -382,7 +382,7 @@ TEST_CASE(external_audio_cells_present_and_inert_with_no_input) {
     drillIn.PressEncoder(0);  // open L1 view -- slate stays 15 cells regardless of cabling
     // The external-audio cells are still PUSHED (present) at their fixed
     // positions (13, 14) but with a null parameter (inert / disconnected
-    // encoder rendering), per ParameterModulation.cpp:2843-2852,2784-2786.
+    // encoder rendering), per External/Sheaf/projects/synth/src/ParameterModulation.cpp:2843-2852,2784-2786.
     REQUIRE_TRUE(target.ModulationDepthParameter(kModSlotExternalAudio) == nullptr);
     REQUIRE_TRUE(target.ModulationDepthParameter(kModSlotExternalAudioEf) == nullptr);
     // Every OTHER (connected) source still materializes normally -- the
@@ -410,7 +410,7 @@ TEST_CASE(external_audio_cells_present_and_inert_with_no_input) {
 // counts. This proves the source's VALUE flows through: at a full (|depth|
 // == 1.0) route, the resolved value is driven entirely by the source and the
 // destination's own commanded center contributes nothing at all
-// (ParameterModulation.cpp:2257-2270's weightSum>=1.0 branch zeroes
+// (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2257-2270's weightSum>=1.0 branch zeroes
 // targetCenterScales_ -- see AttachFullPositiveAudioRateModulation's own
 // comment, below, for the fuller derivation). So pinning the destination's
 // commanded value to a KNOWN quantity, then attaching a full-positive
@@ -431,7 +431,7 @@ TEST_CASE(external_audio_cells_present_and_inert_with_no_input) {
 // accessor this mechanism is named after; `GetRaw(0)` (public) reads the
 // same resolved quantity through `currentCenter_`/`CurrentDepthSlots`, which
 // `ParameterManager::ComputeAllParameters()`'s `SnapCurrentToTarget()` call
-// keeps equal to the target ones (ParameterModulation.cpp:1207-1216,
+// keeps equal to the target ones (External/Sheaf/projects/synth/src/ParameterModulation.cpp:1207-1216,
 // 3165-3173) -- the same convergence AttachFullPositiveAudioRateModulation's
 // own comment relies on for the depth parameter's `GetRaw()`.
 TEST_CASE(connected_external_audio_modulation_reaches_a_destination_end_to_end) {
@@ -1106,7 +1106,7 @@ TEST_CASE(randomize_all_level_one_press_gives_its_own_depths_and_each_depths_sub
         // ones get the STRONGER assertion -- they must carry no sub-depths at
         // all. That second branch is the badge fix pinned directly. Sheaf's
         // ModulatorsAffectingMask counts a depth that merely HAS sub-modulation
-        // (ParameterModulation.cpp:2356-2365 via HasNonZeroState), so a neutral
+        // (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2356-2365 via HasNonZeroState), so a neutral
         // depth with sub-depths would light up as a badge for a source that is
         // modulating nothing -- measured at 13 badges against 1 live source.
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
@@ -2068,7 +2068,7 @@ TEST_CASE(reset_all_drilled_into_audio_pitch_restores_its_default_patch_detent_n
 // `TargetValue(0)` is driven by the live, audio-rate-oscillating source
 // signal instead of `parameter`'s own commanded value. At depth == +1.0 the
 // route's |depth| weight sum is exactly 1.0, which zeroes
-// `targetCenterScales_` (ParameterModulation.cpp:2257-2268's weightSum>=1.0
+// `targetCenterScales_` (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2257-2268's weightSum>=1.0
 // branch) -- i.e. the commanded center contributes NOTHING to
 // `TargetValue(0)`; it is driven entirely by the oscillating source. VCO1's
 // pitch is pinned near the top of its kPitchMinHz-kPitchMaxHz exponential
@@ -2152,14 +2152,14 @@ TEST_CASE(randomize_lands_the_drawn_value_under_full_positive_audio_rate_modulat
 // source6Visualizer_ is constructed with drawBackground=false
 // (FroggersModulation.hpp's own constructor, the trailing argument to
 // GangedRandomLfoVisualizer<1>). GangedRandomLfoVisualizer::
-// AppendBackgroundAndAxis (GangedRandomLfoVisualizer.hpp:57-70) is the only
+// AppendBackgroundAndAxis (External/Sheaf/projects/synth/include/synth/GangedRandomLfoVisualizer.hpp:57-70) is the only
 // thing that Fill's the whole node in Color::Rgb(12, 14, 16) plus an axis
 // line, and it only runs when drawBackground is true -- lanes 1-5's own
 // RandomShLaneVisualizer (FroggersRandomShVisualizer.hpp) never had a
 // background to begin with, so this brings lane 6 in line with the other
 // five. The rest of what BuildGangedRandomLfoCommands draws per voice --
 // the trace polyline and the playhead dot -- is unconditional on
-// drawBackground (GangedRandomLfoVisualizer.hpp:199-243), so lane 6 must
+// drawBackground (External/Sheaf/projects/synth/include/synth/GangedRandomLfoVisualizer.hpp:199-243), so lane 6 must
 // still draw those.
 //
 // Reaches source6Visualizer_/the five lane visualizers through
@@ -2197,7 +2197,7 @@ TEST_CASE(lane_six_visualizer_omits_the_full_node_background_but_still_draws_its
 
     // (a) No full-node background fill -- checked by the exact colour and
     // extent AppendBackgroundAndAxis's Fill uses
-    // (GangedRandomLfoVisualizer.hpp:62-63), not by command count.
+    // (External/Sheaf/projects/synth/include/synth/GangedRandomLfoVisualizer.hpp:62-63), not by command count.
     bool sawFullNodeBackgroundFill = false;
     for (const synth::ui::DrawCommand& command : lane6Commands) {
         if (command.kind == synth::ui::DrawCommand::Kind::Fill &&

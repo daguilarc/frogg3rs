@@ -41,7 +41,7 @@
 // header-only inline).
 //
 // Deliberately NOT ported: WavetableVco::Process's cycle-boundary
-// RecordStart/marker bookkeeping (DspOscillators.hpp:158-163). This struct
+// RecordStart/marker bookkeeping (External/Sheaf/projects/synth/include/synth/DspOscillators.hpp:158-163). This struct
 // does not write to the scope at all -- FroggersAppCore.hpp writes the
 // gated sample to scopeWriterHolder_ after MixOscVoices runs (see
 // SetScopeWriterHolder() below and RouteAudioSample() in
@@ -88,7 +88,7 @@ inline float EvalWaveMorph(float phaseWrapped01, float morph)
 struct Vco
 {
     // Verbatim member names and types, matching Sheaf's own UIState shape
-    // (DspOscillators.hpp:119-124).
+    // (External/Sheaf/projects/synth/include/synth/DspOscillators.hpp:119-124).
     struct UIState
     {
         std::atomic<bool> connected{false};
@@ -278,7 +278,7 @@ struct Vco
     }
 
     // SetScopeWriterHolder/SetScopeColor/PopulateUIState,
-    // same shape as WavetableVco's (DspOscillators.hpp:133-135,137-139,165-171).
+    // same shape as WavetableVco's (External/Sheaf/projects/synth/include/synth/DspOscillators.hpp:133-135,137-139,165-171).
     void SetScopeWriterHolder(synth::ScopeWriterHolder* holder)
     {
         scopeWriterHolder_ = holder;

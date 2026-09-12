@@ -2,7 +2,7 @@
 
 // synth_froggers::TransferFunctionVisualizer -- one
 // Visualizer sampling any synth::TransferFunction's FrequencyResponse()
-// into a DrawCommand::Polyline (PortableUI.hpp:119), log-frequency
+// into a DrawCommand::Polyline (External/Sheaf/projects/synth/include/synth/PortableUI.hpp:119), log-frequency
 // axis. Generic over EITHER ResonantBump::UIState or Comb::UIState
 // (app/dsp/FilterFx.hpp) -- both derive from synth::TransferFunction,
 // so one Visualizer implementation covers both the bump's peak/notch and

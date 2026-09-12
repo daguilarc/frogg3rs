@@ -2,7 +2,7 @@
 
 // synth_froggers::MakeFroggersRegistration.
 // Modelled on
-// apps/braid-4/Braid4Registration.hpp:20-23. Registers FroggersApp into the
+// External/Sheaf/projects/synth/apps/braid-4/Braid4Registration.hpp:20-23. Registers FroggersApp into the
 // sheaf-patch launcher's out-of-tree app-registration hook; nothing in
 // External/Sheaf is edited to do so.
 //
