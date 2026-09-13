@@ -28,9 +28,21 @@ collision the staging exists to prevent.
 
 ## How every figure in this change is produced
 
-- Measure through the PRODUCTION ROUTER at the bank's registered defaults,
-  naming any knob deliberately moved off its default. A hand-configured DSP
-  object is not the instrument and the divergence is silent. `RouteFilterBank`
+- Measure through the PRODUCTION ROUTER, naming every knob moved off its
+  registered default and why. A hand-configured DSP object is not the
+  instrument and the divergence is silent.
+- **THE REVERB BANK'S REGISTERED DEFAULTS ARE A DEAD INSTRUMENT, so "measure at
+  the registered defaults" is not available on that page and no task may ask
+  for it.** Read from `app/FroggersParameters.hpp`: the Reverb rows for Wet/dry,
+  Send and Stereo width each omit the third field and so take
+  `FroggersParamSpec`'s own `0.0f`. Send at 0 leaves the tank unfed. Wet/dry at
+  0 leaves the wet leg out of the app's output. Stereo width at 0 makes `wetL`
+  and `wetR` bit-equal, because `dsp::Reverb::Process` computes
+  `wetL = mid + width * (aOut - mid)` and the same for `wetR`. A correlation
+  probe on that pair reads a flat +1 whatever the tank does. The Delay rows for
+  Wet/dry, Send and Stereo width omit it too. Every Reverb and Delay
+  measurement therefore states its own operating point, knob by knob, and a
+  row that reads flat +1 or `nan` is VOID rather than negative. `RouteFilterBank`
   and `RouteDriveBank` are private members of `FroggersAppCore` in
   `app/FroggersAppCore.hpp` — not of `FroggersApp` in `app/Froggers.hpp`, which
   derives from it and declares neither — so a test reaches them either through
@@ -123,15 +135,91 @@ These share NEW `app/dsp/StereoField.hpp`, `app/dsp/Reverb.hpp`,
 `app/FroggersSurfaceTests.cpp`, `MANUAL.md` and `QUICK_DICT.md`, so they are one
 stage and run in order.
 
+- [ ] 3.0 Repair the stale `ToReverbMono` citations before anything reads them
+      again. The symbol has no definition anywhere in the tracked tree; it is
+      the pre-port simulator's name for work now done elsewhere. It is named as
+      a live symbol at `app/dsp/Delay.hpp:436`, `:970` and `:1011`, at
+      `app/FroggersAudioRoutingTests.cpp:2360`, and in
+      `app/check_artifact_symbols_resolve.py`'s own header, where it serves as
+      that gate's example of what counts as code.
+      This is §8.0 hygiene on the change's own path, and it is sequenced first
+      because those comments are the GENERATOR: task 3.1 named the symbol as
+      live purely because `app/dsp/Delay.hpp` still does. Repairing the task
+      while leaving the comments would reschedule the same defect.
+      Each site names the symbol that does the work today, with a stated
+      disposition. The wet-level follower's mono sum is
+      `AdvanceWetLevel(std::fabs((lastWet.l + lastWet.r) * 0.5f))` inside
+      `dsp::StereoDelay::Process`; `dsp::StereoDelay::ToStereo` carries no mono
+      sum at all. Do not invent a replacement name where reading does not
+      settle which symbol a comment meant — report that site and stop.
+      Grep the bare word case-insensitively across `app/`, the root documents
+      and `openspec/`, and report FOUND versus CHANGED. `openspec/changes/archive/`
+      is a historical record and is excluded.
+      NOTHING ELSE BELONGS IN THIS TASK. It is the one hygiene item that BLOCKS
+      3.1, and the rest of the stale-citation sweep is 3.0a, which blocks
+      nothing. Bundling them under one checkbox would leave 3.1's readiness
+      ambiguous if this stalls halfway.
+- [ ] 3.0a The rest of the stale-citation sweep. Nothing in this change depends
+      on it, so it runs whenever the stage has room, and a stall here does not
+      hold 3.1.
+      TWO CITED PATHS NO LONGER RESOLVE, and they take OPPOSITE dispositions.
+      §8.0's fork is restore-or-remove, and restoration is correct only where
+      the consumer outlives the thing removed — a claim to verify per file, not
+      a rule to apply to both.
+      `openspec/specs/field-button-input-latency/spec.md` says hardware
+      diagnostics "are recorded in `docs/daisy-field-diagnostics.md`" in the
+      present tense; there is no `docs/` directory. That file went out at
+      `b9a8199`, "ship from app/, and retire the trees that no longer ship",
+      as collateral of retiring the trees that stopped shipping rather than
+      because Daisy diagnostics were being cleared. The content survives: the
+      `SW1` stuck-input entry the clause points at is alive under
+      Troubleshooting in `DAISY_MANUAL.md`. REDIRECT the citation there. Do not
+      delete it — the exception clause is still open and the fact is still
+      locatable, and dropping the pointer throws both away.
+      `app/FroggersModulationTests.cpp` cites `UPSTREAM-SHEAF-ASK.md`, deleted
+      at `e027e5b`, "Clear correspondence and scratch from the repository root",
+      which is a content-specific clearing that names its successor. REMOVE the
+      pointer, keep whatever the comment still asserts truly.
+      FOUR COMMENTS CITE A TRUNCATED TEST NAME, each of which does not exist as
+      written. `filter_fx_chain_scoop_full_does_not_cancel` does not exist and
+      `topology_morph_peak_branch_headroom` does not exist; both are at
+      `app/FroggersDspParityTests.cpp:3193-3194`, and the full names are
+      `filter_fx_chain_scoop_full_does_not_cancel_a_boosted_peak_at_the_shared_center_frequency`
+      and `topology_morph_peak_branch_headroom_across_full_range`.
+      `randomize_all_storm_test_never_blows_out` does not exist, at
+      `app/FroggersAudioRoutingTests.cpp:2800`; the full name is
+      `randomize_all_storm_test_never_blows_out_or_permanently_silences`.
+      `fuego_seam_transform` does not exist, at
+      `app/FroggersParameterModelTests.cpp:461` and `:506`; the full name is
+      `fuego_seam_transform_reaches_cached_knob_value_matching_dsp_stack`.
+      Spell each name in full so a resolver finds it, and replace the positional
+      words beside them — "above", "idiom above" — with the name, since a
+      relative pointer decays on the next edit to the file.
+      TWO COMMENTS NAME CONSTANT FAMILIES THAT ARE NOT DECLARED WHERE THEY ARE
+      CITED. In `app/dsp/Limiter.hpp`, `kThreshold` does not exist, `kCeiling`
+      does not exist, `kHeadroom` does not exist, `kAttackSeconds` does not
+      exist and `kReleaseSeconds` does not exist, yet a comment names all five
+      as symbols that "were `static constexpr`". That file's real constants are
+      `kDefaultThreshold`, `kDefaultCeiling`, `kDefaultAttackSeconds`,
+      `kDefaultReleaseSeconds`, `kStageCeiling` and `kSharedCeiling`. The
+      sentence also narrates a refactor the reader never saw, which this
+      change's house style forbids, so say what the constants are and why they
+      are per-instance rather than what they used to be.
+      In `app/FroggersTransferFunctionVisualizer.hpp`, `kMinDb` does not exist
+      and `kMaxDb` does not exist, yet a comment cites that pair as the clamp
+      window. Name the real bound or state the numbers.
 - [ ] 3.1 Enumerate the cross-feed by OPERAND across the whole tree and report
       FOUND versus CHANGED with a disposition per hit, zeros included.
       THE OPERAND IS THE PAIRED WEIGHTING, NOT `* 0.5f`. Search for two line
       reads combined as `(1.0f - w)` against `w`, or for a local named `cross`.
       A bare `0.5f * (a + b)` mono sum is NOT a member: `dsp::Reverb::Process`
       alone carries three — the input mono sum, the mid for the width blend, and
-      the wet-authority target — and `dsp::StereoDelay::ToStereo` and
-      `ToReverbMono` carry more. An enumeration by the `* 0.5f` shape returns
-      all of them and buries the real hits.
+      the wet-authority target — and `dsp::StereoDelay::Process` carries a
+      fourth, the wet-level follower's argument. An enumeration by the `* 0.5f`
+      shape returns all four and buries the real hits.
+      DO NOT SEARCH FOR `ToReverbMono`. It has no definition anywhere in the
+      tree and survives only in stale comments, which this stage repairs under
+      3.0. An earlier version of this task named it as a live symbol.
       DISPOSITIONS ALREADY SETTLED, so the executor does not guess:
       `dsp::StereoDelay::Process` and `dsp::Reverb::Process` are the two
       production copies and are the de-duplication's subject.
@@ -200,7 +288,7 @@ stage and run in order.
       registered defaults, with the grid and tap point stated.
       SEVERAL KNOBS CARRY NO EXPLICIT DEFAULT AND SO SIT AT 0.0, and each kills
       this measurement differently. This is read from `app/FroggersParameters.hpp`,
-      where a bank row without a third field takes `FroggersParameterSpec`'s own
+      where a bank row without a third field takes `FroggersParamSpec`'s own
       `0.0f`, and the Reverb and Delay rows for Wet/dry, Send and Stereo width
       all omit it. Reverb Send and Delay Send leave their wet legs unfed and the
       probe reads `nan` — loud failures. Reverb Wet/dry and Delay Wet/dry leave
@@ -211,6 +299,28 @@ stage and run in order.
       from a dead rig, not a `nan`. Name every knob you move off its default and
       state why. A flat +1 row is VOID, not negative.
       MEASURE BOTH SLOTS THE LATER TASKS GATE ON: slot 7's travel AND slot 6's.
+- [ ] 3.4a MEASURE FIRST, read-only, and it ships no code. THE PROMOTED SPEC
+      CARRIES A FIGURE THAT MEASURES SOMETHING OTHER THAN WHAT IT SAYS, and
+      this change's own dead-instrument finding is what exposes it.
+      `openspec/specs/froggers-sheaf-parameter-model/spec.md`, under
+      "An insert effect page's master returns the dry signal at its floor",
+      states: "Measured on the Reverb bank with every control at its registered
+      default and the master turned fully up, the output is 8.46 dB below its
+      input and differs from it by -4.07 dB relative to that input." The VERY
+      NEXT SENTENCE says Reverb and Delay "read as transparent at rest because
+      their Sends default closed and their wet paths are empty". Both cannot
+      describe the same run. With Send at its registered
+      `0.0f` the tank is never fed, so the pair of figures cannot be the tank's
+      character, which is the thing the surrounding prose uses them to
+      establish.
+      REPORT WHICH QUANTITY REPRODUCES 8.46 dB AND -4.07 dB. Per §6.1 a
+      disagreement is not a finding: identify what the original run actually
+      measured — most likely the crossfade's own dry floor with an empty wet leg
+      — rather than stopping at "my number differs". Then measure the quantity
+      the prose CLAIMS, with Send and Wet/dry open, stating every knob's value.
+      Report both, with the grid and the tap point.
+      This task does not edit the spec. 5.2a decides the restatement on what
+      this returns, and the figures belong in a check rather than in prose.
 - [ ] 3.5 DROPPED — folding the cross-feed under Stereo width rests on a false
       premise. Published practice keeps the two independent: Dattorro's
       cross-feed is a fixed figure-eight with no knob and stereo comes from the
@@ -314,6 +424,34 @@ stage and run in order.
       binds each manual and quickdict bold entry to the parameter table by name
       and slot, so renaming the code while the documents still say Diffusion
       fails the build.
+- [ ] 3.7a THE PARITY REPLICAS THAT 3.2 PROMISED AND NO TASK OWNED. Task 3.2
+      says "a later task tells the same executor to update the parity-side
+      copies". Until this task existed, no task from 3.3 to 3.9 named them, so
+      3.7 would have turned the suite red with nobody holding the repair and
+      working rule 4 would have correctly stopped the executor mid-stage.
+      TWO inline copies of the tank's cross-feed carry the formula themselves,
+      both reading `aFb = valB * (1.0f - cross) + valA * cross`: the replica
+      inside `reverb_process_matches_manual_tank_replica_at_neutral_mod_and_hold`
+      and the one inside `UnsaturatedTankReplica`, both in
+      `app/FroggersDspParityTests.cpp`. `PreFixReverbReplica::Step` in the same
+      file is NOT a third copy — it passes `diffusionKnob01` down into
+      `tank.Step(...)` and holds no formula — but its signature is one of the
+      four `diffusionKnob01` bindings 3.7 renames, so it gets its own stated
+      disposition rather than silence.
+      THE FORK EACH REPLICA PRESENTS, decided per replica and reported: a
+      replica pinning the tank's PRE-CHANGE mechanism is still a true statement
+      about what shipped before, so it is either retired with the mechanism it
+      pins, or kept and renamed to say it pins the superseded tank. A replica
+      pinning the tank's CURRENT mechanism follows the production change.
+      Do not weaken an assertion or retune a threshold to keep a case green —
+      that is the defect this chain exists to hunt. If a case cannot be
+      classified by reading, report it and stop.
+      ASSERT, before touching either replica, that the de-duplication of 3.2 and
+      3.3 left both bit-identical; that assertion is 3.2's own and it must
+      already be green. This task runs after 3.7, so state plainly which
+      failures are 3.7's mechanism change and which would be a de-duplication
+      defect, because a replica edited in the same pass as production detects
+      nothing.
 - [ ] 3.8 Density's default is 0.0, diffusion at minimum — the tank's own
       twin-line character, as close to today's default tank as the new stage
       allows. Bit-identity is impossible because the mechanism behind the slot
@@ -389,12 +527,39 @@ names or strings.
       test's name by grepping for it — when the line is written and again before
       delivery. The Peak gain scenario has already been moved this way, because
       its marker had gone stale against a test that exists and passes.
-- [ ] 5.2 Re-count both MODIFIED requirements against the promoted text. The
-      restate gate checks clause-level drift inside any scenario the delta
-      restates and requires a `keeps:` line under every declared edit, so the
-      remaining manual duty is the scenario COUNT, which the gate deliberately
-      does not cover: dropping a whole scenario is sometimes legitimate
-      supersession and nothing mechanical separates that from an accident.
+- [ ] 5.2 Re-count EVERY MODIFIED requirement this delta carries against the
+      promoted text, which is three if 5.2a promotes its own and two if 5.2a
+      drops itself. An earlier wording said "both" and would have left a third
+      requirement counted by nobody. The restate gate checks clause-level drift
+      inside any scenario the delta restates and requires a `keeps:` line under
+      every declared edit, so the remaining manual duty is the scenario COUNT,
+      which the gate deliberately does not cover: dropping a whole scenario is
+      sometimes legitimate supersession and nothing mechanical separates that
+      from an accident.
+      THIS TASK COUNTS 5.2a's REQUIREMENT TOO, and 5.2a does not count its own.
+      A requirement whose only scenario check is its author's assertion that it
+      is fine is self-certified, which is the pattern this change's gates and
+      the omni rule both exist to stop. Run 5.2 after 5.2a, never as part of it.
+- [ ] 5.2a Restate "An insert effect page's master returns the dry signal at its
+      floor" as a THIRD MODIFIED requirement in this delta, on what 3.4a
+      returns. THIS WIDENS THE DELTA and is reported as such rather than slipped
+      in: the requirement is promoted text this change did not originally touch,
+      and it is reached only because §9 holds that a ruling is not recorded
+      until every artifact asserting the opposite has been re-read. This change
+      ruled the Reverb bank's registered defaults a dead instrument; that
+      paragraph asserts a measurement taken there.
+      A MODIFIED requirement replaces the whole body, so every other clause and
+      scenario under it is carried forward verbatim, and every dropped promoted
+      clause is declared in a `RESTATES-EXCEPT` block with its `keeps:` line —
+      `app/check_modified_requirements_restate_promoted.py` fails the build
+      otherwise.
+      THE FIGURES DO NOT GO BACK INTO THE PROSE. Working rule 1 governs: a
+      figure in prose cannot fail when it drifts. State what the control does
+      and name the check that pins it. If 3.4a shows the two figures measured
+      the crossfade's dry floor, say that is what they measured and let the
+      check carry the number.
+      If 3.4a's result makes the existing wording true as it stands, record that
+      and drop this task. An inconvenient result is the finding either way.
 - [ ] 5.3 Every scenario's `Check:` names a test that exists and passes, or is
       marked not yet delivered in the form the gate recognises. Nothing parses
       prose, which is why this is the cheapest claim in the document to make

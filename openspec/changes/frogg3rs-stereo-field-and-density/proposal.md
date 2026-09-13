@@ -64,8 +64,22 @@ holds a value it does not hold passes it untouched. Its green is evidence that
 no name dangles, and evidence of nothing else.
 
 **And it reads only files git TRACKS.** A change directory that has not been
-committed is invisible to it, so the gate returns 0 on an uncommitted handoff
-without opening a single file. Commit these artifacts, then trust the green.
+staged or committed is invisible to it, so the gate returns 0 on an untracked
+handoff without opening a single file. The collector in
+`app/check_artifact_symbols_resolve.py` reads both `git ls-files` and
+`git diff --cached --name-only`, so `git add` is already
+enough to make it look; a commit is not required for the green to mean
+something.
+
+**Two dangling symbol names have now passed it.** `ToReverbMono`, which has no
+definition anywhere in the tree, and `FroggersParameterSpec`, where the real
+struct is `FroggersParamSpec`. Both are bare CamelCase words with no `::` and
+no call form, which the gate's own header declares to be prose. That is a hole
+in exactly the thing the gate exists to reject, and working rule 6 applies to
+it. Whether to widen the recogniser is held until a mechanical pass reports how
+many bare CamelCase tokens these trees carry and what share of them are
+ordinary English, because a recogniser that fires on the word Damping is worse
+than the hole.
 
 ## How claims are marked in this change
 
@@ -173,6 +187,19 @@ for the stereo field move it less.
 - **The operator holds no stored patches** (2026-09-11), so a default-sound
   change needs no migration. INHERITED: an operator statement, not a fact about
   the tree.
+- **The tank's feedback stays in stereo** (2026-09-13). TRACED: the Reverb row
+  in `app/FroggersParameters.hpp` omits its third field, so Diffusion's
+  registered default is `0.0f`, which makes `cross` zero, which makes
+  `aFb = valB` — line A fed entirely from line B's read, a full swap. At the
+  knob's top `cross` is 0.5 and both `aFb` and `bFb` collapse to
+  `0.5f * (valA + valB)`, a fully mono feedback path. The control's whole travel
+  runs from swap to mono and reaches no straight, uncrossed feedback at any
+  position. The operator ruled that keeping the feedback in stereo is the
+  intent, which is what this change's spec delta already requires when it gives
+  Stereo width the cross-feed "in the widening direction". The SENSE of that
+  drive is read off task 3.4's measurement rather than off the derivation above:
+  the two lines carry different delay lengths and the loop can invert what the
+  isolated expression suggests.
 - **The operator ruled the new diffuser may colour** (2026-09-11). A ruling that
   something may colour is not a licence to leave it undocumented.
 
@@ -210,8 +237,13 @@ says afterwards.
 
 ## Impact
 
-- **Affected spec:** `froggers-sheaf-parameter-model`, with two MODIFIED
-  requirements — the bank layout, and the Drive page control travel requirement.
+- **Affected spec:** `froggers-sheaf-parameter-model`, with three MODIFIED
+  requirements — the bank layout, the Drive page control travel requirement,
+  and the insert-effect master requirement, whose explanatory prose carries a
+  Reverb figure measured at registered defaults that this change's own
+  dead-instrument finding contradicts. That third one widens the delta beyond
+  what this change first scoped, and it is named here rather than discovered in
+  a diff. Task 3.4a measures before 5.2a restates.
   The two transitional NOTEs in the promoted text that pointed at the superseded
   change point here instead, and this delta's declared edits move with them.
 - **Directories this change touches, each of which gets the hygiene sweep:**
@@ -220,7 +252,17 @@ says afterwards.
 - **Code this change edits:** `app/dsp/Reverb.hpp`, `app/dsp/Delay.hpp`, a NEW
   `app/dsp/StereoField.hpp`, `app/FroggersParameters.hpp`,
   `app/FroggersUiSurface.hpp`, `app/FroggersSurfaceTests.cpp`,
-  `app/FroggersDspParityTests.cpp`.
+  `app/FroggersDspParityTests.cpp`. Task 3.0's stale-citation repair adds
+  `app/FroggersAudioRoutingTests.cpp`, `app/check_artifact_symbols_resolve.py`,
+  `app/FroggersModulationTests.cpp`, `app/FroggersParameterModelTests.cpp`,
+  `app/dsp/Limiter.hpp`, `app/FroggersTransferFunctionVisualizer.hpp` and
+  `openspec/specs/field-button-input-latency/spec.md`, all comment or prose
+  edits that change no behaviour. That last one is a promoted spec, and the
+  edited line sits in its Purpose section ahead of any `### Requirement:`, which
+  `app/check_modified_requirements_restate_promoted.py` never collects into a
+  requirement body; the file carries no `Check:` line either, so neither
+  citation gate reads it. TRACED, because a prose edit to promoted text is
+  exactly where a gate consequence would hide.
 - **Out of scope, stated so it is not rediscovered:**
   `src/core/FroggersEngine.hpp`'s own cross-feed inside `ProcessReverb` is
   frozen firmware, and the app tree's port is a sanctioned copy that
