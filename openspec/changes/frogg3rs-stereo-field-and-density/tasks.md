@@ -356,7 +356,7 @@ stage and run in order.
       symbol does not see the moved file pointing outward. Both now name
       `dsp/Delay.hpp`, and every surviving positional word in the new header
       resolves inside it.
-- [ ] 3.4 MEASURE FIRST, read-only. Both cross-feeds are the same weighted
+- [x] 3.4 MEASURE FIRST, read-only. Both cross-feeds are the same weighted
       average in isolation, so the direction each knob moves comes entirely from
       what surrounds them: on the Delay page the same knob also drives an L/R
       time offset, and that pairing — not the cross-feed — is what the widening
@@ -377,7 +377,17 @@ stage and run in order.
       from a dead rig, not a `nan`. Name every knob you move off its default and
       state why. A flat +1 row is VOID, not negative.
       MEASURE BOTH SLOTS THE LATER TASKS GATE ON: slot 7's travel AND slot 6's.
-- [ ] 3.4a MEASURE FIRST, read-only, and it ships no code. THE PROMOTED SPEC
+      OUTCOME: measured through a replica mirroring the bank routers' setter
+      order, whose equivalence is proven by reproducing both golden-vector
+      parity cases bit-exactly. Delay's Stereo width WIDENS, correlation 1.0000
+      to 0.0406, and that is entirely its L/R time offset: the cross-fed term is
+      gated to an exact zero at Feedback's registered default, traced in code
+      and confirmed by an isolation run. Reverb's Stereo width WIDENS, 1.0000 to
+      0.9559. Reverb's slot 7 moves correlation by 0.000134 across its whole
+      travel, below the single-trial noise floor of about 0.0006 and real only
+      as a many-seed average. Four runs were VOID: both pages at Send 0 read
+      `nan`, both at Stereo width 0 read a flat +1.
+- [x] 3.4a MEASURE FIRST, read-only, and it ships no code. THE PROMOTED SPEC
       CARRIES A FIGURE THAT MEASURES SOMETHING OTHER THAN WHAT IT SAYS, and
       this change's own dead-instrument finding is what exposes it.
       `openspec/specs/froggers-sheaf-parameter-model/spec.md`, under
@@ -420,7 +430,7 @@ stage and run in order.
       cross-feed takes the same treatment, a fixed coupling at the weight the
       retired Diffusion default carried, which is also the fixed figure-eight
       the surveyed designs use.
-- [ ] 3.5a WHAT PINS REVERB'S STEREO IMAGE, and it is neither knob.
+- [x] 3.5a WHAT PINS REVERB'S STEREO IMAGE, and it is neither knob.
       TRACED AGAINST PRODUCTION: `app/dsp/Reverb.hpp` declares one
       `OnePoleLowPass dampFilter` and `dsp::Reverb::Process` calls
       `dampFilter.Process(valA)` and then `dampFilter.Process(valB)` on that one
@@ -438,6 +448,11 @@ stage and run in order.
       through the production router, with the grid and tap point stated and with
       Stereo width held off its 0.0 default for the reason 3.4 gives. Report and
       stop: this task ships no code.
+      OUTCOME: the sharing is what holds the tank near mono. Across Damping's
+      travel the shared filter gives correlation 0.9887 rising to 0.9995, so the
+      image closes as the tail is damped; per-line filters give 0.6042 rising to
+      0.6838 over the same grid. The scratch copy used for the comparison was
+      diffed against production and differs only in the split.
       SPLITTING THE FILTER IS DECIDED BY THE RULE AND IS NOT AN OPERATOR
       QUESTION. An earlier wording said to "let the operator decide with the
       numbers"; that was a defect in this task. An operator item is only for
@@ -456,7 +471,7 @@ stage and run in order.
       This is a label-versus-mechanism defect of the same family as the rest of
       this change: a control named Damping moves the stereo width, and the
       controls named for the stereo field move it less.
-- [ ] 3.6 MEASURE FIRST, read-only. Pin today's slot 7 against slot 6 on L/R
+- [x] 3.6 MEASURE FIRST, read-only. Pin today's slot 7 against slot 6 on L/R
       correlation of the wet leg, so the replacement has something to turn green.
       TWO DEAD INSTRUMENTS, both traced to the missing explicit defaults above.
       Reverb's Send sits at 0.0, where the tank is never fed and the probe reads
