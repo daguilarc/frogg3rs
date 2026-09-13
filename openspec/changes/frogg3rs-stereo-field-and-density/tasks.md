@@ -427,9 +427,21 @@ stage and run in order.
       through the production router, with the grid and tap point stated and with
       Stereo width held off its 0.0 default for the reason 3.4 gives. Report and
       stop: this task ships no code.
-      SPLITTING THE FILTER CHANGES THE REVERB'S SOUND at every setting, so it is
-      not folded into this stage silently. Measure, record, and let the operator
-      decide with the numbers.
+      SPLITTING THE FILTER IS DECIDED BY THE RULE AND IS NOT AN OPERATOR
+      QUESTION. An earlier wording said to "let the operator decide with the
+      numbers"; that was a defect in this task. An operator item is only for
+      what reading cannot settle, and reading settles this. The promoted spec
+      requires that a stereo-image control's travel makes L/R correlation fall,
+      and that a knob's travel moves the quantity it is named for. One shared
+      `dampFilter` pins the tank's correlation near the top of its range at
+      every Stereo width setting, so the control named for the stereo field
+      cannot deliver what its name promises while the sharing stands. That is a
+      label-versus-mechanism divergence, which is a bug to fix rather than a
+      cost to document.
+      The split therefore lands, and 3.7b owns it. It changes the reverb's sound
+      at every setting, so it is sequenced and measured rather than slipped in:
+      the new default is pinned, the change from today's tank is measured and
+      reported with its grid, and both documents say what the control now does.
       This is a label-versus-mechanism defect of the same family as the rest of
       this change: a control named Damping moves the stereo width, and the
       controls named for the stereo field move it less.
@@ -530,6 +542,34 @@ stage and run in order.
       failures are 3.7's mechanism change and which would be a de-duplication
       defect, because a replica edited in the same pass as production detects
       nothing.
+- [ ] 3.7b GIVE EACH TANK LINE ITS OWN DAMPING FILTER. `dsp::Reverb` declares
+      one `OnePoleLowPass dampFilter` and runs `dampFilter.Process(valA)` then
+      `dampFilter.Process(valB)` on that instance in the same sample, so line
+      B's output carries line A's through the filter's own memory. That sharing
+      holds the tank's two output taps near each other whatever Stereo width is
+      set to, which is why the control named for the stereo field cannot deliver
+      what its name promises. 3.5a records why this is decided by the rule and
+      is not an operator question.
+      The file header records the shared filter as a verbatim port from the
+      firmware original. It does not record that the sharing sets the stereo
+      image, and after this task it no longer does — say what each filter damps
+      and why there are two.
+      THE FOUR INTEGRATION DUTIES 3.7 NAMES APPLY HERE TOO. `Reset()`,
+      `StateFinite()`, `StateMagnitude()` and `Configure()` in
+      `app/dsp/Reverb.hpp` must each reach the second filter: its state cleared
+      by the first, visited by the second and third, given its sample rate
+      through the fourth. A filter nothing resets holds its content across a
+      voice change.
+      THIS CHANGES THE REVERB AT EVERY SETTING, so bit-identity is impossible
+      and is not asked for. ASSERT instead, in one case over one grid: that L/R
+      correlation of the wet leg with the split filters is lower than with the
+      shared filter at every Damping setting, and that Stereo width's own travel
+      moves correlation further after the split than before. The THRESHOLD and
+      GRID are written into this task from the postflight-confirmed figures
+      before an executor is dispatched, never chosen by the executor. Until they
+      are written here this task is a blank and dispatching it is the defect.
+      MEASURE AND REPORT the change from today's tank at the registered
+      defaults, with the grid stated, so 4.x can say what the control now does.
 - [ ] 3.8 Density's default is 0.0, diffusion at minimum — the tank's own
       twin-line character, as close to today's default tank as the new stage
       allows. Bit-identity is impossible because the mechanism behind the slot
