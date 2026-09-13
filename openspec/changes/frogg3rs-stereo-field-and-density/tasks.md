@@ -399,7 +399,7 @@ stage and run in order.
       Report both, with the grid and the tap point.
       This task does not edit the spec. 5.2a decides the restatement on what
       this returns, and the figures belong in a check rather than in prose.
-- [ ] 3.5 DROPPED — folding the cross-feed under Stereo width rests on a false
+- [x] 3.5 DROPPED — folding the cross-feed under Stereo width rests on a false
       premise. Published practice keeps the two independent: Dattorro's
       cross-feed is a fixed figure-eight with no knob and stereo comes from the
       output tap structure, Schroeder uses an output mixing matrix, Freeverb has
@@ -409,6 +409,17 @@ stage and run in order.
       correlation because something else pins it — and that figure came from a
       replica. It is INHERITED AND UNTRACED and this task does not rest on it;
       3.4 measures the quantity through production.
+      OUTCOME: dropped, and the artifacts that still asserted the fold are
+      repaired with it. The delta's Reverb scenario said Stereo width would
+      drive the cross-feed, and its stereo-image scenario said the same; both
+      now say Stereo width drives the mid/side output scaling alone.
+      WHAT BECOMES OF THE CROSS-FEED is settled by the rule and by this
+      specification's own precedent, not left open: Link was retired as a knob
+      while its coupling term stayed at the weight Link's default carried, as a
+      named constant, so the voice at that default did not move. The tank's
+      cross-feed takes the same treatment, a fixed coupling at the weight the
+      retired Diffusion default carried, which is also the fixed figure-eight
+      the surveyed designs use.
 - [ ] 3.5a WHAT PINS REVERB'S STEREO IMAGE, and it is neither knob.
       TRACED AGAINST PRODUCTION: `app/dsp/Reverb.hpp` declares one
       `OnePoleLowPass dampFilter` and `dsp::Reverb::Process` calls
