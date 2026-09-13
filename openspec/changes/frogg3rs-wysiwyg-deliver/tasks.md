@@ -407,8 +407,9 @@ one file is the collision the staging exists to prevent.
       carries its own inline copy of the formula, and a later task tells the
       same executor to update the parity-side copies — both sides edited by one
       hand detects nothing.
-      Reverb's own coefficient scale at its call site is `kTankCrossFeedScale`,
-      defined beside the call in `app/dsp/Reverb.hpp`. Delay's `0.5f` STAYS a
+      Reverb's own coefficient scale at its call site is a NEW
+      `kTankCrossFeedScale`, which does not exist yet and this task defines
+      beside the call in `app/dsp/Reverb.hpp`. Delay's `0.5f` STAYS a
       literal and is not folded into that constant: Delay's is half of a width
       blend that a separate balance scalar then multiplies, Reverb's bounds a
       tank cross. Two quantities that happen to share a value. Say so at both

@@ -79,7 +79,8 @@ its staging was written to reach. What remains is under "Not delivered" below.
   definition, two call sites. Fold is no longer multiplied by zero at Fuzz
   maximum.
 - **Anti-alias is an equal-power crossfade with a warped knob.**
-  `dsp::FrogBlock::SetAntiAliasBrightness` applies `kAntiAliasKnobExponent` and
+  `dsp::Oversampler2x::SetAntiAliasBrightness`, which `dsp::FrogBlock` reaches
+  through its oversampler member, applies `kAntiAliasKnobExponent` and
   the crossfade calls `dsp::EqualPowerWetDry`.
 - **Symmetry is the bipolar law.** `dsp::FrogBlock::SetSymmetry` is bipolar
   about the knob's centre, injected at the folder's input, with its anchor

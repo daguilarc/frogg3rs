@@ -65,7 +65,16 @@ PATTERNS = [
 
 # A TEMP-BREAK note records HOW a figure was measured -- deliberately breaking a
 # thing to watch a check go red. That is method, and a reader can act on it.
-ALLOWED = (re.compile(r"TEMP-BREAK"),)
+#
+# `tasks.md` and `proposal.md` WITH their extension are filenames, not planning
+# references. A gate that reads those files has to name them, and a reader
+# following the name arrives at a file rather than at a numbered item they
+# cannot see. The bare words stay banned: the extension is what separates a path
+# from a pointer into a plan.
+ALLOWED = (
+    re.compile(r"TEMP-BREAK"),
+    re.compile(r"\b(?:tasks|proposal)\.md\b"),
+)
 
 SCAN_EXT = (".cpp", ".hpp", ".py", ".sh")
 
