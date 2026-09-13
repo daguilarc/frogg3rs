@@ -62,7 +62,7 @@ A control whose name promises emphasis, boost or gain SHALL NOT cost output leve
 - **THEN** the level at the resonant bump's own centre frequency stays flat across the whole travel
 - **AND** the level at frequencies at least three octaves away falls at every step of that travel, which is the liveness control for the flat row and is asserted in the same case
 - **AND** the manual and the quick dictionary each state what the control delivers at the output and what it costs, rather than quoting the bump's own centre gain
-- Check: NOT YET DELIVERED. The peak branch is divided by its own height, so the travel is flat at the bump's own resonant frequency at every knob position while costing 7.10 dB of total broadband level end to end. THE COST CANNOT BE REMOVED, only reduced: `peakLimiter`'s ceiling is `kStageCeiling` and `OutputLimiter::DesiredMagnitude` asymptotes toward it without ever reaching it, so the peak branch's contribution is hard-capped whatever makeup precedes the limiter — measured at the travel's endpoint, total level stays below the reference even at a makeup of one million. An earlier wording of this requirement demanded that total level not fall at all; that is unsatisfiable at this placement, and the ruling it came from asked only that the chosen law move level less than its alternatives. `openspec/changes/frogg3rs-wysiwyg-deliver/tasks.md`'s Peak gain stage delivers the comparison and pins both halves through `RouteFilterBank`; the figures live in that check rather than here, because a figure in prose cannot fail when it drifts.
+- Check: `app/FroggersDspParityTests.cpp`, `filter_bank_peak_gain_travel_measurement_at_and_away_from_resonance`, which drives the Filter bank through a replica of `RouteFilterBank`'s setter order at the registered defaults and pins both halves in one case: the level at the bump's own centre frequency stays flat across the whole travel, and the level on both rows at least three octaves away falls at every step and by several dB end to end, which is the flat row's liveness control. The manual and the quick dictionary each state what the control delivers at the output and what it costs. The cost cannot be removed, only reduced: the peak branch is divided by its own height, and any makeup compensating that sits ahead of `peakLimiter`, whose ceiling is `kStageCeiling` and whose `OutputLimiter::DesiredMagnitude` asymptotes toward it without reaching it, so the branch's contribution is hard-capped whatever makeup precedes the limiter. An earlier wording of this requirement demanded that total level not fall at all, which is unsatisfiable at that placement. Every figure lives in the check rather than here, because a figure in prose cannot fail when it drifts.
 
 ### Requirement: A document describing a control states what the control does
 
@@ -89,7 +89,7 @@ A build gate that fails when a prose claim names something that does not exist S
 - **WHEN** a spec `Check:` line names a token that matches only a common basename appearing throughout the tree
 - **THEN** the gate does not count that line as resolved
 - **AND** a line declaring its scenario not yet delivered is counted as declared rather than resolved
-- Check: `app/check_spec_checks_resolve.py`, run by the test target in `app/Makefile` as check-spec-checks-resolve. Its resolver is inverted: a token resolves only as an exact known test-case name or an exact repo-relative path that exists, and its declared-manual marker recognises the phrase not yet delivered beside none and operator step. The gate is its own check, and the change proved it red by breaking it once. What it still accepts is recorded rather than claimed closed: an indexed PATH counts as evidence, so a full-path citation of a document proves as little as a bare basename did, and a delegated adversarial pass against the inverted resolver is the deliverable that reports what else gets through.
+- Check: `app/check_spec_checks_resolve.py`, run by the test target in `app/Makefile` as check-spec-checks-resolve. Its resolver is inverted: a token resolves only as an exact known test-case name or an exact repo-relative path that exists, and its declared-manual marker recognises the phrase not yet delivered beside none and operator step. The gate is its own check, and the change proved it red by breaking it once. What it still accepts is recorded in the script's own header rather than claimed closed: an indexed PATH counts as evidence, so a full-path citation of a document proves as little as a bare basename did. The delegated adversarial pass against the resolver is spent, run by a context that did not build it, and the two holes that defeated the gate's purpose are closed — a scenario retitled by one comma exempting every bullet under it from any check, and a case name appearing only in comment text being indexed as a real test. The rest are recorded there and left alone, because every gate has holes and a recorded hole is a finding rather than an instruction.
 
 ### Requirement: One mechanism carries one name across pages
 
@@ -101,20 +101,20 @@ A control named for a mechanism SHALL perform that mechanism. Diffusion means sm
 
 - **WHEN** a control named Diffusion is swept on any page
 - **THEN** it smears transients in time through an allpass with a real per-section delay, rather than cross-feeding two channels
-- Check: NOT YET DELIVERED. The Delay bank's Diffusion does this today; the Reverb bank's slot 7 is a cross-feed weight with no delay and no allpass. `openspec/changes/frogg3rs-wysiwyg-deliver/tasks.md`'s cross-feed and Reverb stage delivers this by replacing the Reverb mechanism and renaming the slot.
+- Check: NOT YET DELIVERED. The Delay bank's Diffusion does this today; the Reverb bank's slot 7 is a cross-feed weight with no delay and no allpass. `openspec/changes/frogg3rs-stereo-field-and-density/tasks.md`'s cross-feed and Reverb stage delivers this by replacing the Reverb mechanism and renaming the slot.
 
 #### Scenario: A stereo-image control widens across its whole travel
 
 - **WHEN** either page's Stereo width is swept from floor to top
 - **THEN** L/R correlation of that stage's wet signal falls monotonically
 - **AND** where the control drives more than one stereo mechanism, every mechanism it drives widens in the same direction across that travel
-- Check: NOT YET DELIVERED. Reverb's Stereo width gains the cross-feed currently behind slot 7. Whether that cross-feed narrows as it rises, and so has to be driven inversely, is measured by `openspec/changes/frogg3rs-wysiwyg-deliver/tasks.md`'s cross-feed measurement before its implementation; the requirement above states the outcome the control's name promises, and the sense that achieves it is read off the measurement rather than assumed here.
+- Check: NOT YET DELIVERED. Reverb's Stereo width gains the cross-feed currently behind slot 7. Whether that cross-feed narrows as it rises, and so has to be driven inversely, is measured by `openspec/changes/frogg3rs-stereo-field-and-density/tasks.md`'s cross-feed measurement before its implementation; the requirement above states the outcome the control's name promises, and the sense that achieves it is read off the measurement rather than assumed here.
 
 #### Scenario: A control that colours says so
 
 - **WHEN** Density is raised toward its top
 - **THEN** the manual states that it trades smoothness for metallic coloration, and roughly where on the travel that coloration becomes audible
-- Check: NOT YET DELIVERED. `openspec/changes/frogg3rs-wysiwyg-deliver/tasks.md`'s cross-feed and Reverb stage measures the ringing and writes it down.
+- Check: NOT YET DELIVERED. `openspec/changes/frogg3rs-stereo-field-and-density/tasks.md`'s cross-feed and Reverb stage measures the ringing and writes it down.
 
 ## MODIFIED Requirements
 
@@ -125,7 +125,7 @@ WHEN a Drive page control is mapped from its knob to the coefficient it drives, 
 Restated because its inert-at-default scenario names two controls this change removes, and the tests that scenario cites are deleted with them.
 
 <!-- RESTATES-EXCEPT
-NOTE (pending `frogg3rs-wysiwyg-deliver` delivery): Link and the old Waveshaper offset/Bias
+NOTE (pending `frogg3rs-stereo-field-and-density` delivery): Link and the old Waveshaper offset/Bias
   keeps: none
 -->
 
@@ -183,7 +183,7 @@ slot 11 is Fold (short name `Fold`), the pre-fold scale ahead of the sine-fold s
   keeps: slot 11 is Fold (short name `Fold`)
 slot 13 is Symmetry (short name `Sym`), an offset injected at the folder's own input
   keeps: anchored so that silence-in still produces silence-out
-NOTE (pending `frogg3rs-wysiwyg-deliver` delivery): slots 10 and 13 are updated ahead
+NOTE (pending `frogg3rs-stereo-field-and-density` delivery): slots 10 and 13 are updated ahead
   keeps: none
 slots 2-8 carry the bank's remaining original parameters, with Mod depth and Mod rate collapsed
   keeps: the collapsed modulation control
@@ -311,7 +311,7 @@ What each one becomes. Drive slot 9 gains the description of what the control cr
 - **THEN** slot 0 is Wet/dry (short name `Wet`) and slot 1 is Send, the page's feed into its tank
 - **THEN** slots 2-6 carry Room size, Decay, Pre-delay, Damping and Stereo width, with Stereo width driving both the tank's mid/side output scaling and its L/R cross-feed, each in the widening direction
 - **THEN** slot 7 is Density (short name `Dens`), the tank's initial echo density, produced by a cascade of allpass sections rather than by cross-feeding the tank's two lines
-- Check: NOT YET DELIVERED for the two clauses above. Today slot 7 is Diffusion (short name `Diff`) and is the tank's L/R cross-feed weight, and Stereo width drives the mid/side output scaling alone. `openspec/changes/frogg3rs-wysiwyg-deliver/tasks.md`'s cross-feed and Reverb stage delivers both, measuring the cross-feed's sense before picking the drive direction. Every other clause in this scenario describes the bank as it ships. This marker is written because the clauses read identically whether the behaviour exists or is merely wanted, and the scenarios under this requirement carry no `Check:` line by the promoted spec's own convention — which leaves an undelivered clause here indistinguishable from a delivered one.
+- Check: NOT YET DELIVERED for the two clauses above. Today slot 7 is Diffusion (short name `Diff`) and is the tank's L/R cross-feed weight, and Stereo width drives the mid/side output scaling alone. `openspec/changes/frogg3rs-stereo-field-and-density/tasks.md`'s cross-feed and Reverb stage delivers both, measuring the cross-feed's sense before picking the drive direction. Every other clause in this scenario describes the bank as it ships. This marker is written because the clauses read identically whether the behaviour exists or is merely wanted, and the scenarios under this requirement carry no `Check:` line by the promoted spec's own convention — which leaves an undelivered clause here indistinguishable from a delivered one.
 - **THEN** slot 8 is Mod (short name `Mod`), the collapsed modulation control, and slot 9 is Hold (short name `Hold`)
 - **THEN** slot 10 is Tank Drive (short name `TkDv`), a pre-gain applied to the input of the tank feedback path's own in-loop saturator, never to that saturator's output
 - **THEN** slot 11 is Grit (short name `Grit`), the tank feedback path routed through a bit-scramble stage ahead of that same in-loop saturator

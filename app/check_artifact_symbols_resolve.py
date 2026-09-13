@@ -282,20 +282,27 @@ def change_artifacts(repo):
     its preflight and postflight reports, which quote text nobody is asserting
     any more, so only the two files named in ARTIFACTS are read.
 
-    Only files git TRACKS are scanned. An untracked change is work nobody else
-    can see yet, and a name it has not finished writing must not stop the build
-    for everyone else. A change becomes this gate's subject when it is
-    committed."""
+    A file is this gate's subject once it is TRACKED or STAGED -- that is, once
+    it is about to enter the repository. An untracked, unstaged change is work
+    nobody else can see, and a name it has not finished writing must not stop
+    the build for everyone; staging it is the point at which its author is
+    asking for it to become everyone's problem. Tracked alone is not enough: a
+    brand new change directory is untracked until its first commit, so a gate
+    reading only tracked files opens nothing and reports OK, which is a green
+    that proves the gate ran rather than that the artifacts resolve."""
     out = []
     changes = os.path.join(repo, "openspec", "changes")
     if not os.path.isdir(changes):
         return out
     tracked = set()
     try:
-        listing = subprocess.run(["git", "-C", repo, "ls-files", "openspec/changes"],
-                                 capture_output=True, text=True, timeout=30)
-        if listing.returncode == 0:
-            tracked = {os.path.join(repo, line) for line in listing.stdout.splitlines() if line}
+        for args in (["ls-files", "openspec/changes"],
+                     ["diff", "--cached", "--name-only", "--", "openspec/changes"]):
+            listing = subprocess.run(["git", "-C", repo] + args,
+                                     capture_output=True, text=True, timeout=30)
+            if listing.returncode == 0:
+                tracked |= {os.path.join(repo, line)
+                            for line in listing.stdout.splitlines() if line}
     except (OSError, subprocess.SubprocessError):
         tracked = set()
     for entry in sorted(os.listdir(changes)):

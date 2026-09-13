@@ -116,7 +116,7 @@ or MAY hold additional named parameters where a bank's slate has been explicitly
   Drive stage
 - **THEN** slot 13 is Symmetry (short name `Sym`), an offset injected at the folder's own input in phase
   units, anchored so that silence-in still produces silence-out
-- NOTE (pending `frogg3rs-wysiwyg-deliver` delivery): slots 10 and 13 are updated ahead of that change's
+- NOTE (pending `frogg3rs-stereo-field-and-density` delivery): slots 10 and 13 are updated ahead of that change's
   own archival, because Link and Bias no longer exist in the tree and a promoted scenario naming them
   would record a bank the code does not have. That change's spec-delta group restates this requirement's full
   scenario set at delivery, including the bound and centred default its Symmetry law carries.
@@ -576,7 +576,7 @@ WHEN a Drive page control is mapped from its knob to the coefficient it drives, 
 - **THEN** Symmetry's effect on the output is more than 10 dB smaller than with the folder engaged, not bit-identical — the floor that keeps Fuzz from silencing the folder's leg entirely also keeps a small residual of Symmetry's own effect
 - **AND** the manual names which control has to be moved for Symmetry to act
 - Check: `app/FroggersDspParityTests.cpp`, `drive_symmetry_is_inert_when_the_folder_is_not_engaged`, which measures Symmetry's own audible effect through `ProcessDriveBank` with the folder fully engaged (Fuzz 0.0) against the same sweep with the folder floored to its minimum blend weight (Fuzz 1.0) — measured about 3 dB engaged against about -19 dB disengaged, a real but far smaller effect there, matching the manual's own statement of which control (Fuzz) has to move for Symmetry to act.
-- NOTE (pending `frogg3rs-wysiwyg-deliver` delivery): Link and the old Waveshaper offset/Bias no longer exist; this scenario is updated ahead of that change's own archival so this gate does not dangle on the deleted tests in the interim. `openspec/changes/frogg3rs-wysiwyg-deliver/tasks.md`'s spec-delta group restates this requirement's full scenario set at delivery.
+- NOTE (pending `frogg3rs-stereo-field-and-density` delivery): Link and the old Waveshaper offset/Bias no longer exist; this scenario is updated ahead of that change's own archival so this gate does not dangle on the deleted tests in the interim. `openspec/changes/frogg3rs-stereo-field-and-density/tasks.md`'s spec-delta group restates this requirement's full scenario set at delivery.
 
 ### Requirement: An insert effect page's master returns the dry signal at its floor
 
