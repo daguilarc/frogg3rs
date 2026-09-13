@@ -326,6 +326,15 @@ public:
     // either one is always audible. This is a deliberate product decision,
     // not an oversight -- do not "restore" Braid 4's convention here.
     static constexpr std::size_t kNumScenes = 2;
+    // Gesture faders the engine allocates. Each parameter stores a value and
+    // an active flag per scene per gesture, and modulation-depth children
+    // store the same, so this multiplies patch JSON: at 8 the default patch
+    // is 182KB, and the plugin's constructor-time state seed
+    // (app/vst/FroggersPluginProcessor.cpp) builds the whole patch into one
+    // non-growing 256KB arena. Twelve gestures overruns that seed, which
+    // fails silently and leaves the host with empty state, so this is the
+    // ceiling rather than the 64 the engine's GestureMask allows.
+    static constexpr std::size_t kNumGestures = 8;
     // Sized for the 91 top-level parameters this class itself registers (6
     // banks x 14 page
     // parameters + 6 per-bank Crispy + 1 shared Crunchy = 91) plus a little
@@ -353,6 +362,9 @@ public:
     void Init(synth::ParameterManager& manager, synth::ui::Visualizer* peakVisualizer = nullptr,
               synth::ui::Visualizer* combVisualizer = nullptr) {
         manager_ = &manager;
+        // Must precede CreateGroup: SetGestureCount refuses once the manager
+        // owns a group, and this is the only group Froggers creates.
+        manager.SetGestureCount(kNumGestures);
         group_ = &manager.CreateGroup({
             .numVoices = kNumVoices,
             .numModulators = kNumModulators,
