@@ -267,10 +267,13 @@ struct Reverb
     // next call's output), so filtering A then B through one instance mixed
     // line B's result into whatever line A had just left behind, which is
     // what pinned the tank's two output taps close together whatever Stereo
-    // width was set to (dsp::Reverb's own file header, above; measured
-    // across Damping's travel, correlation of the wet leg runs 0.9887 rising
-    // to 0.9995 with a shared filter, against 0.6042 rising to 0.6838 with
-    // this split). Splitting removes that coupling, so Stereo width's blend below
+    // width was set to (dsp::Reverb's own file header, above). The size of
+    // that coupling is measured rather than quoted here:
+    // reverb_damping_filter_split_lowers_wet_leg_correlation_at_every_setting
+    // runs both regimes over the same tank content at every Damping setting
+    // and prints each one's wet-leg correlation beside the gap between them,
+    // so the figures move with the code instead of going stale in a comment.
+    // Splitting removes that coupling, so Stereo width's blend below
     // (`wetL`/`wetR`) is now free to separate the two taps by as much as the
     // tank's own signal actually supports.
     OnePoleLowPass dampFilterA;

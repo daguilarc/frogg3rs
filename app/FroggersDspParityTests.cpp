@@ -8768,7 +8768,9 @@ TEST_CASE(drive_symmetry_is_inert_when_the_folder_is_not_engaged) {
 // extreme (0.02 cycles), measured at about a tenth of full scale.
 // `FrogBlock::Process` subtracts `Sine01(symmetryOffsetCycles)` from the
 // folder's own output (and from what it feeds back), which restores the
-// exact property `ProcessBiased` used to guarantee -- silence in still
+// exact property the retired Bias offset guaranteed by the same idiom --
+// subtracting the shaper's own response to the offset alone, so that at a
+// zero input the two terms cancel exactly -- silence in still
 // produces silence out at any Symmetry setting, checked directly below as
 // this fix's own positive control -- but a driven tone is not silence, and
 // folding it around an off-centre point is genuinely asymmetric
@@ -9482,6 +9484,23 @@ TEST_CASE(reverb_damping_darkens_and_quiets_the_tank_while_room_size_does_neithe
     REQUIRE_TRUE(roomHigh - roomLow < 0.5);
 }
 
+struct Correlation {
+    double sx = 0.0, sy = 0.0, sxx = 0.0, syy = 0.0, sxy = 0.0, n = 0.0;
+    void Add(double x, double y) {
+        sx += x;
+        sy += y;
+        sxx += x * x;
+        syy += y * y;
+        sxy += x * y;
+        n += 1.0;
+    }
+    double Value() const {
+        const double num = n * sxy - sx * sy;
+        const double den = std::sqrt((n * sxx - sx * sx) * (n * syy - sy * sy));
+        return den > 0.0 ? num / den : 1.0;  // both channels constant (e.g. width==0): read as perfectly correlated.
+    }
+};
+
 // Damping's shared filter used to hold the tank's two output taps close
 // together at every Stereo width setting (dsp::Reverb.hpp's own file
 // header): dampFilterA/dampFilterB now give each line its own one-pole
@@ -9532,23 +9551,6 @@ TEST_CASE(reverb_damping_filter_split_lowers_wet_leg_correlation_at_every_settin
     const std::size_t baseB = static_cast<std::size_t>(260.0f + sizeNorm * 1800.0f);
     const std::size_t dA = std::min(dsp::Reverb::kSize - 1, std::max<std::size_t>(1, baseA));
     const std::size_t dB = std::min(dsp::Reverb::kSize - 1, std::max<std::size_t>(1, baseB));
-
-    struct Correlation {
-        double sx = 0.0, sy = 0.0, sxx = 0.0, syy = 0.0, sxy = 0.0, n = 0.0;
-        void Add(double x, double y) {
-            sx += x;
-            sy += y;
-            sxx += x * x;
-            syy += y * y;
-            sxy += x * y;
-            n += 1.0;
-        }
-        double Value() const {
-            const double num = n * sxy - sx * sy;
-            const double den = std::sqrt((n * sxx - sx * sx) * (n * syy - sy * sy));
-            return den > 0.0 ? num / den : 1.0;  // both channels constant (e.g. width==0): read as perfectly correlated.
-        }
-    };
 
     // Measures both regimes at one Damping/Stereo width pair over the same
     // noise burst, returning {sharedCorrelation, splitCorrelation}.
@@ -9614,6 +9616,141 @@ TEST_CASE(reverb_damping_filter_split_lowers_wet_leg_correlation_at_every_settin
     std::cout << "  [stereo width travel] this run's shared-regime travel=" << (sharedHigh - sharedLow)
               << " (does not reproduce the inherited figure of 0.044 -- different, unrecorded rig)"
               << "  post-split travel=" << (splitHigh - splitLow) << " -- the deliverable figure\n";
+}
+
+// Grid: both rows over Density/Stereo width in {0.0, 0.25, 0.5, 0.75, 1.0}.
+// The width row sweeps Stereo width with Density held at its registered
+// default (0.0); the density row sweeps Density with Stereo width held at
+// 0.5 -- Stereo width's own 0.0 default makes the wet pair bit-equal, which
+// would read the density row as a flat +1 regardless of what Density does.
+// Damping is held at its registered default (0.0) on both rows and is not
+// swept. Room size, Decay and Pre-delay stay at their registered defaults;
+// Send is opened to 1.0 because its own 0.0 default never feeds the tank.
+// Tap point: dsp::Reverb's own wetL/wetR read right after Process(), over
+// the same seed-20260913, warmup-12000-then-measure-12000 noise burst
+// reverb_damping_filter_split_lowers_wet_leg_correlation_at_every_setting
+// establishes, reusing the Correlation accumulator that case's own struct
+// was lifted from.
+//
+// Density's own row travels only a little and does not fall monotonically
+// across the grid -- it dips at the middle and rises again -- and this case
+// re-measures the row's midpoint (Density 0.5, Stereo width 0.5) under a
+// second noise seed, printing both values and their spread on the density
+// row midpoint reseed line below. That measured spread sits above what the
+// density row travels end to end, so this case does not assert which way
+// Density's row points, and does not assert that it is flat either: both
+// would be pinning noise. What does survive averaging over that noise is
+// size -- the width row travels far enough, and Density's travels little
+// enough, that a ten-times gap between them holds regardless of which way
+// the noise pushes Density's own two endpoints.
+TEST_CASE(reverb_density_correlation_travel_is_a_small_fraction_of_stereo_widths_live_monotonic_travel) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr int kWarmupSamples = 12000;
+    constexpr int kMeasureSamples = 12000;
+
+    std::uint32_t lcg = 20260913u;
+    std::vector<float> noise;
+    noise.reserve(kWarmupSamples + kMeasureSamples);
+    for (int i = 0; i < kWarmupSamples + kMeasureSamples; ++i) {
+        lcg = lcg * 1664525u + 1013904223u;
+        noise.push_back(0.5f * (static_cast<float>(lcg >> 8) / 8388608.0f - 1.0f));
+    }
+
+    constexpr float sizeKnob = 0.0f;   // registered default.
+    constexpr float decayKnob = 0.0f;  // registered default.
+    constexpr float preKnob = 0.0f;    // registered default.
+    constexpr float dampKnob = 0.0f;   // registered default -- held, not swept.
+
+    const auto measure = [&](float widthKnob, float densityKnob) {
+        dsp::Reverb rv;
+        rv.Configure(sampleRate);
+        Correlation split;
+        for (std::size_t i = 0; i < noise.size(); ++i) {
+            rv.Process(dsp::StereoSample{noise[i], noise[i]}, /*mixKnob01=*/0.0f, sizeKnob, decayKnob, preKnob,
+                       dampKnob, widthKnob, densityKnob, sampleRate, /*modDepthKnob01=*/0.0f,
+                       /*holdKnob01=*/0.0f, /*modRateKnob01=*/0.5f, /*tankDriveKnob01=*/0.5f,
+                       /*gritKnob01=*/0.0f, /*tiltKnob01=*/0.5f, /*tunedKnob01=*/0.5f, /*sendKnob01=*/1.0f);
+            if (static_cast<int>(i) >= kWarmupSamples) {
+                split.Add(rv.wetL, rv.wetR);
+            }
+        }
+        return split.Value();
+    };
+
+    constexpr float grid[5] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+
+    double widthCorr[5];
+    double widthLow = 2.0, widthHigh = -2.0;
+    for (int i = 0; i < 5; ++i) {
+        widthCorr[i] = measure(grid[i], /*densityKnob=*/0.0f);
+        std::cout << "  [density vs width travel] width row: width=" << grid[i]
+                  << " correlation=" << widthCorr[i] << "\n";
+        widthLow = std::min(widthLow, widthCorr[i]);
+        widthHigh = std::max(widthHigh, widthCorr[i]);
+    }
+    const double widthTravel = widthHigh - widthLow;
+
+    double densityLow = 2.0, densityHigh = -2.0;
+    double densityMidCorr = 0.0;
+    for (int i = 0; i < 5; ++i) {
+        const double corr = measure(/*widthKnob=*/0.5f, grid[i]);
+        std::cout << "  [density vs width travel] density row: density=" << grid[i]
+                  << " correlation=" << corr << "\n";
+        densityLow = std::min(densityLow, corr);
+        densityHigh = std::max(densityHigh, corr);
+        if (grid[i] == 0.5f) densityMidCorr = corr;
+    }
+    const double densityTravel = densityHigh - densityLow;
+
+    std::cout << "  [density vs width travel] width travel=" << widthTravel
+              << " density travel=" << densityTravel << " ratio=" << (widthTravel / densityTravel) << "\n";
+
+    // Reseed the density row's midpoint (Density 0.5, Stereo width 0.5)
+    // under a second, independent noise seed to measure this rig's own
+    // seed-to-seed noise floor at that point -- printed for context, not
+    // asserted, since a seed-to-seed spread is not a stable bound.
+    std::uint32_t altLcg = 778899001u;
+    std::vector<float> altNoise;
+    altNoise.reserve(kWarmupSamples + kMeasureSamples);
+    for (int i = 0; i < kWarmupSamples + kMeasureSamples; ++i) {
+        altLcg = altLcg * 1664525u + 1013904223u;
+        altNoise.push_back(0.5f * (static_cast<float>(altLcg >> 8) / 8388608.0f - 1.0f));
+    }
+    dsp::Reverb altRv;
+    altRv.Configure(sampleRate);
+    Correlation altSplit;
+    for (std::size_t i = 0; i < altNoise.size(); ++i) {
+        altRv.Process(dsp::StereoSample{altNoise[i], altNoise[i]}, /*mixKnob01=*/0.0f, sizeKnob, decayKnob, preKnob,
+                       dampKnob, /*widthKnob=*/0.5f, /*densityKnob=*/0.5f, sampleRate, /*modDepthKnob01=*/0.0f,
+                       /*holdKnob01=*/0.0f, /*modRateKnob01=*/0.5f, /*tankDriveKnob01=*/0.5f,
+                       /*gritKnob01=*/0.0f, /*tiltKnob01=*/0.5f, /*tunedKnob01=*/0.5f, /*sendKnob01=*/1.0f);
+        if (static_cast<int>(i) >= kWarmupSamples) {
+            altSplit.Add(altRv.wetL, altRv.wetR);
+        }
+    }
+    const double altMidCorr = altSplit.Value();
+    std::cout << "  [density vs width travel] density row midpoint reseed: seed-A=" << densityMidCorr
+              << " seed-B=" << altMidCorr << " spread=" << std::abs(altMidCorr - densityMidCorr) << "\n";
+
+    // Density's row moves correlation by far less than Stereo width's row
+    // does, over the same run.
+    REQUIRE_TRUE(widthTravel > 10.0 * densityTravel);
+    // The ratio above would pass vacuously, and more comfortably than it
+    // does now, if Density stopped reaching the tank at all: an unwired knob
+    // makes all five points bit-equal, drives the density travel to exactly
+    // zero, and reduces the comparison to "the width row moved". Everything
+    // in this run is deterministic, so a travel of exactly zero means
+    // bit-equal rather than merely small. This asserts that Density reaches
+    // the output at all, and deliberately asserts nothing about how far or
+    // in which direction -- its whole row travels less than the reseed
+    // spread printed above.
+    REQUIRE_TRUE(densityTravel > 0.0);
+    // Liveness: the width row actually moves, so a dead tank cannot hide
+    // behind a small ratio.
+    REQUIRE_TRUE(widthTravel > 0.5);
+    // Stereo width widens the stereo image across its whole travel, one step
+    // at a time: falling correlation is the two channels growing less alike.
+    for (int i = 1; i < 5; ++i) REQUIRE_TRUE(widthCorr[i] < widthCorr[i - 1]);
 }
 
 // Density's registered default (0.0) leaves the tank's own feed and
