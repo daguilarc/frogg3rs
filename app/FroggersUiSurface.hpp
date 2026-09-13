@@ -834,7 +834,7 @@ FroggersApprovedLabels() {
           "Reverse", "Diffusion", "FB drive", "FB tone", "Mod rate", "Width bal", "Crush"}},
         // Reverb -- no shortenings.
         {{"Wet/dry", "Send", "Room size", "Decay", "Pre-delay", "Damping", "Stereo width",
-          "Diffusion", "Mod", "Hold", "Tank drive", "Grit", "Tilt", "Tuned"}},
+          "Density", "Mod", "Hold", "Tank drive", "Grit", "Tilt", "Tuned"}},
     }};
     return labels;
 }

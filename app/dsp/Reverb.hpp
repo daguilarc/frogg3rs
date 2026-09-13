@@ -3,8 +3,8 @@
 // synth_froggers::dsp::Reverb -- a **copy** of the cited Froggers formulas
 // -- read directly from the firmware source before porting, not from memory.
 //
-// Ported (7 of the Reverb page's 9 params -- Wet/dry, Room size, Decay,
-// Pre-delay, Damping, Stereo width, Diffusion) from:
+// Ported (6 of the Reverb page's 9 params -- Wet/dry, Room size, Decay,
+// Pre-delay, Damping, Stereo width) from:
 //   - 08b5fd3:src/core/FroggersEngine.hpp:493-536  ProcessReverb, verbatim signal
 //     path (pre-delay tap, twin comb-ish delay lines A/B with cross-feed
 //     diffusion, shared damping low-pass, stereo width blend)
@@ -18,13 +18,22 @@
 //            .m_alpha = m_rvDamp.Process()`) -- NOT run through
 //            SetAlphaFromNatFreq; the ExpMap output IS the alpha.
 //       :460 Stereo width = GetParam(5), direct passthrough
-//       :461 Diffusion    = GetParam(6), direct passthrough
+//       :461 fed a tank cross-feed weight directly (Diffusion, direct
+//            passthrough) -- superseded in this file: slot 7 (Density,
+//            see its own paragraph below) no longer reads GetParam(6) into
+//            that weight.
 //   - 08b5fd3:src/core/FroggersEngine.hpp:847 (ApplyOutputFx) -- the Wet/dry
 //     blend `(1-rvMix)*output + rvMix*rvb` that actually consumes Wet/dry;
 //     ProcessReverb itself never reads m_rvMix.
 //   - 08b5fd3:src/core/FroggersEngine.hpp:65-69 (x_rvSize = 4096, the three
 //     x_rvSize-length ring buffers, and m_rvDampFilter's type OPLowPassFilter,
-//     ported here as the shared dsp::OnePoleLowPass).
+//     ported here as dsp::OnePoleLowPass) -- superseded in this file: the
+//     firmware ran both tank lines through that one instance's shared state,
+//     which is what pinned their correlation near the top of its range no
+//     matter what Stereo width was set to, so a control named for the stereo
+//     field could not deliver what its name promised. This file gives line A
+//     and line B their own instance instead (dampFilterA/dampFilterB, see
+//     their own field comment below).
 //
 // Pre-delay note: the firmware's ExpMap divided both endpoints by sampleRate
 // (`ExpMap(1.0f/sr, 100.0f/sr, knob)`) and ProcessReverb then re-multiplied
@@ -49,13 +58,31 @@
 // owned by Sheaf's parameter model -- callers of this unit pass already-
 // resolved 0..1 knob values per sample.
 //
+// Density (Reverb slot 7, was Diffusion): no longer a direct passthrough
+// into the tank's cross-feed. The tank's two lines cross-wire at a fixed
+// swap now (see that call site's own comment in Process(), below), and this
+// knob instead drives an authored dsp::DelayDiffuser (dsp/StereoField.hpp)
+// on the pre-delay tap, ahead of the tank -- the same input-diffusion role
+// Delay's own Diffusion plays on its wet tap, decorrelating what reaches
+// the tank rather than blending what the tank already holds. Authored, not
+// ported: the firmware's GetParam(6) never drove an allpass cascade.
+//
 // NOT ported (deliberately): Mod depth and Hold (Reverb page
 // slots 7 and 8). `m_reverbParams->GetParam(7)`/`GetParam(8)` are never
 // read anywhere in FroggersEngine.hpp -- confirmed by grep -- so there is
 // no formula to pin. They are newly authored below, clearly marked,
 // with behavioral (not parity) tests. At their neutral defaults
-// (modDepthKnob=0, holdKnob=0) the authored stage is a no-op, so the seven
-// ported params reproduce ProcessReverb + the Wet/dry blend exactly.
+// (modDepthKnob=0, holdKnob=0) the authored stage is a no-op, and at
+// Density's own registered default of 0.0 the input diffuser's output is
+// discarded (see that call site's own comment in Process(), below), so the
+// tank's own feed and cross-wire reproduce ProcessReverb's tank math exactly
+// at that setting. The FULL output no longer does, at Density 0.0 or anywhere
+// else: dampFilterA/dampFilterB's own split (this file's header, above)
+// changes what every Process() call returns regardless of Density, so
+// bit-identity between this port and ProcessReverb does not hold anywhere any
+// more. reverb_density_at_its_registered_default_differs_from_the_shared_filter_tank_it_replaced
+// (app/FroggersDspParityTests.cpp) measures the gap this leaves at Density's
+// own floor.
 
 #include "DspMath.hpp"
 #include "Drive.hpp"     // reuse dsp::DigitalReorganizer AS-IS for the Grit knob (same reuse Delay.hpp makes of dsp::SampleRateReducer).
@@ -203,6 +230,18 @@ struct Reverb
     static constexpr float kTiltCrossoverHz = 1000.0f;
     static constexpr float kTiltDepth = 1.0f;
 
+    // (slot 7, Density): scales the knob into `inputDiffuser`'s coefficient
+    // argument, Process()'s own comment on `densityCoeff` (below). Same
+    // stability margin `dsp::StereoDelay::kDiffusionCoeffScale` applies to
+    // this same dsp::DelayDiffuser type (dsp/Delay.hpp's own comment) --
+    // kept as its own named constant because this page reaches that bound
+    // independently, not because one call site's value feeds another's.
+    // Class-level (not local to Process()) so the parity replica that tracks
+    // this tank's current mechanism (UnsaturatedTankReplica,
+    // app/FroggersDspParityTests.cpp) can read the same value rather than
+    // carrying a second copy of the literal.
+    static constexpr float kDensityCoeffScale = 0.7f;
+
     float lineA[kSize]{};
     float lineB[kSize]{};
     float preLine[kSize]{};
@@ -210,11 +249,32 @@ struct Reverb
     size_t indexB = 0;
     size_t preIndex = 0;
 
-    // 08b5fd3:src/core/FroggersEngine.hpp:69, shared between the A and B taps just
-    // as the single m_rvDampFilter instance is (ported faithfully,
-    // including the shared-state quirk of filtering A then B in sequence
-    // through the same one-pole state each sample).
-    OnePoleLowPass dampFilter;
+    // (slot 7, Density): decorrelates the pre-delay tap before it reaches
+    // the tank. One instance, not a per-channel pair -- the tank's own feed
+    // is mono (see Process()'s own comment on `preLine`, below), so there is
+    // only one signal to diffuse. Runs at its own three section lengths
+    // (dsp::DelayDiffuser's own comment, dsp/StereoField.hpp), unretuned
+    // for this tank.
+    DelayDiffuser inputDiffuser;
+
+    // 08b5fd3:src/core/FroggersEngine.hpp:69 names one m_rvDampFilter; this
+    // file gives line A and line B their own instance instead of running both
+    // through that one instance in sequence each sample. dampFilterA damps
+    // only what line A's tap carries into the output, dampFilterB only what
+    // line B's carries -- the same corner (Damping sets both filters' alpha
+    // identically, below), but no shared recursive state between them. A
+    // shared filter's own state IS a signal (its recursive output feeds the
+    // next call's output), so filtering A then B through one instance mixed
+    // line B's result into whatever line A had just left behind, which is
+    // what pinned the tank's two output taps close together whatever Stereo
+    // width was set to (dsp::Reverb's own file header, above; measured
+    // across Damping's travel, correlation of the wet leg runs 0.9887 rising
+    // to 0.9995 with a shared filter, against 0.6042 rising to 0.6838 with
+    // this split). Splitting removes that coupling, so Stereo width's blend below
+    // (`wetL`/`wetR`) is now free to separate the two taps by as much as the
+    // tank's own signal actually supports.
+    OnePoleLowPass dampFilterA;
+    OnePoleLowPass dampFilterB;
 
     // (slot 12, "Tilt"): twin OnePoleLowPass instances sharing the same
     // fixed corner (kTiltCrossoverHz, recomputed from `sampleRate` every
@@ -294,16 +354,30 @@ struct Reverb
         // line just above follows -- see wetAuthority's own field comment
         // for what these coefficients now govern.
         wetAuthority.Configure(sampleRate);
+        // Same rule again -- the input diffuser's three sections size
+        // themselves from the real sample rate here, the same entry point
+        // `StereoDelay::SetSampleRate` uses for its own diffuserL/diffuserR
+        // (dsp/Delay.hpp).
+        inputDiffuser.SetSampleRate(sampleRate);
+        // dampFilterA/dampFilterB need no entry here: an `OnePoleLowPass`
+        // carries no sample-rate-dependent state of its own (unlike
+        // `inputDiffuser`'s three sections, sized in samples above) --
+        // `alpha` is recomputed fresh from `dampKnob01` on every Process()
+        // call, below, the same way it always was for the one filter this
+        // pair replaces, and the same way `tiltLowPass`/`tiltHighPass`'s
+        // `alpha` already is from `sampleRate` directly. Configure() sets up
+        // state a filter would otherwise carry stale between calls; this
+        // filter pair has none of that kind.
     }
 
     // (Stop-transport reset, app/FroggersAppCore.hpp's ProcessBlock
     // running->stopped edge): zero every member that carries signal energy
     // between calls to Process() -- the recursive comb-ish tank (lineA/
-    // lineB), the pre-delay line, all three ring indices, the shared
-    // damping filter's one-pole state (dampFilter.output; its `alpha`
-    // coefficient is recomputed from dampKnob01 every Process() call, so
-    // leaving it untouched is correct -- this clears state, it does not
-    // reconfigure), and the last computed wet outputs. Decay (up to 0.98)
+    // lineB), the pre-delay line, all three ring indices, both per-line
+    // damping filters' one-pole state (dampFilterA.output/dampFilterB.output;
+    // their `alpha` coefficient is recomputed from dampKnob01 every Process()
+    // call, so leaving it untouched is correct -- this clears state, it does
+    // not reconfigure), and the last computed wet outputs. Decay (up to 0.98)
     // and Hold (`fb` approaching but never reaching 1.0) make this
     // tank self-sustaining on its own, so without this the reverb keeps
     // ringing after the operator stops the transport.
@@ -323,11 +397,15 @@ struct Reverb
         indexA = 0;
         indexB = 0;
         preIndex = 0;
-        dampFilter.output = 0.0f;
+        // Same "must reset them too" rationale as the buffers just above --
+        // the input diffuser carries its own retained history.
+        inputDiffuser.Reset();
+        dampFilterA.output = 0.0f;
+        dampFilterB.output = 0.0f;
         // `tiltLowPass`/`tiltHighPass` carry their own recursive
         // one-pole state, same "must reset them too" rationale as
-        // `dampFilter.output` just above -- new state sitting downstream of
-        // the tank this clear is meant to silence.
+        // `dampFilterA.output`/`dampFilterB.output` just above -- new state
+        // sitting downstream of the tank this clear is meant to silence.
         tiltLowPass.output = 0.0f;
         tiltHighPass.output = 0.0f;
         tiltLowPassR.output = 0.0f;
@@ -349,21 +427,22 @@ struct Reverb
 
     // (Tier 1 recovery, app/FroggersAppCore.hpp): Reverb has NO
     // gate/bypass -- Process() unconditionally writes into lineA/lineB/
-    // preLine and unconditionally feeds `input` through dampFilter's shared
-    // one-pole state every call, regardless of any parameter -- so a single
-    // non-finite sample arriving from an upstream fault propagates into this
-    // unit's own state (first the pre-delay tap, typically within a handful
-    // of samples at default settings, then the room delay taps once the
-    // tainted ring slot is eventually read back) and, once dampFilter.output
-    // itself goes non-finite, poisons every future sample this Reverb ever
-    // produces -- permanently, since nothing else clears it. This is exactly
-    // the "audio never comes back" failure mode Tier 1 exists to fix, and
-    // Reverb is just as exposed to it as any other unit under Tier 1
-    // recovery; reuses this existing Reset() (the Stop-transport reset
+    // preLine and unconditionally feeds `input` through both damping
+    // filters' one-pole state every call, regardless of any parameter -- so a
+    // single non-finite sample arriving from an upstream fault propagates
+    // into this unit's own state (first the pre-delay tap, typically within a
+    // handful of samples at default settings, then the room delay taps once
+    // the tainted ring slot is eventually read back) and, once either
+    // filter's output itself goes non-finite, poisons every future sample
+    // this Reverb ever produces -- permanently, since nothing else clears it.
+    // This is exactly the "audio never comes back" failure mode Tier 1 exists
+    // to fix, and Reverb is just as exposed to it as any other unit under
+    // Tier 1 recovery; reuses this existing Reset() (the Stop-transport reset
     // above) rather than adding a duplicate.
     bool StateFinite() const
     {
-        if (!std::isfinite(dampFilter.output) || !std::isfinite(wetL) || !std::isfinite(wetR) ||
+        if (!std::isfinite(dampFilterA.output) || !std::isfinite(dampFilterB.output) ||
+            !std::isfinite(wetL) || !std::isfinite(wetR) ||
             !std::isfinite(modLfoPhase) || !std::isfinite(tiltLowPass.output) || !std::isfinite(tiltHighPass.output) ||
             !std::isfinite(tiltLowPassR.output) || !std::isfinite(tiltHighPassR.output))
         {
@@ -381,6 +460,13 @@ struct Reverb
         // already follows -- the wet-authority follower's own level must be
         // visible here too.
         if (!wetAuthority.StateFinite())
+        {
+            return false;
+        }
+        // Same "aggregate finiteness" rule the checks above already
+        // follow -- the input diffuser's own retained history must be
+        // visible here too.
+        if (!inputDiffuser.StateFinite())
         {
             return false;
         }
@@ -403,9 +489,11 @@ struct Reverb
     // clear" apart from "cleared once, then refilled."
     float StateMagnitude() const
     {
-        float magnitude = std::max({std::fabs(dampFilter.output), std::fabs(wetL), std::fabs(wetR),
+        float magnitude = std::max({std::fabs(dampFilterA.output), std::fabs(dampFilterB.output),
+                                     std::fabs(wetL), std::fabs(wetR),
                                      std::fabs(tiltLowPass.output), std::fabs(tiltHighPass.output),
-                                     std::fabs(tiltLowPassR.output), std::fabs(tiltHighPassR.output)});
+                                     std::fabs(tiltLowPassR.output), std::fabs(tiltHighPassR.output),
+                                     inputDiffuser.StateMagnitude()});
         for (size_t i = 0; i < kSize; ++i)
         {
             magnitude = std::max({magnitude, std::fabs(lineA[i]), std::fabs(lineB[i]), std::fabs(preLine[i])});
@@ -484,7 +572,7 @@ struct Reverb
                    float preKnob01,
                    float dampKnob01,
                    float widthKnob01,
-                   float diffusionKnob01,
+                   float densityKnob01,
                    float sampleRate,
                    float modDepthKnob01 = 0.0f,
                    float holdKnob01 = 0.0f,
@@ -601,28 +689,41 @@ struct Reverb
         const float decayFb = DecayFeedbackFromKnob(decayKnob01);
         const float fb = decayFb + (1.0f - decayFb) * std::min(holdKnob01, 0.999f);
 
-        const float diffusion = diffusionKnob01;  // :461, direct passthrough
-        // This tank's own coefficient scale, bounding the cross-feed weight
-        // the same way Delay's own `0.5f * widthBalance` bounds its
-        // cross-feed (dsp::StereoDelay::Process, dsp/Delay.hpp) -- kept as
-        // its own named constant rather than folded into Delay's, because
-        // Delay's 0.5f is half of a width blend a separate balance scalar
-        // then multiplies further, while this one bounds a tank cross
-        // outright. Two quantities that happen to share a value, not one
-        // quantity two call sites read.
-        static constexpr float kTankCrossFeedScale = 0.5f;
-        const float cross = diffusion * kTankCrossFeedScale;
-        // dsp::CrossFeedPair (dsp/StereoField.hpp) is identity on its FIRST
-        // argument at cross == 0, but this tank's own pre-existing zero-cross
-        // behavior is a full SWAP -- line A fed from line B's read and line B
-        // fed from line A's (see dsp::CrossFeedPair's own comment,
-        // dsp/StereoField.hpp). Passing the reads transposed (`valB` first,
-        // `valA` second) reproduces that swap exactly, rather than silently
-        // turning it into an identity the way passing them in reading order
-        // would.
-        const CrossedPair fed = CrossFeedPair(valB, valA, cross);
+        // The tank's two lines cross-wire at a fixed swap -- line A fed from
+        // line B's read and line B fed from line A's. dsp::CrossFeedPair
+        // (dsp/StereoField.hpp) is identity on its FIRST argument at
+        // cross == 0, and passing the reads transposed (`valB` first, `valA`
+        // second) at that fixed zero is what turns the identity into this
+        // swap (see dsp::CrossFeedPair's own comment). This used to be a
+        // knob-controlled blend toward a half-and-half mix as Diffusion
+        // rose; Density (below) now decorrelates the tank's own feed
+        // instead of blending what the tank already holds, so the swap
+        // stays fixed regardless of Density's setting.
+        const CrossedPair fed = CrossFeedPair(valB, valA, 0.0f);
         const float aFb = fed.a;
         const float bFb = fed.b;
+
+        // (slot 7, Density): decorrelates the signal reaching the tank,
+        // Dattorro's input-diffusion role -- ahead of the tank, not inside
+        // its feedback loop and not on the wet output (this file's header
+        // comment says why). `inputDiffuser` RUNS UNCONDITIONALLY every
+        // call, and only its OUTPUT is blended against `preOut` -- the same
+        // shape `StereoDelay::ApplyDiffusion` (dsp/Delay.hpp) already
+        // establishes, for the identical reason its own comment records:
+        // skipping the call at Density == 0 would leave the cascade's
+        // history frozen, so the first move off zero would replay whatever
+        // it last held instead of fresh input.
+        const float density = densityKnob01;
+        const float densityCoeff = density * kDensityCoeffScale;
+        const float diffusedFeed = inputDiffuser.Process(preOut, densityCoeff);
+        const float blendedFeed = preOut * (1.0f - density) + diffusedFeed * density;
+        // Exactness at the default is preserved by this explicit branch,
+        // not by trusting `preOut*(1-0) + diffusedFeed*0` to land on
+        // `preOut` regardless of what `diffusedFeed` computes to --
+        // "guaranteed rather than argued," the same rule
+        // `StereoDelay::Process`'s own Diffusion call site states for the
+        // identical reason.
+        const float tankFeed = (density == 0.0f) ? preOut : blendedFeed;
 
         // The reverb tank has an in-loop saturator, the same one used
         // elsewhere in this codebase, for consistency.
@@ -637,7 +738,7 @@ struct Reverb
         // -- reused, not reimplemented -- applied BEFORE the `fb`
         // multiply, exactly mirroring that fix's `fbk * PadeSaturator::Saturate(fbL)`.
         // `Saturate` clamps to +-1 unconditionally, so every write to
-        // lineA/lineB is now bounded by `|preOut| + fb` regardless of how
+        // lineA/lineB is now bounded by `|tankFeed| + fb` regardless of how
         // many round trips have already run -- a per-sample bound, not
         // merely a steady-state one.
         //
@@ -661,8 +762,8 @@ struct Reverb
         // defect that DC-block construction exists to fix (see Drive.hpp's
         // own divergence-note comment). Local instance (no persistent
         // signal state of its own -- flip/hashBits are config, reassigned
-        // fresh every call from gritKnob01, same idiom dampFilter.alpha
-        // uses above). gritKnob01 == 0.0f -> flip == 0, hashBits == 0 ->
+        // fresh every call from gritKnob01, same idiom dampFilterA.alpha/
+        // dampFilterB.alpha use above). gritKnob01 == 0.0f -> flip == 0, hashBits == 0 ->
         // Mangle(x,0,0) - Mangle(0,0,0) == x - 0 == x exactly (Drive.hpp's
         // own Mangle formula reduces to the identity at flip==hashBits==0),
         // an EXACT bit-identical bypass, not merely a small value -- the
@@ -674,7 +775,7 @@ struct Reverb
         const float bFbGrit = gritReorganizer.Process(bFb);
         // (slot 10, Tank drive): pre-gain on the ARGUMENT of Saturate
         // ONLY -- Saturate's
-        // own +-1 clamp still bounds this line to `|preOut| + fb` regardless
+        // own +-1 clamp still bounds this line to `|tankFeed| + fb` regardless
         // of tankDrive (writing `tankDrive * fb * Saturate(...)` instead
         // would raise that bound; deliberately not done, same reasoning
         // Delay's own Feedback-drive comment gives, dsp/Delay.hpp).
@@ -682,12 +783,17 @@ struct Reverb
         // (unity -- see kTankDriveMin/Max's own comment), so this alone
         // never disturbs the parity case either.
         const float tankDrive = TankDriveFromKnob(tankDriveKnob01);
-        const float aIn = preOut + fb * PadeSaturator::Saturate(tankDrive * aFbGrit);
-        const float bIn = preOut + fb * PadeSaturator::Saturate(tankDrive * bFbGrit);
+        const float aIn = tankFeed + fb * PadeSaturator::Saturate(tankDrive * aFbGrit);
+        const float bIn = tankFeed + fb * PadeSaturator::Saturate(tankDrive * bFbGrit);
 
-        dampFilter.alpha = DampAlphaFromKnob(dampKnob01);  // :459, :574
-        const float aOut = dampFilter.Process(valA);
-        const float bOut = dampFilter.Process(valB);
+        // :459, :574 Damping -- both filters take the same alpha (one
+        // knob, two independent lines; see dampFilterA/dampFilterB's own
+        // field comment for why they no longer share state).
+        const float dampAlpha = DampAlphaFromKnob(dampKnob01);
+        dampFilterA.alpha = dampAlpha;
+        dampFilterB.alpha = dampAlpha;
+        const float aOut = dampFilterA.Process(valA);
+        const float bOut = dampFilterB.Process(valB);
 
         lineA[indexA] = aIn;
         lineB[indexB] = bIn;

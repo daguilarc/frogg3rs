@@ -166,8 +166,14 @@ per-line filters. A replica is not the instrument. The measurement task below
 produces these again through the production router.
 
 This is a label-versus-mechanism defect of the same family as the rest of this
-chain: a control named Damping moves the stereo width, and the controls named
-for the stereo field move it less.
+chain. MEASURED, and not as first written: Stereo width moves L/R correlation
+0.044 across its travel, Damping 0.0107, and slot 7 only 0.000134. An earlier
+wording said the controls named for the stereo field move the image LESS than
+Damping does. That is true of slot 7 and false of Stereo width, which moves it
+four times more. What the sharing actually does is CAP the image: with one
+filter serving both lines, correlation never falls below 0.9559 however the
+width control is set, so raising Damping closes the tank and the control named
+for the stereo field cannot open it.
 
 ## Rulings carried forward
 
@@ -271,8 +277,11 @@ says afterwards.
   manual and quickdict bold entry to the parameter table by name and slot, so a
   parameter rename and its two document rows must land in the same step.
   `app/check_artifact_symbols_resolve.py` reads this change's own `tasks.md` and
-  `proposal.md`, and only once they are committed.
+  `proposal.md`, and only once they are staged or committed.
 - **Affected documents:** `MANUAL.md`, `QUICK_DICT.md`.
-- **Sound.** Reverb's slot 7 changes mechanism entirely, and Reverb's Stereo
-  width gains the cross-feed.
+- **Sound.** Reverb's slot 7 changes mechanism entirely, the tank's cross-feed
+  becomes a fixed coupling at the weight the retired knob's default carried, and
+  Damping runs one filter per tank line instead of one shared by both. Stereo
+  width does NOT gain the cross-feed: that was considered and dropped, because
+  no surveyed design ties the two.
 - **Delivery is a push to `main`.** This repository does not use pull requests.

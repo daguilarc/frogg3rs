@@ -770,8 +770,9 @@ material it currently leaves alone. Use **Send** to put the level back.
 **Stereo width** (slot 6) — spread between the tank's two internal taps in the final left/right
 output.
 
-**Diffusion** (slot 7) — cross-feed between the tank's two internal lines. Higher values smear
-the two lines into each other more.
+**Density** (slot 7) — decorrelates the signal before it reaches the tank, through a cascade of
+three short allpass sections applied to the pre-delay tap. At 0 this is an exact bypass; raising
+it progressively softens the attack of the tank's own reflections.
 
 **Mod** (slot 8) — depth of a slow sinusoidal wow on the tank's read taps, for chorus-y
 movement in the tail, at a fixed rate (0.35 Hz). 0 = no movement.

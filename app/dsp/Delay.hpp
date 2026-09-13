@@ -713,11 +713,10 @@ struct StereoDelay
 
         // 0.5f now scaled by widthBalance -- see SetWidthBalance's own
         // comment for how bound (a) (cross-feed stays in [0,1]) holds by
-        // construction. This 0.5f stays a literal rather than folding into
-        // dsp::Reverb's own kTankCrossFeedScale (dsp/Reverb.hpp): it is half
-        // of a width blend that widthBalance then scales further, while
-        // Reverb's constant bounds a tank cross outright -- two quantities
-        // that happen to share a value, not one quantity two call sites read.
+        // construction. This 0.5f stays a literal, its own value for this
+        // cross-feed's own bound -- half of a width blend that widthBalance
+        // then scales further, not a quantity shared with any other call
+        // site's cross-feed weight.
         const float cross = p.dwid * 0.5f * widthBalance;
         // dsp::CrossFeedPair (dsp/StereoField.hpp) is identity on its first
         // argument at cross == 0, which is exactly this call's own zero-cross

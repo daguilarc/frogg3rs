@@ -140,7 +140,7 @@ struct FroggersBankLayout {
 //   Delay    -- Wet/dry, Send, Delay time, Feedback, Stereo width, Freeze,
 //               Mod depth, Reverse blend, Diffusion
 //   Reverb   -- Wet/dry, Send, Room size, Decay, Pre-delay, Damping,
-//               Stereo width, Diffusion, Mod, Hold
+//               Stereo width, Density, Mod, Hold
 inline const std::array<FroggersBankLayout, kFroggersBankCount>& FroggersBankLayouts() {
     static const std::array<FroggersBankLayout, kFroggersBankCount> layouts{{
         {FroggersBankId::Audio, "Audio", synth::Color::Red, {{
@@ -283,7 +283,7 @@ inline const std::array<FroggersBankLayout, kFroggersBankCount>& FroggersBankLay
         {FroggersBankId::Reverb, "Reverb", synth::Color::Cyan, {{
             {"Wet/dry", "Wet"}, {"Send", "Send"}, {"Room size", "Room"}, {"Decay", "Decay"},
             {"Pre-delay", "PreDly"}, {"Damping", "Damp"}, {"Stereo width", "Width"},
-            {"Diffusion", "Diff"}, {"Mod", "Mod"}, {"Hold", "Hold"},
+            {"Density", "Dens"}, {"Mod", "Mod"}, {"Hold", "Hold"},
             // Default knob 0.5f for
             // TkDv/Tilt/Tund -- TkDv's ExpMapCompute(0.25,4,·) reproduces
             // unity (1.0f) exactly, Tilt's centre crossfade weight is exactly

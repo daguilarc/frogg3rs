@@ -93,7 +93,7 @@ Six banks — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 - **Pre-delay** (slot 4) — Time before input reaches the tank, 0.02 ms to about 85 ms.
 - **Damping** (slot 5) — low-pass on the tank output; darker AND quieter tail at higher knob.
 - **Stereo width** (slot 6) — Spread between the tank's two taps.
-- **Diffusion** (slot 7) — Cross-feed between the tank's two lines.
+- **Density** (slot 7) — Decorrelates the signal reaching the tank through a short allpass cascade; exact bypass at 0.
 - **Mod** (slot 8) — Sinusoidal wow depth on the tank's read taps, fixed 0.35 Hz rate.
 - **Hold** (slot 9) — Pushes tank feedback toward, never to, self-oscillation.
 - **Tank drive** (slot 10) — Pre-gain into the tank's feedback saturator, 0.25×–4×, unity at default.

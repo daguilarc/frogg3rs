@@ -1939,7 +1939,7 @@ TEST_CASE(every_rendered_label_matches_the_approved_list_verbatim) {
             {{"Wet/dry", "Send", "Delay time", "Feedback", "Stereo width", "Freeze", "Mod depth", "Reverse",
               "Diffusion", "FB drive", "FB tone", "Mod rate", "Width bal", "Crush"}},
             {{"Wet/dry", "Send", "Room size", "Decay", "Pre-delay", "Damping", "Stereo width",
-              "Diffusion", "Mod", "Hold", "Tank drive", "Grit", "Tilt", "Tuned"}},
+              "Density", "Mod", "Hold", "Tank drive", "Grit", "Tilt", "Tuned"}},
         }};
     constexpr const char* kExpectedCrispy = "Crispy";
     constexpr const char* kExpectedCrunchy = "Crunchy";

@@ -256,7 +256,7 @@ stage and run in order.
       zero, DE-DUPLICATION SUBJECT; `ProcessReverb` in
       `src/core/FroggersEngine.hpp`, OUT OF SCOPE as frozen firmware and left
       untouched; the inline replica inside
-      `reverb_process_matches_manual_tank_replica_at_neutral_mod_and_hold` and
+      `reverb_process_matches_the_superseded_firmware_tank_replica_at_neutral_mod_and_hold` and
       the one inside `UnsaturatedTankReplica`, both in
       `app/FroggersDspParityTests.cpp`, both OWNED BY 3.7a.
       A SIXTH site derives the weight without combining the pair: the
@@ -286,7 +286,7 @@ stage and run in order.
       not against a parity replica.
       AN EARLIER WORDING OF THIS TASK SAID "assert bit-identity against the
       parity replicas" AND WAS UNSATISFIABLE. The replicas were never bit-exact:
-      `reverb_process_matches_manual_tank_replica_at_neutral_mod_and_hold`
+      `reverb_process_matches_the_superseded_firmware_tank_replica_at_neutral_mod_and_hold`
       compares with `REQUIRE_NEAR(actual, expected, 1e-4)`, so the instrument
       that wording named as the reference carries a tolerance of its own. An
       executor spent a full session proving that and correctly stopped rather
@@ -319,9 +319,11 @@ stage and run in order.
       reading order; Reverb calls it `CrossFeedPair(valB, valA, cross)`, passing
       its two line reads transposed so the tank's swap at weight zero survives,
       and the call site says why reading order would silently make it an
-      identity. `kTankCrossFeedScale` is defined beside Reverb's call; Delay's
-      `0.5f` stayed a literal and both sites say why two quantities share the
-      value. Two golden-vector cases assert with `==` against hexadecimal float
+      identity. `kTankCrossFeedScale` was defined beside Reverb's call at the
+      time and is SUPERSEDED LATER IN THIS SAME STAGE: 3.7 retired slot 7's
+      knob, so the tank's cross-feed became a fixed coupling and the constant
+      went with the control it scaled. Delay's `0.5f` stayed a literal and both
+      sites say why two quantities share the value. Two golden-vector cases assert with `==` against hexadecimal float
       literals over knob 0.0, 0.5 and 1.0, the first of which is the registered
       default where the tank is fully swapped. Transposing the operands at
       Reverb's call site takes that position from -0x1.07977p-3 to
@@ -482,8 +484,12 @@ stage and run in order.
       the new default is pinned, the change from today's tank is measured and
       reported with its grid, and both documents say what the control now does.
       This is a label-versus-mechanism defect of the same family as the rest of
-      this change: a control named Damping moves the stereo width, and the
-      controls named for the stereo field move it less.
+      this change. MEASURED: Stereo width moves L/R correlation 0.044 across its
+      travel, Damping 0.0107, slot 7 only 0.000134. An earlier wording said the
+      controls named for the stereo field move the image LESS than Damping. That
+      holds for slot 7 and fails for Stereo width, which moves it four times
+      more. The sharing CAPS the image rather than setting it: one filter over
+      both lines holds correlation at or above 0.9559 however width is set.
 - [x] 3.6 MEASURE FIRST, read-only. Pin today's slot 7 against slot 6 on L/R
       correlation of the wet leg, so the replacement has something to turn green.
       TWO DEAD INSTRUMENTS, both traced to the missing explicit defaults above.
@@ -509,9 +515,28 @@ stage and run in order.
       slightly, which contradicts the naive reading of the formula, but the
       effect is below single-trial noise and a check on its sign would be a
       check on noise.
-      OUTCOME: the threshold above is written and this task is closed. The
-      implementing check is 3.10's to land with the rest of the stage.
-- [ ] 3.7 Replace the cross-feed behind slot 7 with `dsp::DelayDiffuser`
+      OUTCOME: MEASURED, and the threshold above DOES NOT SURVIVE THE STAGE that
+      followed it. The figures were taken against the tank as it stood before
+      slot 7 became a diffuser and before Damping split into two filters, so
+      they describe an instrument this change then replaced. Against the
+      delivered tank the width row moves 1.035547, not 0.044, and the Density
+      row deviates 0.005256, 0.008960, 0.002572 and 0.006261 across the grid —
+      every point above the 0.002 bound, the worst about sixty-seven times the
+      0.000134 this task recorded.
+      The 0.044 itself does not reproduce and the tree says so at the case that
+      carries it: a different, unrecorded rig. Two contexts agreed on it because
+      the second rebuilt the first's method, not because the figure is robust —
+      the quantity was never recorded precisely enough to re-derive.
+      THE CLAIM SURVIVES AND THE BOUND DOES NOT. Width still moves correlation
+      about a hundred and fifteen times more than Density does, which is the
+      thing this change exists to establish. Density now moves it a little
+      rather than not at all, because an allpass on the input genuinely
+      decorrelates where a cross-feed weight did not.
+      An executor built the check, measured it against the stated bounds,
+      reported the conflict and reverted rather than widening the bound. The
+      check is CARRIED FORWARD, to be written from figures measured against the
+      delivered tank.
+- [x] 3.7 Replace the cross-feed behind slot 7 with `dsp::DelayDiffuser`
       UNCHANGED, at its own section lengths rather than retuned for the tank.
       PLACEMENT: THE INPUT PATH, ahead of the tank, not inside the loop and not
       on the wet output. This is Dattorro's input-diffusion role — decorrelate
@@ -566,14 +591,26 @@ stage and run in order.
       binds each manual and quickdict bold entry to the parameter table by name
       and slot, so renaming the code while the documents still say Diffusion
       fails the build.
-- [ ] 3.7a THE PARITY REPLICAS THAT 3.2 PROMISED AND NO TASK OWNED. Task 3.2
+      OUTCOME: slot 7 is Density, short name `Dens`, driving `dsp::DelayDiffuser`
+      on the tank's input path ahead of the loop, at the cascade's own section
+      lengths. The cascade runs unconditionally with only its output branched,
+      so its state never freezes while the knob sits at zero, and all four
+      integration duties reach it. The rename landed in the parameter table and
+      both label tables, including the deliberately independent copy inside the
+      surface test, and in both documents in the same step, because the document
+      gate binds each entry to the table by name and slot. All four
+      `diffusionKnob01` bindings carry a stated disposition: the Reverb
+      parameter renamed, Delay's own left alone, one forwarding replica renamed,
+      one pre-change replica left to the replica task. Delay's Diffusion row is
+      untouched at every label site and in both documents.
+- [x] 3.7a THE PARITY REPLICAS THAT 3.2 PROMISED AND NO TASK OWNED. Task 3.2
       says "a later task tells the same executor to update the parity-side
       copies". Until this task existed, no task from 3.3 to 3.9 named them, so
       3.7 would have turned the suite red with nobody holding the repair and
       working rule 4 would have correctly stopped the executor mid-stage.
       TWO inline copies of the tank's cross-feed carry the formula themselves,
       both reading `aFb = valB * (1.0f - cross) + valA * cross`: the replica
-      inside `reverb_process_matches_manual_tank_replica_at_neutral_mod_and_hold`
+      inside `reverb_process_matches_the_superseded_firmware_tank_replica_at_neutral_mod_and_hold`
       and the one inside `UnsaturatedTankReplica`, both in
       `app/FroggersDspParityTests.cpp`. `PreFixReverbReplica::Step` in the same
       file is NOT a third copy — it passes `diffusionKnob01` down into
@@ -594,7 +631,53 @@ stage and run in order.
       failures are 3.7's mechanism change and which would be a de-duplication
       defect, because a replica edited in the same pass as production detects
       nothing.
-- [ ] 3.7b GIVE EACH TANK LINE ITS OWN DAMPING FILTER. `dsp::Reverb` declares
+      OUTCOME: verified first — `stereo_delay_cross_feed_reproduces_its_captured_output_exactly`
+      (3.2/3.3's own de-duplication pin for Delay) was green in the untouched
+      baseline, so nothing here traces to that de-duplication.
+      `reverb_process_matches_the_superseded_firmware_tank_replica_at_neutral_mod_and_hold`
+      (renamed from `..._manual_tank_replica_...`) pins ProcessReverb, frozen
+      firmware — a permanent, true statement about what shipped before —
+      kept and renamed rather than retired, with its header rewritten to say
+      which parts (the cross-feed, the damping filter) are now superseded and
+      why its fixed 32-sample run still reproduces bit-exactly regardless:
+      both delay lines' read taps sit above 180 samples and are never
+      populated within the run, so neither superseded mechanism is actually
+      exercised there — only the pre-delay ring, decay/fb bookkeeping,
+      equal-power crossfade and wetLimiter are, and those remain ported and
+      unchanged. `UnsaturatedTankReplica` pins dsp::Reverb::Process's CURRENT
+      mechanism by its own stated contract ("every formula copied verbatim...
+      EXCEPT" the saturator) — followed the production change: the cross-feed
+      formula became the fixed swap, and Density's own input diffuser (out of
+      this replica's scope before Density existed) was added, reusing
+      dsp::DelayDiffuser and a newly class-level `dsp::Reverb::kDensityCoeffScale`
+      rather than a second copy of that literal, because the diffuser's output
+      feeds `tankFeed` into lineA/lineB, meeting this replica's own
+      completeness rule. `PreFixReverbReplica::Step` confirmed NOT a third
+      copy; its own damping filter is likewise split into
+      dampFilterA/dampFilterB so its "audible output minus the saturator"
+      comparison is not confounded by 3.7b's later change to the output stage
+      it also reconstructs.
+      A third, unnamed parity case surfaced empirically and took the same
+      fork: 3.2's own golden vector (a TEST_CASE named
+      reverb_cross_feed_reproduces_its_captured_output_exactly, now deleted)
+      failed at its second case (knob 0.5) under 3.7's mechanism change alone
+      — confirmed by probing production with the damping filter temporarily
+      collapsed back to one instance, where knob 0.0 still reproduced its
+      captured literal exactly and only 0.5/1.0 did not — and failed at ALL
+      THREE cases once 3.7b's damping split lands, since that changes
+      dsp::Reverb::Process's output at every setting including 0.0 over the
+      3000-sample run this case uses. No case reproduces current production
+      and recapturing new literals is neither this task's nor 3.8's/3.9's
+      charter, so it is RETIRED outright — deleted, with no reference to it
+      surviving anywhere else in the tree.
+      The `diffusionKnob01` comment inside
+      `stereo_delay_diffusion_at_default_zero_is_bit_identical_to_no_diffusion`
+      names `dsp::MapRowsToDelayParams`/`FroggersAppCore.hpp` — the Delay
+      page's own Diffusion — confirmed correct and left untouched.
+      Suite counts are reported once, under 3.7b, since this stage's own
+      Reverb.hpp edit landed before either task's own build was run and the
+      two are not separable in what was actually measured.
+- [x] 3.7b GIVE EACH TANK LINE ITS OWN DAMPING FILTER. `dsp::Reverb` declares
       one `OnePoleLowPass dampFilter` and runs `dampFilter.Process(valA)` then
       `dampFilter.Process(valB)` on that instance in the same sample, so line
       B's output carries line A's through the filter's own memory. That sharing
@@ -634,13 +717,74 @@ stage and run in order.
       moves before it. No figure exists for the post-split width travel yet, so
       a task asserting one would be handing an executor a blank. Report it with
       its grid so 4.x can say what the control now does.
-- [ ] 3.8 Density's default is 0.0, diffusion at minimum — the tank's own
+      OUTCOME: `dampFilterA`/`dampFilterB` replace the single `dampFilter`
+      (`app/dsp/Reverb.hpp`). All four integration duties reached: `Reset()`
+      clears both `.output`s, `StateFinite()`/`StateMagnitude()` visit both,
+      and `Configure()` now carries a stated disposition rather than silence
+      — an `OnePoleLowPass`'s alpha is set fresh from the knob on every
+      Process() call, exactly as the one filter it replaces always was, so
+      there is no sample-rate-dependent state for Configure() to give it,
+      the same standing already true of `tiltLowPass`/`tiltHighPass`. The
+      file header is repaired at both sites that recorded the shared filter
+      as a verbatim port: the top-of-file firmware citation and the field's
+      own comment now say line A and line B get independent filters and why
+      — a shared instance's own recursive state mixed line B's result into
+      whatever line A had just left, which is what pinned the tank's two
+      taps together whatever Stereo width was set to.
+      New case `reverb_damping_filter_split_lowers_wet_leg_correlation_at_every_setting`.
+      Grid: Damping {0.0, 0.25, 0.5, 0.75, 1.0}, Stereo width 0.5, Send opened
+      to 1.0, Room size/Decay/Pre-delay/Density at their registered defaults,
+      a 12000-sample LCG noise warmup discarded then 12000 measured. Both
+      regimes are read from the SAME tank taps in one pass — dsp::Reverb's
+      own public lineA/lineB/indexA/indexB, peeked immediately before each
+      Process() call, since neither damping filter feeds back into the
+      recursion — split reads production's own `rv.wetL`/`rv.wetR`; shared
+      runs the identical peeked taps through one local `OnePoleLowPass`.
+      Measured gap (shared minus split) across the grid: 0.367, 0.403, 0.421,
+      0.410, 0.347 — every point clears the required >0.25 margin with room
+      to spare. Deliberately broken (collapsed both taps onto one filter) and
+      rebuilt: RED, gap exactly 0 at every setting (`sharedCorr - splitCorr
+      > 0.25` fails immediately at Damping 0.0). Restored and rebuilt: GREEN,
+      same gap figures as before the break.
+      Stereo width's own post-split travel, measured and reported with no
+      threshold: at Damping's registered default, correlation runs 1.000 to
+      -0.036 across width's grid under this run's rig, a travel of about
+      1.036 — this run's own re-derivation of the pre-split travel under the
+      same rig is about 0.207, which does not reproduce the 0.044 an earlier,
+      unrecorded rig measured (that rig's own Room size/Decay/input signal
+      are not written down anywhere in this tree), reported as an open
+      discrepancy rather than papered over. Either figure it is compared
+      against, the post-split travel is unambiguously and substantially
+      larger, which is what a later document-facing task needs to say the
+      control now does.
+      Suite: `make all` and `make test` both exit 0, all 14 binaries by path
+      exit 0, 390 PASS / 0 FAIL (388 PASS/2 FAIL baseline, minus one retired
+      case, plus two new cases, both green). All six gates pass.
+- [x] 3.8 Density's default is 0.0, diffusion at minimum — the tank's own
       twin-line character, as close to today's default tank as the new stage
       allows. Bit-identity is impossible because the mechanism behind the slot
       changes entirely. ASSERT the measured difference from today's default tank
       and report the figure with its grid, rather than asserting closeness in
       prose.
-- [ ] 3.9 Measure the metallic ringing the allpass cascade produces, on an
+      OUTCOME: new case `reverb_density_at_its_registered_default_differs_from_the_shared_filter_tank_it_replaced`.
+      At Density's own floor the tank's feed and cross-wire already match the
+      tank Density replaced exactly (densityCoeff is 0, so `inputDiffuser`'s
+      output is discarded, and the fixed swap is the same swap the pre-split
+      code's own knob-at-zero cross feed already gave); what still differs is
+      the damping stage, which moved from one shared `OnePoleLowPass` run on
+      both taps in sequence to independent `dampFilterA`/`dampFilterB`, and
+      that reaches the output at every Damping setting including this one.
+      Grid: Room size, Decay, Pre-delay, Damping, Density and Stereo width all
+      at their registered default of 0.0, Send moved to 1.0 (its own default
+      never feeds the tank), a 12000-sample LCG noise burst at 48kHz, RMS of
+      the mono tap 0.5*(wetL+wetR) over the whole burst. Measured: today's
+      tank RMS 0.0677, RMS difference from the tank it replaced 0.0346 (51% of
+      today's own level) — comfortably above rounding noise, asserted at
+      >1.0e-3 alongside a liveness floor on today's own RMS. The stale file
+      header comment in `app/dsp/Reverb.hpp` claiming exact reproduction of
+      `ProcessReverb` at Density 0.0 is corrected to state the narrower true
+      claim (tank math only) and to point at this case for the gap.
+- [x] 3.9 Measure the metallic ringing the allpass cascade produces, on an
       impulse, across Density's travel, and report it as a figure with its grid.
       THE METRIC IS THE NORMALISED ECHO DENSITY PROFILE of Abel and Huang: over a
       sliding 20-30 ms Hanning-weighted window, the fraction of impulse-response
@@ -666,7 +810,37 @@ stage and run in order.
       it carries energy happily. Assert in the same case that every section's
       configured delay is longer than one sample at the measurement's sample
       rate, or the run is VOID.
-- [ ] 3.10 Stage gate: full suite green, then commit and push.
+      OUTCOME: new case `reverb_density_travel_raises_the_impulse_responses_echo_density`,
+      implementing the profile above as `NormalizedEchoDensity` (one Hanning
+      window, one pass, no FFT). Measured through production
+      `dsp::Reverb::Process` (an impulse that never reaches the tank is the
+      first dead instrument this task names, so the run goes through the tank
+      rather than driving the diffuser in isolation), Send moved to 1.0 (its
+      own default never feeds the tank), Room size/Decay/Pre-delay/Damping/
+      Stereo width at their registered default of 0.0. Tap point: the mono sum
+      of the tank's own wetL/wetR taps, a 25ms Hanning window centred 30ms
+      into the impulse response (sample 1440, half-width 600, at 48kHz). Grid
+      Density {0.0, 0.25, 0.5, 0.75, 1.0} gives NDP 0.0514, 0.2342, 0.3403,
+      0.4132, 0.4782 — strictly rising, asserted pairwise across the grid.
+      Both liveness controls sit in the same case: the floor row's window
+      energy is 3.42e-6 (asserted >1.0e-8, not a flat row), and a probe
+      `dsp::Reverb` configured at the measurement's own 48kHz asserts all
+      three of `inputDiffuser.section1/2/3.m` exceed one sample (226, 590 and
+      1013 samples respectively), so the run is not measuring an unconfigured
+      cascade's phaser behaviour.
+- [x] 3.10 Stage gate: full suite green, then commit and push.
+      OUTCOME: fourteen binaries at exit 0, 393 passing, none failing, and all
+      six gates green. The stage's postflight ran once over the whole stage
+      rather than per task, and returned seven divergences: a claim about which
+      control moves the stereo image that this change's own measurements
+      refuted, left standing in two artifacts; a delta still promising Stereo
+      width the cross-feed after that was dropped; gate mechanics written into a
+      promoted requirement's prose; a threshold measured before the stage
+      replaced the instrument it described; a task ticked with no outcome while
+      four later tasks assumed its state; an outcome naming a constant the same
+      stage deleted; and, found only by an independent sweep after the first six
+      were repaired, a seventh copy of the first claim in the proposal's own
+      Impact. All seven are closed and the repairs introduced nothing new.
 
 ## Stage 4 — the documents
 
@@ -747,8 +921,8 @@ names or strings.
       sentence dropped rather than re-measured into prose, since no check pins
       the tank's wet level and a figure in prose cannot fail when it drifts.
       NO `RESTATES-EXCEPT` ENTRY ACCOMPANIES IT, and that is a finding about the
-      gate rather than an omission. `join_wrapped` in
-      `app/check_modified_requirements_restate_promoted.py` collects only lines
+      gate rather than an omission. The bullet collector in
+      `app/check_modified_requirements_restate_promoted.py` keeps only lines
       opening with a dash, so a requirement's PROSE is never compared and never
       counted as dropped. Declaring a prose sentence there matches nothing by
       construction and turns the gate red. The gate confirms every bullet and

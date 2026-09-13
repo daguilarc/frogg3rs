@@ -3816,13 +3816,36 @@ TEST_CASE(reverb_wet_dry_mix_is_affine_in_mix_knob_at_fixed_history) {
     }
 }
 
-TEST_CASE(reverb_process_matches_manual_tank_replica_at_neutral_mod_and_hold) {
-    // Full-chain regression pin: an independent manual re-derivation of
-    // ProcessReverb's tank (pre-delay ring, twin delay lines with diffusion
-    // cross-feed, shared damping filter, stereo width blend), built directly
-    // from src/core/FroggersEngine.hpp:301-342 rather than by calling dsp::Reverb, run
-    // in lockstep against dsp::Reverb::Process at modDepth=0/hold=0 (the
-    // parity default) over several samples with a fixed knob set.
+TEST_CASE(reverb_process_matches_the_superseded_firmware_tank_replica_at_neutral_mod_and_hold) {
+    // Regression pin against a frozen reference: an independent manual
+    // re-derivation of ProcessReverb's tank (pre-delay ring, twin delay
+    // lines with a Diffusion-weighted cross-feed, one shared damping filter,
+    // stereo width blend), built directly from
+    // src/core/FroggersEngine.hpp:301-342 rather than by calling
+    // dsp::Reverb, run in lockstep against dsp::Reverb::Process at
+    // modDepth=0/hold=0 (the parity default) over several samples with a
+    // fixed knob set.
+    //
+    // dsp::Reverb's own tank has since diverged from this replica at any
+    // nonzero Density: the cross-feed is now a fixed swap regardless of the
+    // knob (dsp::Reverb::Process's own comment on `fed`), Density instead
+    // decorrelates the pre-tank feed through an authored allpass cascade
+    // this replica never modeled, and the damping filter is now two
+    // per-line instances rather than one shared instance. This replica
+    // keeps the ORIGINAL firmware formula unchanged -- still a true
+    // statement about what ProcessReverb (frozen firmware) computes -- so
+    // what it pins is that superseded tank, not dsp::Reverb's current one.
+    //
+    // The knob set below still passes, and for a reason worth stating
+    // plainly rather than leaving it looking like live cross-feed/damping
+    // coverage: room size keeps both delay lines' read taps above 180
+    // samples (dsp::Reverb::Process's own dA/dB floor), and this run is
+    // only 32 samples long, so lineA/lineB never return a nonzero read --
+    // every formula downstream of them, the cross-feed and the damping
+    // filter alike, sees zero under both the superseded tank and the
+    // current one. What this run still exercises bit-exactly is the
+    // pre-delay ring, the decay/fb bookkeeping, the equal-power wet/dry
+    // crossfade and the wetLimiter -- all still ported and unchanged.
     constexpr size_t kSize = dsp::Reverb::kSize;
     static float lineA[kSize]{};
     static float lineB[kSize]{};
@@ -3960,7 +3983,7 @@ TEST_CASE(reverb_wet_authority_tracks_whether_send_is_open_and_the_tank_is_fed) 
             const float decayKnob = 0.5f + 0.4f * std::sin(0.0013f * static_cast<float>(step));
             rv.Process(dsp::StereoSample{input, input}, /*mixKnob01=*/0.6f, sizeKnob, decayKnob,
                        /*preKnob01=*/0.2f, /*dampKnob01=*/0.5f, /*widthKnob01=*/0.4f,
-                       /*diffusionKnob01=*/0.5f, sr, /*modDepthKnob01=*/0.3f, /*holdKnob01=*/0.4f,
+                       /*densityKnob01=*/0.5f, sr, /*modDepthKnob01=*/0.3f, /*holdKnob01=*/0.4f,
                        /*modRateKnob01=*/0.5f, /*tankDriveKnob01=*/0.5f, /*gritKnob01=*/0.0f,
                        /*tiltKnob01=*/0.5f, /*tunedKnob01=*/0.5f, sendKnob);
             authority = rv.wetAuthority.Authority();
@@ -4223,23 +4246,34 @@ TEST_CASE(reverb_tuned_sweeps_never_raise_the_peak_above_the_stage_ceiling) {
 // -----------------------------------------------------------------------
 // Positive-control fixture: a minimal, LOCAL manual replica of ONLY the
 // recursive relationship that determines dsp::Reverb's own lineA/lineB
-// growth (pre-delay tap, room-size-derived per-line delay length,
-// diffusion cross-feed, `fb`) -- every formula copied verbatim from
-// dsp::Reverb::Process (dsp/Reverb.hpp) EXCEPT the one line the fix
-// changed: no PadeSaturator::Saturate here, deliberately -- this is the
-// pre-fix shape.
+// growth (pre-delay tap, room-size-derived per-line delay length, a fixed
+// cross-feed swap, Density's pre-tank input diffuser, `fb`) -- every
+// formula copied verbatim from dsp::Reverb::Process (dsp/Reverb.hpp) EXCEPT
+// the one line the fix changed: no PadeSaturator::Saturate here,
+// deliberately -- this is the pre-fix shape.
 //
-// Deliberately omits dampFilter/width/mix/wetLimiter: dsp::Reverb::Process
-// never feeds any of those back into lineA/lineB -- `dampFilter.Process`
-// reads valA/valB for the OUTPUT path only, computed from the SAME valA the
-// tank write above it also reads, never from aIn/aOut -- so omitting them
-// changes nothing about the question this replica exists to answer (the
-// tank's OWN growth). PreFixReverbReplica below adds exactly those omitted
-// output-path stages on top of this one, rather than restating the tank.
+// Density's diffuser IS modeled, reusing dsp::DelayDiffuser and
+// dsp::Reverb::kDensityCoeffScale directly rather than re-deriving them: its
+// output feeds `tankFeed`, which is written into lineA/lineB below, so it
+// is exactly the kind of thing this replica's own completeness rule
+// requires (see the dampFilterA/dampFilterB paragraph just below) --
+// omitting it left this replica tracking a `preOut`-fed tank that
+// dsp::Reverb::Process stopped being the moment Density shipped, and the
+// gap only became visible once a nonzero Density value pushed real energy
+// through the cascade this replica never had.
+//
+// Deliberately omits dampFilterA/dampFilterB/width/mix/wetLimiter:
+// dsp::Reverb::Process never feeds any of those back into lineA/lineB --
+// each damping filter reads valA or valB for the OUTPUT path only, computed
+// from the SAME valA the tank write above it also reads, never from
+// aIn/aOut -- so omitting them changes nothing about the question this
+// replica exists to answer (the tank's OWN growth). PreFixReverbReplica
+// below adds exactly those omitted output-path stages on top of this one,
+// rather than restating the tank.
 //
 // Distinct from this file's own
-// reverb_process_matches_manual_tank_replica_at_neutral_mod_and_hold, which
-// is NOT duplication of these two: that
+// reverb_process_matches_the_superseded_firmware_tank_replica_at_neutral_mod_and_hold,
+// which is NOT duplication of these two: that
 // test re-derives the tank from FroggersEngine.hpp's raw ExpMapCompute
 // calls precisely so it does NOT go through dsp::Reverb's own static
 // helpers -- its independence from them IS its assertion, and routing it
@@ -4251,9 +4285,18 @@ struct UnsaturatedTankReplica {
     float lineB[kSize]{};
     float preLine[kSize]{};
     size_t indexA = 0, indexB = 0, preIndex = 0;
+    // Same entry point as dsp::Reverb::Configure's own inputDiffuser.
+    // SetSampleRate call (dsp/Reverb.hpp) -- done once here, at
+    // construction, rather than every Step() call, because Configure()
+    // (SchroederAllpassSection's own comment, dsp/StereoField.hpp) clears
+    // the cascade's history, and this replica needs that history to
+    // persist across samples the same way production's does.
+    dsp::DelayDiffuser inputDiffuser;
+
+    explicit UnsaturatedTankReplica(float sampleRate) { inputDiffuser.SetSampleRate(sampleRate); }
 
     // Same formulas, same argument order as dsp::Reverb::Process's own
-    // pre-delay/room-size/diffusion/fb math -- minus the
+    // pre-delay/room-size/cross-feed/density/fb math -- minus the
     // PadeSaturator::Saturate wrap (the one line this struct exists to
     // omit, marked below).
     //
@@ -4265,7 +4308,7 @@ struct UnsaturatedTankReplica {
     // so readA/readB can never equal indexA/indexB and this sample's writes
     // cannot disturb this sample's reads.
     std::pair<float, float> Step(float input, float sizeKnob01, float decayKnob01, float preKnob01,
-                                 float diffusionKnob01, float sampleRate, float holdKnob01) {
+                                 float densityKnob01, float sampleRate, float holdKnob01) {
         const float preNorm = dsp::Reverb::PreDelayNormFromKnob(preKnob01, sampleRate);
         size_t preDelay = static_cast<size_t>(std::round(preNorm * sampleRate));
         if (preDelay >= kSize) {
@@ -4288,14 +4331,25 @@ struct UnsaturatedTankReplica {
 
         const float decayFb = dsp::Reverb::DecayFeedbackFromKnob(decayKnob01);
         const float fb = decayFb + (1.0f - decayFb) * std::min(holdKnob01, 0.999f);
-        const float cross = diffusionKnob01 * 0.5f;
-        const float aFb = valB * (1.0f - cross) + valA * cross;
-        const float bFb = valA * (1.0f - cross) + valB * cross;
+        // Fixed swap -- dsp::Reverb::Process's own cross-feed no longer
+        // reads Density into a cross weight (its own comment on `fed`).
+        const float aFb = valB;
+        const float bFb = valA;
+
+        // (Density): same shape as dsp::Reverb::Process's own tankFeed
+        // blend, reusing that struct's kDensityCoeffScale rather than a
+        // second copy of the literal. Runs unconditionally, same reason
+        // production's does (its own comment): a branch around the call
+        // would leave the cascade's history frozen at Density's default.
+        const float densityCoeff = densityKnob01 * dsp::Reverb::kDensityCoeffScale;
+        const float diffusedFeed = inputDiffuser.Process(preOut, densityCoeff);
+        const float blendedFeed = preOut * (1.0f - densityKnob01) + diffusedFeed * densityKnob01;
+        const float tankFeed = (densityKnob01 == 0.0f) ? preOut : blendedFeed;
 
         // Pre-fix shape, deliberately: no PadeSaturator::Saturate here --
         // this is the whole reason this struct exists.
-        const float aIn = preOut + aFb * fb;
-        const float bIn = preOut + bFb * fb;
+        const float aIn = tankFeed + aFb * fb;
+        const float bIn = tankFeed + bFb * fb;
 
         lineA[indexA] = aIn;
         lineB[indexB] = bIn;
@@ -4306,12 +4360,12 @@ struct UnsaturatedTankReplica {
     }
 
     // Mirrors dsp::Reverb::StateMagnitude()'s own scan exactly (lineA,
-    // lineB, preLine -- this replica has no dampFilter/wetL/wetR to fold
-    // in), so the two numbers these tests compare are computed the
-    // identical way: an apples-to-apples comparison, not two different
-    // metrics that happen to share a name.
+    // lineB, preLine, inputDiffuser -- this replica has no dampFilterA/
+    // dampFilterB/wetL/wetR to fold in), so the two numbers these tests
+    // compare are computed the identical way: an apples-to-apples
+    // comparison, not two different metrics that happen to share a name.
     float StateMagnitude() const {
-        float magnitude = 0.0f;
+        float magnitude = inputDiffuser.StateMagnitude();
         for (size_t i = 0; i < kSize; ++i) {
             magnitude = std::max({magnitude, std::fabs(lineA[i]), std::fabs(lineB[i]), std::fabs(preLine[i])});
         }
@@ -4334,22 +4388,30 @@ struct UnsaturatedTankReplica {
 // -----------------------------------------------------------------------
 struct PreFixReverbReplica {
     UnsaturatedTankReplica tank;
-    dsp::OnePoleLowPass dampFilter;
+    // Split the same way dsp::Reverb's own dampFilterA/dampFilterB are
+    // (dsp/Reverb.hpp): this replica's job is the audible OUTPUT the tank
+    // produces with everything EXCEPT the saturator matching current
+    // production, and a still-shared filter here would confound that
+    // comparison with a second, unintended difference.
+    dsp::OnePoleLowPass dampFilterA;
+    dsp::OnePoleLowPass dampFilterB;
     dsp::OutputLimiter wetLimiter;
 
-    explicit PreFixReverbReplica(float sampleRate) {
+    explicit PreFixReverbReplica(float sampleRate) : tank(sampleRate) {
         wetLimiter.Configure(sampleRate, dsp::kReverbWetLimiterThreshold, dsp::kReverbWetLimiterCeiling,
                               dsp::kReverbWetLimiterAttackSeconds, dsp::kReverbWetLimiterReleaseSeconds);
     }
 
     float Step(float input, float mixKnob01, float sizeKnob01, float decayKnob01, float preKnob01,
-               float dampKnob01, float widthKnob01, float diffusionKnob01, float sampleRate, float holdKnob01) {
+               float dampKnob01, float widthKnob01, float densityKnob01, float sampleRate, float holdKnob01) {
         const auto [valA, valB] =
-            tank.Step(input, sizeKnob01, decayKnob01, preKnob01, diffusionKnob01, sampleRate, holdKnob01);
+            tank.Step(input, sizeKnob01, decayKnob01, preKnob01, densityKnob01, sampleRate, holdKnob01);
 
-        dampFilter.alpha = dsp::Reverb::DampAlphaFromKnob(dampKnob01);
-        const float aOut = dampFilter.Process(valA);
-        const float bOut = dampFilter.Process(valB);
+        const float dampAlpha = dsp::Reverb::DampAlphaFromKnob(dampKnob01);
+        dampFilterA.alpha = dampAlpha;
+        dampFilterB.alpha = dampAlpha;
+        const float aOut = dampFilterA.Process(valA);
+        const float bOut = dampFilterB.Process(valB);
 
         const float mid = 0.5f * (aOut + bOut);
         const float wetL = mid + widthKnob01 * (aOut - mid);
@@ -4377,7 +4439,12 @@ TEST_CASE(reverb_tank_stays_bounded_under_sustained_overdrive_at_max_decay_and_h
     constexpr float sizeKnob = 0.0f;
     constexpr float decayKnob = 1.0f;      // -> decayFb = 0.98 (ceiling).
     constexpr float preKnob = 0.1f;
-    constexpr float diffusionKnob = 0.4f;  // nonzero cross-feed -- exercises both taps.
+    // Feeds dsp::Reverb::Process's own densityKnob01 argument below (both
+    // taps are already exercised unconditionally by the tank's own fixed
+    // cross-feed swap, independent of this value) -- nonzero so the pre-tank
+    // input diffuser this control now drives runs on real content too,
+    // rather than at its always-bypassed default.
+    constexpr float diffusionKnob = 0.4f;
     constexpr float widthKnob = 0.5f;      // in [0,1]: this test's bound derivation below needs that range.
     constexpr float dampKnob = 0.5f;
     constexpr float holdKnob = 1.0f;       // -> fb = 0.98 + 0.02*0.999 = 0.99998.
@@ -4418,7 +4485,7 @@ TEST_CASE(reverb_tank_stays_bounded_under_sustained_overdrive_at_max_decay_and_h
     // bound this test can state without pinning theta's exact trajectory.
     const float bound = std::sqrt(kOverdriveInput * kOverdriveInput + tankBound * tankBound);
 
-    UnsaturatedTankReplica control;
+    UnsaturatedTankReplica control(sr);
 
     constexpr int kSamples = 5000;  // ~27 round trips at 180 samples/trip -- plenty for the control to diverge.
     float maxRawMagnitude = 0.0f;
@@ -4472,8 +4539,8 @@ TEST_CASE(reverb_tank_stays_bounded_under_sustained_overdrive_at_max_decay_and_h
 // -----------------------------------------------------------------------
 TEST_CASE(reverb_quiet_ordinary_level_tail_matches_unsaturated_control_at_max_hold) {
     dsp::Reverb rv;
-    UnsaturatedTankReplica control;
     const float sr = 48000.0f;
+    UnsaturatedTankReplica control(sr);
     constexpr float mixKnob = 1.0f, sizeKnob = 0.6f, decayKnob = 1.0f, preKnob = 0.1f, dampKnob = 0.5f,
                     widthKnob = 0.5f, diffusionKnob = 0.4f, holdKnob = 1.0f;
     // "Ordinary" excitation: quiet relative to full scale (~-34dBFS), NOT
@@ -6944,48 +7011,50 @@ TEST_CASE(stereo_delay_cross_feed_reproduces_its_captured_output_exactly) {
     }
 }
 
-// Golden-vector regression: dsp::Reverb::Process's tank cross-feed now calls
-// the shared dsp::CrossFeedPair with its two line reads transposed, which is
-// what reproduces this stage's own pre-existing full swap at Diffusion's
-// registered default of 0.0 (dsp::CrossFeedPair's own comment,
-// dsp/StereoField.hpp, and this call site's own comment, dsp/Reverb.hpp).
-// The literals below were captured by running this same fixture against
-// dsp::Reverb::Process before the two stages shared this definition.
-TEST_CASE(reverb_cross_feed_reproduces_its_captured_output_exactly) {
+// Golden-vector regression: dsp::Reverb::Process has no exact-output pin of
+// its own -- reverb_cross_feed_reproduces_its_captured_output_exactly was
+// retired along with the pre-Density tank it pinned, once the cross-feed
+// swap and the damping filter split left no case of it that reproduced
+// current production. This is Reverb's replacement, protecting the tank as
+// it stands today (the fixed cross-feed swap, the Density diffuser ahead of
+// it, the split damping filters) the way
+// stereo_delay_cross_feed_reproduces_its_captured_output_exactly already
+// protects Delay. The literals below were captured by running this same
+// fixture against today's dsp::Reverb::Process.
+//
+// Knobs moved off their registered default, each because the default reads
+// as a dead instrument rather than because a different value is more
+// correct: Send to 1.0 (its own 0.0 default never feeds the tank), Wet/dry
+// to 1.0 (its own 0.0 default leaves the wet leg out of what Process()
+// returns), Stereo width to 0.7 (its own 0.0 default makes wetL and wetR
+// bit-equal, which would pin a case blind to a left/right swap). Room size,
+// Decay, Pre-delay and Damping stay at their registered default of 0.0.
+// Density is the grid, and it includes Density's own registered default of
+// 0.0.
+TEST_CASE(reverb_process_reproduces_its_captured_output_exactly) {
     struct Case {
-        float diffusionKnob;
+        float density;
         float expectedL;
         float expectedR;
     };
     const Case cases[] = {
-        {0.0f, -0x1.07977p-3f, -0x1.5abb06p-4f},
-        {0.5f, -0x1.55aa7ep-3f, -0x1.0238d4p-3f},
-        {1.0f, -0x1.c94aa4p-3f, -0x1.7d5756p-3f},
+        {0.0f, 0x1.cea732p-5f, -0x1.cefed8p-2f},
+        {0.5f, -0x1.a1ddbap-3f, -0x1.803572p-4f},
+        {1.0f, -0x1.17f108p-2f, 0x1.0c4268p-1f},
     };
     const float sr = 48000.0f;
     for (const Case& c : cases) {
         dsp::Reverb rv;
-        // Isolates the tank's own cross-feed mechanism from the separate
-        // wetAuthority ramp, the same technique
-        // reverb_process_matches_manual_tank_replica_at_neutral_mod_and_hold
-        // uses: Advance() becomes an exact identity at coefficient 1.0f, so
-        // Authority() stays pinned at full from the first sample.
-        rv.wetAuthority.level = dsp::kWetAuthorityFullLevel;
-        rv.wetAuthority.attackCoeff = 1.0f;
-        rv.wetAuthority.releaseCoeff = 1.0f;
-
+        rv.Configure(sr);
         dsp::StereoSample out{};
         for (int step = 0; step < 3000; ++step) {
-            const float input = std::sin(0.15f * static_cast<float>(step));
-            out = rv.Process(dsp::StereoSample{input, input},
-                              /*mixKnob01=*/1.0f,
-                              /*sizeKnob01=*/0.0f,
-                              /*decayKnob01=*/0.5f,
-                              /*preKnob01=*/0.0f,
-                              /*dampKnob01=*/0.5f,
-                              /*widthKnob01=*/1.0f,
-                              c.diffusionKnob,
-                              sr);
+            const float input = std::sin(0.2f * static_cast<float>(step));
+            out = rv.Process(dsp::StereoSample{input, input}, /*mixKnob01=*/1.0f, /*sizeKnob01=*/0.0f,
+                              /*decayKnob01=*/0.0f, /*preKnob01=*/0.0f, /*dampKnob01=*/0.0f,
+                              /*widthKnob01=*/0.7f, c.density, sr, /*modDepthKnob01=*/0.0f,
+                              /*holdKnob01=*/0.0f, /*modRateKnob01=*/0.5f, /*tankDriveKnob01=*/0.5f,
+                              /*gritKnob01=*/0.0f, /*tiltKnob01=*/0.5f, /*tunedKnob01=*/0.5f,
+                              /*sendKnob01=*/1.0f);
         }
         REQUIRE_TRUE(out.l == c.expectedL);
         REQUIRE_TRUE(out.r == c.expectedR);
@@ -9364,7 +9433,7 @@ TEST_CASE(reverb_damping_darkens_and_quiets_the_tank_while_room_size_does_neithe
         for (std::size_t i = 0; i < noise.size(); ++i) {
             rv.Process(dsp::StereoSample{noise[i], noise[i]}, /*mixKnob01=*/0.0f, sizeKnob,
                        /*decayKnob01=*/0.0f, /*preKnob01=*/0.0f, dampKnob, /*widthKnob01=*/0.0f,
-                       /*diffusionKnob01=*/0.0f, sampleRate, /*modDepthKnob01=*/0.0f,
+                       /*densityKnob01=*/0.0f, sampleRate, /*modDepthKnob01=*/0.0f,
                        /*holdKnob01=*/0.0f, /*modRateKnob01=*/0.5f, /*tankDriveKnob01=*/0.5f,
                        /*gritKnob01=*/0.0f, /*tiltKnob01=*/0.5f, /*tunedKnob01=*/0.5f,
                        /*sendKnob01=*/1.0f);
@@ -9411,6 +9480,357 @@ TEST_CASE(reverb_damping_darkens_and_quiets_the_tank_while_room_size_does_neithe
         roomHigh = std::max(roomHigh, db);
     }
     REQUIRE_TRUE(roomHigh - roomLow < 0.5);
+}
+
+// Damping's shared filter used to hold the tank's two output taps close
+// together at every Stereo width setting (dsp::Reverb.hpp's own file
+// header): dampFilterA/dampFilterB now give each line its own one-pole
+// state instead of running both through one.
+//
+// Both regimes are measured from the SAME tank taps in one pass: each
+// damping filter reads valA or valB for the OUTPUT path only and never
+// feeds back into lineA/lineB (dsp::Reverb::Process's own comment), so
+// peeking dsp::Reverb's own public lineA/lineB/indexA/indexB right before
+// each Process() call recovers exactly the same valA/valB Process() is
+// about to read internally, regardless of how the damping stage is wired.
+// SPLIT reads directly off production's own rv.wetL/rv.wetR; SHARED runs
+// the peeked valA/valB through one local dsp::OnePoleLowPass instead,
+// mirroring the pre-split Process() body exactly (one alpha, then
+// Process(valA) then Process(valB) on that same instance). Reused rather
+// than re-derived: dsp::Reverb::RoomSizeFromKnob for the peek's own dA/dB
+// and dsp::Reverb::DampAlphaFromKnob for both regimes' alpha.
+//
+// Grid: Damping {0.0, 0.25, 0.5, 0.75, 1.0}, Stereo width held at 0.5 --
+// its own 0.0 default makes the wet pair bit-equal regardless of the
+// filter. Send opened to 1.0 -- its own 0.0 default never feeds the tank,
+// so the tap would read a flat, uninformative value at every Damping
+// setting; Room size, Decay, Pre-delay and Density left at their
+// registered defaults. Noise burst per point: same LCG idiom
+// reverb_damping_darkens_and_quiets_the_tank_while_room_size_does_neither
+// above uses, not reinvented, with a warmup discarded before correlation is
+// accumulated over the remainder so the tank is past its initial transient.
+TEST_CASE(reverb_damping_filter_split_lowers_wet_leg_correlation_at_every_setting) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr int kWarmupSamples = 12000;
+    constexpr int kMeasureSamples = 12000;
+
+    std::uint32_t lcg = 20260913u;
+    std::vector<float> noise;
+    noise.reserve(kWarmupSamples + kMeasureSamples);
+    for (int i = 0; i < kWarmupSamples + kMeasureSamples; ++i) {
+        lcg = lcg * 1664525u + 1013904223u;
+        noise.push_back(0.5f * (static_cast<float>(lcg >> 8) / 8388608.0f - 1.0f));
+    }
+
+    constexpr float sizeKnob = 0.0f;     // registered default.
+    constexpr float decayKnob = 0.0f;    // registered default.
+    constexpr float preKnob = 0.0f;      // registered default.
+    constexpr float densityKnob = 0.0f;  // registered default -- keeps the pre-tank diffuser out of this question.
+
+    const float sizeNorm = dsp::Reverb::RoomSizeFromKnob(sizeKnob);
+    const std::size_t baseA = static_cast<std::size_t>(180.0f + sizeNorm * 1300.0f);
+    const std::size_t baseB = static_cast<std::size_t>(260.0f + sizeNorm * 1800.0f);
+    const std::size_t dA = std::min(dsp::Reverb::kSize - 1, std::max<std::size_t>(1, baseA));
+    const std::size_t dB = std::min(dsp::Reverb::kSize - 1, std::max<std::size_t>(1, baseB));
+
+    struct Correlation {
+        double sx = 0.0, sy = 0.0, sxx = 0.0, syy = 0.0, sxy = 0.0, n = 0.0;
+        void Add(double x, double y) {
+            sx += x;
+            sy += y;
+            sxx += x * x;
+            syy += y * y;
+            sxy += x * y;
+            n += 1.0;
+        }
+        double Value() const {
+            const double num = n * sxy - sx * sy;
+            const double den = std::sqrt((n * sxx - sx * sx) * (n * syy - sy * sy));
+            return den > 0.0 ? num / den : 1.0;  // both channels constant (e.g. width==0): read as perfectly correlated.
+        }
+    };
+
+    // Measures both regimes at one Damping/Stereo width pair over the same
+    // noise burst, returning {sharedCorrelation, splitCorrelation}.
+    const auto measure = [&](float dampKnob, float widthKnob) {
+        dsp::Reverb rv;
+        rv.Configure(sampleRate);
+        dsp::OnePoleLowPass sharedFilter;
+        Correlation split;
+        Correlation shared;
+        for (std::size_t i = 0; i < noise.size(); ++i) {
+            const std::size_t readA = (rv.indexA + dsp::Reverb::kSize - dA) % dsp::Reverb::kSize;
+            const std::size_t readB = (rv.indexB + dsp::Reverb::kSize - dB) % dsp::Reverb::kSize;
+            const float valA = rv.lineA[readA];
+            const float valB = rv.lineB[readB];
+
+            const float alpha = dsp::Reverb::DampAlphaFromKnob(dampKnob);
+            sharedFilter.alpha = alpha;
+            const float sharedAOut = sharedFilter.Process(valA);
+            const float sharedBOut = sharedFilter.Process(valB);
+            const float sharedMid = 0.5f * (sharedAOut + sharedBOut);
+            const float sharedWetL = sharedMid + widthKnob * (sharedAOut - sharedMid);
+            const float sharedWetR = sharedMid + widthKnob * (sharedBOut - sharedMid);
+
+            rv.Process(dsp::StereoSample{noise[i], noise[i]}, /*mixKnob01=*/0.0f, sizeKnob, decayKnob, preKnob,
+                       dampKnob, widthKnob, densityKnob, sampleRate, /*modDepthKnob01=*/0.0f,
+                       /*holdKnob01=*/0.0f, /*modRateKnob01=*/0.5f, /*tankDriveKnob01=*/0.5f,
+                       /*gritKnob01=*/0.0f, /*tiltKnob01=*/0.5f, /*tunedKnob01=*/0.5f, /*sendKnob01=*/1.0f);
+
+            if (static_cast<int>(i) >= kWarmupSamples) {
+                split.Add(rv.wetL, rv.wetR);
+                shared.Add(sharedWetL, sharedWetR);
+            }
+        }
+        return std::make_pair(shared.Value(), split.Value());
+    };
+
+    constexpr float dampingGrid[5] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+    for (float dampKnob : dampingGrid) {
+        const auto [sharedCorr, splitCorr] = measure(dampKnob, /*widthKnob=*/0.5f);
+        std::cout << "  [damping filter split] Damping=" << dampKnob << " shared=" << sharedCorr
+                  << " split=" << splitCorr << " gap=" << (sharedCorr - splitCorr) << "\n";
+        REQUIRE_TRUE(sharedCorr - splitCorr > 0.25);
+    }
+
+    // Measured and reported, not asserted: Stereo width's own travel after
+    // the split, against the 0.044 it moved before an earlier, unrecorded
+    // rig measured (that figure's own knob values for Room size/Decay/the
+    // input signal used are not written down anywhere in this tree, so this
+    // run's own "shared" column below is a fresh re-derivation under THIS
+    // rig, printed for context rather than as a reproduction of that
+    // number). Damping held at its registered default (0.0), the same
+    // width-travel tap point that earlier figure used.
+    double sharedLow = 2.0, sharedHigh = -2.0, splitLow = 2.0, splitHigh = -2.0;
+    for (float widthKnob : dampingGrid) {
+        const auto [sharedCorr, splitCorr] = measure(/*dampKnob=*/0.0f, widthKnob);
+        std::cout << "  [stereo width travel] width=" << widthKnob << " shared=" << sharedCorr
+                  << " split=" << splitCorr << "\n";
+        sharedLow = std::min(sharedLow, sharedCorr);
+        sharedHigh = std::max(sharedHigh, sharedCorr);
+        splitLow = std::min(splitLow, splitCorr);
+        splitHigh = std::max(splitHigh, splitCorr);
+    }
+    std::cout << "  [stereo width travel] this run's shared-regime travel=" << (sharedHigh - sharedLow)
+              << " (does not reproduce the inherited figure of 0.044 -- different, unrecorded rig)"
+              << "  post-split travel=" << (splitHigh - splitLow) << " -- the deliverable figure\n";
+}
+
+// Density's registered default (0.0) leaves the tank's own feed and
+// cross-wire untouched: densityCoeff is 0 so inputDiffuser's output is
+// discarded (dsp::Reverb::Process's own tankFeed branch), and the swap
+// dsp::CrossFeedPair(valB, valA, 0.0f) produces uses a fixed 0.0f cross
+// weight that Density never touches, so it is identical to the tank this
+// slot replaced at every setting, this one included. What still differs is
+// the damping stage: the pre-split code ran both tank taps
+// through ONE shared dsp::OnePoleLowPass in sequence, so line B's read
+// carried line A's leftover recursive state; dampFilterA/dampFilterB now
+// give each line its own state instead, and that reaches the output at
+// every Damping setting, this one included -- so bit-identity with the tank
+// this slot replaced is not reachable even at Density's own floor, and this
+// measures the gap rather than arguing it in prose.
+//
+// SHARED recomputes the pre-split output locally from the SAME tank
+// content: peeking dsp::Reverb's own public lineA/lineB/indexA/indexB
+// immediately before each Process() call recovers the identical valA/valB
+// Process() is about to read, the same technique
+// reverb_damping_filter_split_lowers_wet_leg_correlation_at_every_setting
+// uses above, so the two regimes run off identical tank recursion and only
+// the damping stage differs. SPLIT reads production's own rv.wetL/rv.wetR.
+//
+// Grid: Room size, Decay, Pre-delay, Damping and Density all at their
+// registered default of 0.0; Stereo width at its own registered default too
+// -- inert here regardless of its own value, since the mono tap below
+// cancels its blend exactly (dsp::Reverb::Process's own comment on
+// wetL+wetR). Send moved to 1.0 -- its own 0.0 default never feeds the tank,
+// reading a silent, uninformative row. Tap point: the mono sum of the two
+// output taps, 0.5*(wetL+wetR), RMS over a 12000-sample LCG noise burst
+// (same generator reverb_damping_darkens_and_quiets_the_tank_while_room_size_does_neither
+// uses).
+TEST_CASE(reverb_density_at_its_registered_default_differs_from_the_shared_filter_tank_it_replaced) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr int kSamples = 12000;
+
+    std::uint32_t lcg = 20260913u;
+    std::vector<float> noise(kSamples);
+    for (int i = 0; i < kSamples; ++i) {
+        lcg = lcg * 1664525u + 1013904223u;
+        noise[static_cast<std::size_t>(i)] = 0.5f * (static_cast<float>(lcg >> 8) / 8388608.0f - 1.0f);
+    }
+
+    constexpr float sizeKnob = 0.0f;
+    constexpr float decayKnob = 0.0f;
+    constexpr float preKnob = 0.0f;
+    constexpr float dampKnob = 0.0f;
+    constexpr float widthKnob = 0.0f;
+    constexpr float densityKnob = 0.0f;
+
+    const float sizeNorm = dsp::Reverb::RoomSizeFromKnob(sizeKnob);
+    const std::size_t baseA = static_cast<std::size_t>(180.0f + sizeNorm * 1300.0f);
+    const std::size_t baseB = static_cast<std::size_t>(260.0f + sizeNorm * 1800.0f);
+    const std::size_t dA = std::min(dsp::Reverb::kSize - 1, std::max<std::size_t>(1, baseA));
+    const std::size_t dB = std::min(dsp::Reverb::kSize - 1, std::max<std::size_t>(1, baseB));
+
+    dsp::Reverb rv;
+    rv.Configure(sampleRate);
+    dsp::OnePoleLowPass sharedFilter;
+
+    double sumSqSplit = 0.0;
+    double sumSqDiff = 0.0;
+    for (int i = 0; i < kSamples; ++i) {
+        const std::size_t readA = (rv.indexA + dsp::Reverb::kSize - dA) % dsp::Reverb::kSize;
+        const std::size_t readB = (rv.indexB + dsp::Reverb::kSize - dB) % dsp::Reverb::kSize;
+        const float valA = rv.lineA[readA];
+        const float valB = rv.lineB[readB];
+
+        const float alpha = dsp::Reverb::DampAlphaFromKnob(dampKnob);
+        sharedFilter.alpha = alpha;
+        const float sharedAOut = sharedFilter.Process(valA);
+        const float sharedBOut = sharedFilter.Process(valB);
+        const float sharedTap = 0.5f * (sharedAOut + sharedBOut);
+
+        rv.Process(dsp::StereoSample{noise[static_cast<std::size_t>(i)], noise[static_cast<std::size_t>(i)]},
+                   /*mixKnob01=*/0.0f, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, densityKnob, sampleRate,
+                   /*modDepthKnob01=*/0.0f, /*holdKnob01=*/0.0f, /*modRateKnob01=*/0.5f, /*tankDriveKnob01=*/0.5f,
+                   /*gritKnob01=*/0.0f, /*tiltKnob01=*/0.5f, /*tunedKnob01=*/0.5f, /*sendKnob01=*/1.0f);
+        const float splitTap = 0.5f * (rv.wetL + rv.wetR);
+
+        sumSqSplit += static_cast<double>(splitTap) * static_cast<double>(splitTap);
+        const double diff = static_cast<double>(splitTap) - static_cast<double>(sharedTap);
+        sumSqDiff += diff * diff;
+    }
+
+    const double rmsSplit = std::sqrt(sumSqSplit / static_cast<double>(kSamples));
+    const double rmsDiff = std::sqrt(sumSqDiff / static_cast<double>(kSamples));
+    std::cout << "  [density default vs shared-filter tank] rmsSplit(today's tank)=" << rmsSplit
+              << " rmsDiff(today's tank minus the tank Density replaced)=" << rmsDiff
+              << " ratio=" << (rmsDiff / rmsSplit) << "\n";
+
+    // Liveness: today's tank actually produced a real signal at this
+    // operating point, not a flat row.
+    REQUIRE_TRUE(rmsSplit > 1.0e-3);
+    // The measured difference from the tank Density replaced: comfortably
+    // above rounding noise, a real and reproducible gap rather than a claim
+    // of closeness left in prose.
+    REQUIRE_TRUE(rmsDiff > 1.0e-3);
+}
+
+// The normalised echo density profile (Abel and Huang): over a
+// Hanning-weighted window, the fraction of samples whose magnitude exceeds
+// that window's own weighted standard deviation, divided by the fraction a
+// Gaussian signal exceeds at one standard deviation (erfc(1/root2), about
+// 0.3173) so a fully Gaussian-dense window reads 1. One window, one pass, no
+// FFT; level, equalisation, decay time and sample rate all drop out of a
+// ratio of two quantities measured on the same window.
+double NormalizedEchoDensity(const std::vector<float>& response, int windowCenter, int windowHalf) {
+    std::vector<double> weight(static_cast<std::size_t>(2 * windowHalf + 1));
+    double weightSum = 0.0;
+    double weightedSum = 0.0;
+    double weightedSumSq = 0.0;
+    for (int k = -windowHalf; k <= windowHalf; ++k) {
+        const double hann = 0.5 - 0.5 * std::cos(M_PI * static_cast<double>(k + windowHalf) / windowHalf);
+        const double x = static_cast<double>(response[static_cast<std::size_t>(windowCenter + k)]);
+        weight[static_cast<std::size_t>(k + windowHalf)] = hann;
+        weightSum += hann;
+        weightedSum += hann * x;
+        weightedSumSq += hann * x * x;
+    }
+    const double mean = weightedSum / weightSum;
+    const double variance = std::max(0.0, weightedSumSq / weightSum - mean * mean);
+    const double stdDev = std::sqrt(variance);
+
+    double exceedWeight = 0.0;
+    for (int k = -windowHalf; k <= windowHalf; ++k) {
+        const double x = static_cast<double>(response[static_cast<std::size_t>(windowCenter + k)]);
+        if (std::fabs(x) > stdDev) {
+            exceedWeight += weight[static_cast<std::size_t>(k + windowHalf)];
+        }
+    }
+    const double kGaussianFraction = std::erfc(1.0 / std::sqrt(2.0));  // The fraction a standard normal exceeds one
+                                                                        // standard deviation in absolute value.
+    return (exceedWeight / weightSum) / kGaussianFraction;
+}
+
+// Measures the metallic ringing dsp::DelayDiffuser's cascade adds ahead of
+// the tank, through the same production dsp::Reverb::Process the app calls
+// rather than driving the cascade in isolation, so the figure below is what
+// the tank's own recirculation and the diffuser together actually produce.
+//
+// Grid: Density {0.0, 0.25, 0.5, 0.75, 1.0}. Room size, Decay, Pre-delay,
+// Damping and Stereo width all at their registered default of 0.0 -- Decay's
+// own default leaves decayFb at 0.1, so the tank's own recirculation empties
+// out within a handful of round trips and does not dominate the window
+// below; Stereo width is inert for the mono tap this test reads
+// (dsp::Reverb::Process's own comment on wetL+wetR cancelling its blend).
+// Send moved to 1.0 -- its own 0.0 default never reaches the tank.
+//
+// Tap point: dsp::Reverb's own public wetL/wetR fields (not the dry/wet
+// return value -- Wet/dry's own 0.0 default would otherwise leave this tap
+// almost entirely dry), a 25ms Hanning window (inside the profile's own
+// 20-30ms range) centred 30ms into the impulse response at 48kHz -- sample
+// 1440, half-width 600 samples.
+TEST_CASE(reverb_density_travel_raises_the_impulse_responses_echo_density) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr int kRunSamples = 2200;
+    constexpr int windowCenter = 1440;  // 30ms at 48kHz.
+    constexpr int windowHalf = 600;     // 25ms window.
+
+    constexpr float sizeKnob = 0.0f;
+    constexpr float decayKnob = 0.0f;
+    constexpr float preKnob = 0.0f;
+    constexpr float dampKnob = 0.0f;
+    constexpr float widthKnob = 0.0f;
+
+    // An unconfigured dsp::DelayDiffuser leaves every section at a 1-sample
+    // delay -- its own header's phaser warning (dsp/StereoField.hpp) -- and
+    // would still pass a liveness check while measuring the wrong mechanism.
+    // dsp::Reverb::Configure() (called through the fixture below) must size
+    // every section above one sample at this measurement's own sample rate,
+    // or the run is void.
+    dsp::Reverb probe;
+    probe.Configure(sampleRate);
+    REQUIRE_TRUE(probe.inputDiffuser.section1.m > 1);
+    REQUIRE_TRUE(probe.inputDiffuser.section2.m > 1);
+    REQUIRE_TRUE(probe.inputDiffuser.section3.m > 1);
+
+    const auto impulseResponse = [&](float densityKnob) {
+        dsp::Reverb rv;
+        rv.Configure(sampleRate);
+        std::vector<float> response(static_cast<std::size_t>(kRunSamples));
+        for (int i = 0; i < kRunSamples; ++i) {
+            const float in = (i == 0) ? 1.0f : 0.0f;
+            rv.Process(dsp::StereoSample{in, in}, /*mixKnob01=*/0.0f, sizeKnob, decayKnob, preKnob, dampKnob,
+                       widthKnob, densityKnob, sampleRate, /*modDepthKnob01=*/0.0f, /*holdKnob01=*/0.0f,
+                       /*modRateKnob01=*/0.5f, /*tankDriveKnob01=*/0.5f, /*gritKnob01=*/0.0f,
+                       /*tiltKnob01=*/0.5f, /*tunedKnob01=*/0.5f, /*sendKnob01=*/1.0f);
+            response[static_cast<std::size_t>(i)] = 0.5f * (rv.wetL + rv.wetR);
+        }
+        return response;
+    };
+
+    constexpr float densityGrid[5] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+    double ndp[5];
+    double floorWindowEnergy = 0.0;
+    for (int g = 0; g < 5; ++g) {
+        const std::vector<float> response = impulseResponse(densityGrid[g]);
+        ndp[static_cast<std::size_t>(g)] = NormalizedEchoDensity(response, windowCenter, windowHalf);
+        std::cout << "  [density echo density] Density=" << densityGrid[g]
+                   << " NDP=" << ndp[static_cast<std::size_t>(g)] << "\n";
+        if (g == 0) {
+            for (int k = -windowHalf; k <= windowHalf; ++k) {
+                const double x = static_cast<double>(response[static_cast<std::size_t>(windowCenter + k)]);
+                floorWindowEnergy += x * x;
+            }
+        }
+    }
+
+    // An impulse that never reached the tank would leave this window
+    // silent; it carries real energy even at Density's floor.
+    REQUIRE_TRUE(floorWindowEnergy > 1.0e-8);
+
+    for (int g = 1; g < 5; ++g) {
+        REQUIRE_TRUE(ndp[static_cast<std::size_t>(g)] > ndp[static_cast<std::size_t>(g - 1)]);
+    }
 }
 
 // Magnitude-squared of one tone, taken from ComplexGoertzel above rather
