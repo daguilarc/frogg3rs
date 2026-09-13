@@ -1753,38 +1753,35 @@ private:
         // floor could sit at.
         const float bumpWidth = dsp::ExpMapCompute(0.4f, 10.0f, RoutedKnob(FroggersBankId::Filter, 2));
         filterChain_.peak.SetFreq(bumpFreq);
-        // Ceiling lowered
-        // from 10x (+20 dB) to 4x (+12 dB). An audible resonant peak does
-        // not need a 20 dB multiplier sitting on top of a comb that (with
-        // its feedback now bounded below unity) can still ring for seconds -- 10x was the primary gain
-        // offender in the operator's blowout (multiplying the comb's
-        // saturator-pinned output before the
-        // limiter). scoopNotch (below) has its own independent freq/width
-        // knobs (Filter slots 9/10) but its own height is a DIP
-        // (max(0.05, 1-0.95*scoop)), not a gain, so it is unaffected and
-        // untouched.
-        // Ceiling 4.0f (+12 dB), NOT the firmware's 10.0f
-        // (+20 dB). A pinned self-oscillating comb through a 20 dB peak is what put
-        // ~20x full scale into the output stage. Deliberate divergence from the port
-        // source -- parity deprioritised by operator decision 2026-07-28.
-        // Lowered again 2026-07-29, operator on hearing it: 4x "is still too
-        // harsh when modulated/randomized ... gets very close to blowout
-        // territory anyway". 10x -> 4x fixed the gross overload; 4x -> 2x
-        // targets the harshness that remains.
+        // Peak gain maps its whole travel onto bump heights from 1.0 (flat)
+        // up to `dsp::kMaxResonantBumpHeight`, read from that constant rather
+        // than retyped here so the two cannot drift apart; the constant's own
+        // comment (dsp/FilterFx.hpp) carries where its value comes from.
+        // scoopNotch (below) has its own independent freq/width knobs (Filter
+        // slots 9/10) and its own height is a DIP (max(0.05, 1-0.95*scoop)),
+        // so this ceiling leaves it untouched.
         //
-        // Why modulation is the case that matters: the knob is a modulation
-        // TARGET, so a randomized depth sweeps it to maximum regularly rather
-        // than only when the operator dials it there. The comb feeding this
-        // stage is bounded near |in| + 0.95 (~2 at full scale), so 4x handed
-        // the output stage ~8 -- about 9x over the limiter's 0.9 threshold,
-        // which means the limiter rides hard and continuously, and heavy
-        // sustained gain reduction is itself the harshness. 2x (+6 dB) roughly
-        // halves how hard it has to work while still being an audible
-        // resonant peak.
+        // Modulation is the case that governs this ceiling: the knob is a
+        // modulation TARGET, so a randomized depth sweeps it to maximum
+        // regularly, not only when the operator dials it there. The comb
+        // feeding this stage is bounded near |in| + 0.95 (about 2 at full
+        // scale), and whatever the peak multiplies that by, the limiters
+        // downstream take back -- heavy sustained gain reduction is itself
+        // audible as harshness, so the ceiling is what keeps them off the
+        // signal.
         //
-        // If it is STILL harsh, the next lever is the comb feedback (0.95)
-        // that feeds it, not this ceiling -- past a point, lowering this just
-        // makes the resonance inaudible.
+        // The height sets how far the peak stands above its surroundings, and
+        // raising it lowers those surroundings. `FilterFxChain::Process`
+        // divides the peak branch by this same height (its own `rawPeakTrim`,
+        // dsp/FilterFx.hpp): at the bump's own resonant frequency the divide
+        // cancels the height exactly, so the level there holds across the
+        // whole travel, and away from that frequency the same divide lowers
+        // the level. Raising this ceiling widens that spread; it does not
+        // make the instrument louder.
+        //
+        // If the resonance is harsh, the lever is the comb feedback (0.95)
+        // that feeds it -- past a point, lowering this ceiling only makes the
+        // resonance inaudible.
         filterChain_.peak.SetHeight(
             dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, RoutedKnob(FroggersBankId::Filter, 1)));
         filterChain_.peak.SetWidth(bumpWidth);
@@ -2161,16 +2158,18 @@ private:
     //     std::min(1.0f, output))`) before it ever reaches a recursive
     //     stage this recovery watches.
     //   - `ResonantBump`'s peak gain is `A^2 == height`, `height ==
-    //     dsp::ExpMapCompute(1.0f, 4.0f, knob)` (FroggersAppCore.hpp's own
-    //     RouteAudioSample, Filter bank wiring -- the filter-bank gain bound) -- at most 4x for
-    //     any reachable knob value (was 10x).
+    //     dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, knob)` (this
+    //     file's own RouteFilterBank, Filter bank wiring -- the filter-bank
+    //     gain bound), so `dsp::kMaxResonantBumpHeight` bounds it for any
+    //     reachable knob value. Named here rather than retyped as a number,
+    //     so retuning the ceiling moves this derivation with it.
     //   - `scoopNotch`'s height is a DIP, not a gain: `max(0.05, 1 - 0.95 *
     //     scoop)` in [0.05, 1] -- adds no gain at all, unaffected by the filter-bank gain bound.
-    //   - So the largest legitimate magnitude this chain can produce is
-    //     roughly 4 (ResonantBump's peak gain), maybe ~8-10 with ringing
-    //     (Comb's now sub-unity +-0.95 feedback -- a decaying loop,
+    //   - So the largest legitimate magnitude this chain can produce is the
+    //     peak height ceiling, under ~10 with ringing
+    //     (Comb's sub-unity +-0.95 feedback -- a decaying loop,
     //     not a compounding one, but still capable of several round trips'
-    //     worth of buildup before it settles). 100.0 remains a full 10x-25x
+    //     worth of buildup before it settles). 100.0 remains at least 10x
     //     above ANY of that -- comfortably above legitimate ringing,
     //     comfortably below float overflow (3.4e38, so 100.0 is ~3.4e36x
     //     below it) -- and because divergence under recursive feedback is

@@ -469,8 +469,13 @@ Drive/Delay/Reverb downstream.
 
 **Peak freq** (slot 0) — center frequency of the resonant peaking EQ, 100 Hz–20 kHz.
 
-**Peak gain** (slot 1) — height of that peak's boost. Flat (no boost) at the bottom of travel;
-up to about +9.5 dB (3×) at the top.
+**Peak gain** (slot 1) — how far the peak stands above the rest of the signal. At the bottom of
+travel the peak is flat. The peak path divides its own output by the same height it raises the peak
+to, so turning this up holds the level at the peak's own center frequency and pulls the rest of the
+signal down. With the bank at its defaults, which put the peak at 100 Hz, a full-scale tone at that
+center frequency holds within 0.00025 dB across the whole travel, a tone at 1 kHz falls
+6.04 dB, and a tone at 5 kHz falls 6.52 dB; a broadband source loses 7.10 dB of total level end to
+end. The peak is shaped by attenuation, so reaching its full height costs that much level.
 
 **Peak Q** (slot 2) — width/resonance of the peak: a wide, gentle bump at the bottom, a narrow,
 ringing resonance at the top.
@@ -568,16 +573,19 @@ onto the bit counts that actually do something, so the first audible step arrive
 floor rather than a fifth of the way up.
 
 **Fuzz** (slot 7) — blends between the sine-folded wet path (bottom of travel, the default) and a
-tanh-style saturator (top of travel) inside the waveshaper stage. The saturator stays smooth
-until its input crosses about 3. The gain ahead of it drives well past that, so the top of the
-knob sounds hard because of the level reaching the curve rather than the curve's own shape.
+tanh-style saturator (top of travel) inside the waveshaper stage. The saturator's curve is smooth
+up to an input of 3 and clamps above that. The gain ahead of it drives well past 3, so the level
+reaching the curve is what makes the top of the knob sound hard.
 
-The blend's travel is floored the same way Comb/Peak's is, so neither path is ever fully absent:
-about −22 dB down at either extreme, exactly −3 dB — a true 50/50 — at the center of travel.
-Because the floor reaches all the way to the default, the saturator now contributes a small
-amount (about −22 dB) even at Fuzz's own floor, where it used to be silent — the Drive page's
-default sound is not bit-identical to what shipped before this floor was added, though the
-difference is small.
+The blend is floored the same way Comb/Peak's is, so both paths stay in the sound at every
+position: the held-back one sits about −22 dB at either extreme, and the two meet at −3 dB — a
+true 50/50 — at the center of travel. At the default the saturator is the held-back path.
+
+Fuzz therefore sets how much of the folder reaches the output, and Feedback, Fold and Symmetry all
+work inside that folder. At the top of Fuzz's travel their reach shrinks: on a 220 Hz tone at full
+wet, sweeping Symmetry end to end moves the output about 25 dB less than the same sweep does with
+Fuzz at the bottom, and Feedback and Fold are held back by the same blend. What Fold still moves up
+there is under Fold below.
 
 **Phase** (slot 8) — a first-order allpass filter on the wet signal, applied *before* the Wet/Dry
 crossfade above. At Wet/Dry 0 this has no audible effect at all, since dry passes through unfiltered
@@ -591,8 +599,8 @@ through the allpass's own corner frequency, so equal turns move the audible band
 amounts across the whole travel.
 
 **Anti-alias brightness** (`Anti-alias`, slot 9) — crossfades between a clean, heavily
-oversampled shaper path and the grittier path the instrument has always used. At the top of the
-travel — the default — it is bit-for-bit what shipped before, so nothing is taken away.
+oversampled shaper path and a grittier one. The top of the travel — the default — is all grit,
+with the clean path multiplied out of the mix entirely; the bottom is the clean path.
 
 Turned down, it removes the metallic ring that hard shaping puts on higher notes: partials that
 belong to no key, a different one per semitone, so a line played up the keyboard changes character
@@ -602,8 +610,12 @@ cleaner than the grit end.
 It runs out at the top of the range, and deliberately so. It cleans up to roughly A6; above about
 2 kHz the harmonics that would need cleaning have already passed the oversampled domain's own
 ceiling, where no filter in this path can reach them. Expect no change at all on a bass note —
-nothing folds down there to remove. The in-band level is not quite constant across the sweep
-either: the fundamental drops about 2.5 dB from the clean end to the grit end.
+nothing folds down there to remove. The in-band level moves a little across the sweep: the
+fundamental drops about 2.5 dB from the clean end to the grit end.
+
+The crossfade holds its level through the middle of the travel at the page's own defaults, where the
+deepest point of the sweep sits about 0.6 dB under the quieter of the two ends. That figure belongs
+to those defaults.
 
 **Feedback** (slot 10) — the amount of the folder's own output fed back into its own input,
 one sample later. At 0 (the default) the folder reduces to a plain sine fold with no feedback at
@@ -614,9 +626,16 @@ away once the note does, at every setting. The margin shrinks toward the top of 
 ring after a note stops takes noticeably longer to die out up there than it does lower down the
 knob, even though it always eventually reaches silence.
 
-**Fold** (slot 11) — divisor inside the sine-fold stage (1×–16×). Fold density RISES as the knob is
-turned up — the opposite of the raw divisor, which falls across the same travel — so the tone gets
-denser rather than quieter as the knob goes up.
+The loop wraps the folder alone, so Fuzz sets how much of it is audible: turning Fuzz up holds the
+folder back behind the saturator, and Feedback's reach goes with it.
+
+**Fold** (slot 11) — divisor inside the sine-fold stage. The divisor falls from 16× to 1× as the
+knob is turned up, so more of the signal's swing wraps through the fold each cycle and fold density
+RISES with the knob. Every position folds; the bottom of the travel folds least.
+
+At Fuzz's maximum the folder sits about 22 dB under the saturator, so Fold is quieter up there
+without going inert: on a 220 Hz tone at full wet with Gain and Shape at their page defaults, every
+position above the bottom of Fold's travel still changes the sound.
 
 **Tone** (slot 12) — a low-pass filter at the end of the Drive chain, on the driven signal that
 Wet/Dry mixes against the dry. Fully open at the top of travel (the default), and progressively darker as
@@ -624,8 +643,8 @@ it is turned down, to roughly an 800 Hz cutoff at the bottom.
 
 **Symmetry** (slot 13) — shifts the folder's own input by a phase offset, bipolar around a centred
 default: the middle of the travel is no offset, and the two halves skew opposite sides of the wave
-to fold first. Inert when the folder itself is barely present in the sound — most audible with Fuzz
-low, since Fuzz's top end floors the folder's own contribution to a small residual.
+to fold first. It is loudest with Fuzz low, where the folder carries most of the sound; at Fuzz's
+top the same end-to-end sweep moves the output about 25 dB less.
 
 Silence in always produces silence out, at any Symmetry setting. A held or picked note is not
 silence, though, and skewing which half of a wave folds first is a genuine asymmetry, so a driven
@@ -635,22 +654,22 @@ away from those defaults it grows much larger, up to around three-quarters of fu
 
 ### "Feedback" across the instrument
 
-The word "Feedback" names five controls across three banks. Each one is the same mechanism — a
-stage's own output returning to that same stage's input — applied to a different stage, so the
-name is reused on purpose rather than by accident:
+Five controls carry the name Feedback, across three banks. Three of them set how much of a stage's
+own output returns to that same stage's input; the other two shape what travels around Delay's
+loop on each pass:
 
-- **Filter bank, Comb feedback** — the comb delay line's own output returns to the comb delay
-  line's own input.
-- **Drive bank, Feedback** — the wavefolder's own output returns to the wavefolder's own input, one
-  sample later.
-- **Delay bank, Feedback** — the delay line's own repeated echo returns to the delay line's own
-  input.
-- **Delay bank, Feedback drive** — not a feedback path itself; sets how hard the saturator inside
-  Delay's feedback loop is driven.
-- **Delay bank, Feedback tone** — not a feedback path itself; sets the tone filter inside Delay's
-  feedback loop.
+- **Filter bank, Comb feedback** — sets how much of the comb delay line's output returns to the
+  comb delay line's own input.
+- **Drive bank, Feedback** — sets how much of the wavefolder's output returns to the wavefolder's
+  own input, one sample later.
+- **Delay bank, Feedback** — sets how much of each repeat returns to the delay line's own input.
+- **Delay bank, Feedback drive** — sets the pre-gain into the saturator that sits in Delay's
+  feedback loop, and with it how hard each pass is driven.
+- **Delay bank, Feedback tone** — sets the cutoff of the low-pass inside Delay's feedback loop, and
+  with it how much treble each pass keeps.
 
-Reverb has no control named Feedback — its tank uses Decay and Hold for the equivalent job instead.
+Reverb's tank runs on one feedback coefficient, and two controls set it: Decay places it between
+0.1 and 0.98, and Hold moves it from wherever Decay left it toward 1, always stopping short.
 
 ---
 

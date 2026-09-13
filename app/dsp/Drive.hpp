@@ -248,7 +248,11 @@ struct Oversampler2x
     // crossfade. knob01 == 1 (this control's new default,
     // FroggersParameters.hpp) is ALL grit -- bit-identical to what shipped
     // before this change, `cleanMix` at its own default of 0.0 -- and
-    // knob01 == 0 is the fully clean 4x path.
+    // knob01 == 0 is the clean 4x path, to within the equal-power law's own
+    // endpoint residual: `EqualPowerWetDry` reaches this end at theta ==
+    // pi/2, where float `cos` returns -4.37e-8 rather than 0, so a trace of
+    // the grit leg survives at about -147 dB. That endpoint is clean, not
+    // bit-exactly clean; the all-grit end at knob01 == 1 is exact.
     //
     // `kAntiAliasKnobExponent` warps the knob before it reaches `cleanMix`,
     // replacing a plain `cleanMix = 1 - knob01`. MEASURED (a standalone
@@ -262,9 +266,9 @@ struct Oversampler2x
     // than the last). Exponent 1.5 spreads that far more evenly
     // (-4.65 / -5.96 / -7.70 / -4.96 dB) without moving either endpoint:
     // `1 - knob01^p` still reaches exactly 0.0 at knob01 == 1 and exactly
-    // 1.0 at knob01 == 0 for any p, so both bit-identity claims this
-    // control already carries (all-grit default, fully-clean floor) are
-    // unaffected by this remap.
+    // 1.0 at knob01 == 0 for any p, so the remap moves neither endpoint. The
+    // all-grit default is bit-identical; the clean floor carries the
+    // equal-power endpoint residual described above and is not.
     static constexpr float kAntiAliasKnobExponent = 1.5f;
     void SetAntiAliasBrightness(float knob01) { cleanMix = 1.0f - std::pow(knob01, kAntiAliasKnobExponent); }
 
@@ -467,8 +471,11 @@ struct SampleRateReducer
 //
 // DELIBERATE PARITY DIVERGENCE #2 (same class of divergence as
 // dsp::Comb::GetFeedback's +-1.1 -> +-0.95 above (FilterFx.hpp) and the
-// resonant-peak ceiling's 10x -> 4x -> 2x (FilterFx.hpp's
-// kMaxResonantBumpHeight), each carrying its own in-code note):
+// resonant-peak ceiling reduced from the firmware original to
+// `dsp::kMaxResonantBumpHeight` (FilterFx.hpp), each carrying its own in-code
+// note. Name the constant rather than its value here: this ladder has been
+// retyped stale twice, and a number in a comment does not move when the
+// constant does):
 //
 // `Process(0.0f)` -- digital silence -- is NOT silent. At input==0,
 // `inputUp` is exactly 128 and `inputRemainder` is exactly 0, but the XOR by

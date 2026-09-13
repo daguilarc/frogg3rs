@@ -36,7 +36,7 @@ Six banks — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 ## Filter
 
 - **Peak freq** (slot 0) — Resonant peaking-EQ center frequency, 100 Hz–20 kHz.
-- **Peak gain** (slot 1) — Peak boost height, up to about +9.5 dB (3×).
+- **Peak gain** (slot 1) — Raises the peak above its surroundings by attenuating them; level at the peak's own center frequency holds across the travel. With the bank at its defaults, which put the peak at 100 Hz, 1 kHz falls 6.04 dB, 5 kHz falls 6.52 dB, and broadband level falls 7.10 dB.
 - **Peak Q** (slot 2) — Peak width/resonance.
 - **Comb offset** (slot 3) — Short pure delay ahead of the comb, 1–100 ms.
 - **Comb delay** (slot 4) — Comb filter pitch, 100 Hz–10 kHz.
@@ -59,13 +59,13 @@ Six banks — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 - **SRR 2** (slot 4) — Second sample-rate reducer stage, in series after SRR 1; same off-at-the-bottom mapping.
 - **XOR** (slot 5) — 8-bit XOR mask on the sample; the mid-travel plateau strips the low end and leaves the top.
 - **Bit depth** (slot 6) — How many low bits the digital reorganizer scrambles.
-- **Fuzz** (slot 7) — Floored equal-power blend from sine-fold (bottom, the default) to tanh-style saturation (soft below |x| = 3, hard only because of the level fed to it); about −22 dB down at either extreme, so the default is not bit-identical to before this floor.
+- **Fuzz** (slot 7) — Floored equal-power blend from sine-fold (bottom, the default) to tanh-style saturation (smooth up to an input of 3, clamped above it, and the gain ahead of it drives past 3); the held-back path sits about −22 dB at either extreme, and both paths sit at −3 dB at the centre. Sets how much of the folder reaches the output, and with it how far Feedback, Fold and Symmetry reach: at Fuzz's top a Symmetry sweep moves the output about 25 dB less than at Fuzz's bottom.
 - **Phase** (slot 8) — Allpass on the wet signal before Wet/Dry; silent effect at Wet/Dry 0.
-- **Anti-alias brightness** (`Anti-alias`, slot 9) — Crossfade between a clean oversampled shaper path and today's gritty one; top of travel is what shipped before.
-- **Feedback** (slot 10) — Folder output fed back into its own input, one sample later; 0 = no feedback, bounded below self-oscillation across the whole travel, though the margin — and the ring's decay time — shrinks toward the top.
-- **Fold** (slot 11) — Sine-fold divisor, 1×–16×; fold density rises as the knob rises.
+- **Anti-alias brightness** (`Anti-alias`, slot 9) — Crossfade between a clean oversampled shaper path and a gritty one; all grit at the top of travel (the default), clean at the bottom. Level holds through the travel at the page's default Gain and Shape: the deepest point sits about 0.6 dB under the quieter end.
+- **Feedback** (slot 10) — Folder output fed back into its own input, one sample later; 0 = no feedback, bounded below self-oscillation across the whole travel, though the margin — and the ring's decay time — shrinks toward the top. Wraps the folder alone, so raising Fuzz holds the folder back and Feedback's reach goes with it.
+- **Fold** (slot 11) — Sine-fold divisor, 16× down to 1× as the knob rises, so fold density rises with it; every position folds. At Fuzz's maximum the folder sits about 22 dB under the saturator, so Fold is quieter there without going inert: every position above the bottom still changes the sound.
 - **Tone** (slot 12) — Low-pass at the end of the chain, ~800 Hz to bypass; bypass at default.
-- **Symmetry** (slot 13) — Bipolar phase offset into the folder, centred at default (middle of travel = no offset, the two halves skew opposite sides of the wave); inert when the folder is barely present in the sound; silence in is always silence out, but a driven, sustained tone picks up a DC offset, small at the page's default settings and up to about three-quarters of full scale at some other Gain/Shape/Fold combinations.
+- **Symmetry** (slot 13) — Bipolar phase offset into the folder, centred at default (middle of travel = no offset, the two halves skew opposite sides of the wave); loudest with Fuzz low, and about 25 dB less effect at Fuzz's top; silence in is always silence out, but a driven, sustained tone picks up a DC offset, small at the page's default settings and up to about three-quarters of full scale at some other Gain/Shape/Fold combinations.
 
 ## Delay
 

@@ -618,7 +618,7 @@ A page's gain stage SHALL be named Gain and SHALL govern the stage it drives rat
 - **WHEN** the Delay bank's Send sits at zero and its wet/dry control is raised to its top
 - **THEN** the output is the dry signal, neither ducked nor replaced
 - **AND** the Reverb bank behaves identically, through the same shared mechanism rather than a second copy of it
-- Check: `app/dsp/Delay.hpp`'s `WetAuthority()` provides this today; the case pins it against the renamed control and against Reverb's new Send.
+- Check: `app/FroggersDspParityTests.cpp`'s `delay_wet_dry_leaves_dry_untouched_while_send_is_closed_and_moves_it_once_fed` pins the Delay bank's dry-until-fed behavior against the renamed control, and `reverb_wet_authority_tracks_whether_send_is_open_and_the_tank_is_fed` pins the identical `wetAuthority` mechanism for Reverb's Send.
 
 #### Scenario: The master's position and name say what it does
 

@@ -17,20 +17,39 @@ things its own plan said to check. It survived the strict validator, survived
 the spec-checks gate, and survived two full audits by contexts that had not
 written it. The clause named a property the feedback path depends on.
 
-WHAT THIS DOES NOT CHECK, and why. A delta that drops a promoted scenario
-ENTIRELY is usually superseding it on purpose: `frogg3rs-midi-controller-
-resilience` replaces "A missing release leaves Shift held until the next press
-and release" with "A missing release does not outlive the profile that saw it",
-which is the whole point of a change about bounded modifier lifetime. Nothing
-mechanical separates that from an accidental omission, so gating it would fail
-the build on correct work. Scenario counts are also the thing review already
-handles: two independent audits counted them correctly here. What review missed,
-twice, was a clause lost INSIDE a scenario the delta did restate -- which has no
-legitimate silent form, because restating a scenario is a statement that you
-carried it forward. That is the gap this gate covers, and only that.
+PAIRING A SCENARIO WITH ITS COUNTERPART. A delta scenario restates a promoted
+one when it carries that scenario's clauses, not when it repeats its title.
+Titles are prose and get reworded, and a gate that pairs on titles alone exempts
+every clause under a retitled scenario from every check here -- one comma turns
+the gate off for a whole scenario, including the dropped clause it exists to
+find.
 
-So the rule is mechanical and binary: for every scenario the delta restates,
-every promoted bullet under it appears VERBATIM or is DECLARED.
+So the pairing rule is: a promoted scenario pairs with the delta scenario of the
+same title when one exists, and otherwise with the delta scenario carrying the
+most of its clauses verbatim, when that is more than half of them. More than
+half is what restating means mechanically. A scenario carried forward under a
+new name arrives with most of its clauses intact, however its title was
+rewritten; one arriving with fewer is a different scenario standing where the
+old one used to.
+
+A promoted scenario that pairs with nothing has disappeared, and this REPORTS
+it rather than failing on it. Dropping a promoted scenario entirely is often
+supersession on purpose: `frogg3rs-midi-controller-resilience` replaces "A
+missing release leaves Shift held until the next press and release" with "A
+missing release does not outlive the profile that saw it", which carries one of
+the four clauses and is the whole point of a change about bounded modifier
+lifetime. Nothing mechanical separates that from an accidental omission, so
+failing on it fails the build on correct work. Printing the pair puts it in
+front of a reader who can tell the two apart, which silently skipping it does
+not.
+
+What has no legitimate silent form is a clause lost INSIDE a scenario the delta
+does restate, because restating a scenario is a statement that you carried it
+forward. Review already counts scenarios and counted them correctly here twice;
+what it missed, twice, was the clause inside one.
+
+So the rule for a paired scenario is mechanical and binary: every promoted
+bullet under it appears VERBATIM or is DECLARED.
 
 DECLARING AN EDIT. A MODIFIED requirement may carry a block naming each
 promoted bullet it deliberately changes or drops:
@@ -42,10 +61,16 @@ promoted bullet it deliberately changes or drops:
       keeps: none
     -->
 
-Each fragment must match at least one promoted bullet that the delta does not
-carry verbatim. A fragment matching nothing is itself a failure: it is a
-declaration that has decayed past the text it described, which is the same
-defect in the other direction, and it would otherwise sit reading as true.
+Each fragment must occur in exactly one promoted bullet that the delta does
+not carry verbatim. Occurring inside a bullet is not enough to cover it: a
+short or generic fragment can sit inside several dropped bullets at once, and
+a fragment that matches everything distinguishes nothing. A fragment covers
+only the one dropped bullet it occurs in uniquely; a fragment occurring in two
+or more dropped bullets identifies none of them, so every promoted bullet it
+was meant to cover still fails as undeclared. A fragment matching nothing is
+itself a failure: it is a declaration that has decayed past the text it
+described, which is the same defect in the other direction, and it would
+otherwise sit reading as true.
 
 EVERY DECLARED EDIT MUST SAY WHAT IT KEEPS, and the first version of this gate
 did not demand that -- which made it green on the very defect it was written
@@ -61,6 +86,21 @@ it has to be written, because a default would be chosen by whoever was in a
 hurry. The author still decides what is load-bearing; the difference is that the
 decision is recorded once and then enforced on every later edit, instead of
 being re-made silently by each person who touches the file.
+
+That text is matched against the requirement's whole restated body, not against
+one bullet picked out as the dropped clause's replacement. The declaration
+names the dropped clause; it does not name where its replacement sits in the
+delta, and the delta is free to insert, split or merge bullets around an edit
+-- itself never checked, since only loss is gated -- so a bullet's position in
+the promoted scenario does not carry over to a matching position in the
+restated one: a clause dropped from the middle of a scenario routinely comes
+back split across two bullets, merged into a neighbour, or pushed down the list
+by an addition ahead of it. Naming a single bullet as "the" replacement needs
+the declaration to name that bullet itself, which the syntax above has no field
+for. So a `keeps:` phrase can be satisfied by text that survives elsewhere in
+the requirement rather than in the sentence that replaced the dropped one; this
+is narrower than checking nothing, and it is exactly as wide as the declaration
+format can support today.
 
 The asymmetry is deliberate. Bullets the delta ADDS are not checked -- a change
 is allowed to say more than the requirement it replaces. Only loss is silent,
@@ -184,24 +224,63 @@ def without_declarations(lines):
     return out
 
 
-def scenario_titles(lines):
-    return [m.group("title") for m in (SCENARIO.match(l) for l in lines) if m]
+def scenario_blocks(lines):
+    """The requirement's preamble lines, then each scenario's title with the
+    lines under it. The preamble comes back under the title None."""
+    blocks = [(None, [])]
+    for line in lines:
+        m = SCENARIO.match(line)
+        if m:
+            blocks.append((m.group("title"), []))
+            continue
+        blocks[-1][1].append(line)
+    return blocks
 
 
-def restated_only(promoted_body, delta_body):
+def counterparts(promoted_body, delta_body):
+    """Every promoted scenario as (title, the delta scenario restating it,
+    how many clauses it has). The middle value is None when no delta scenario
+    restates it.
+
+    Same title pairs directly. Otherwise the delta scenario carrying the most
+    of the promoted scenario's clauses verbatim pairs with it, when that is
+    more than half of them -- see the module docstring for why a title is not
+    the identity of a scenario, and why a scenario that pairs with nothing is
+    reported rather than failed."""
+    delta = {
+        title: set(join_wrapped(body))
+        for title, body in scenario_blocks(without_declarations(delta_body))
+        if title is not None
+    }
+    out = []
+    for title, body in scenario_blocks(promoted_body):
+        if title is None:
+            continue
+        bullets = join_wrapped(body)
+        if title in delta:
+            out.append((title, title, len(bullets)))
+            continue
+        carried, best = 0, None
+        for delta_title, delta_bullets in delta.items():
+            shared = sum(1 for b in bullets if b in delta_bullets)
+            if shared > carried:
+                carried, best = shared, delta_title
+        out.append((title, best if carried * 2 > len(bullets) else None, len(bullets)))
+    return out
+
+
+def restated_only(promoted_body, restated):
     """The promoted lines that fall under a scenario the delta restates, plus
     the requirement's own preamble lines before any scenario.
 
-    A scenario the delta drops entirely is left out: see the module docstring
-    for why deliberate supersession and accidental omission cannot be told
-    apart mechanically, and why gating the pair fails correct changes."""
-    keep = set(scenario_titles(delta_body))
+    `restated` is the promoted titles `counterparts` paired with something. A
+    scenario paired with nothing is left out here and reported by the caller."""
     out = []
     live = True
     for line in promoted_body:
         m = SCENARIO.match(line)
         if m:
-            live = m.group("title") in keep
+            live = m.group("title") in restated
         if live:
             out.append(line)
     return out
@@ -274,6 +353,7 @@ def main():
     repo = os.path.dirname(app_dir)
 
     errors = []
+    notes = []
     checked_requirements = 0
     checked_bullets = 0
     declared_edits = 0
@@ -310,18 +390,36 @@ def main():
             delta_text = normalize(" ".join(asserted))
             entries = declared_fragments(delta_body)
             declared_edits += len(entries)
+
+            pairs = counterparts(promoted_body, delta_body)
+            for scenario, counterpart, clauses in pairs:
+                if counterpart is None:
+                    notes.append(
+                        f"{rel_delta}: '{title}' no longer restates promoted scenario "
+                        f"'{scenario}' and its {clauses} clause(s); no delta scenario "
+                        f"carries more than half of them"
+                    )
+            restated = {s for s, counterpart, _ in pairs if counterpart}
+
             dropped = []
-            for bullet in join_wrapped(restated_only(promoted_body, delta_body)):
+            for bullet in join_wrapped(restated_only(promoted_body, restated)):
                 checked_bullets += 1
                 if bullet not in delta_bullets:
                     dropped.append(bullet)
 
+            occurrence_count = {
+                f: sum(1 for b in dropped if f in b) for f, _ in entries if f
+            }
             matched = {f: 0 for f, _ in entries}
             for bullet in dropped:
-                covering = [f for f, _ in entries if f and f in bullet]
-                for f in covering:
+                identifying = [
+                    f
+                    for f, _ in entries
+                    if f and f in bullet and occurrence_count[f] == 1
+                ]
+                for f in identifying:
                     matched[f] += 1
-                if not covering:
+                if not identifying:
                     shown = bullet if len(bullet) <= 140 else bullet[:137] + "..."
                     errors.append(
                         f"{rel_delta}: '{title}' drops a promoted clause without "
@@ -330,10 +428,17 @@ def main():
             for fragment, keeps in entries:
                 shown = fragment if len(fragment) <= 100 else fragment[:97] + "..."
                 if not fragment or matched.get(fragment, 0) == 0:
-                    errors.append(
-                        f"{rel_delta}: '{title}' declares an edit that matches no "
-                        f"dropped promoted clause: {shown}"
-                    )
+                    if occurrence_count.get(fragment, 0) > 1:
+                        errors.append(
+                            f"{rel_delta}: '{title}' declares an edit whose fragment "
+                            f"occurs in {occurrence_count[fragment]} dropped promoted "
+                            f"clauses, identifying none of them: {shown}"
+                        )
+                    else:
+                        errors.append(
+                            f"{rel_delta}: '{title}' declares an edit that matches no "
+                            f"dropped promoted clause: {shown}"
+                        )
                     continue
                 if keeps is _MISSING:
                     errors.append(
@@ -349,6 +454,12 @@ def main():
                         f"requirement"
                     )
 
+    # A scenario nothing restates is a finding for a reader, not a failure:
+    # supersession and omission look identical from here, so this says which
+    # scenario left and lets the reader decide.
+    for n in notes:
+        print(f"{NAME}: NOTE - {n}")
+
     if errors:
         for e in errors:
             print(f"{NAME}: FAIL - {e}", file=sys.stderr)
@@ -357,7 +468,8 @@ def main():
     print(
         f"{NAME}: OK - {checked_requirements} MODIFIED requirement(s), "
         f"{checked_bullets} promoted clause(s) restated or declared, "
-        f"{declared_edits} declared edit(s)"
+        f"{declared_edits} declared edit(s), "
+        f"{len(notes)} promoted scenario(s) no longer restated"
     )
     return 0
 

@@ -43,11 +43,21 @@ predecessors:
 
 ## State of the tree
 
-Verified against the working tree on 2026-09-12 by reading, not carried from a
-checkbox. `main` is level with `origin/main` at `1dd0a94`. **Everything below
-described as delivered is UNCOMMITTED**, and sits in the working tree beside an
-`openspec archive` of two earlier changes that was also run and never committed.
-That is the expected state: this change exists to get that work committed.
+**Everything below described as delivered is committed and pushed.** The code
+and document work is in `e565331`; this change's own artifacts are in `585f332`.
+The working tree is clean apart from `frogg3rs-midi-controller-resilience`,
+which is a separate change the operator is holding and which this change does
+not touch. Where `main`'s tip sits is not restated here — `git log` produces it,
+and a commit id written into prose is wrong at the next commit.
+
+The `openspec archive` of `frogg3rs-effect-page-hierarchy` and
+`frogg3rs-prose-claims-get-gates` was run and is on disk under
+`openspec/changes/archive/`, which `.gitignore` excludes deliberately: archived
+changes stay local as a working record. There is nothing to commit there, and
+no task asks for it.
+
+So this change opens with its inherited work already banked, which is the state
+its staging was written to reach. What remains is under "Not delivered" below.
 
 ### Delivered and in the tree
 
@@ -77,15 +87,35 @@ That is the expected state: this change exists to get that work committed.
   is unchanged from the control it replaced; what changed is the mechanism, not
   the number — the old offset was cancelled before it reached the folder and
   this one reaches it.
-- **Both citation gates resolve exactly.** `app/check_spec_checks_resolve.py`
-  and `app/check_citations_resolve.py` accept a token only as an exact known
-  test-case name or an exact repo-relative path.
+- **Both citation gates resolve exactly, with one stated exemption.**
+  `app/check_spec_checks_resolve.py` and `app/check_citations_resolve.py`
+  accept a token only as an exact known test-case name or an exact
+  repo-relative path. The exemption is a citation carrying a git commit pin
+  (`sha:path:line`), which `check_citations_resolve.py` accepts and counts
+  without looking the path up at all, because a path pinned to a commit is not
+  expected to resolve in the working tree. The pin is not resolved against the
+  object database either, so a malformed sha passes. That is recorded here, not
+  scheduled: no task in this change repairs it.
 - **`app/check_citations_resolve.py` fails on a split citation.** It joins each
   comment line to the next line carrying text and fails when a citation resolves
   and straddles the join. It found citations no line-by-line scan could see,
   some of which were also hiding a line number into this tree from the same
   script's own rule against those. All of them are repaired, and the gate now
   reports what remains rather than this sentence doing so.
+  **Its adversarial pass is spent, and what got through is recorded here.** A
+  fresh context enumerated nine accepting branches and ran nine evasions against
+  the real script; four passed. The instrument is live: the same citation on one
+  line exits 0 and split across a break exits 1. Three of the four are coverage
+  gaps in the joiner — two blank spacer lines exceed its one-line lookahead, a
+  three-way split never chains a second join, and an unrelated filler comment
+  between the fragments is consumed as the joined line. The fourth is fatal on
+  its own terms: a citation that is BOTH split AND points at a path that exists
+  nowhere passes silently, because the split report fires only when the join
+  resolves. THE GATE IS NOT REBUILT FOR ANY OF THEM, and no task in this change
+  repairs them. Every gate has holes; a recorded hole is a finding, not an
+  instruction. Closing the fatal one would also make the gate newly red against
+  an unmeasured number of existing comments, which is a change of its own with
+  its own trace, not a repair to fold into this one.
 - **`app/check_modified_requirements_restate_promoted.py` exists** and is wired
   into `app/Makefile`'s `test` target.
 - **The manual and quickdict** carry Fold, Feedback, Fuzz, Symmetry and
@@ -116,18 +146,33 @@ That is the expected state: this change exists to get that work committed.
 
 ### Gate and test status
 
-`nice -n 10 make -C app test -j2`, EXIT 0, 384 PASS / 0 FAIL, every gate the
-`test` target wires green. Never raise `-j` above 2: this is an 8-core/16GB
-machine that freezes above it. The recipe stops at the first failure, so the
-baseline task below also runs each binary by path; on the run that produced this
-figure the recipe reached EXIT 0, so no binary was skipped.
+The suite is `nice -n 10 make -C app test -j2`. **Never raise `-j` above 2**:
+this is an 8-core/16GB machine that freezes above it.
+
+The pass and fail counts are not written here. The recipe stops at its first
+failure, so its exit code alone says nothing about the binaries it never
+reached, and a count in prose is falsified by the next commit that adds a case.
+The baseline task in the task list produces both — the recipe's exit code and a
+per-binary pass count from running each binary by path — and that task's result
+is where the figures live.
 
 ## Rulings carried forward, not reopened
 
-- **Peak gain takes candidate (c)**: keep the existing `1/height` trim and add a
-  level-holding makeup. Measured through the full chain with the comb ringing
-  against two alternatives; the other two moved total level the wrong way or
-  further. The blowout ceiling was identical for all three.
+- **Peak gain keeps the existing `1/height` trim, and the makeup that ruling
+  paired it with does not exist.** The original ruling took candidate (c) — keep
+  the trim, add a level-holding makeup — after measuring three candidates
+  through the full chain with the comb ringing, where the other two moved total
+  level the wrong way or further and the blowout ceiling was identical for all
+  three. The makeup half is refuted: any makeup at the required placement sits
+  ahead of a limiter whose response is strictly increasing, so it raises the
+  output ceiling, and no finite law holds total level to the end of the travel.
+  The trim half is confirmed, and by a different argument than the ruling gave.
+  It is not what bounds the output — `peakLimiter` is, and cancelling the trim
+  leaves the output bounded within 0.04 dB. What the trim buys is a clean
+  output: cancelling it costs 6.3 to 13.8 dB of harmonic distortion and 7.0 to
+  15.8 dB of intermodulation at the bank's registered defaults, and swings the
+  limiter's gain reduction 8.90 dB at up to 198 dB per second against 1.67 dB at
+  55. So Peak gain's level cost stays, and the documents state it.
 - **The reverb tank's diffuser is `dsp::DelayDiffuser` at its own section
   lengths**, not retuned for the tank. Every shorter set measured inert across
   the whole travel.

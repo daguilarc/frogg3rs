@@ -15,14 +15,54 @@ or a repo-relative path indexed verbatim from the tree. Nothing else resolves --
 not a bare basename, not a path relative to a sub-project root, not a name with
 its extension dropped, not a path the filesystem happens to have. Each of those
 guesses which real thing a line meant, and a guess that lands reads exactly like
-a citation somebody checked. The accepting surface is the thing that has to stay
-small enough to enumerate, so it is two rules and they are both exact.
+a citation somebody checked.
 
-Where a Check: names one of this repository's own test files, it must also name
-a case that file DEFINES. The pairing is read off the citation's shape, so the
-compound `app/Foo Tests.cpp: some_case` holds the case to that token's file
-while the separate-backtick style takes a case from anywhere on the line. Held
-apart, a real case name beside a file that never defined it reads as backed.
+Resolving is necessary but not sufficient. A path can exist and still be
+nothing to a reader deciding whether the requirement above it is backed by
+anything: a Check: line is evidence only once it also has a real case, a file
+that DEFINES one, or a gate that runs on its own -- everything else it names
+is context, carried for the reader rather than for this script.
+
+Where a Check: names a file that DEFINES cases, it must also name a case that
+file defines. The pairing is read off the citation's shape: the compound
+`app/Foo Tests.cpp: some_case` holds the case to that token's file, and the
+separate-backtick style takes a case from anywhere on the line. A real case
+name beside a file that never defined it reads as backed, and so does that
+same file named with no case anywhere on the line.
+
+The case index itself reaches app/ and External/Sheaf, over the extensions a
+test can be written in. openspec/ is specs and config in extensions the walk
+never parses, and the frozen firmware tree under src/ carries those
+extensions but defines no test macro anywhere in it -- widening the walk to
+either tree adds zero entries, checked by reading both before choosing. So a
+file's case set is whatever the index recorded for it, empty when the index
+never reached it or found nothing there, and pairing holds any file with a
+non-empty set to it, Sheaf included, not only app/.
+
+A file with an empty case set can still resolve the line: this directory's
+own `test` Makefile target runs a handful of scripts as gates in their own
+right, where running the script IS the check rather than a stand-in for one.
+A Check: naming one of those resolves on that alone. Which scripts qualify is
+read from the Makefile's own `test:` recipe, not matched against the
+filenames the check scripts happen to share -- a same-named script nothing in
+`test` runs is not a gate, and this asks the Makefile rather than guessing
+from a name. Any other file a Check: line names -- a DSP header cited as the
+expression under test, a doc, a Makefile -- is context: real, but neither a
+case-defining file nor a wired gate, so it neither passes nor fails the line
+by itself. A line that reaches none of a real case, a wired gate, or the
+declared-manual marker below has named only context, which is not a check.
+
+COMMENT TEXT DEFINES NOTHING. The index reads each file with its comment
+regions blanked out first, so a name that appears only inside a comment is not
+a name the tree defines. `// TEST_CASE(gone)` otherwise indexes exactly like a
+case the file runs, and a citation naming it resolves against nothing, which is
+the defect this gate exists to reject. The bare-function form is the same hole
+one move further along: its rule is a declaration plus a second mention of the
+name, and a commented-out call is a mention, so the declaration alone would be
+enough. `//` and `/* */` are the comment forms these trees use -- .cpp, .hpp,
+.ts, .mjs and .js have no `#` comment. Blanking tracks string and character
+literals so their contents survive: a test name is a quoted string in the
+JavaScript form, and `"http://host/path"` is a path, not a comment.
 
 An honest gap stays sayable. A `Check:` whose text begins `none`,
 `operator step`, or `not yet delivered` passes and is counted, because
@@ -91,11 +131,91 @@ def spec_files(repo):
 # it.
 JS_TEST = re.compile(r"""\b(?:test|it)\(\s*(['"`])((?:\\.|(?!\1).)*)\1""")
 
+# A run of Sheaf's UI and runtime test files skip TEST_CASE entirely and
+# declare a test as a bare top-level function instead -- `void TestFoo()` in
+# most of them, `static void TestFoo()` in a couple. The declaration alone
+# does not make it a test: a same-shaped function nothing calls again would
+# read as one for free. What makes it one is a second reference to the same
+# name elsewhere in the file, because every file that uses this form invokes
+# every such function it defines, either directly (`TestFoo();`, most files)
+# or by handing the name and the function to a small runner
+# (`Run("TestFoo", TestFoo);`, runtime_main_component_tests.cpp) -- both wire
+# the name to something that executes it, and a plain word-boundary search
+# for the name a second time catches either. The search runs over the file
+# with its comments blanked, so the second mention has to be code: a
+# commented-out call executes nothing and would otherwise make a declaration
+# self-sufficient.
+BARE_TEST_FN = re.compile(r"^(?:static\s+)?void\s+(Test[A-Za-z0-9_]*)\s*\(\s*\)\s*$",
+                          re.MULTILINE)
+
+IDENTIFIER_CHAR = re.compile(r"[A-Za-z0-9_]")
+
+
+def blank_comment_regions(text, template_strings):
+    """The file's text with every comment region blanked to spaces, character
+    for character so line structure and offsets are unchanged.
+
+    A name that only ever appears in a comment names no test, so nothing read
+    out of a comment reaches the index. String and character literals are
+    tracked and kept: a `//` inside `"http://host/path"` opens no comment, and
+    the JavaScript declaration form puts the test's name in a quoted string.
+    A `'` straight after a letter or digit is C++'s digit separator rather than
+    the start of a character literal, which is what `1'000'000` is, and reading
+    it as a literal swallows the code after it. Backticks delimit a string only
+    in the languages that have template strings.
+    """
+    out = list(text)
+    i = 0
+    n = len(text)
+    while i < n:
+        char = text[i]
+        if char == "/" and i + 1 < n and text[i + 1] in "/*":
+            if text[i + 1] == "/":
+                end = text.find("\n", i)
+                end = n if end < 0 else end
+            else:
+                end = text.find("*/", i + 2)
+                end = n if end < 0 else end + 2
+            for k in range(i, end):
+                if out[k] != "\n":
+                    out[k] = " "
+            i = end
+            continue
+        opens_literal = (
+            char == '"'
+            or (char == "`" and template_strings)
+            or (char == "'" and not (i and IDENTIFIER_CHAR.match(text[i - 1])))
+        )
+        if opens_literal:
+            i += 1
+            while i < n:
+                if text[i] == "\\":
+                    i += 2
+                    continue
+                if text[i] == char:
+                    i += 1
+                    break
+                if text[i] == "\n" and char != "`":
+                    break
+                i += 1
+            continue
+        i += 1
+    return "".join(out)
+
 
 def tests_by_file(repo):
     """Which cases live in which file, so a `Check:` naming both can be held to
     the pair rather than to each half separately. A real case name beside the
     wrong file is a false citation, and checking them independently blesses it.
+
+    Three declaration forms count: `TEST_CASE(name)`, `test("name")` /
+    `it("name")`, and a bare `[static] void TestFoo()` that something in the
+    same file calls again by name (see BARE_TEST_FN) -- a case is whichever
+    of these the file's own text shows running, not merely defining.
+
+    Every one of them is read from the file with its comments blanked out, so
+    a declaration written in a comment declares nothing and a commented-out
+    call is not the second mention the bare form needs.
 
     This is the only place case names are collected. The set of every name in
     the tree is the union of these, so reading the tree twice would be two
@@ -107,10 +227,13 @@ def tests_by_file(repo):
             continue
         for full in walk_sources(root_dir, (".cpp", ".hpp", ".ts", ".mjs", ".js")):
             try:
-                text = read(full)
+                text = blank_comment_regions(read(full), full.endswith((".ts", ".mjs", ".js")))
             except OSError:
                 continue
             found = set(TEST_CASE.findall(text)) | {m.group(2) for m in JS_TEST.finditer(text)}
+            for name in BARE_TEST_FN.findall(text):
+                if len(re.findall(r"\b" + re.escape(name) + r"\b", text)) >= 2:
+                    found.add(name)
             if found:
                 per_file[os.path.relpath(full, repo)] = found
     return per_file
@@ -118,10 +241,61 @@ def tests_by_file(repo):
 
 SEARCH_ROOTS = ("app", "openspec", "External/Sheaf", "src")
 
+MAKE_RULE = re.compile(r"^([A-Za-z][A-Za-z0-9_.-]*)\s*:(?!=)(.*)$")
+GATE_RECIPE_PATH = re.compile(r"\$\(APP_DIR\)/([^\s\"']+\.(?:py|sh|cpp))")
+
+
+def gate_scripts(app_dir, repo):
+    """Paths the `test` Makefile target runs as a gate in their own right --
+    a script whose exit code IS the check, the way a compiled test binary's
+    exit code is, rather than a file whose cases this script's own index
+    reads.
+
+    Read mechanically from the Makefile, not matched against a filename: the
+    `test:` rule's own prerequisite list names every gate target, other than
+    the `$(VAR)`-built test binaries, which the case index already covers
+    because their source defines the cases directly. Each named target's own
+    recipe lines are searched for a literal `$(APP_DIR)/name` -- every check
+    script this Makefile runs is invoked that way. A target that reaches its
+    script only through another variable's build output, rather than a
+    literal path in its own recipe, is not chased further; none of this
+    Makefile's check targets do that today. A script that merely looks like a
+    check but that `test` does not depend on must not resolve a citation, and
+    a real gate must resolve however it happens to be named -- a filename
+    pattern gets both of those backwards.
+    """
+    try:
+        lines = read(os.path.join(app_dir, "Makefile")).splitlines()
+    except OSError:
+        return set()
+
+    rules = {}
+    for i, line in enumerate(lines):
+        m = MAKE_RULE.match(line)
+        if not m:
+            continue
+        block = [m.group(2)]
+        for follow in lines[i + 1:]:
+            if not follow.startswith("\t"):
+                break
+            block.append(follow)
+        rules.setdefault(m.group(1), []).append("\n".join(block))
+
+    prereqs = rules.get("test", [""])[0].split()
+    targets = [p for p in prereqs if not p.startswith("$(")]
+
+    app_rel = os.path.relpath(app_dir, repo)
+    scripts = set()
+    for target in targets:
+        for block in rules.get(target, []):
+            for name in GATE_RECIPE_PATH.findall(block):
+                scripts.add(os.path.normpath(os.path.join(app_rel, name)))
+    return scripts
+
 
 FILES = set()
 BY_FILE = {}
-APP_CASE_FILES = set()
+GATE_SCRIPTS = set()
 
 
 def is_claim(tok):
@@ -180,14 +354,10 @@ def main():
     app_dir = os.path.abspath(sys.argv[1])
     repo = os.path.dirname(app_dir)
 
-    global FILES, BY_FILE, APP_CASE_FILES
+    global FILES, BY_FILE, GATE_SCRIPTS
     FILES = path_index(repo, SEARCH_ROOTS)
     BY_FILE = tests_by_file(repo)
-    # The files the case-naming rule covers are the ones this repository owns
-    # and this walk actually read cases out of, not the ones whose names look
-    # like test files. External/Sheaf is a pinned submodule and its suites are
-    # indexed less completely, so a Check: naming one is held to the file only.
-    APP_CASE_FILES = {f for f in BY_FILE if f.startswith("app/")}
+    GATE_SCRIPTS = gate_scripts(app_dir, repo)
     tests = set().union(*BY_FILE.values())
     errors = []
     resolved = 0
@@ -248,8 +418,11 @@ def main():
                 # Naming a test FILE is not evidence on its own: these files run
                 # to thousands of lines and hundreds of cases, so "the
                 # stage-independence case" in prose beside one cannot be checked
-                # by anyone. Where the file is one this repository owns, a case
-                # must be named too, and it must be a case that file DEFINES.
+                # by anyone. A file that DEFINES cases is held to one, whatever
+                # tree it sits in -- a citation is a claim about one specific
+                # file, and the tree it sits in does not change what the
+                # sentence asserts. A file that defines none is not handled
+                # here: it falls through to the context/gate check below.
                 #
                 # The pairing is read off the citation's own shape, so every
                 # shape answers to it. `app/Foo Tests.cpp: some_case` pairs the
@@ -264,17 +437,34 @@ def main():
                 for tok in claims:
                     parts = split_parts(tok)
                     inside = [p for p in parts if p in tests]
-                    for f in [p for p in parts if p in APP_CASE_FILES]:
-                        stray = [c for c in inside if c not in BY_FILE[f]]
+                    for f in [p for p in parts if p in BY_FILE]:
+                        file_cases = BY_FILE.get(f, set())
+                        stray = [c for c in inside if c not in file_cases]
                         if stray:
                             pairing.append(f"{rel}:{n} pairs `{stray[0]}` with {f}, "
                                            f"which does not define it")
-                        elif not line_cases & BY_FILE[f]:
+                        elif not line_cases & file_cases:
                             pairing.append(f"{rel}:{n} names {f} but no case defined in it; "
                                            f"backtick a case name from that file")
                 if pairing:
                     errors += pairing
                     continue
+
+                # A line can carry nothing but context and still reach here:
+                # the pairing block above only ever fires for a file that
+                # DEFINES cases, so a Check: naming solely a DSP header, a
+                # doc, or a script `test` never runs passes through it
+                # untouched. What makes a line a check is a real case
+                # somewhere on it, a gate `test` actually runs somewhere on
+                # it, or the declared-manual marker -- short of all three,
+                # everything named is context, and context is not a check.
+                gate_here = any(p in GATE_SCRIPTS for t in claims for p in split_parts(t))
+                if not declared and not line_cases and not gate_here:
+                    shown = ", ".join(f"`{t}`" for t in claims[:3])
+                    errors.append(f"{rel}:{n} names only context, no case and "
+                                  f"no wired gate: {shown}")
+                    continue
+
                 if declared:
                     declared_manual += 1
                 else:

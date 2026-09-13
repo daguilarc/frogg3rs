@@ -38,7 +38,7 @@ Where one control makes another inert, that SHALL be stated in the manual, and t
 
 - **WHEN** Fuzz sits at its maximum and Fold is swept across its whole travel
 - **THEN** either the output moves, or the manual states that Fold does nothing there
-- Check: `app/FroggersDspParityTests.cpp`, `drive_fold_moves_the_output_at_fuzz_maximum`, which sweeps Fold at Fuzz maximum through the production router and asserts the output moves. Its positive control is the behaviour it replaced: the linear blend multiplied the folder's leg by exactly zero there, so the same sweep measured bit-identical at -240 dB. The manual states which quantity moves at that setting, because what Fold still moves at Fuzz maximum is spectral tilt rather than density.
+- Check: `app/FroggersDspParityTests.cpp`, `drive_fold_moves_the_output_at_fuzz_maximum`, which sweeps Fold at Fuzz maximum through the production router and asserts the output moves. Its positive control is the behaviour it replaced: the linear blend multiplied the folder's leg by exactly zero there, so the same sweep measured bit-identical at -240 dB. The manual states which quantity moves at that setting: at Fuzz maximum Fold moves the balance between harmonics rather than density, against a total level that barely moves. It is not a spectral tilt — measured across a Gain by Shape grid there is no monotone slope, and which harmonic moves depends on Gain and Shape.
 
 ### Requirement: A crossfade between two signal paths holds its level
 
@@ -52,17 +52,17 @@ A control that crossfades two paths SHALL NOT lose level partway through its tra
 - **AND** alias reduction is distributed across the travel rather than concentrated in one quarter of it
 - Check: `app/FroggersDspParityTests.cpp`, `drive_anti_alias_travel_does_not_dip_below_either_endpoint`, which sweeps the whole travel at five tones through `ProcessDriveBank` with Blend raised to 1.0 and the bank's other parameters at their registered defaults, and asserts the worst dip below the lower endpoint stays under 1 dB; and `drive_anti_alias_crossfade_falls_monotonically_and_the_old_one_pole_barely_moved_it` for the distribution of alias reduction across the travel. The scenario names that operating point deliberately. The bound is met there and is not claimed everywhere: away from those defaults the dip is larger at some Gain and Shape settings, which is what the second clause sends to the manual rather than leaving unstated.
 
-### Requirement: A control's travel does not cost level it never gives back
+### Requirement: A control's travel does not silently cost level
 
-A control whose name promises emphasis, boost or gain SHALL NOT reduce the output's overall level across its travel. Where a stage is trimmed for headroom, the trim SHALL NOT be paid for out of the named control's own travel, and the control SHALL deliver the quantity it names at the output rather than only inside the stage it sets.
+A control whose name promises emphasis, boost or gain SHALL NOT cost output level silently: where its travel costs level that cannot be removed without degrading the output, the cost SHALL be stated where the control is described, and SHALL be pinned by a check measuring it. A cost that CAN be removed without degrading the output is removed instead of documented.
 
-#### Scenario: Peak gain raises the peak without lowering everything else
+#### Scenario: Peak gain's level cost is measured, stated, and pinned
 
 - **WHEN** the Filter page's Peak gain is swept from its floor to its top, measured through the whole filter chain rather than through the resonant bump alone
-- **THEN** the total output level does not fall across the travel
-- **AND** the peak's level relative to the frequencies around it rises across the travel by more than it does today, measured against a baseline taken in the same run -- the clause discriminates only against that baseline, because the shipped defect already satisfies a bare "rises"
-- **AND** the headroom case the branch trim was added for is still bounded at the control's maximum
-- Check: NOT YET DELIVERED. The peak branch is currently divided by its own height, so the travel is flat at the bump's own resonant frequency at every knob position while costing most of a 10 dB attenuation at frequencies away from it. `openspec/changes/frogg3rs-wysiwyg-deliver/tasks.md`'s Peak gain stage delivers this and pins both halves through `RouteFilterBank`; the figures live in that check rather than here, because a figure in prose cannot fail when it drifts.
+- **THEN** the level at the resonant bump's own centre frequency stays flat across the whole travel
+- **AND** the level at frequencies at least three octaves away falls at every step of that travel, which is the liveness control for the flat row and is asserted in the same case
+- **AND** the manual and the quick dictionary each state what the control delivers at the output and what it costs, rather than quoting the bump's own centre gain
+- Check: NOT YET DELIVERED. The peak branch is divided by its own height, so the travel is flat at the bump's own resonant frequency at every knob position while costing 7.10 dB of total broadband level end to end. THE COST CANNOT BE REMOVED, only reduced: `peakLimiter`'s ceiling is `kStageCeiling` and `OutputLimiter::DesiredMagnitude` asymptotes toward it without ever reaching it, so the peak branch's contribution is hard-capped whatever makeup precedes the limiter — measured at the travel's endpoint, total level stays below the reference even at a makeup of one million. An earlier wording of this requirement demanded that total level not fall at all; that is unsatisfiable at this placement, and the ruling it came from asked only that the chosen law move level less than its alternatives. `openspec/changes/frogg3rs-wysiwyg-deliver/tasks.md`'s Peak gain stage delivers the comparison and pins both halves through `RouteFilterBank`; the figures live in that check rather than here, because a figure in prose cannot fail when it drifts.
 
 ### Requirement: A document describing a control states what the control does
 
@@ -78,7 +78,7 @@ Prose in the shipped manual SHALL describe the behaviour the code produces at th
 
 - **WHEN** the manual's stated gain for a boost control is compared against the level that control produces at the chain's output
 - **THEN** the stated figure is the one the output reaches
-- Check: NOT YET DELIVERED. MANUAL.md currently states "up to about +9.5 dB (3x) at the top", which is the resonant bump's own centre gain before the branch trim removes exactly it. `openspec/changes/frogg3rs-wysiwyg-deliver/tasks.md`'s Peak gain stage delivers this.
+- Check: `app/FroggersDspParityTests.cpp`, `filter_bank_peak_gain_travel_measurement_at_and_away_from_resonance`, which drives the Filter bank through a replica of `RouteFilterBank`'s setter order at the registered defaults and pins both halves in one case: the level at the bump's own centre frequency stays flat across the whole travel, and the level at frequencies at least three octaves away falls at every step. Both documents now state what the control delivers at the output — the peak rises relative to its surroundings because the surroundings fall — and state the cost, rather than quoting the bump's own centre gain as if the output reached it.
 
 ### Requirement: A gate asserting a claim resolves distinguishes evidence from coincidence
 

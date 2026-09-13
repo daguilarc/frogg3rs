@@ -249,7 +249,7 @@ The MIDI configuration page SHALL offer exactly one control that lists devices �
 - **WHEN** a MIDI Fighter Twister row is presented
 - **THEN** no control on that row offers an Akai APC40 preset, or any preset for a kind other than the row's own
 - **AND** the only control listing devices anywhere on the page is the add row's selector
-- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, the row-control tests (task 2.6); operator, tasks 6.1 and 6.3.
+- Check: not yet delivered as a resolvable case. controllers_page_ui_tests.cpp's row-control tests cover a Twister row never showing another kind's preset, which the deleted preset combo (task 2.3, zero remaining references to ControllerLayout/kControllerLayout) makes true by construction but which no test asserts by name. The page-wide half — the add row's selector is the only device-listing control on the page — no longer holds: Sheaf commit ba3898e4 ("Let a Launchpad row say which Launchpad it is", branch launchpad-model-on-the-row) reintroduced a per-row Variant selector for Launchpad rows, exercised by TestLaunchpadRowOffersVariantAndRetargetsItsPads. This scenario needs the operator's decision (permit the Variant selector as an exception, or reconsider it) before either half can be marked delivered. Operator, tasks 6.1 and 6.3, predate that commit.
 
 #### Scenario: Restore appears only when there is something to restore
 - **WHEN** a row created from a preset has had a mapping edited
@@ -258,21 +258,21 @@ The MIDI configuration page SHALL offer exactly one control that lists devices �
 - **AND** a row whose configuration still matches its preset offers no Restore
 - **AND** a row that was never created from a preset offers none either
 - **AND** editing a mapping and setting it back by hand withdraws Restore again
-- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, the Restore tests (task 2.6); operator, task 6.2.
+- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, `TestRestoreReinstallsADivergedPresetAndIsGatedByDivergence`, which pins Restore absent on an untouched preset row, absent on a row never created from a preset, present once diverged, and gone again once the row matches its preset (there, by pressing Restore itself); operator, task 6.2, covers the by-hand-edit-reverts-it variant this test does not drive.
 
 #### Scenario: A device model is chosen once, as a preset
 - **WHEN** the add row is opened
 - **THEN** each Launchpad model is listed as its own preset, alongside the Twister and each APC40 mode
 - **AND** no control anywhere on a created row asks which model or mode that row is
 - **AND** a row created from a preset carrying a connect-time message sends exactly that message when its output connects, and one created from a preset without such a message sends none
-- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, the preset tests, and `External/Sheaf/projects/synth/tests/instrument_tests.cpp`, the connect-message tests (task 2.6); operator, tasks 6.1a and 6.1b.
+- Check: the add row's preset list (each Launchpad model, Twister, and each APC40 mode) is operator-verified only (task 6.1a); frogg3rs's own Launchpad presets live in app/FroggersMidiCatalog.hpp, outside Sheaf's test tree. "No control anywhere on a created row asks which model or mode" no longer holds now that Sheaf commit ba3898e4 (branch launchpad-model-on-the-row) restored a per-row Variant selector for Launchpad rows (TestLaunchpadRowOffersVariantAndRetargetsItsPads), which needs the operator's decision. The connect-time-message half is backed: `External/Sheaf/projects/synth/tests/instrument_tests.cpp`'s `CreateMidiControllerProfileWiresOpenSysExToConnectTimeOutput` proves a preset's openSysEx message sends exactly once on connect and an empty one sends none. Operator, tasks 6.1a and 6.1b, predate that commit.
 
 #### Scenario: Releasing a controller frees it and keeps its mappings
 - **WHEN** a row with both endpoints bound is released
 - **THEN** its open endpoints are closed, its stored references are retained, and another application can take the device
 - **AND** reclaiming it restores its mappings
 - **AND** a row with no bound device offers no release control at all, rather than a disabled one
-- Check: `External/Sheaf/projects/synth/tests/viewmodel_tests.cpp` and `External/Sheaf/projects/synth/tests/browser_runtime_contract_tests.cpp`, the release round trip (task 2.5); operator, task 6.5.
+- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`'s `TestControllerLifecycleActionsUseTheNormalCommitAndSavePath` proves a release closes both endpoints and retains the profile as dormant data, and `TestReleaseRequiresResolvedWizardAndBoundEndpoints` proves a row with no bound device offers no release control at all. "Reclaiming it restores its mappings" is not backed, and reading the code says why: RemoveFromBlacklist (`External/Sheaf/projects/synth/src/MidiConfigViewModel.cpp`), which the Reclaim action calls, removes the record outright rather than restoring it — matching Sheaf's own `External/Sheaf/openspec/changes/app-midi-catalog/specs/synth-runtime-ui/spec.md` scenario "Reclaim restores availability": Reclaim discards the inert record and frees its device pair for a fresh Add, it does not bring this record's mappings back. This needs the operator's correction to the requirement, not a test. Operator, task 6.5, exercised Restore and Release; its Reclaim observation was not re-verified against this reading.
 
 ### Requirement: A row remembers which preset created it
 A controller row SHALL retain the identity of the preset that created it for as long as the row exists, and editing the row's mappings SHALL NOT discard that identity. Whether the row still matches that preset SHALL be determined by comparing the row's stored configuration against the preset's generated configuration, rather than by treating the recorded identity as a marker of an unedited row. Controls that depend on a row resolving to a known preset SHALL remain available after the row's mappings have been edited.
@@ -281,13 +281,13 @@ A controller row SHALL retain the identity of the preset that created it for as 
 - **WHEN** a mapping on a row created from a preset is edited, deleted, or added to
 - **THEN** the row still resolves to the preset that created it
 - **AND** the row is reported as differing from that preset
-- Check: `External/Sheaf/projects/synth/tests/viewmodel_tests.cpp`, the provenance tests (task 2.6).
+- Check: `External/Sheaf/projects/synth/tests/viewmodel_tests.cpp`, `ApplyMappingEditKeepsWizardIdProvenance`, `DeleteRowKeepsWizardIdProvenance`, `AddSingleKeepsWizardIdProvenance`, `AddBlockKeepsWizardIdProvenance` — one case per verb this scenario names (edited, deleted, added). Each pins that the row still resolves to its creating preset; that the edited row is then reported as differing from it is the divergence flag Restore's own gating proves (see the Restore scenario above).
 
 #### Scenario: Editing a row does not withdraw its other controls
 - **WHEN** a row with both endpoints bound has one of its mappings edited
 - **THEN** the row still offers to release the bound controller
 - **AND** a released row that has been edited still offers Configure
-- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, the row-control tests (task 2.6); operator, task 6.5.
+- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, `TestReleaseRequiresResolvedWizardAndBoundEndpoints`, which drives a mapping edit through the real per-field commit path and then finds Release still present; and `TestConfigureStaysAvailableOnAReleasedEditedRow`, which releases an edited row and finds Configure still present. Operator, task 6.5.
 
 ### Requirement: The MIDI configuration page fits this application's window in every state
 
@@ -302,9 +302,7 @@ The MIDI configuration page SHALL lay every control inside this application's co
   open, and the Twister row is expanded with Encoders open
 - **THEN** no control lies outside the page's content width in any of
   those states
-- Check: `External/Sheaf/projects/synth/tests/portable_ui_tests.cpp`,
-  `TestControllersRowFitsWithinFroggersNarrowestHost` (task 2.6);
-  operator, task 7.1.
+- Check: `External/Sheaf/projects/synth/tests/portable_ui_tests.cpp`, `TestControllersRowFitsWithinFroggersNarrowestHost` (task 2.6); operator, task 7.1.
 
 #### Scenario: The row reads as its parts
 
@@ -315,8 +313,7 @@ The MIDI configuration page SHALL lay every control inside this application's co
   selector, Delete and Blacklist on the second; no rename control in the header
 - **AND** a Launchpad row shows a "Variant" selector on that first line,
   holding the model its profile records
-- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, the caption, dot-order and
-  header tests (task 2.5); operator, task 7.1.
+- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, `TestControllerLifecycleActionsUseTheNormalCommitAndSavePath` (no rename control in a collapsed row's header) and `TestLaunchpadRowOffersVariantAndRetargetsItsPads` (the Variant selector on a Launchpad row's first line); the per-row status-dot-precedes-its-combo and MIDI-in/MIDI-out caption assertions this scenario also names are exercised only inline in this file's own `main()`, which this repository's case index does not resolve by name. Operator, task 7.1.
 
 #### Scenario: Renaming keeps the editor open
 
@@ -326,10 +323,7 @@ The MIDI configuration page SHALL lay every control inside this application's co
   section it had open is still open
 - **AND** deleting a controller and adding another with the same name
   still starts that row fully collapsed
-- Check: `External/Sheaf/projects/synth/tests/viewmodel_tests.cpp`, the rename expand-state tests;
-  `controllers_page_ui_tests.cpp` and
-  `juce/ControllersPageSimulationTests.cpp`, the post-rename editor
-  assertions (task 2.5); operator, task 7.2.
+- Check: `External/Sheaf/projects/synth/tests/viewmodel_tests.cpp`, `RenameOfExpandedRowKeepsSectionPresentationOpen` (rename preserves expansion and the open section) and `SameNameReaddAfterDeleteStartsFullyCollapsed` (delete, then re-add under the same name, starts collapsed); operator, task 7.2.
 
 #### Scenario: Adding from a preset
 
@@ -342,8 +336,7 @@ The MIDI configuration page SHALL lay every control inside this application's co
   binds both ports to it
 - **AND** with only one of its ports present, both ports still read
   "(none)" and the operator picks the present one from its selector
-- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, the add-from-preset tests (task
-  2.5); operator, task 7.3.
+- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, `TestAddFromPresetWithNoDeviceInstallsTheDefaultPresetWithNoneEndpoints` and `TestAddFromPresetWithMatchingOnlinePairBindsBothEndpoints` (task 2.5); operator, task 7.3.
 
 #### Scenario: A page change rebuilds every test that reads the page
 
@@ -353,17 +346,14 @@ The MIDI configuration page SHALL lay every control inside this application's co
   relinked from the changed source rather than reported up to date
 - **AND** a binary built from more than one translation unit is rebuilt
   when a header reached by any one of them changes, not only the last
-- Check: `app/Makefile`'s generated depfiles are the mechanism, and a two-leg
-  rebuild proves them: touching a header reached through either leg rebuilds
-  the dependent object.
+- Check: not yet delivered as a standing case. The prior wording named `app/Makefile`, which carries no such mechanism; the generated depfiles (`DEPFLAGS := -MMD -MP`) that make this true live in `External/Sheaf/projects/synth/Makefile`, on the five Sheaf test-binary rules and the split BrowserRuntimeAbi.o rule, proven once by a manual two-leg positive control (touching `External/Sheaf/projects/synth/include/synth/ControllersPageUI.hpp` rebuilt the dependent binary where the prior hand-written list reported it up to date). Sheaf's own analogous scenario records the identical one-time proof and cites no automated case either. Delivering this as a standing check means a script that dirties a leaf header, rebuilds, and asserts the expected object's mtime moved.
 
 #### Scenario: A selector's text stays in its box
 
 - **WHEN** a controller's Preset selector shows "MIDI Fighter Twister" in
   the browser build
 - **THEN** the selector fills exactly its box and clips its text
-- Check: `External/Sheaf/projects/synth/browser/tests/ui-backend.spec.ts`, the select-fills-wrapper
-  assertion.
+- Check: `External/Sheaf/projects/synth/browser/tests/ui-backend.spec.ts`, `renders portable controls, canvas draws, and reachable scroll content`, whose select-fills-wrapper assertion (the combo's select child is sized to match its own wrapper's width) is the mechanism a same-width select clips its own text by.
 
 ### Requirement: The library is tested on the target the product ships to
 The library's own test binaries SHALL be built and run for the browser's wasm32 target as part of the test gate, so that behaviour depending on the width of `std::size_t` is exercised at the width the shipping build uses. The gate SHALL fail, rather than skip, when the toolchain that builds for that target is unavailable. Arithmetic guarding an index or a count SHALL be correct on every target the code is built for, independent of word size.
@@ -372,13 +362,13 @@ The library's own test binaries SHALL be built and run for the browser's wasm32 
 - **WHEN** a size bound or overflow guard behaves differently under a 32-bit `std::size_t` than under a 64-bit one
 - **THEN** the test gate fails on the wasm32 target
 - **AND** the failure names the function whose behaviour differs
-- Check: the wasm32 gate, proven live in both directions — with the pre-fix guard restored it exits non-zero on 23 failures in `External/Sheaf/projects/synth/tests/blocks_tests.cpp`, and after the block validator's overflow guard is corrected it runs both binaries to 249 passes and 0 failures. The gate is fail-fast, so the 26 failures the same guard causes in `External/Sheaf/projects/synth/tests/viewmodel_tests.cpp` are measured by building that binary for the target directly, not through the gate.
+- Check: `External/Sheaf/projects/synth/tests/blocks_tests.cpp`'s `ExpandEncoderBlockRejectsStartPositionNearSizeMaxThatWouldWrap`, `ExpandAnalogBlockRejectsStartGestureIxNearSizeMaxThatWouldWrap` and `ExpandSystemBlockRejectsStartArgNearSizeMaxThatWouldWrap` are the width-dependent cases, proven live in both directions: with the pre-fix guard restored they are among 23 failures under wasm32, and after the block validator's overflow guard is corrected the wasm32 binaries run to 249 passes and 0 failures. The gate itself is `test-wasm32` in External/Sheaf/projects/synth/Makefile, wired into that Makefile's own `test` target; this repository's gate script only reads app/Makefile for wired-gate scripts, so no citation naming it resolves as a gate here. The gate is fail-fast, so the 26 failures the same guard causes in External/Sheaf/projects/synth/tests/viewmodel_tests.cpp are measured by building that binary for the target directly, not through the gate.
 
 #### Scenario: Adding an encoder mapping succeeds in the browser build
 - **WHEN** a controller row created from a preset has Add or Block pressed in the Encoders editor
 - **THEN** the mapping or block is added, in the browser build as in every other
 - **AND** the same holds on a row with no existing mappings, and in the Analogs and System Messages sections
-- Check: `External/Sheaf/projects/synth/tests/blocks_tests.cpp` and `External/Sheaf/projects/synth/tests/viewmodel_tests.cpp` on wasm32, which fail on exactly these paths before the guard is corrected and pass after; and the operator on the deployed build.
+- Check: `External/Sheaf/projects/synth/tests/blocks_tests.cpp`'s `ExpandEncoderBlockProducesConsecutiveCcToPositionMapping` (Encoders), `ExpandAnalogBlockProducesConsecutiveCcToGestureMapping` (Analogs) and `ExpandSystemBlockGenericSceneSelectProducesCcRunWithFeedbackEqualsPress` (System Messages) exercise exactly these add paths on wasm32, among the cases that fail before the guard is corrected and pass after; External/Sheaf/projects/synth/tests/viewmodel_tests.cpp's own failures under the same guard are measured by building that binary for the target directly, per the scenario above. And the operator on the deployed build.
 
 ### Requirement: A control's label is legible and its neighbours are separated
 A text node SHALL be allocated a box wide enough for the text it renders, and adjacent controls within a row SHALL be separated by a non-zero gap, so that no label is clipped by, or visually continuous with, the control beside it. This SHALL be checked by a criterion applied to the page's rendered states, measuring text width finely enough to catch a sub-pixel overrun, rather than by inspection.
@@ -387,12 +377,12 @@ A text node SHALL be allocated a box wide enough for the text it renders, and ad
 - **WHEN** the Encoders editor's Turn or Push group header is presented
 - **THEN** every column label is fully legible
 - **AND** a gap separates the last column from the Add button
-- Check: `External/Sheaf/projects/synth/browser/tests/visual-criteria.spec.ts`, the text-fit criterion, extended to the row-expanded/Encoders-open state and to a sub-pixel measurement, proven to fail on the 58px `BlockStartPos` allocation and the zero gap before they are corrected; and the operator on the deployed build.
+- Check: `External/Sheaf/projects/synth/browser/tests/visual-criteria.spec.ts`, `the controller row's Encoders group header meets the structural criteria across a range of widths`, which asserts the "Start Pos" column header renders twice (Turn and Push) and is the text-fit criterion extended to the row-expanded/Encoders-open state, proven to fail on the 58px `BlockStartPos` allocation and the zero gap before they are corrected; and the operator on the deployed build.
 
 #### Scenario: A rounding-width overrun is not reported as fitting
 - **WHEN** a label's rendered text exceeds its allocated box by less than one pixel
 - **THEN** the text-fit criterion reports a violation
-- Check: `External/Sheaf/projects/synth/browser/tests/visual-criteria.spec.ts`, the same criterion. `scrollWidth` and `clientWidth` are integers and both read 58 for the 58.3px "Start Pos" label, so the integer comparison this replaces reports no violation on a live defect.
+- Check: `External/Sheaf/projects/synth/browser/tests/visual-criteria.spec.ts`, `every text element fits its allocated extent`, which measures `textNeededWidth`/`textAvailableWidth` rather than `scrollWidth`/`clientWidth`; those two are integers and both read 58 for the 58.3px "Start Pos" label, so the integer comparison this replaces reports no violation on a live defect.
 
 ### Requirement: A preset's port aliases are per direction and name what the host reports
 

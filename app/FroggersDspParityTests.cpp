@@ -2348,7 +2348,7 @@ TEST_CASE(comb_branch_output_stays_at_or_below_computed_bound_at_max_feedback) {
     chain.pureDelay.delaySamples = 0.0f;
 
     const float fb = std::fabs(chain.comb.feedback);
-    const float inputAmplitude = 1.0f;  // A: filter input is bounded |A| <= 1 (Drive output, W2.1-MATH).
+    const float inputAmplitude = 1.0f;  // A: the filter's input is bounded |A| <= 1 by the Drive stage ahead of it.
     const float bound = (inputAmplitude + fb) / (1.0f + fb);
     // Held-in peak-branch contribution the floored blend now adds on top of
     // `bound` (this test's own header comment) -- computed from the floor
@@ -2417,7 +2417,7 @@ TEST_CASE(comb_branch_output_stays_at_or_below_computed_bound_at_max_feedback) {
 // hard clamp). At 0.45 both patterns below measure exactly 0.0 overshoot.
 // -----------------------------------------------------------------------
 TEST_CASE(comb_branch_output_stays_at_or_below_computed_bound_under_audio_rate_feedback_modulation) {
-    const float inputAmplitude = 1.0f;  // A: filter input is bounded |A| <= 1 (Drive output, W2.1-MATH).
+    const float inputAmplitude = 1.0f;  // A: the filter's input is bounded |A| <= 1 by the Drive stage ahead of it.
     const float kMaxFb = dsp::Comb::GetFeedback(1.0f);  // +0.95, kMaxFeedbackMagnitude.
 
     auto boundFor = [&](float fb) { return (inputAmplitude + std::fabs(fb)) / (1.0f + std::fabs(fb)); };
@@ -2504,7 +2504,7 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_at_max_height) {
     chain.peak.SetHeight(maxHeight);
     chain.peak.SetWidth(1.0f);
 
-    const float inputAmplitude = 1.0f;  // A: filter input is bounded |A| <= 1 (Drive output, W2.1-MATH).
+    const float inputAmplitude = 1.0f;  // A: the filter's input is bounded |A| <= 1 by the Drive stage ahead of it.
     const float bound = inputAmplitude;  // A * height / height == A -- the trim's exact target.
     // Held-in comb-branch contribution the floored blend adds on top of
     // `bound` (see this test's own header comment) -- chain.comb defaults
@@ -2541,8 +2541,8 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_at_max_height) {
 // (peakTrimSmoother shares kTrimGlideCyclesPerSample with combTrimSmoother,
 // FilterFx.hpp) -- reused here rather than re-derived.
 //
-// FINDING (measured, not fixed -- out of the trim fix's scope, which is "mirror
-// W2.2a's mechanism exactly"): pattern 1 (hard step) settles to ~0
+// FINDING (measured, not fixed -- the peak trim mirrors the comb trim's
+// mechanism and does nothing further): pattern 1 (hard step) settles to ~0
 // overshoot, same as the comb -- but pattern 2 (audio-rate sweep) does NOT
 // reach the comb's "exactly 0 overshoot at glide>=0.33" result. Root cause,
 // traced rather than assumed: the comb's per-sample bound is UNCONDITIONAL
@@ -2554,21 +2554,21 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_at_max_height) {
 // across a height change, so when `height` drops suddenly the trim (tracked
 // fast, correctly, at the new low target) can under-attenuate a raw signal
 // still carrying resonance energy built up under the PRIOR, higher height
-// -- the mirror image of R1's original comb problem, and not closable by
-// retuning the same one glide constant in either direction (faster
-// worsens a height-decrease; slower would reopen R1's original
-// height-increase gap). Measured (500,000 trials across 10 fixed seeds,
+// -- the mirror image of the lag the comb's own trim was added to close,
+// and not closable by retuning the same one glide constant in either
+// direction (faster worsens a height-decrease; slower would reopen the
+// height-increase gap the comb's trim closes). Measured (500,000 trials across 10 fixed seeds,
 // xorshift32, 50000 samples/seed): trimmed worst-case 1.669 vs raw
 // (untrimmed) worst-case 1.819 -- the trim fix measurably helps (worst case pulled
 // down from near the untrimmed ceiling) but does not achieve the static
 // case's tight `A` bound under this adversarial pattern. What IS still
 // provably true, and what this test pins: the trim never makes the
 // worst case WORSE than the pre-existing, already-accepted ceiling
-// `A * kMaxResonantBumpHeight` (W2.1-MATH's own `|peak| <= A * height`,
-// height <= kMaxResonantBumpHeight) -- i.e. the trim fix is a net improvement and a
+// `A * kMaxResonantBumpHeight` (the bump's own `|peak| <= A * height`,
+// with height <= kMaxResonantBumpHeight) -- i.e. the trim fix is a net improvement and a
 // safe no-regression, not a complete fix of the audio-rate case. Recorded
 // as a residual finding for a future dispatch, not invented as a fix here
-// (the trim fix's brief is "mirror W2.2a's mechanism exactly", not "redesign it").
+// (the trim mirrors the comb trim's mechanism rather than redesigning it).
 //
 // Both bounds below are widened by the SAME held-in comb-branch slack
 // peak_branch_output_stays_at_or_below_computed_bound_at_max_height derives
@@ -2577,7 +2577,7 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_at_max_height) {
 // feedback=0.0f here too, so its own bound is exactly `inputAmplitude`.
 // -----------------------------------------------------------------------
 TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_under_audio_rate_height_modulation) {
-    const float inputAmplitude = 1.0f;  // A: filter input is bounded |A| <= 1 (Drive output, W2.1-MATH).
+    const float inputAmplitude = 1.0f;  // A: the filter's input is bounded |A| <= 1 by the Drive stage ahead of it.
     const float freqNormalized = 0.05f;
     const float kMaxHeight = dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, 1.0f);
 
@@ -2625,7 +2625,7 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_under_audio_rate_h
     // Per this TEST_CASE's own header finding, this pattern does NOT settle
     // to the tight `A` bound the way the comb's audio-rate sweep does --
     // asserted here against the pre-existing, already-established ceiling
-    // `A * kMaxResonantBumpHeight` (W2.1-MATH) instead: the property this
+    // `A * kMaxResonantBumpHeight` instead: the property this
     // test CAN honestly pin is "the trim fix does not regress the worst case past the
     // already-accepted untrimmed ceiling", not "the trim fix fully bounds the
     // audio-rate case" (it measurably does not, per the header comment).
@@ -2638,7 +2638,7 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_under_audio_rate_h
             rngState ^= rngState << 5;
             return static_cast<float>(rngState % 1000000u) / 1000000.0f;
         };
-        const float ceilingBound = inputAmplitude * dsp::kMaxResonantBumpHeight;  // W2.1-MATH's own bound.
+        const float ceilingBound = inputAmplitude * dsp::kMaxResonantBumpHeight;  // the untrimmed peak's own ceiling.
         constexpr int kSamples = 20000;
         for (int i = 0; i < kSamples; ++i) {
             const float height = 1.0f + nextUniform01() * (kMaxHeight - 1.0f);
@@ -2691,7 +2691,7 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_under_audio_rate_h
 // -----------------------------------------------------------------------
 TEST_CASE(peak_branch_output_respects_computed_bound_under_audio_rate_height_modulation_with_limiter) {
     constexpr float sampleRate = 48000.0f;
-    const float inputAmplitude = 1.0f;  // A: filter input is bounded |A| <= 1 (Drive output, W2.1-MATH).
+    const float inputAmplitude = 1.0f;  // A: the filter's input is bounded |A| <= 1 by the Drive stage ahead of it.
     const float freqNormalized = 0.05f;
     const float kMaxHeight = dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, 1.0f);
     const float bound = inputAmplitude;  // the computed bound the test targets -- never a literal.
@@ -3072,6 +3072,567 @@ TEST_CASE(topology_morph_peak_branch_headroom_across_full_range) {
     // limiters/trims already target -- which finiteness above does not by
     // itself rule out.
     REQUIRE_TRUE(overallMax < 5.0f);
+}
+
+// -----------------------------------------------------------------------
+// Filter-bank replica (SetFilterFxChainKnobs/ProcessFilterBank, mirroring
+// RouteFilterBank's own setter order, FroggersAppCore.hpp) -- there was no
+// Filter-bank equivalent of DriveBankKnobs/SetFrogBlockKnobs/
+// ProcessDriveBank (3.9 below) before this. One field per
+// FroggersBankId::Filter slot (FroggersBankLayouts()'s Filter row,
+// FroggersParameters.hpp), holding the RAW 0..1 knob value exactly as
+// RoutedKnob would return it. Unlike Drive's SetGain/SetCoefs, most of
+// RouteFilterBank's ExpMapCompute/GetFeedback/GetDelaySamples calls happen
+// OUTSIDE the dsp setters, so SetFilterFxChainKnobs below reproduces those
+// calls itself rather than pushing raw knobs straight into the chain.
+// Defaults are the FroggersParameters.hpp registered defaults: every slot
+// is 0.0f except Comb feedback (0.5, GetFeedback maps it to exactly zero
+// feedback) and Comb drive (0.5, ExpMapCompute(0.25,4,0.5) is exactly
+// unity) -- see FroggersBankLayouts()'s own Filter-row comments.
+struct FilterBankKnobs {
+    float peakFreq = 0.0f;       // slot 0
+    float peakGain = 0.0f;       // slot 1 -- swept across its travel below.
+    float peakQ = 0.0f;          // slot 2 (bump width)
+    float combOffset = 0.0f;     // slot 3
+    float combDelay = 0.0f;      // slot 4 (comb frequency)
+    float combFeedback = 0.5f;   // slot 5
+    float combLp = 0.0f;         // slot 6
+    float combDrive = 0.5f;      // slot 7
+    float scoopMix = 0.0f;       // slot 8
+    float scoopFreq = 0.0f;      // slot 9
+    float scoopWidth = 0.0f;     // slot 10
+    float scoopDepth = 0.0f;     // slot 11
+    float combPeakBlend = 0.0f;  // slot 12
+    float topology = 0.0f;       // slot 13
+};
+
+// RouteFilterBank's own setter order (FroggersAppCore.hpp): pureDelay
+// (comb offset) first, then peak freq/height/width, then scoop
+// freq/width/height, then comb delay-samples/feedback/LP-alpha/drive.
+// Comb/Peak blend, Scoop mix and Topology are not chain setters at all --
+// they are arguments to FilterFxChain::Process itself, passed through
+// unmodified (see ProcessFilterBank below), exactly where RouteFilterBank
+// passes them. combDrive's setter reads RouteFilterBank's own
+// `StoppedKnob(Filter, 7, kStopUnityDriveKnob)` in production (a
+// transport-stop override); this replica has no transport, so it always
+// takes the raw knob directly -- safe here because the override value
+// (kStopUnityDriveKnob, 0.5f) and the registered default (also 0.5f) are
+// the SAME number, so a measurement that never moves combDrive off its
+// default cannot tell the two paths apart.
+void SetFilterFxChainKnobs(dsp::FilterFxChain& chain, const FilterBankKnobs& k, float sampleRate) {
+    const float combOffsetSeconds =
+        std::min(dsp::ExpMapCompute(0.001f, 0.1f, k.combOffset),
+                 static_cast<float>(dsp::PureDelay::kSize - 1) / sampleRate);
+    chain.pureDelay.SetDelaySeconds(combOffsetSeconds, sampleRate);
+
+    const float bumpFreq = dsp::ExpMapCompute(100.0f / sampleRate, 20000.0f / sampleRate, k.peakFreq);
+    const float bumpWidth = dsp::ExpMapCompute(0.4f, 10.0f, k.peakQ);
+    chain.peak.SetFreq(bumpFreq);
+    chain.peak.SetHeight(dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, k.peakGain));
+    chain.peak.SetWidth(bumpWidth);
+
+    const float scoopFreq = dsp::ExpMapCompute(100.0f / sampleRate, 20000.0f / sampleRate, k.scoopFreq);
+    const float scoopWidth = dsp::ExpMapCompute(0.4f, 10.0f, k.scoopWidth);
+    chain.scoopNotch.SetFreq(scoopFreq);
+    chain.scoopNotch.SetWidth(scoopWidth);
+    chain.scoopNotch.SetHeight(dsp::ExpMapCompute(1.0f, 0.05f, k.scoopDepth));
+
+    const float combFreq = dsp::ExpMapCompute(100.0f / sampleRate, 10000.0f / sampleRate, k.combDelay);
+    chain.comb.delaySamples =
+        std::min(static_cast<float>(dsp::Comb::kSize - 1), std::max(1.0f, dsp::Comb::GetDelaySamples(combFreq)));
+    chain.comb.SetFeedback(dsp::Comb::GetFeedback(k.combFeedback));
+    const float cmlpCeiling = 20000.0f / sampleRate;
+    const float cmlp = dsp::ExpMapCompute(std::min(4.0f * combFreq, cmlpCeiling), cmlpCeiling, k.combLp);
+    chain.comb.SetCutoffAlpha(1.0f - std::exp(-2.0f * static_cast<float>(M_PI) * cmlp));
+    chain.comb.SetDrive(dsp::ExpMapCompute(0.25f, 4.0f, k.combDrive));
+}
+
+// The full bank: FilterFxChain's Process, driven by RouteFilterBank's own
+// last three routed knobs (Topology, Comb/Peak blend, Scoop mix) exactly
+// as it passes them -- same split ProcessDriveBank uses below (setters,
+// then Process, then the bank's own remaining routed arguments). Calls
+// `dsp::FilterFxChain::Process` itself, so what is measured through here
+// is the shipped signal path rather than a replica of it.
+float ProcessFilterBank(dsp::FilterFxChain& chain, const FilterBankKnobs& k, float sampleRate, float driveOut) {
+    SetFilterFxChainKnobs(chain, k, sampleRate);
+    return chain.Process(driveOut, k.topology, k.combPeakBlend, k.scoopMix);
+}
+
+// -----------------------------------------------------------------------
+// MEASUREMENT (read-only): FilterFxChain::Process divides the peak
+// branch's output by peak.height with no makeup gain (`rawPeakTrim =
+// 1.0f / peak.height`, FilterFx.hpp). AT the bump's own resonant
+// frequency this is the intended behaviour -- `peakRaw ~= A*height` there,
+// so `peakRaw/height ~= A`, height-independent, matching combTrim's own
+// worst-case normalization (FilterFxChain::Process's own comment on
+// `rawPeakTrim`). AWAY from resonance the RBJ peaking biquad's own gain
+// approaches UNITY regardless of height (ResonantBump::UpdateCoefficients,
+// FilterFx.hpp) -- the SAME `1/height` divide still applies there, with
+// nothing to compensate for, so the composite level at an off-resonance
+// frequency is expected to FALL as Peak gain (height) rises.
+//
+// Driven through ProcessFilterBank (mirroring RouteFilterBank's own
+// setter order, FroggersAppCore.hpp) at the Filter bank's registered
+// defaults (FroggersBankLayouts()'s Filter row, FroggersParameters.hpp).
+// Only Peak gain (slot 1) is swept, across its whole [0,1] travel, not
+// just the endpoints (this file's own topology-sweep idiom above).
+//
+// NOT dsp::ResonantBump alone: an isolated bump has no `1/height` trim, so
+// its own skirt gain RISES with height even off-centre, hiding this
+// defect entirely (contrast resonant_bump_frequency_response_matches_
+// simulated_steady_state_gain above, which never sweeps an off-centre
+// row). NOT a hand-configured FilterFxChain either: SetFilterFxChainKnobs
+// above calls pureDelay.SetDelaySeconds, mirroring RouteFilterBank's own
+// first setter call -- a chain that skips it leaves pureDelay.delaySamples
+// at its struct default (0.0f), which a prior attempt found moved one
+// frequency row's reading while the others agreed.
+//
+// Tap point: the composite FilterFxChain output -- ProcessFilterBank's
+// return value, exactly RouteFilterBank's own return (post comb/peak
+// blend, post peakLimiter) -- fed by a full-scale sine (matches this
+// section's own filter_fx_chain_scoop_full_does_not_cancel/
+// topology_morph_peak_branch_headroom idiom above), one grid frequency at
+// a time. A fourth row runs the same travel and the same tap on a
+// full-scale broadband source and reads total level as RMS, which is the
+// overall cost both documents quote; a per-frequency grid cannot produce
+// that figure, so without this row it would live only in prose.
+//
+// This case asserts the PAIRING it prints, and both halves belong to it.
+// The resonance row alone is also what a dead or disconnected rig prints
+// -- every cell equal because nothing is reaching the peak -- so the away
+// rows' monotonic fall is this fixture's liveness control and is asserted
+// here rather than in a separate case. It pins today's shipped behaviour,
+// including the level the travel costs, which no change removes; MANUAL.md
+// and QUICK_DICT.md describe Peak gain in exactly these terms.
+// -----------------------------------------------------------------------
+TEST_CASE(filter_bank_peak_gain_travel_measurement_at_and_away_from_resonance) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float inputAmplitude = 1.0f;  // full-scale, matches this section's own peak-branch idiom.
+
+    FilterBankKnobs knobs;  // every field at its FroggersBankLayouts() registered default.
+    const float bumpFreqNormalized = dsp::ExpMapCompute(100.0f / sampleRate, 20000.0f / sampleRate, knobs.peakFreq);
+    const double resonantFreqHz = static_cast<double>(bumpFreqNormalized) * static_cast<double>(sampleRate);
+
+    // Grid: the bump's own resonant frequency (Peak freq's registered
+    // default -- ExpMapCompute's floor, 100 Hz) plus two frequencies well
+    // outside the default bump's own skirt (bumpWidth's registered default
+    // is 0.4, ResonantBump.hpp's own comment measures that as ~3 octaves --
+    // 1 kHz sits ~3.3 octaves above 100 Hz, 5 kHz ~5.6 octaves above it).
+    const double frequencyGridHz[] = {resonantFreqHz, 1000.0, 5000.0};
+    const char* frequencyLabels[] = {"resonance (100 Hz)", "away (1000 Hz)", "away (5000 Hz)"};
+    constexpr std::size_t kNumRows = 3;
+
+    // Peak gain's whole travel, not just the endpoints.
+    const float peakGainGrid[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+    constexpr std::size_t kNumCols = 5;
+
+    constexpr int kWarmupSamples = 4000;   // resonance buildup, matches this file's other peak-branch tests above.
+    constexpr int kMeasureSamples = 2000;  // >= 4 periods even at the grid's lowest frequency (100 Hz, 480 samples/period at 48 kHz).
+
+    std::cout << "  [filter bank peak gain sweep] tap = ProcessFilterBank's composite output "
+                 "(post comb/peak blend, post peakLimiter), full-scale sine input, "
+              << kWarmupSamples << " warmup + " << kMeasureSamples << " measured samples/cell:\n";
+
+    double levelDbGrid[kNumRows][kNumCols];
+
+    for (std::size_t row = 0; row < kNumRows; ++row) {
+        std::cout << "  [filter bank peak gain sweep] " << frequencyLabels[row] << ":\n";
+        for (std::size_t col = 0; col < kNumCols; ++col) {
+            FilterBankKnobs trialKnobs = knobs;
+            trialKnobs.peakGain = peakGainGrid[col];
+
+            dsp::FilterFxChain chain;
+            chain.Configure(sampleRate);
+
+            const float freqNormalized = static_cast<float>(frequencyGridHz[row] / sampleRate);
+            int sampleIx = 0;
+            for (; sampleIx < kWarmupSamples; ++sampleIx) {
+                const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
+                ProcessFilterBank(chain, trialKnobs, sampleRate, inputAmplitude * std::sin(phase));
+            }
+            // Split the measurement window in half as a settle check: if the
+            // rig were still transiting (not at steady state), the two
+            // halves would disagree -- printed below, not asserted, since
+            // this is instrumentation liveness, not the pairing under test.
+            float windowAPeak = 0.0f, windowBPeak = 0.0f;
+            for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
+                const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
+                const float level = ProcessFilterBank(chain, trialKnobs, sampleRate, inputAmplitude * std::sin(phase));
+                REQUIRE_TRUE(std::isfinite(level));
+                if (i < kMeasureSamples / 2) {
+                    windowAPeak = std::max(windowAPeak, std::fabs(level));
+                } else {
+                    windowBPeak = std::max(windowBPeak, std::fabs(level));
+                }
+            }
+            const double measuredLevel = std::max(windowAPeak, windowBPeak);
+            const double levelDb = 20.0 * std::log10(std::max(measuredLevel, 1.0e-12));
+            levelDbGrid[row][col] = levelDb;
+            std::cout << "  [filter bank peak gain sweep]   Peak gain=" << peakGainGrid[col]
+                      << "  level=" << measuredLevel << "  (" << levelDb << " dB)"
+                      << "  [settle check: first-half=" << windowAPeak << ", second-half=" << windowBPeak << "]\n";
+        }
+    }
+
+    // Row 0 is the bump's own resonant frequency. `FilterFxChain::Process`
+    // divides the peak branch by `peak.height` and the RBJ peaking biquad's
+    // centre gain IS that height, so the two cancel and the level there is
+    // the same at every Peak gain setting. The tolerance is 40x the spread
+    // this grid measures across the whole travel (0.00025 dB) and 200x below
+    // the fall the away rows show, so it separates "holds" from "moves"
+    // without pinning float noise.
+    constexpr double kResonanceFlatnessDb = 0.01;
+    double resonanceLowDb = levelDbGrid[0][0];
+    double resonanceHighDb = levelDbGrid[0][0];
+    for (std::size_t col = 1; col < kNumCols; ++col) {
+        resonanceLowDb = std::min(resonanceLowDb, levelDbGrid[0][col]);
+        resonanceHighDb = std::max(resonanceHighDb, levelDbGrid[0][col]);
+    }
+    REQUIRE_TRUE(resonanceHighDb - resonanceLowDb < kResonanceFlatnessDb);
+
+    // Rows 1 and 2 are at least three octaves off that resonance (the grid
+    // comment above states the octave distances), where the bump contributes
+    // no gain and the same divide is the whole of what the peak branch does.
+    // Level therefore falls at every step of the travel, and by several dB
+    // end to end: this grid measures 6.04 dB at 1 kHz and 6.52 dB at 5 kHz,
+    // and the bound below sits about 2 dB under the smaller of them.
+    constexpr double kAwayFallDb = 4.0;
+    for (std::size_t row = 1; row < kNumRows; ++row) {
+        for (std::size_t col = 1; col < kNumCols; ++col) {
+            REQUIRE_TRUE(levelDbGrid[row][col] < levelDbGrid[row][col - 1]);
+        }
+        REQUIRE_TRUE(levelDbGrid[row][0] - levelDbGrid[row][kNumCols - 1] > kAwayFallDb);
+    }
+
+    // The same travel measured on a broadband source instead of one tone at
+    // a time, which is the figure both documents quote for what Peak gain
+    // costs overall. Total level is the RMS of the composite output, the
+    // same tap the rows above use, over the window after the warmup. The
+    // source is a deterministic LCG at full scale, the generator this file
+    // already uses for broadband work (reverb_damping_darkens_and_quiets_
+    // the_tank_while_room_size_does_neither below), and the amplitude is
+    // part of the quantity: at half scale peakLimiter no longer engages at
+    // the travel's quiet end and the same grid reads 9.03 dB instead.
+    {
+        constexpr int kBroadbandWarmup = 12000;
+        constexpr int kBroadbandMeasure = 24000;
+        std::uint32_t lcg = 20260911u;
+        std::vector<float> noise;
+        noise.reserve(kBroadbandWarmup + kBroadbandMeasure);
+        for (int i = 0; i < kBroadbandWarmup + kBroadbandMeasure; ++i) {
+            lcg = lcg * 1664525u + 1013904223u;
+            noise.push_back(inputAmplitude * (static_cast<float>(lcg >> 8) / 8388608.0f - 1.0f));
+        }
+
+        double broadbandDb[kNumCols];
+        std::cout << "  [filter bank peak gain sweep] broadband (full-scale LCG noise, RMS of the same composite tap, "
+                  << kBroadbandWarmup << " warmup + " << kBroadbandMeasure << " measured samples/cell):\n";
+        for (std::size_t col = 0; col < kNumCols; ++col) {
+            FilterBankKnobs trialKnobs = knobs;
+            trialKnobs.peakGain = peakGainGrid[col];
+
+            dsp::FilterFxChain chain;
+            chain.Configure(sampleRate);
+            double sumSquares = 0.0;
+            for (std::size_t i = 0; i < noise.size(); ++i) {
+                const float level = ProcessFilterBank(chain, trialKnobs, sampleRate, noise[i]);
+                REQUIRE_TRUE(std::isfinite(level));
+                if (static_cast<int>(i) >= kBroadbandWarmup) {
+                    sumSquares += static_cast<double>(level) * static_cast<double>(level);
+                }
+            }
+            const double rms = std::sqrt(sumSquares / static_cast<double>(kBroadbandMeasure));
+            broadbandDb[col] = 20.0 * std::log10(std::max(rms, 1.0e-12));
+            std::cout << "  [filter bank peak gain sweep]   Peak gain=" << peakGainGrid[col] << "  rms=" << rms << "  ("
+                      << broadbandDb[col] << " dB)\n";
+        }
+        const double broadbandFallDb = broadbandDb[0] - broadbandDb[kNumCols - 1];
+        std::cout << "  [filter bank peak gain sweep]   broadband total level falls " << broadbandFallDb
+                  << " dB end to end\n";
+
+        // This grid reads 7.12 dB. The reading depends on which noise
+        // realization the source draws: four fixed seeds put it between
+        // 7.09 and 7.13 dB, a 0.04 dB spread, and the figure both documents
+        // carry sits inside it. The band below is about fifteen times that
+        // spread on either side, so it holds the documented figure to the
+        // tenth of a decibel it is quoted at without pinning one seed's
+        // third decimal, and it excludes both the half-scale reading above
+        // and any run where the travel stops costing level.
+        constexpr double kBroadbandFallLowDb = 6.5;
+        constexpr double kBroadbandFallHighDb = 7.7;
+        REQUIRE_TRUE(broadbandFallDb > kBroadbandFallLowDb);
+        REQUIRE_TRUE(broadbandFallDb < kBroadbandFallHighDb);
+    }
+}
+
+// One sample of the Filter bank with the peak branch's two level controls
+// individually switchable. Mirrors `dsp::FilterFxChain::Process` node for
+// node and in its order -- scoop input blend, pureDelay, comb, comb trim
+// smoother, topology morph, peak, peak trim, peakLimiter, floored
+// equal-power blend -- so the only differences from the shipped path are
+// the two flags. `applyTrim == false` drops the `1/height` scalar, which
+// is what a makeup gain of exactly `height` at the trim's own position
+// does: `peakLimiter` then sees the untrimmed peak output.
+// `applyLimiter == false` skips the `peakLimiter` call entirely. The peak
+// trim smoother still advances every sample whichever way the flags sit,
+// so the four combinations drive identical unit state. With both flags set
+// this reproduces `dsp::FilterFxChain::Process` itself, which
+// filter_bank_peak_branch_trim_versus_limiter_bound_on_pinned_comb checks
+// sample for sample before it measures anything.
+struct PeakBranchTap {
+    float composite;   // what dsp::FilterFxChain::Process returns.
+    float peakBranch;  // the peak branch alone, immediately before the blend.
+    float combFedBack; // this sample's fed-back comb term, `feedback * Saturate(..)/combDrive`.
+};
+
+PeakBranchTap ProcessFilterBankPeakVariant(dsp::FilterFxChain& chain, const FilterBankKnobs& k, float sampleRate,
+                                           float driveOut, bool applyTrim, bool applyLimiter) {
+    SetFilterFxChainKnobs(chain, k, sampleRate);
+    const float scoopedIn = driveOut * (1.0f - k.scoopMix) + chain.scoopNotch.Process(driveOut) * k.scoopMix;
+    const float delayed = chain.pureDelay.Process(scoopedIn);
+    const float combRaw = chain.comb.Process(delayed);
+    const float rawCombTrim = 1.0f / (1.0f + std::fabs(chain.comb.feedback));
+    const float combTrim = chain.combTrimSmoother.Process(rawCombTrim);
+    const float combPath = combRaw * combTrim;
+    const float peakIn = scoopedIn * (1.0f - k.topology) + combPath * k.topology;
+    const float peakRaw = chain.peak.Process(peakIn);
+    const float rawPeakTrim = 1.0f / chain.peak.height;
+    const float peakTrim = chain.peakTrimSmoother.Process(rawPeakTrim);
+    const float peakTrimmed = applyTrim ? peakRaw * peakTrim : peakRaw;
+    const float peakPath = applyLimiter ? chain.peakLimiter.Process(peakTrimmed) : peakTrimmed;
+    const dsp::FloorBlendGains blendGains = dsp::FlooredEqualPowerBlend(k.combPeakBlend);
+    return PeakBranchTap{peakPath * blendGains.legA + combPath * blendGains.legB, peakPath, combRaw - delayed};
+}
+
+// -----------------------------------------------------------------------
+// MEASUREMENT (read-only): which of the peak branch's two level controls
+// holds the output down when a maximum-feedback comb drives the peak at
+// maximum height -- the `1/height` scalar trim
+// (`FilterFxChain::Process`'s own `rawPeakTrim`) or `peakLimiter`. Four
+// cells, one per combination of the two, reported in linear and dB.
+//
+// EXCITATION. A full-scale sine at the comb's own fundamental resonance
+// drives the comb loop until the saturator inside it clamps, which is the
+// loudest state `dsp::Comb::Process` can hold: `out = in +
+// feedback*Saturate(..)`, so a clamped saturator puts `|feedback|` into
+// every pass. Comb feedback sits at the knob's maximum, where
+// `dsp::Comb::GetFeedback` returns +0.95, the largest magnitude this port
+// produces. Topology at maximum makes the peak's input the comb branch
+// alone, so the pinned loop is the only thing the peak sees.
+//
+// Peak freq and Comb delay are both at their registered default, which
+// puts the bump's centre and the comb's fundamental on the same 100 Hz:
+// the comb's loudest partial lands exactly on the peak's own resonance.
+// Comb/Peak blend stays at its registered default too, which already gives
+// the peak branch `cos(0.025*pi) == 0.9969` of the composite and the comb
+// branch `sin(0.025*pi) == 0.0785`.
+//
+// GRID. Two height modes over the same excitation. Static holds Peak gain
+// at maximum, where the trim is an exact `1/kMaxResonantBumpHeight`
+// scalar. Per-sample-random redraws Peak gain every sample across its
+// whole travel from a fixed xorshift32 seed (this file's own Pattern 2
+// idiom), which is the modulation `peakLimiter`'s own declaration comment
+// describes: a scalar cannot retroactively scale energy already stored in
+// the biquad, so this is the mode where the trim is expected to leak.
+//
+// TAP POINTS. Two, reported side by side: the composite -- what
+// `FilterFxChain::Process` returns, post blend, post limiter -- and the
+// peak branch on its own immediately before the blend, which is the node
+// the two controls act on.
+//
+// LIVENESS. A comb that never reaches its saturator prints four cells that
+// differ only by the arithmetic of the trim, with a fed-back term far
+// under `|feedback|` and a silent tail. Printed alongside every reading:
+// the fed-back term's peak against `|feedback|` (1.0 means the saturator
+// is clamped on every pass), and the branch level in the first and last
+// windows of a tail with the input removed, which is the loop running on
+// its own stored energy.
+// -----------------------------------------------------------------------
+TEST_CASE(filter_bank_peak_branch_trim_versus_limiter_bound_on_pinned_comb) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr float inputAmplitude = 1.0f;  // full-scale, matches this section's own peak-branch idiom.
+
+    FilterBankKnobs knobs;         // every field at its FroggersBankLayouts() registered default, except:
+    knobs.peakGain = 1.0f;         // slot 1 at maximum -- height == kMaxResonantBumpHeight.
+    knobs.combFeedback = 1.0f;     // slot 5 at maximum -- GetFeedback returns +0.95.
+    knobs.topology = 1.0f;         // slot 13 at maximum -- the peak's input is the comb branch alone.
+
+    const float bumpFreqNormalized = dsp::ExpMapCompute(100.0f / sampleRate, 20000.0f / sampleRate, knobs.peakFreq);
+    const float driveFreqNormalized = bumpFreqNormalized;
+    const float combFreqNormalized = dsp::ExpMapCompute(100.0f / sampleRate, 10000.0f / sampleRate, knobs.combDelay);
+    const float combDelaySamples = dsp::Comb::GetDelaySamples(combFreqNormalized);
+    const float maxFeedback = dsp::Comb::GetFeedback(1.0f);
+
+    constexpr int kPinSamples = 24000;     // 0.5 s at 48 kHz, 50 round trips of the 480-sample comb.
+    constexpr int kMeasureSamples = 9600;  // 20 further round trips, input still running.
+    constexpr int kTailSamples = 4800;     // 10 round trips with the input removed.
+    constexpr int kTailWindow = 480;       // one round trip, the tail's own first and last.
+
+    std::cout << "  [peak trim vs limiter] excitation: full-scale sine at " << driveFreqNormalized * sampleRate
+              << " Hz; comb delay " << combDelaySamples << " samples (" << combFreqNormalized * sampleRate
+              << " Hz); comb feedback " << maxFeedback << "; bump centre " << bumpFreqNormalized * sampleRate
+              << " Hz; " << kPinSamples << " pin + " << kMeasureSamples << " measured + " << kTailSamples
+              << " tail samples/cell\n";
+
+    struct Reading {
+        double compositePeak;
+        double branchPeak;
+        double fedBackPeak;
+        double tailFirst;
+        double tailLast;
+        float observedFeedback;
+        float observedHeight;
+    };
+
+    const auto measure = [&](bool applyTrim, bool applyLimiter, bool modulateHeight) {
+        dsp::FilterFxChain chain;
+        chain.Configure(sampleRate);  // the call FroggersAppCore::PrepareToPlay makes.
+        FilterBankKnobs trial = knobs;
+        std::uint32_t rngState = 0xC0FFEEu;
+        const auto nextUniform01 = [&rngState]() {
+            rngState ^= rngState << 13;
+            rngState ^= rngState >> 17;
+            rngState ^= rngState << 5;
+            return static_cast<float>(rngState % 1000000u) / 1000000.0f;
+        };
+        Reading r{0.0, 0.0, 0.0, 0.0, 0.0, 0.0f, 0.0f};
+        int sampleIx = 0;
+        const auto step = [&](float input) {
+            if (modulateHeight) {
+                trial.peakGain = nextUniform01();
+            }
+            const PeakBranchTap tap =
+                ProcessFilterBankPeakVariant(chain, trial, sampleRate, input, applyTrim, applyLimiter);
+            ++sampleIx;
+            REQUIRE_TRUE(std::isfinite(tap.composite) && std::isfinite(tap.peakBranch));
+            return tap;
+        };
+        const auto driveSample = [&]() {
+            const float phase = 2.0f * static_cast<float>(M_PI) * driveFreqNormalized * static_cast<float>(sampleIx);
+            return step(inputAmplitude * std::sin(phase));
+        };
+
+        for (int i = 0; i < kPinSamples; ++i) {
+            driveSample();
+        }
+        for (int i = 0; i < kMeasureSamples; ++i) {
+            const PeakBranchTap tap = driveSample();
+            r.compositePeak = std::max(r.compositePeak, static_cast<double>(std::fabs(tap.composite)));
+            r.branchPeak = std::max(r.branchPeak, static_cast<double>(std::fabs(tap.peakBranch)));
+            r.fedBackPeak = std::max(r.fedBackPeak, static_cast<double>(std::fabs(tap.combFedBack)));
+        }
+        for (int i = 0; i < kTailSamples; ++i) {
+            const PeakBranchTap tap = step(0.0f);
+            if (i < kTailWindow) {
+                r.tailFirst = std::max(r.tailFirst, static_cast<double>(std::fabs(tap.peakBranch)));
+            } else if (i >= kTailSamples - kTailWindow) {
+                r.tailLast = std::max(r.tailLast, static_cast<double>(std::fabs(tap.peakBranch)));
+            }
+        }
+        r.observedFeedback = chain.comb.feedback;
+        r.observedHeight = chain.peak.height;
+        return r;
+    };
+
+    // Replica fidelity: the shipped-law cell reproduces
+    // dsp::FilterFxChain::Process, driven by ProcessFilterBank through the
+    // same setters, sample for sample.
+    {
+        dsp::FilterFxChain production;
+        dsp::FilterFxChain replica;
+        production.Configure(sampleRate);
+        replica.Configure(sampleRate);
+        double worstDelta = 0.0;
+        for (int i = 0; i < kPinSamples + kMeasureSamples; ++i) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * driveFreqNormalized * static_cast<float>(i);
+            const float input = inputAmplitude * std::sin(phase);
+            const float shipped = ProcessFilterBank(production, knobs, sampleRate, input);
+            const float mirrored =
+                ProcessFilterBankPeakVariant(replica, knobs, sampleRate, input, true, true).composite;
+            worstDelta = std::max(worstDelta, std::fabs(static_cast<double>(shipped) - static_cast<double>(mirrored)));
+        }
+        std::cout << "  [peak trim vs limiter] replica vs dsp::FilterFxChain::Process, worst sample delta = "
+                  << worstDelta << "\n";
+        REQUIRE_TRUE(worstDelta <= 1.0e-6);
+    }
+
+    struct Cell {
+        const char* label;
+        bool applyTrim;
+        bool applyLimiter;
+    };
+    const Cell cells[] = {
+        {"shipped (trim + limiter)  ", true, true},
+        {"trim cancelled (limiter)  ", false, true},
+        {"limiter bypassed (trim)   ", true, false},
+        {"neither (unbounded)       ", false, false},
+    };
+    const char* heightModeLabels[] = {"Peak gain pinned at maximum", "Peak gain redrawn every sample"};
+
+    for (int mode = 0; mode < 2; ++mode) {
+        std::cout << "  [peak trim vs limiter] " << heightModeLabels[mode] << ":\n";
+        double branchSpread[4] = {0.0, 0.0, 0.0, 0.0};
+        for (int c = 0; c < 4; ++c) {
+            const Reading r = measure(cells[c].applyTrim, cells[c].applyLimiter, mode == 1);
+            branchSpread[c] = r.branchPeak;
+            const double compositeDb = 20.0 * std::log10(std::max(r.compositePeak, 1.0e-12));
+            const double branchDb = 20.0 * std::log10(std::max(r.branchPeak, 1.0e-12));
+            std::cout << "  [peak trim vs limiter]   " << cells[c].label << " branch=" << r.branchPeak << " ("
+                      << branchDb << " dB)  composite=" << r.compositePeak << " (" << compositeDb << " dB)\n";
+            std::cout << "  [peak trim vs limiter]     liveness: fed-back peak=" << r.fedBackPeak << " of |feedback|="
+                      << std::fabs(r.observedFeedback) << " (clamp ratio "
+                      << r.fedBackPeak / std::max(static_cast<double>(std::fabs(r.observedFeedback)), 1.0e-12)
+                      << "), tail branch first window=" << r.tailFirst << " last window=" << r.tailLast
+                      << ", height=" << r.observedHeight << "\n";
+            // The measurement means nothing unless the comb is actually
+            // pinned and actually ringing. Feedback sits at the magnitude
+            // GetFeedback's own maximum returns; the fed-back term reaches
+            // 0.975 of it, so the saturator inside the loop is at its clamp
+            // on the loudest passes; and the branch is still at 0.14 or
+            // above a full 10 round trips after the input stops, which is
+            // the loop running on its own stored energy. A comb that never
+            // got there reads a fed-back term near zero and a silent tail.
+            REQUIRE_TRUE(std::fabs(r.observedFeedback) == maxFeedback);
+            REQUIRE_TRUE(r.fedBackPeak >= 0.9 * std::fabs(r.observedFeedback));
+            REQUIRE_TRUE(r.tailLast > 0.05);
+        }
+        // The ordering the four cells exist to establish, at the branch tap
+        // and in the cell order declared above: `peakLimiter` is what holds
+        // this branch down, and the `1/height` trim is not. Removing both
+        // leaves the loudest branch; removing only the limiter is next;
+        // the two cells that keep the limiter land together, far below
+        // either, whether or not the trim is there.
+        const double shippedDb = 20.0 * std::log10(std::max(branchSpread[0], 1.0e-12));
+        const double trimCancelledDb = 20.0 * std::log10(std::max(branchSpread[1], 1.0e-12));
+        const double limiterBypassedDb = 20.0 * std::log10(std::max(branchSpread[2], 1.0e-12));
+        const double unboundedDb = 20.0 * std::log10(std::max(branchSpread[3], 1.0e-12));
+        const double loudestLimitedDb = std::max(shippedDb, trimCancelledDb);
+        std::cout << "  [peak trim vs limiter]   margins: unbounded over bypassed = "
+                  << unboundedDb - limiterBypassedDb << " dB, bypassed over the louder limited cell = "
+                  << limiterBypassedDb - loudestLimitedDb
+                  << " dB, spread between the two limited cells = " << std::fabs(shippedDb - trimCancelledDb)
+                  << " dB\n";
+        // Bounds come from this grid's own readings. Branch levels, pinned
+        // mode: unbounded 9.78, bypassed 0.23, trim cancelled -1.94,
+        // shipped -1.98 dB; redrawn mode: 5.42, 5.07, -1.94, -1.93 dB. The
+        // three margins therefore measure 9.54 and 0.35 dB, 2.17 and
+        // 7.00 dB, and 0.042 and 0.011 dB. Each bound sits at least twice
+        // inside the tighter of its own two measurements, so it separates
+        // the ordering from a rig that moved without pinning the readings.
+        constexpr double kUnboundedOverBypassedDb = 0.15;
+        constexpr double kBypassedOverLimitedDb = 1.0;
+        constexpr double kLimitedPairSpreadDb = 0.2;
+        REQUIRE_TRUE(unboundedDb - limiterBypassedDb > kUnboundedOverBypassedDb);
+        REQUIRE_TRUE(limiterBypassedDb - loudestLimitedDb > kBypassedOverLimitedDb);
+        REQUIRE_TRUE(std::fabs(shippedDb - trimCancelledDb) < kLimitedPairSpreadDb);
+
+        // Four cells that all read alike mean the flags reached no live
+        // node and the rig measured nothing.
+        const double lowest = *std::min_element(branchSpread, branchSpread + 4);
+        const double highest = *std::max_element(branchSpread, branchSpread + 4);
+        std::cout << "  [peak trim vs limiter]   branch spread across the four cells = " << highest / lowest << "x\n";
+        REQUIRE_TRUE(highest > lowest * 1.05);
+    }
 }
 
 // =========================================================================
@@ -4706,7 +5267,7 @@ TEST_CASE(drive_blend_phase_default_phase_impulse_response_decays_not_rings_fore
 //     -- PASSES.
 // -----------------------------------------------------------------------
 TEST_CASE(drive_blend_phase_output_stays_at_or_below_computed_bound_under_audio_rate_phase_modulation) {
-    const float inputAmplitude = 1.0f;  // FrogBlock's own bound (W2.1-MATH; dsp/Drive.hpp class comment).
+    const float inputAmplitude = 1.0f;  // FrogBlock's own output bound (dsp/Drive.hpp class comment).
     const float bound = inputAmplitude;
 
     // Pattern A: full-bank per-sample-random modulation. blendKnob01=1
@@ -8741,6 +9302,410 @@ TEST_CASE(reverb_damping_darkens_and_quiets_the_tank_while_room_size_does_neithe
         roomHigh = std::max(roomHigh, db);
     }
     REQUIRE_TRUE(roomHigh - roomLow < 0.5);
+}
+
+// Magnitude-squared of one tone, taken from ComplexGoertzel above rather
+// than GoertzelPower's recurrence. The intermodulation products below sit
+// as low as 30 Hz, where that recurrence's coefficient is within 1e-5 of 2
+// and its state grows across the window; the direct sum has no recurrence
+// to grow. Absolute values depend on the window length, as GoertzelPower's
+// own do; the ratios taken from them below do not.
+double TonePower(const std::vector<float>& samples, double freqHz, double sampleRateHz) {
+    const auto [re, im] = ComplexGoertzel(samples, freqHz, sampleRateHz);
+    return re * re + im * im;
+}
+
+// Harmonic distortion: power summed over harmonics 2..lastHarmonic against
+// the fundamental's own power, in dB. A silent output, or a meter reading a
+// band nothing reaches, puts zero in the numerator and reads the -200 dB
+// floor.
+//
+// This sums TonePower rather than reusing HarmonicBandPower above, which
+// runs the same loop over GoertzelPower. The case below reads this meter
+// and IntermodulationDb side by side and compares their separations
+// against one spread, so both have to come off the same primitive, and
+// IntermodulationDb cannot use the recurrence form (its products reach
+// 30 Hz). Parameterising HarmonicBandPower by the primitive instead would
+// put a second primitive under its eight existing call sites, whose
+// figures were all measured through the recurrence.
+double HarmonicDistortionDb(const std::vector<float>& samples, double fundamentalHz, double sampleRateHz,
+                            int lastHarmonic) {
+    double harmonics = 0.0;
+    for (int n = 2; n <= lastHarmonic; ++n) {
+        harmonics += TonePower(samples, fundamentalHz * static_cast<double>(n), sampleRateHz);
+    }
+    const double fundamental = TonePower(samples, fundamentalHz, sampleRateHz);
+    return 10.0 * std::log10(std::max(harmonics / std::max(fundamental, 1.0e-30), 1.0e-20));
+}
+
+// Intermodulation: power summed over the difference, sum and third-order
+// products of a two-tone pair against the two tones' own power, in dB. No
+// member of the product list belongs to either tone's harmonic series at
+// the pair used below, so harmonic distortion does not leak into this
+// reading.
+double IntermodulationDb(const std::vector<float>& samples, double f1Hz, double f2Hz, double sampleRateHz) {
+    const double products[] = {f2Hz - f1Hz,
+                               2.0 * f1Hz - f2Hz,
+                               2.0 * f2Hz - f1Hz,
+                               f1Hz + f2Hz,
+                               3.0 * f1Hz - 2.0 * f2Hz,
+                               3.0 * f2Hz - 2.0 * f1Hz};
+    double side = 0.0;
+    for (const double f : products) {
+        side += TonePower(samples, std::fabs(f), sampleRateHz);
+    }
+    const double tones = TonePower(samples, f1Hz, sampleRateHz) + TonePower(samples, f2Hz, sampleRateHz);
+    return 10.0 * std::log10(std::max(side / std::max(tones, 1.0e-30), 1.0e-20));
+}
+
+// How far and how fast a limiter's gain-reduction signal moves. Reduction
+// is -20log10(envelope), so 0 dB is no reduction at all. The per-sample
+// signal carries audio-rate ripple, because the envelope releases through
+// every zero crossing of the carrier, so the slow movement that pumping
+// names is read off a block-mean curve whose block is one carrier period:
+// that curve's range, and its largest block-to-block slope in dB per
+// second. A limiter holding a constant reduction reads 0.00 dB of range
+// and 0.0 dB/s; an envelope that never leaves unity reads those and a mean
+// of 0.00 dB as well.
+struct GainMovement {
+    double meanDb;
+    double blockRangeDb;
+    double maxSlopeDbPerSec;
+};
+
+GainMovement MeasureGainMovement(const std::vector<float>& envelope, double sampleRateHz, int blockSamples) {
+    GainMovement m{0.0, 0.0, 0.0};
+    if (envelope.empty() || blockSamples <= 0) {
+        return m;
+    }
+    double total = 0.0;
+    std::vector<double> blockMeans;
+    double blockTotal = 0.0;
+    int inBlock = 0;
+    for (const float gain : envelope) {
+        const double db = -20.0 * std::log10(std::max(static_cast<double>(gain), 1.0e-12));
+        total += db;
+        blockTotal += db;
+        if (++inBlock == blockSamples) {
+            blockMeans.push_back(blockTotal / static_cast<double>(inBlock));
+            blockTotal = 0.0;
+            inBlock = 0;
+        }
+    }
+    m.meanDb = total / static_cast<double>(envelope.size());
+    if (blockMeans.empty()) {
+        return m;
+    }
+    double blockLow = blockMeans[0];
+    double blockHigh = blockMeans[0];
+    for (std::size_t i = 1; i < blockMeans.size(); ++i) {
+        blockLow = std::min(blockLow, blockMeans[i]);
+        blockHigh = std::max(blockHigh, blockMeans[i]);
+        const double slope =
+            (blockMeans[i] - blockMeans[i - 1]) * sampleRateHz / static_cast<double>(blockSamples);
+        m.maxSlopeDbPerSec = std::max(m.maxSlopeDbPerSec, std::fabs(slope));
+    }
+    m.blockRangeDb = blockHigh - blockLow;
+    return m;
+}
+
+// -----------------------------------------------------------------------
+// MEASUREMENT (read-only): what the peak branch's `1/height` trim buys and
+// costs at the output, against the same chain with that scalar cancelled
+// and `peakLimiter` left to bound the branch on its own. Both laws keep
+// the limiter in circuit; the only difference is the scalar, switched by
+// ProcessFilterBankPeakVariant's `applyTrim`, whose shipped-law setting
+// filter_bank_peak_branch_trim_versus_limiter_bound_on_pinned_comb already
+// pins sample for sample against dsp::FilterFxChain::Process.
+//
+// Cancelling the trim raises what the limiter has to remove. Three
+// readings say whether that extra duty shows up in the signal:
+// harmonic distortion at a single tone, intermodulation at a two-tone
+// pair, and the movement of the gain-reduction signal itself under a
+// carrier whose amplitude swings at a syllabic rate.
+//
+// GRID. Peak gain across its whole travel at both laws, at two operating
+// points: the registered defaults with only Peak gain moved, and the
+// corner where Comb feedback and Topology are also at maximum so a pinned
+// comb drives the peak. Every excitation sits at the bump's own centre,
+// which the registered Peak freq default puts at 100 Hz -- the frequency
+// where height acts and where the untrimmed branch drives the limiter
+// hardest.
+//
+// TAPS. Two, side by side: the composite that dsp::FilterFxChain::Process
+// returns, and the peak branch alone immediately before the blend. The
+// composite is what a listener gets; the branch is the node the trim and
+// the limiter act on, and at the pinned-comb corner it is the only tap
+// where the peak's own distortion is not sitting under the comb
+// saturator's.
+//
+// SPREAD. Every cell is measured over three consecutive windows of the
+// same steady state. The chain is deterministic, so this is not run to run
+// noise -- it is how much the reading moves with window placement, which
+// is the noise a reader needs to tell a difference from a coincidence.
+//
+// NULL CELL. At Peak gain 0 the height is exactly 1.0, so the trim is a
+// multiply by exactly 1.0f and the two laws are bit-identical. Every
+// metric must read exactly equal there; a rig whose flag reached something
+// else would separate them.
+// -----------------------------------------------------------------------
+TEST_CASE(filter_bank_peak_trim_removal_distortion_intermodulation_and_limiter_pumping) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr double sr = 48000.0;
+    constexpr double kToneHz = 100.0;       // the bump centre at the registered Peak freq default.
+    constexpr double kSecondToneHz = 130.0; // no product of the pair lands on a harmonic of either tone.
+    constexpr int kLastHarmonic = 20;
+    constexpr int kWarmupSamples = 24000;  // 0.5 s: 50 round trips of the 480-sample comb, 5 limiter releases.
+    constexpr int kWindowSamples = 4800;   // 10 Hz bins, so every tone and product above is bin aligned.
+    constexpr int kWindows = 3;
+    constexpr int kPumpWindowSamples = 12000;  // one period of the 4 Hz amplitude swing.
+    constexpr int kPumpBlockSamples = 480;     // one period of the 100 Hz carrier.
+    constexpr double kAmHz = 4.0;
+
+    // ---- Meter calibration, in this binary, against closed forms -------
+    std::vector<float> pureTone, tonePlusSecond, clippedTone, cleanPair, squaredPair;
+    for (int n = 0; n < kWindowSamples; ++n) {
+        const double theta = 2.0 * M_PI * kToneHz * static_cast<double>(n) / sr;
+        pureTone.push_back(static_cast<float>(std::sin(theta)));
+        tonePlusSecond.push_back(static_cast<float>(std::sin(theta) + 0.1 * std::sin(2.0 * theta)));
+        clippedTone.push_back(static_cast<float>(std::max(-0.5, std::min(0.5, std::sin(theta)))));
+        const double pair = 0.5 * std::sin(2.0 * M_PI * kToneHz * static_cast<double>(n) / sr) +
+                            0.5 * std::sin(2.0 * M_PI * kSecondToneHz * static_cast<double>(n) / sr);
+        cleanPair.push_back(static_cast<float>(pair));
+        squaredPair.push_back(static_cast<float>(pair + 0.1 * pair * pair));
+    }
+    const double thdPure = HarmonicDistortionDb(pureTone, kToneHz, sr, kLastHarmonic);
+    const double thdSecond = HarmonicDistortionDb(tonePlusSecond, kToneHz, sr, kLastHarmonic);
+    const double thdClipped = HarmonicDistortionDb(clippedTone, kToneHz, sr, kLastHarmonic);
+    const double imdClean = IntermodulationDb(cleanPair, kToneHz, kSecondToneHz, sr);
+    const double imdSquared = IntermodulationDb(squaredPair, kToneHz, kSecondToneHz, sr);
+    std::cout << "  [peak trim duty] meter calibration: harmonic distortion of a pure tone = " << thdPure
+              << " dB, of a tone carrying a tenth-amplitude second harmonic = " << thdSecond
+              << " dB (closed form -20.000), of a tone hard clipped at 0.5 = " << thdClipped
+              << " dB (closed form -12.66 over every harmonic)\n";
+    std::cout << "  [peak trim duty] meter calibration: intermodulation of a clean two-tone = " << imdClean
+              << " dB, of that pair through x + 0.1x^2 = " << imdSquared << " dB (closed form -26.021)\n";
+
+    // A tenth-amplitude second harmonic is 0.01 of the fundamental's power
+    // by construction. A sine hard clipped at 0.5 has mean square
+    // (2/pi)*(integral of sin^2 to pi/6 plus 0.25 across the flat) ==
+    // 0.195487 and a fundamental of 0.609000 in amplitude, so its harmonics
+    // carry 0.010047 against the fundamental's 0.185440 -- 0.054179, or
+    // -12.66 dB, over the whole series. This meter stops at the 20th, which
+    // can only read lower.
+    REQUIRE_NEAR(thdSecond, -20.0, 1.0e-4);
+    REQUIRE_TRUE(thdClipped > -13.2 && thdClipped < -12.2);
+    REQUIRE_TRUE(thdPure < thdClipped - 40.0);
+    // x + 0.1x^2 on two equal tones of amplitude 0.5 puts 0.1*0.25 at the
+    // difference and at the sum and nothing at the third-order products, so
+    // the product power is 2*(0.025^2) against the tones' 2*(0.5^2):
+    // 0.0025, or -26.021 dB.
+    REQUIRE_NEAR(imdSquared, -26.021, 0.01);
+    REQUIRE_TRUE(imdClean < imdSquared - 40.0);
+
+    // The gain-movement meter against a 4 Hz reduction curve of known
+    // amplitude. Averaging in 10 ms blocks attenuates a 4 Hz component by
+    // sin(pi*4*0.01)/(pi*4*0.01) == 0.99974, and a sinusoid's block-to-block
+    // slope at that spacing peaks at 2*3*sin(pi*4*0.01)/0.01 == 75.20 dB/s
+    // against the continuous 2*pi*4*3 == 75.40 dB/s.
+    std::vector<float> swingingGain, steadyGain;
+    for (int n = 0; n < 2 * kPumpWindowSamples; ++n) {
+        const double db = 5.0 + 3.0 * std::sin(2.0 * M_PI * kAmHz * static_cast<double>(n) / sr);
+        swingingGain.push_back(static_cast<float>(std::pow(10.0, -db / 20.0)));
+        steadyGain.push_back(static_cast<float>(std::pow(10.0, -5.0 / 20.0)));
+    }
+    const GainMovement swingingMove = MeasureGainMovement(swingingGain, sr, kPumpBlockSamples);
+    const GainMovement steadyMove = MeasureGainMovement(steadyGain, sr, kPumpBlockSamples);
+    std::cout << "  [peak trim duty] meter calibration: a 4 Hz +/-3 dB reduction curve reads mean "
+              << swingingMove.meanDb << " dB, range " << swingingMove.blockRangeDb << " dB (closed form 6.00), slope "
+              << swingingMove.maxSlopeDbPerSec << " dB/s (closed form 75.20); a constant 5 dB reduction reads mean "
+              << steadyMove.meanDb << " dB, range " << steadyMove.blockRangeDb << " dB, slope "
+              << steadyMove.maxSlopeDbPerSec << " dB/s\n";
+    REQUIRE_NEAR(swingingMove.meanDb, 5.0, 0.02);
+    REQUIRE_NEAR(swingingMove.blockRangeDb, 6.0, 0.05);
+    REQUIRE_NEAR(swingingMove.maxSlopeDbPerSec, 75.20, 1.0);
+    REQUIRE_TRUE(steadyMove.blockRangeDb == 0.0 && steadyMove.maxSlopeDbPerSec == 0.0);
+
+    // ---- The grid -----------------------------------------------------
+    struct Stat {
+        double mean;
+        double spread;
+    };
+    const auto summarize = [](const double* values, int count) {
+        double total = 0.0;
+        double low = values[0];
+        double high = values[0];
+        for (int i = 0; i < count; ++i) {
+            total += values[i];
+            low = std::min(low, values[i]);
+            high = std::max(high, values[i]);
+        }
+        return Stat{total / static_cast<double>(count), high - low};
+    };
+
+    // Drives one chain with `inputFn` and returns the branch tap, the
+    // composite tap and `peakLimiter`'s own envelope, all three per sample,
+    // for the samples after the warmup.
+    const auto collect = [&](const FilterBankKnobs& k, bool applyTrim, int measureSamples, auto inputFn,
+                             std::vector<float>& branch, std::vector<float>& composite,
+                             std::vector<float>& envelope) {
+        dsp::FilterFxChain chain;
+        chain.Configure(sampleRate);
+        branch.clear();
+        composite.clear();
+        envelope.clear();
+        branch.reserve(static_cast<std::size_t>(measureSamples));
+        composite.reserve(static_cast<std::size_t>(measureSamples));
+        envelope.reserve(static_cast<std::size_t>(measureSamples));
+        for (int n = 0; n < kWarmupSamples + measureSamples; ++n) {
+            const PeakBranchTap tap =
+                ProcessFilterBankPeakVariant(chain, k, sampleRate, inputFn(n), applyTrim, /*applyLimiter=*/true);
+            REQUIRE_TRUE(std::isfinite(tap.composite) && std::isfinite(tap.peakBranch));
+            if (n >= kWarmupSamples) {
+                branch.push_back(tap.peakBranch);
+                composite.push_back(tap.composite);
+                envelope.push_back(chain.peakLimiter.envelope);
+            }
+        }
+    };
+
+    struct Cell {
+        Stat thdBranch, thdComposite, imdBranch, imdComposite;
+        Stat pumpMean, pumpRange, pumpSlope;
+        double fundamentalPower;
+        double staticReductionDb;
+    };
+
+    const auto runCell = [&](const FilterBankKnobs& base, float peakGain, bool applyTrim) {
+        FilterBankKnobs k = base;
+        k.peakGain = peakGain;
+
+        std::vector<float> branch, composite, envelope;
+        double thdB[kWindows], thdC[kWindows], imdB[kWindows], imdC[kWindows];
+        double pumpMean[kWindows], pumpRange[kWindows], pumpSlope[kWindows];
+
+        collect(k, applyTrim, kWindows * kWindowSamples,
+                [&](int n) {
+                    return static_cast<float>(std::sin(2.0 * M_PI * kToneHz * static_cast<double>(n) / sr));
+                },
+                branch, composite, envelope);
+        double fundamentalPower = 0.0;
+        double staticReductionDb = 0.0;
+        for (int w = 0; w < kWindows; ++w) {
+            const auto first = static_cast<std::size_t>(w * kWindowSamples);
+            const std::vector<float> b(branch.begin() + static_cast<long>(first),
+                                       branch.begin() + static_cast<long>(first + kWindowSamples));
+            const std::vector<float> c(composite.begin() + static_cast<long>(first),
+                                       composite.begin() + static_cast<long>(first + kWindowSamples));
+            thdB[w] = HarmonicDistortionDb(b, kToneHz, sr, kLastHarmonic);
+            thdC[w] = HarmonicDistortionDb(c, kToneHz, sr, kLastHarmonic);
+            fundamentalPower = std::max(fundamentalPower, TonePower(c, kToneHz, sr));
+        }
+        staticReductionDb = MeasureGainMovement(envelope, sr, kPumpBlockSamples).meanDb;
+
+        collect(k, applyTrim, kWindows * kWindowSamples,
+                [&](int n) {
+                    const double t = static_cast<double>(n) / sr;
+                    return static_cast<float>(0.5 * std::sin(2.0 * M_PI * kToneHz * t) +
+                                              0.5 * std::sin(2.0 * M_PI * kSecondToneHz * t));
+                },
+                branch, composite, envelope);
+        for (int w = 0; w < kWindows; ++w) {
+            const auto first = static_cast<std::size_t>(w * kWindowSamples);
+            const std::vector<float> b(branch.begin() + static_cast<long>(first),
+                                       branch.begin() + static_cast<long>(first + kWindowSamples));
+            const std::vector<float> c(composite.begin() + static_cast<long>(first),
+                                       composite.begin() + static_cast<long>(first + kWindowSamples));
+            imdB[w] = IntermodulationDb(b, kToneHz, kSecondToneHz, sr);
+            imdC[w] = IntermodulationDb(c, kToneHz, kSecondToneHz, sr);
+        }
+
+        collect(k, applyTrim, kWindows * kPumpWindowSamples,
+                [&](int n) {
+                    const double t = static_cast<double>(n) / sr;
+                    const double amplitude = 0.55 + 0.45 * std::sin(2.0 * M_PI * kAmHz * t);
+                    return static_cast<float>(amplitude * std::sin(2.0 * M_PI * kToneHz * t));
+                },
+                branch, composite, envelope);
+        for (int w = 0; w < kWindows; ++w) {
+            const auto first = static_cast<std::size_t>(w * kPumpWindowSamples);
+            const std::vector<float> e(envelope.begin() + static_cast<long>(first),
+                                       envelope.begin() + static_cast<long>(first + kPumpWindowSamples));
+            const GainMovement move = MeasureGainMovement(e, sr, kPumpBlockSamples);
+            pumpMean[w] = move.meanDb;
+            pumpRange[w] = move.blockRangeDb;
+            pumpSlope[w] = move.maxSlopeDbPerSec;
+        }
+
+        return Cell{summarize(thdB, kWindows),     summarize(thdC, kWindows),     summarize(imdB, kWindows),
+                    summarize(imdC, kWindows),     summarize(pumpMean, kWindows), summarize(pumpRange, kWindows),
+                    summarize(pumpSlope, kWindows), fundamentalPower,             staticReductionDb};
+    };
+
+    FilterBankKnobs defaults;  // every field at its FroggersBankLayouts() registered default.
+    FilterBankKnobs corner = defaults;
+    corner.combFeedback = 1.0f;  // GetFeedback returns +0.95, the largest magnitude this port produces.
+    corner.topology = 1.0f;      // the peak's input is the comb branch alone.
+
+    struct OperatingPoint {
+        const char* label;
+        const FilterBankKnobs* knobs;
+    };
+    const OperatingPoint points[] = {{"registered defaults, only Peak gain moved", &defaults},
+                                     {"Comb feedback and Topology at maximum    ", &corner}};
+    const float peakGainGrid[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+    constexpr int kGridSize = 5;
+
+    std::cout << "  [peak trim duty] tone " << kToneHz << " Hz at full scale; pair " << kToneHz << " + "
+              << kSecondToneHz << " Hz at half scale each; carrier " << kToneHz << " Hz swinging at " << kAmHz
+              << " Hz between 0.1 and 1.0; " << kWarmupSamples << " warmup + " << kWindows << " windows/cell\n";
+
+    for (const OperatingPoint& point : points) {
+        std::cout << "  [peak trim duty] " << point.label << ":\n";
+        for (int g = 0; g < kGridSize; ++g) {
+            const Cell trimmed = runCell(*point.knobs, peakGainGrid[g], /*applyTrim=*/true);
+            const Cell cancelled = runCell(*point.knobs, peakGainGrid[g], /*applyTrim=*/false);
+            std::cout << "  [peak trim duty]   Peak gain=" << peakGainGrid[g] << "\n";
+            std::cout << "  [peak trim duty]     harmonic  branch trim=" << trimmed.thdBranch.mean << " (+/-"
+                      << trimmed.thdBranch.spread << ")  cancelled=" << cancelled.thdBranch.mean << " (+/-"
+                      << cancelled.thdBranch.spread << ")   composite trim=" << trimmed.thdComposite.mean << " (+/-"
+                      << trimmed.thdComposite.spread << ")  cancelled=" << cancelled.thdComposite.mean << " (+/-"
+                      << cancelled.thdComposite.spread << ")  dB\n";
+            std::cout << "  [peak trim duty]     intermod  branch trim=" << trimmed.imdBranch.mean << " (+/-"
+                      << trimmed.imdBranch.spread << ")  cancelled=" << cancelled.imdBranch.mean << " (+/-"
+                      << cancelled.imdBranch.spread << ")   composite trim=" << trimmed.imdComposite.mean << " (+/-"
+                      << trimmed.imdComposite.spread << ")  cancelled=" << cancelled.imdComposite.mean << " (+/-"
+                      << cancelled.imdComposite.spread << ")  dB\n";
+            std::cout << "  [peak trim duty]     reduction trim mean=" << trimmed.pumpMean.mean
+                      << " range=" << trimmed.pumpRange.mean << " (+/-" << trimmed.pumpRange.spread
+                      << ") slope=" << trimmed.pumpSlope.mean << " dB/s   cancelled mean=" << cancelled.pumpMean.mean
+                      << " range=" << cancelled.pumpRange.mean << " (+/-" << cancelled.pumpRange.spread
+                      << ") slope=" << cancelled.pumpSlope.mean << " dB/s\n";
+            std::cout << "  [peak trim duty]     liveness: steady-tone reduction trim=" << trimmed.staticReductionDb
+                      << " dB cancelled=" << cancelled.staticReductionDb
+                      << " dB; composite fundamental power trim=" << trimmed.fundamentalPower
+                      << " cancelled=" << cancelled.fundamentalPower << "\n";
+
+            if (peakGainGrid[g] == 0.0f) {
+                // Height is exactly 1.0 here, so the trim is a multiply by
+                // exactly 1.0f and the two laws run the same samples.
+                REQUIRE_TRUE(trimmed.thdBranch.mean == cancelled.thdBranch.mean);
+                REQUIRE_TRUE(trimmed.thdComposite.mean == cancelled.thdComposite.mean);
+                REQUIRE_TRUE(trimmed.imdBranch.mean == cancelled.imdBranch.mean);
+                REQUIRE_TRUE(trimmed.imdComposite.mean == cancelled.imdComposite.mean);
+                REQUIRE_TRUE(trimmed.pumpMean.mean == cancelled.pumpMean.mean);
+                REQUIRE_TRUE(trimmed.pumpRange.mean == cancelled.pumpRange.mean);
+                REQUIRE_TRUE(trimmed.fundamentalPower == cancelled.fundamentalPower);
+            }
+            if (peakGainGrid[g] == 1.0f) {
+                // The steady-tone duty the two laws ask of the limiter is
+                // 2.2 dB against 11.7 dB; this bound sits at half that gap,
+                // so a rig whose flag reached the limiter at all clears it
+                // and one whose flag reached nothing cannot.
+                REQUIRE_TRUE(cancelled.staticReductionDb - trimmed.staticReductionDb > 4.75);
+            }
+        }
+    }
 }
 
 }  // namespace
