@@ -18,13 +18,17 @@
 // for its own `outputLimiter_` member).
 //
 // CRITICAL constraint: the MASTER output limiter's behaviour must
-// not change by one sample. Before this move, `kThreshold` (0.9) /
-// `kCeiling` (1.0) / `kHeadroom` / `kAttackSeconds` (1ms) / `kReleaseSeconds`
-// (100ms) were `static constexpr`, so every instance of the type shared one
-// tuning -- exactly why a second instance (the peak branch's own limiter)
-// could not just be dropped in verbatim; it would duck identically to the
-// master and be useless there.
-// Converted to instance fields here. The single-argument `Configure(
+// not change by one sample. `threshold`, `ceiling`, `headroom`,
+// `attackSeconds` and `releaseSeconds` are instance fields, each defaulted
+// from this type's own `kDefaultThreshold`, `kDefaultCeiling`,
+// `kDefaultAttackSeconds` and `kDefaultReleaseSeconds` (`headroom` has no
+// default constant of its own; it is computed as `kDefaultCeiling -
+// kDefaultThreshold`). They are per-instance because a second,
+// independently-tuned instance (the peak branch's own limiter) needs its
+// own tuning distinct from the master's; one shared tuning across every
+// instance would duck the peak branch identically to the master and be
+// useless there.
+// The single-argument `Configure(
 // sampleRate)` overload below reproduces the master's ORIGINAL tuning via
 // the exact same formula, same operand order, same float literals, so
 // FroggersAppCore.hpp's one pre-existing call site

@@ -3189,10 +3189,10 @@ float ProcessFilterBank(dsp::FilterFxChain& chain, const FilterBankKnobs& k, flo
 //
 // Tap point: the composite FilterFxChain output -- ProcessFilterBank's
 // return value, exactly RouteFilterBank's own return (post comb/peak
-// blend, post peakLimiter) -- fed by a full-scale sine (matches this
-// section's own filter_fx_chain_scoop_full_does_not_cancel/
-// topology_morph_peak_branch_headroom idiom above), one grid frequency at
-// a time. A fourth row runs the same travel and the same tap on a
+// blend, post peakLimiter) -- fed by a full-scale sine (matches
+// filter_fx_chain_scoop_full_does_not_cancel_a_boosted_peak_at_the_shared_center_frequency/
+// topology_morph_peak_branch_headroom_across_full_range's own idiom), one
+// grid frequency at a time. A fourth row runs the same travel and the same tap on a
 // full-scale broadband source and reads total level as RMS, which is the
 // overall cost both documents quote; a per-frequency grid cannot produce
 // that figure, so without this row it would live only in prose.

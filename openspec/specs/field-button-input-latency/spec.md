@@ -4,7 +4,7 @@
 
 Daisy Field firmware control-loop architecture for responsive tactile switches and randomize buttons under audio load: fast input polling decoupled from OLED refresh, queued heavy randomize, and toolchain parity with proto Froggers.
 
-Hardware diagnostic findings (e.g. SW1 stuck-input on a specific unit) are recorded in `docs/daisy-field-diagnostics.md` and are out of scope for latency acceptance on affected hardware.
+Hardware diagnostic findings (e.g. SW1 stuck-input on a specific unit) are recorded in `DAISY_MANUAL.md`'s Troubleshooting section and are out of scope for latency acceptance on affected hardware.
 ## Requirements
 ### Requirement: Fast control poll decoupled from OLED refresh
 

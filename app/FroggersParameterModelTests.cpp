@@ -458,7 +458,8 @@ TEST_CASE(crispy_sweep_changes_sibling_parameters_on_its_own_bank_only) {
     // (settled) value -- one bank's Crispy affects every ordinary parameter
     // in that same bank. Compared against each parameter's own GetRaw()
     // (not the 0.42 setpoint) so this holds regardless of smoother settling
-    // precision, matching the fuego_seam_transform test's approach above.
+    // precision, matching the fuego_seam_transform_reaches_cached_knob_value_matching_dsp_stack
+    // test's approach.
     REQUIRE_TRUE(std::fabs(audioRow0.CachedKnobValue(0) - audioRow0.GetRaw(0)) > 1e-2f);
     REQUIRE_TRUE(std::fabs(audioRow1.CachedKnobValue(0) - audioRow1.GetRaw(0)) > 1e-2f);
 
@@ -502,8 +503,8 @@ TEST_CASE(global_crunchy_affects_all_banks) {
 
     // Every bank's row 0, computed independently from ITS OWN settled raw
     // value and the one shared, settled Crunchy raw value -- self-consistent
-    // regardless of smoother settling precision (same technique as the
-    // fuego_seam_transform test above).
+    // regardless of smoother settling precision (same technique as
+    // fuego_seam_transform_reaches_cached_knob_value_matching_dsp_stack).
     for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
         synth::Parameter& param = *row0[bankIx];
         const float rawParam = param.GetRaw(0);

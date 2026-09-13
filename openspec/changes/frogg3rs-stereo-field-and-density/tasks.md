@@ -30,7 +30,14 @@ collision the staging exists to prevent.
 
 - Measure through the PRODUCTION ROUTER, naming every knob moved off its
   registered default and why. A hand-configured DSP object is not the
-  instrument and the divergence is silent.
+  instrument and the divergence is silent. `RouteFilterBank`
+  and `RouteDriveBank` are private members of `FroggersAppCore` in
+  `app/FroggersAppCore.hpp` — not of `FroggersApp` in `app/Froggers.hpp`, which
+  derives from it and declares neither — so a test reaches them either through
+  the app's public entry or through a replica mirroring the router's setter
+  order. `ProcessDriveBank` in `app/FroggersDspParityTests.cpp` is the existing
+  precedent for the Drive bank; `filter_bank_peak_gain_travel_measurement_at_and_away_from_resonance`
+  in the same file is now the precedent for the Filter bank.
 - **THE REVERB BANK'S REGISTERED DEFAULTS ARE A DEAD INSTRUMENT, so "measure at
   the registered defaults" is not available on that page and no task may ask
   for it.** Read from `app/FroggersParameters.hpp`: the Reverb rows for Wet/dry,
@@ -42,14 +49,7 @@ collision the staging exists to prevent.
   probe on that pair reads a flat +1 whatever the tank does. The Delay rows for
   Wet/dry, Send and Stereo width omit it too. Every Reverb and Delay
   measurement therefore states its own operating point, knob by knob, and a
-  row that reads flat +1 or `nan` is VOID rather than negative. `RouteFilterBank`
-  and `RouteDriveBank` are private members of `FroggersAppCore` in
-  `app/FroggersAppCore.hpp` — not of `FroggersApp` in `app/Froggers.hpp`, which
-  derives from it and declares neither — so a test reaches them either through
-  the app's public entry or through a replica mirroring the router's setter
-  order. `ProcessDriveBank` in `app/FroggersDspParityTests.cpp` is the existing
-  precedent for the Drive bank; `filter_bank_peak_gain_travel_measurement_at_and_away_from_resonance`
-  in the same file is now the precedent for the Filter bank.
+  row that reads flat +1 or `nan` is VOID rather than negative.
 - A figure lands in a TEST, never in prose.
 - State the GRID and the TAP POINT beside any worst-case figure. Where the claim
   is about an improvement, measure both states in ONE run over ONE grid and
@@ -135,7 +135,7 @@ These share NEW `app/dsp/StereoField.hpp`, `app/dsp/Reverb.hpp`,
 `app/FroggersSurfaceTests.cpp`, `MANUAL.md` and `QUICK_DICT.md`, so they are one
 stage and run in order.
 
-- [ ] 3.0 Repair the stale `ToReverbMono` citations before anything reads them
+- [x] 3.0 Repair the stale `ToReverbMono` citations before anything reads them
       again. The symbol has no definition anywhere in the tracked tree; it is
       the pre-port simulator's name for work now done elsewhere. It is named as
       a live symbol at `app/dsp/Delay.hpp:436`, `:970` and `:1011`, at
@@ -155,11 +155,16 @@ stage and run in order.
       Grep the bare word case-insensitively across `app/`, the root documents
       and `openspec/`, and report FOUND versus CHANGED. `openspec/changes/archive/`
       is a historical record and is excluded.
+      OUTCOME: five sites named the symbol and five were repaired; each now names
+      the symbol that does the work today, and no replacement was invented. The
+      wet-level follower's mono sum is in `dsp::StereoDelay::Process`;
+      `dsp::StereoDelay::ToStereo` carries none, and the repaired sentences say
+      so. Suite unchanged at 387 PASS / 0 FAIL across fourteen binaries.
       NOTHING ELSE BELONGS IN THIS TASK. It is the one hygiene item that BLOCKS
       3.1, and the rest of the stale-citation sweep is 3.0a, which blocks
       nothing. Bundling them under one checkbox would leave 3.1's readiness
       ambiguous if this stalls halfway.
-- [ ] 3.0a The rest of the stale-citation sweep. Nothing in this change depends
+- [x] 3.0a The rest of the stale-citation sweep. Nothing in this change depends
       on it, so it runs whenever the stage has room, and a stall here does not
       hold 3.1.
       TWO CITED PATHS NO LONGER RESOLVE, and they take OPPOSITE dispositions.
@@ -208,6 +213,16 @@ stage and run in order.
       In `app/FroggersTransferFunctionVisualizer.hpp`, `kMinDb` does not exist
       and `kMaxDb` does not exist, yet a comment cites that pair as the clamp
       window. Name the real bound or state the numbers.
+      OUTCOME: twenty sites found, thirteen changed; every unchanged hit carries
+      a stated disposition. The Daisy diagnostics citation is REDIRECTED to
+      `DAISY_MANUAL.md`'s Troubleshooting section, which covers the same
+      stuck-input fact, and stays in its spec's Purpose section ahead of any
+      requirement heading. The correspondence pointer is REMOVED and what the
+      comment still asserts truly is kept. All four test names are spelled in
+      full and the positional words beside them are gone. Both constant families
+      now name constants that are declared where they are cited, and the
+      limiter comment states why those constants are per-instance rather than
+      narrating the refactor that made them so.
 - [ ] 3.1 Enumerate the cross-feed by OPERAND across the whole tree and report
       FOUND versus CHANGED with a disposition per hit, zeros included.
       THE OPERAND IS THE PAIRED WEIGHTING, NOT `* 0.5f`. Search for two line

@@ -433,7 +433,7 @@ struct StereoDelay
     OutputLimiter wetLimiterL;
     OutputLimiter wetLimiterR;
     // One follower for both channels: it tracks `monoWet`, the value
-    // ToReverbMono already forms, so the measurement costs one fabs, one
+    // `AdvanceWetLevel` passes each sample, so the measurement costs one fabs, one
     // compare, one multiply-add and one float of state per sample rather than
     // a pair of followers on a value nothing else needs. `WetAuthorityFollower`
     // (Limiter.hpp) is the same unit `dsp::Reverb::wetAuthority` owns.
@@ -967,7 +967,7 @@ struct StereoDelay
         // governs the loop's own dynamics/persistence, unaffected.
         // `wetLimiterL`/`wetLimiterR` are applied strictly AFTER
         // that write, to what actually ESCAPES this stage toward
-        // `ToReverbMono`/Reverb/the master limiter, so a hot delay tail no
+        // `ToStereo`/Reverb/the master limiter, so a hot delay tail no
         // longer forces the downstream chain (Reverb, then the master) to
         // duck around it. See this file's header comment (above the struct)
         // for the tuning and its measurement.
@@ -1008,9 +1008,9 @@ struct StereoDelay
 
         lastWet.l = wetLimiterL.Process(diffusedL);
         lastWet.r = wetLimiterR.Process(diffusedR);
-        // Follows the same `monoWet` ToReverbMono forms, so one follower
-        // serves both channels and measures the value the crossfade actually
-        // mixes in.
+        // Forms `monoWet`, the value `AdvanceWetLevel` advances the follower
+        // with, so one follower serves both channels and measures the value
+        // the crossfade actually mixes in.
         AdvanceWetLevel(std::fabs((lastWet.l + lastWet.r) * 0.5f));
         return lastWet;
     }

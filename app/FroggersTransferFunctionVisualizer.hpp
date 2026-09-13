@@ -14,9 +14,10 @@
 // already finite by construction (SafeDenominator floors the
 // denominator's magnitude), but a finite-and-huge value could still land
 // far outside this Visualizer's own drawing bounds. Plotting in dB and
-// clamping to a fixed [kMinDb, kMaxDb] window before mapping to pixel-y is
-// what keeps the polyline inside GetBounds() regardless of how extreme the
-// underlying (finite) response gets.
+// clamping to a fixed [`minDb_`, `maxDb_`] window (-40 dB to 40 dB by
+// default) before mapping to pixel-y is what keeps the polyline inside
+// GetBounds() regardless of how extreme the underlying (finite) response
+// gets.
 
 #include "synth/DspTransferFunction.hpp"
 #include "synth/Color.hpp"

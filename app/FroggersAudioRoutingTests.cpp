@@ -2357,7 +2357,7 @@ TEST_CASE(encoder_edit_while_frozen_changes_the_output_measurably) {
     // `transportRunningNow`, so the edit above could not reach the DSP):
     // diff == 0.00627667 over this same 50-block gap. The real edit (Mix
     // 1.0 -> 0.0 collapsing delayOut toward the near-silent dry signal,
-    // dsp/Delay.hpp's ToReverbMono) measures diff == 0.537887 -- ~86x that
+    // dsp/Delay.hpp's ToStereo) measures diff == 0.537887 -- ~86x that
     // noise floor. kMeasurableChangeLinear sits an order of magnitude above
     // the measured noise floor and comfortably below the measured true
     // effect, so this cannot pass on drift alone.
@@ -2797,8 +2797,8 @@ struct EnvelopeWindow {
 };
 
 // One arm, start to finish. Settles the rig into a running steady state
-// first (the same 8 blocks randomize_all_storm_test_never_blows_out... uses
-// before its first draw), applies the operation, warms up, then measures.
+// first (the same 8 blocks randomize_all_storm_test_never_blows_out_or_permanently_silences
+// uses before its first draw), applies the operation, warms up, then measures.
 std::vector<EnvelopeWindow> MeasureEnvelopeArm(EnvelopeArm arm, const char* scratchName) {
     constexpr double kSampleRateHz = 48000.0;
     constexpr std::size_t kSettleBlocks = 8;

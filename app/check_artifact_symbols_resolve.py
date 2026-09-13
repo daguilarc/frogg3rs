@@ -40,7 +40,7 @@ this or any other mechanism, so the qualified spelling is the cheap one.
 
 WHAT IS NOT A CLAIM, and why the line is drawn there. A bare CamelCase word is
 prose to this gate. `Density`, `Diff`, `Gain` and `Step` are knob labels and
-short names; `RouteFilterBank` and `ToReverbMono` are code; nothing lexical
+short names; `RouteFilterBank` and `RouteDriveBank` are code; nothing lexical
 separates them, and a gate that rejected the first four would be worked around
 rather than fixed. A token with no `/` is not read as a path either: a bare
 filename does not say which of the tree's several same-named files is meant,

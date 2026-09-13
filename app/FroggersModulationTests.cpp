@@ -2053,9 +2053,9 @@ TEST_CASE(reset_all_drilled_into_audio_pitch_restores_its_default_patch_detent_n
 // `PressBankWithRandomValue`) no longer routes the VALUE write through that
 // function at all: it draws its own uniform value and commits it directly
 // via `HandleSetAbsolute` (`sceneCenters_`, no dependency on
-// resolved/modulated state), to both scene poles. Filed upstream as
-// `UPSTREAM-SHEAF-ASK.md` ask #16; Sheaf is pinned and untouched, so this
-// app-side fix does not wait on it.
+// resolved/modulated state), to both scene poles. Filed upstream as ask
+// #16; Sheaf is pinned and untouched, so this app-side fix does not wait
+// on it.
 //
 // Verified (not asserted here): temporarily restoring the OLD
 // press-with-RandomHeld body in `PressBankWithRandomValue` and rebuilding
