@@ -101,20 +101,20 @@ A control named for a mechanism SHALL perform that mechanism. Diffusion means sm
 
 - **WHEN** a control named Diffusion is swept on any page
 - **THEN** it smears transients in time through an allpass with a real per-section delay, rather than cross-feeding two channels
-- Check: NOT YET DELIVERED. The Delay bank's Diffusion does this today; the Reverb bank's slot 7 is a cross-feed weight with no delay and no allpass. `openspec/changes/frogg3rs-stereo-field-and-density/tasks.md`'s cross-feed and Reverb stage delivers this by replacing the Reverb mechanism and renaming the slot.
+- Check: `app/FroggersDspParityTests.cpp`, `reverb_density_travel_raises_the_impulse_responses_echo_density`, which drives Density's travel and asserts the impulse response's normalised echo density rises across it, asserting in the same case that the response carries energy at Density's floor and that every section's configured delay exceeds one sample, so an unconfigured cascade acting as a phaser cannot pass. Both pages smear in time through the same cascade: the Delay bank's Diffusion drives it on the wet tap, Reverb's Density on the tank's input.
 
 #### Scenario: A stereo-image control widens across its whole travel
 
 - **WHEN** either page's Stereo width is swept from floor to top
 - **THEN** L/R correlation of that stage's wet signal falls monotonically
 - **AND** where the control drives more than one stereo mechanism, every mechanism it drives widens in the same direction across that travel
-- Check: NOT YET DELIVERED. Reverb's Stereo width drives one mechanism, the tank's mid/side output scaling, and giving it the cross-feed as a second was considered and dropped — no surveyed design ties the two, and the cross-feed is retired to a fixed coupling instead. What stops the control reaching the image today is neither knob: one damping filter serves both tank lines, so the second line's output carries the first through that filter's own memory and the two taps stay close together wherever the control sits. `openspec/changes/frogg3rs-stereo-field-and-density/tasks.md` gives each line its own filter and pins the travel afterwards.
+- Check: PARTLY DELIVERED. Reverb's Stereo width drives one mechanism, the tank's mid/side output scaling; giving it the cross-feed as a second was considered and dropped, because no surveyed design ties the two and the cross-feed is retired to a fixed coupling instead. What held the control back was neither knob: one damping filter served both tank lines, so the second line's output carried the first through that filter's own memory. Each line now has its own filter and correlation falls where it could not before. Check: `app/FroggersDspParityTests.cpp`, `reverb_damping_filter_split_lowers_wet_leg_correlation_at_every_setting`, which pins the split against the shared filter it replaced over one grid in one run. The control's OWN travel is not yet pinned: the superseded change measured that bound against a mechanism it then replaced, and `openspec/changes/frogg3rs-density-documents-and-spec/tasks.md` re-measures it against the delivered tank.
 
 #### Scenario: A control that colours says so
 
 - **WHEN** Density is raised toward its top
 - **THEN** the manual states that it trades smoothness for metallic coloration, and roughly where on the travel that coloration becomes audible
-- Check: NOT YET DELIVERED. `openspec/changes/frogg3rs-stereo-field-and-density/tasks.md`'s cross-feed and Reverb stage measures the ringing and writes it down.
+- Check: `app/FroggersDspParityTests.cpp`, `reverb_density_travel_raises_the_impulse_responses_echo_density` measures the ringing across the travel. The manual sentence it backs is not yet written: `openspec/changes/frogg3rs-density-documents-and-spec/tasks.md`'s document stage states where on the travel the colouration becomes audible.
 
 ## MODIFIED Requirements
 
@@ -125,7 +125,7 @@ WHEN a Drive page control is mapped from its knob to the coefficient it drives, 
 Restated because its inert-at-default scenario names two controls this change removes, and the tests that scenario cites are deleted with them.
 
 <!-- RESTATES-EXCEPT
-NOTE (pending `frogg3rs-stereo-field-and-density` delivery): Link and the old Waveshaper offset/Bias
+NOTE (pending `frogg3rs-density-documents-and-spec` delivery): Link and the old Waveshaper offset/Bias
   keeps: none
 -->
 
@@ -183,7 +183,7 @@ slot 11 is Fold (short name `Fold`), the pre-fold scale ahead of the sine-fold s
   keeps: slot 11 is Fold (short name `Fold`)
 slot 13 is Symmetry (short name `Sym`), an offset injected at the folder's own input
   keeps: anchored so that silence-in still produces silence-out
-NOTE (pending `frogg3rs-stereo-field-and-density` delivery): slots 10 and 13 are updated ahead
+NOTE (pending `frogg3rs-density-documents-and-spec` delivery): slots 10 and 13 are updated ahead
   keeps: none
 slots 2-8 carry the bank's remaining original parameters, with Mod depth and Mod rate collapsed
   keeps: the collapsed modulation control
@@ -312,7 +312,7 @@ What each one becomes. Drive slot 9 gains the description of what the control cr
 - **THEN** slots 2-6 carry Room size, Decay, Pre-delay, Damping and Stereo width, with Damping running one filter per tank line so that damping the tail does not also collapse the stereo image, and Stereo width driving the tank's mid/side output scaling
 - **THEN** the tank's L/R cross-feed is a fixed coupling rather than a control, held at the weight the removed Diffusion knob's registered default carried, so retiring that knob does not change the tank at its default
 - **THEN** slot 7 is Density (short name `Dens`), the tank's initial echo density, produced by a cascade of allpass sections rather than by cross-feeding the tank's two lines
-- Check: NOT YET DELIVERED for the three clauses above. Today slot 7 is Diffusion (short name `Diff`) and is the tank's L/R cross-feed weight; Damping runs one filter shared by both tank lines; and Stereo width drives the mid/side output scaling alone. `openspec/changes/frogg3rs-stereo-field-and-density/tasks.md`'s cross-feed and Reverb stage delivers all three. Driving the cross-feed from Stereo width was considered and dropped: no surveyed design ties the two, Dattorro's cross-feed being a fixed figure-eight with no knob and stereo coming from the output tap structure. The fixed-coupling clause follows the same rule this specification already applies to Link, whose coupling term was kept at its own default weight as a named constant when the knob was retired. Every other clause in this scenario describes the bank as it ships. This marker is written because the clauses read identically whether the behaviour exists or is merely wanted, and the scenarios under this requirement carry no `Check:` line by the promoted spec's own convention — which leaves an undelivered clause here indistinguishable from a delivered one.
+- Check: DELIVERED for the three clauses above, awaiting their citations. Slot 7 is Density driving an allpass cascade on the tank's input; the tank's cross-feed is a fixed coupling at the weight the retired knob's default carried; and Damping runs one filter per tank line. They are backed by `reverb_process_reproduces_its_captured_output_exactly`, `reverb_density_travel_raises_the_impulse_responses_echo_density` and `reverb_damping_filter_split_lowers_wet_leg_correlation_at_every_setting` in `app/FroggersDspParityTests.cpp`. Driving the cross-feed from Stereo width was considered and dropped: no surveyed design ties the two, Dattorro's cross-feed being a fixed figure-eight with no knob and stereo coming from the output tap structure. The fixed-coupling clause follows the same rule this specification already applies to Link, whose coupling term was kept at its own default weight as a named constant when the knob was retired. Every other clause in this scenario describes the bank as it ships. This marker is written because the clauses read identically whether the behaviour exists or is merely wanted, and the scenarios under this requirement carry no `Check:` line by the promoted spec's own convention — which leaves an undelivered clause here indistinguishable from a delivered one.
 - **THEN** slot 8 is Mod (short name `Mod`), the collapsed modulation control, and slot 9 is Hold (short name `Hold`)
 - **THEN** slot 10 is Tank Drive (short name `TkDv`), a pre-gain applied to the input of the tank feedback path's own in-loop saturator, never to that saturator's output
 - **THEN** slot 11 is Grit (short name `Grit`), the tank feedback path routed through a bit-scramble stage ahead of that same in-loop saturator
