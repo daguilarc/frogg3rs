@@ -465,11 +465,22 @@ stage and run in order.
       whatever the tank does, so a pin written at that width can neither turn
       green nor red. HOLD WIDTH OFF ITS DEFAULT while sweeping slot 7, say at
       what value, and name every knob you move.
-      ASSERTION, once this reports: the check pins BOTH travels in one case,
-      with its threshold and grid taken from what this measurement returns and
-      written into this task before the implementing task is dispatched. A
-      "near-zero row" is a blank until this reports the number; the row is
-      meaningful only because the other row moves in the same run.
+      ASSERTION, now written from confirmed figures. One case, one grid,
+      Damping {0.0, 0.25, 0.5, 0.75, 1.0} and the same for slot 7, Stereo width
+      held at 0.5 because its own 0.0 default makes the wet pair bit-equal.
+      ASSERT the Stereo width row moves correlation by more than 0.03 end to
+      end — measured 0.044, twice by different contexts — which is the liveness
+      proof for the other row. ASSERT every slot 7 row point stays within 0.002
+      of its own knob-zero value; measured range 0.000134.
+      THE BOUND IS 0.002 AND NOT 0.001 FOR A REASON. Slot 7's effect is real
+      only as a many-seed average: the single-trial noise floor is about 0.0006,
+      roughly five times the effect itself. A bound of 0.001 would sit under two
+      noise floors and flake. At 0.002 the near-zero row still separates cleanly
+      from the width row's 0.044, so the case says what it means to say.
+      DO NOT ASSERT SLOT 7's DIRECTION. Averaged over many seeds it widens
+      slightly, which contradicts the naive reading of the formula, but the
+      effect is below single-trial noise and a check on its sign would be a
+      check on noise.
 - [ ] 3.7 Replace the cross-feed behind slot 7 with `dsp::DelayDiffuser`
       UNCHANGED, at its own section lengths rather than retuned for the tank.
       PLACEMENT: THE INPUT PATH, ahead of the tank, not inside the loop and not
@@ -579,8 +590,20 @@ stage and run in order.
       GRID are written into this task from the postflight-confirmed figures
       before an executor is dispatched, never chosen by the executor. Until they
       are written here this task is a blank and dispatching it is the defect.
-      MEASURE AND REPORT the change from today's tank at the registered
-      defaults, with the grid stated, so 4.x can say what the control now does.
+      THE THRESHOLD, now written from confirmed figures. Grid: Damping
+      {0.0, 0.25, 0.5, 0.75, 1.0}, Stereo width held at 0.5 for the reason 3.4
+      gives. Measured twice by different contexts, the shared filter holds
+      correlation at 0.9887 rising to 0.9995 across that travel; per-line
+      filters give 0.6042 rising to 0.6838. ASSERT in one case over one grid
+      that per-line correlation is lower than shared at EVERY Damping setting by
+      more than 0.25; the smallest measured gap is 0.3157, at the top of the
+      travel, and the single-trial noise floor is about 0.0006, so the margin is
+      not close.
+      ALSO MEASURE AND REPORT, without asserting a threshold nobody has
+      measured: Stereo width's own travel after the split, against the 0.044 it
+      moves before it. No figure exists for the post-split width travel yet, so
+      a task asserting one would be handing an executor a blank. Report it with
+      its grid so 4.x can say what the control now does.
 - [ ] 3.8 Density's default is 0.0, diffusion at minimum — the tank's own
       twin-line character, as close to today's default tank as the new stage
       allows. Bit-identity is impossible because the mechanism behind the slot
