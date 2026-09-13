@@ -409,6 +409,19 @@ stage and run in order.
       Report both, with the grid and the tap point.
       This task does not edit the spec. 5.2a decides the restatement on what
       this returns, and the figures belong in a check rather than in prose.
+      OUTCOME: 8.46 dB reproduces as the Reverb page's own `OutputLimiter`
+      compressing a dry pass-through at roughly 2.12x full scale while the tank
+      is starved, so it measures the limiter rather than the wet path the
+      paragraph cites it for. The master is inert there: a closed Send drives
+      the wet-authority target to zero and `WetAuthorityFollower::Authority()`
+      reads a level that starts at zero, so the mix weight is exactly zero.
+      The two stated figures cannot describe one run. For the scalar gain this
+      is, `diffDb = 20*log10(1 - 10^(levelDb/20))`, which forces -4.1182 from
+      -8.46 and -8.5401 from -4.07. The quantity the prose claims — the tank
+      with Send and Wet/dry open, everything else at registered default —
+      measures about -1.75 dB peak and -1.74 dB RMS. The requirement's point
+      survives: a wet path at -1.75 dB is not transparent. Reproduced by a
+      second context running its own driver.
 - [x] 3.5 DROPPED — folding the cross-feed under Stereo width rests on a false
       premise. Published practice keeps the two independent: Dattorro's
       cross-feed is a fixed figure-eight with no knob and stereo comes from the
@@ -496,6 +509,8 @@ stage and run in order.
       slightly, which contradicts the naive reading of the formula, but the
       effect is below single-trial noise and a check on its sign would be a
       check on noise.
+      OUTCOME: the threshold above is written and this task is closed. The
+      implementing check is 3.10's to land with the rest of the stage.
 - [ ] 3.7 Replace the cross-feed behind slot 7 with `dsp::DelayDiffuser`
       UNCHANGED, at its own section lengths rather than retuned for the tank.
       PLACEMENT: THE INPUT PATH, ahead of the tank, not inside the loop and not
