@@ -223,7 +223,7 @@ stage and run in order.
       now name constants that are declared where they are cited, and the
       limiter comment states why those constants are per-instance rather than
       narrating the refactor that made them so.
-- [ ] 3.1 Enumerate the cross-feed by OPERAND across the whole tree and report
+- [x] 3.1 Enumerate the cross-feed by OPERAND across the whole tree and report
       FOUND versus CHANGED with a disposition per hit, zeros included.
       THE OPERAND IS THE PAIRED WEIGHTING, NOT `* 0.5f`. Search for two line
       reads combined as `(1.0f - w)` against `w`, or for a local named `cross`.
@@ -247,6 +247,25 @@ stage and run in order.
       what makes it an independent oracle for a promoted requirement. Collapsing
       it turns production into its own witness and the requirement loses its
       check while the suite stays green.
+      OUTCOME: run twice by different operands, once by a context that did not
+      write this change and once by the parent, and both return the same set.
+      FIVE sites carry the paired weighting, cited by symbol because line
+      numbers decay: `dsp::StereoDelay::Process` in `app/dsp/Delay.hpp`,
+      identity at weight zero, DE-DUPLICATION SUBJECT;
+      `dsp::Reverb::Process` in `app/dsp/Reverb.hpp`, a full swap at weight
+      zero, DE-DUPLICATION SUBJECT; `ProcessReverb` in
+      `src/core/FroggersEngine.hpp`, OUT OF SCOPE as frozen firmware and left
+      untouched; the inline replica inside
+      `reverb_process_matches_manual_tank_replica_at_neutral_mod_and_hold` and
+      the one inside `UnsaturatedTankReplica`, both in
+      `app/FroggersDspParityTests.cpp`, both OWNED BY 3.7a.
+      A SIXTH site derives the weight without combining the pair: the
+      width-balance case named above reads `dwid * 0.5f * widthBalance` and
+      never forms the average, which is what leaves it an independent oracle.
+      KEEP, unchanged.
+      `PreFixReverbReplica::Step` in the same file carries no formula and only
+      passes the knob down; its signature is one of 3.7's four renames.
+      FOUND 6, CHANGED 0 at this task — it reports and ships no code.
 - [ ] 3.2 One definition, in a NEW `app/dsp/StereoField.hpp`. Not
       `app/dsp/Limiter.hpp`: following `dsp::EqualPowerWetDry`'s precedent by
       destination rather than by shape would put a cross-feed and an allpass
@@ -262,13 +281,33 @@ stage and run in order.
       the same weighted average with transposed operands, so the natural call
       would be a DIFFERENT TANK at every knob position including the registered
       default, and it is a silent audio change.
-      ASSERT BIT-IDENTITY AT BOTH CALL SITES across the de-duplication, against
-      the parity replicas, BEFORE those replicas are touched. The one test that
-      would otherwise catch this,
-      `reverb_process_matches_manual_tank_replica_at_neutral_mod_and_hold`,
-      carries its own inline copy of the formula, and a later task tells the
-      same executor to update the parity-side copies — both sides edited by one
-      hand detects nothing.
+      ASSERT THAT PRODUCTION REPRODUCES ITSELF ACROSS THE DE-DUPLICATION, and
+      do it AGAINST A GOLDEN VECTOR CAPTURED FROM PRODUCTION BEFORE THE EDIT,
+      not against a parity replica.
+      AN EARLIER WORDING OF THIS TASK SAID "assert bit-identity against the
+      parity replicas" AND WAS UNSATISFIABLE. The replicas were never bit-exact:
+      `reverb_process_matches_manual_tank_replica_at_neutral_mod_and_hold`
+      compares with `REQUIRE_NEAR(actual, expected, 1e-4)`, so the instrument
+      that wording named as the reference carries a tolerance of its own. An
+      executor spent a full session proving that and correctly stopped rather
+      than relaxing the assertion. The blank was the task's.
+      THE METHOD. At the commit BEFORE the edit, run `dsp::Reverb::Process` and
+      `dsp::StereoDelay::Process` over a fixed input and a fixed knob grid that
+      INCLUDES the registered default, where Reverb's cross weight is zero and
+      the tank is fully swapped, and write the outputs into the test as
+      hexadecimal float literals. After the edit, assert the same grid
+      reproduces those literals EXACTLY. This compares production against
+      itself, which is the claim the de-duplication actually makes, and it is
+      reachable bit-exactly because both sides are the same code path.
+      IF THE GOLDEN VECTOR FAILS, THE REFACTOR CHANGED THE SOUND. Report it and
+      stop. Do not widen to a tolerance, and do not accept a rounding-level
+      difference as harmless: the whole subject of this change is a control
+      whose mechanism moved without anyone noticing.
+      SEPARATELY, PROVE THE CASE CAN FAIL by transposing the operands at one
+      call site, rebuilding with the binary removed first, and confirming RED,
+      then restoring and confirming GREEN. Report both numbers.
+      LEAVE THE TWO INLINE REPLICAS ALONE. 3.7a owns them. Editing production
+      and a replica in one pass detects nothing.
       Reverb's own coefficient scale at its call site becomes a NEW
       `kTankCrossFeedScale`, defined beside the call in `app/dsp/Reverb.hpp`.
       Delay's `0.5f` STAYS a literal and is not folded into that constant:
