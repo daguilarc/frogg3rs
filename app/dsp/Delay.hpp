@@ -49,6 +49,7 @@
 #include "Drive.hpp"    // reuse dsp::SampleRateReducer AS-IS for the Crush knob (see StereoDelay::SetCrush below).
 #include "FilterFx.hpp"
 #include "Limiter.hpp"
+#include "StereoField.hpp"  // dsp::CrossFeedPair, shared with dsp::Reverb::Process (dsp/Reverb.hpp).
 
 #include <algorithm>
 #include <array>
@@ -164,174 +165,11 @@ struct DelayParams
 // than a second declaration of it.
 using DelayWetPair = StereoSample;
 
-// (Diffusion, Delay slot 8, this file's
-// DelayParams::ddif comment): one Schroeder allpass section with an
-// M-sample delay, M configured at runtime (up to `Capacity` samples, fixed
-// at compile time so the audio path never allocates).
-//
-// Recurrence and coefficient-sign convention are the SAME as
-// DriveBlendPhase's one-sample allpass (Drive.hpp:
-// `phased = -a*wet + allpassX1 + a*allpassY1; allpassX1 = wet;
-// allpassY1 = phased;`), generalized from one-sample registers
-// (allpassX1/allpassY1) to M-sample circular buffers (xHistory/yHistory
-// below) -- reuse the RECURRENCE FORM, not the one-sample STATE: a
-// straight copy of DriveBlendPhase's one-
-// sample memory produces frequency-dependent phase rotation (a phaser),
-// not time smearing, so diffusion needs real per-section delay instead.
-template <std::size_t Capacity>
-struct SchroederAllpassSection
-{
-    // xHistory[pos]/yHistory[pos] hold x[n-M]/y[n-M] the instant Process()
-    // reads them (read-before-write, the same ring-buffer idiom
-    // StereoDelay's own ReadAt/WriteSample pair uses on lineL/lineR below,
-    // just backed by a fixed-capacity array instead of a heap vector).
-    std::array<float, Capacity> xHistory{};
-    std::array<float, Capacity> yHistory{};
-    std::size_t pos = 0;
-    std::size_t m = 1;  // current delay length in samples; set by Configure(), clamped to [1, Capacity].
-
-    // Recomputes M from a base delay time (seconds) and a sample rate --
-    // called only from DelayDiffuser::SetSampleRate (never per-sample), so
-    // the rounding/clamp here are not audio-path cost. Also clears this
-    // section's history: a rate change invalidates old buffer alignment
-    // either way, matching StereoDelay::SetSampleRate's own lineL/lineR
-    // re-assignment just below.
-    void Configure(float sampleRateHz, float baseSeconds)
-    {
-        long long rounded = std::lround(static_cast<double>(baseSeconds) * static_cast<double>(sampleRateHz));
-        if (rounded < 1)
-        {
-            rounded = 1;
-        }
-        if (rounded > static_cast<long long>(Capacity))
-        {
-            // Defensive only -- this unit is sized for sample rates up to
-            // 192kHz (see DelayDiffuser's own capacity comments below);
-            // clamping here keeps every buffer access in-bounds even if a
-            // caller supplies more, rather than relying on that ceiling
-            // never being crossed.
-            rounded = static_cast<long long>(Capacity);
-        }
-        m = static_cast<std::size_t>(rounded);
-        Reset();
-    }
-
-    // y[n] = -a*x[n] + x[n-M] + a*y[n-M] -- Drive.hpp's recurrence,
-    // M-sample memory instead of one-sample (class header comment above).
-    float Process(float x, float a)
-    {
-        const float xDelayed = xHistory[pos];
-        const float yDelayed = yHistory[pos];
-        const float y = -a * x + xDelayed + a * yDelayed;
-        xHistory[pos] = x;
-        yHistory[pos] = y;
-        pos = (pos + 1 >= m) ? 0 : pos + 1;
-        return y;
-    }
-
-    void Reset()
-    {
-        std::fill(xHistory.begin(), xHistory.end(), 0.0f);
-        std::fill(yHistory.begin(), yHistory.end(), 0.0f);
-        pos = 0;
-    }
-
-    bool StateFinite() const
-    {
-        for (const float v : xHistory)
-        {
-            if (!std::isfinite(v))
-            {
-                return false;
-            }
-        }
-        for (const float v : yHistory)
-        {
-            if (!std::isfinite(v))
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    float StateMagnitude() const
-    {
-        float magnitude = 0.0f;
-        for (const float v : xHistory)
-        {
-            magnitude = std::max(magnitude, std::fabs(v));
-        }
-        for (const float v : yHistory)
-        {
-            magnitude = std::max(magnitude, std::fabs(v));
-        }
-        return magnitude;
-    }
-};
-
-// One channel's diffuser -- three SchroederAllpassSection cascades
-// at non-harmonic base times (4.7ms/12.3ms/21.1ms) so the sections do not
-// reinforce one another. One instance per
-// channel (StereoDelay::diffuserL/diffuserR below), matching this file's
-// existing per-channel-instance idiom (wetLimiterL/R, fbToneL/R, crushL/R)
-// rather than one shared instance driven by e.g. max(|L|,|R|).
-struct DelayDiffuser
-{
-    static constexpr float kSection1BaseSeconds = 0.0047f;  // 4.7 ms.
-    static constexpr float kSection2BaseSeconds = 0.0123f;  // 12.3 ms.
-    static constexpr float kSection3BaseSeconds = 0.0211f;  // 21.1 ms.
-
-    // Capacities sized to each section's OWN 192kHz maximum, not all to the
-    // longest section's.
-    static constexpr std::size_t kSection1Capacity = 1024;  // 4.7ms@192kHz = 902.4 samples; headroom to a round cap.
-    static constexpr std::size_t kSection2Capacity = 2560;  // 12.3ms@192kHz = 2361.6 samples; own maximum, not 4096.
-    static constexpr std::size_t kSection3Capacity =
-        4096;  // 21.1ms@192kHz ~= 4051.2 samples; a safe cap for the longest section.
-
-    SchroederAllpassSection<kSection1Capacity> section1;
-    SchroederAllpassSection<kSection2Capacity> section2;
-    SchroederAllpassSection<kSection3Capacity> section3;
-
-    void SetSampleRate(float sampleRateHz)
-    {
-        section1.Configure(sampleRateHz, kSection1BaseSeconds);
-        section2.Configure(sampleRateHz, kSection2BaseSeconds);
-        section3.Configure(sampleRateHz, kSection3BaseSeconds);
-    }
-
-    // Cascaded: section1's output feeds section2's input feeds section3's
-    // input, all three driven by the SAME coefficient `a` (StereoDelay's
-    // own ddif*kDiffusionCoeffScale mapping computes `a` once per sample --
-    // see StereoDelay::ApplyDiffusion below).
-    float Process(float x, float a)
-    {
-        return section3.Process(section2.Process(section1.Process(x, a), a), a);
-    }
-
-    void Reset()
-    {
-        section1.Reset();
-        section2.Reset();
-        section3.Reset();
-    }
-
-    bool StateFinite() const
-    {
-        return section1.StateFinite() && section2.StateFinite() && section3.StateFinite();
-    }
-
-    float StateMagnitude() const
-    {
-        return std::max(section1.StateMagnitude(), std::max(section2.StateMagnitude(), section3.StateMagnitude()));
-    }
-};
-
 // (Reverse Blend, Delay slot 7, this
 // file's DelayParams::drev comment): per-channel backward-travelling read
 // pointer into the SAME delay line the forward tap reads, plus the
-// crossfade state that declicks its wrap. Shape follows DelayDiffuser
-// above (DelayDiffuser's own precedent for a per-channel helper struct) --
+// crossfade state that declicks its wrap. Shape follows
+// dsp::DelayDiffuser (dsp/StereoField.hpp)'s own precedent for a per-channel helper struct --
 // Reset()/StateFinite()/StateMagnitude(), one instance per channel
 // (StereoDelay::reverserL/reverserR below) -- rather than inventing a
 // different shape for the same kind of per-channel unit.
@@ -875,10 +713,20 @@ struct StereoDelay
 
         // 0.5f now scaled by widthBalance -- see SetWidthBalance's own
         // comment for how bound (a) (cross-feed stays in [0,1]) holds by
-        // construction.
+        // construction. This 0.5f stays a literal rather than folding into
+        // dsp::Reverb's own kTankCrossFeedScale (dsp/Reverb.hpp): it is half
+        // of a width blend that widthBalance then scales further, while
+        // Reverb's constant bounds a tank cross outright -- two quantities
+        // that happen to share a value, not one quantity two call sites read.
         const float cross = p.dwid * 0.5f * widthBalance;
-        float fbL = dL * (1.0f - cross) + dR * cross;
-        float fbR = dR * (1.0f - cross) + dL * cross;
+        // dsp::CrossFeedPair (dsp/StereoField.hpp) is identity on its first
+        // argument at cross == 0, which is exactly this call's own zero-cross
+        // behavior (fbL == dL, fbR == dR) -- passed in the same order the
+        // formula already reads them, unlike dsp::Reverb::Process's own call
+        // (that site's own comment says why it passes its reads transposed).
+        const CrossedPair fed = CrossFeedPair(dL, dR, cross);
+        float fbL = fed.a;
+        float fbR = fed.b;
         const float fbk = std::min(std::max(p.dfbk, 0.0f), 0.98f);
         const float send = std::min(std::max(p.dsnd, 0.0f), 1.0f);
         const float inSignal = bumpIn * send;
@@ -979,7 +827,7 @@ struct StereoDelay
         // per repeat, equally for every repeat, rather than compounding
         // once per round trip the way an in-loop placement would (a
         // different, rejected control -- see the SchroederAllpassSection/
-        // DelayDiffuser header comments above for the full rationale); the
+        // DelayDiffuser header comments in dsp/StereoField.hpp for the full rationale); the
         // existing wet limiters still bound whatever escapes afterward,
         // unchanged.
         //

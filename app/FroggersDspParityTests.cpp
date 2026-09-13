@@ -15,6 +15,7 @@
 #include "dsp/Fuegoize.hpp"
 #include "dsp/RandomShLane.hpp"
 #include "dsp/Reverb.hpp"
+#include "dsp/StereoField.hpp"
 #include "dsp/Vco.hpp"
 #include "dsp/VoiceEnvelope.hpp"
 
@@ -6883,6 +6884,114 @@ TEST_CASE(stereo_delay_width_balance_mapping_keeps_cross_in_0_1_and_spread_at_or
     REQUIRE_NEAR(delay.widthBalance, 1.0f, 1e-6);  // default knob reproduces today's 0.35/0.5 ratio exactly.
 }
 
+// dsp::CrossFeedPair (dsp/StereoField.hpp) is identity on both arguments at
+// cross == 0 -- a zero multiply on the other argument, not an argument the
+// arithmetic merely happens to cancel -- and blends them in equal measure at
+// cross == 0.5, its own documented ceiling.
+TEST_CASE(cross_feed_pair_is_identity_at_zero_and_an_equal_blend_at_one_half) {
+    const dsp::CrossedPair identity = dsp::CrossFeedPair(0.3f, -0.7f, 0.0f);
+    REQUIRE_TRUE(identity.a == 0.3f);
+    REQUIRE_TRUE(identity.b == -0.7f);
+
+    const dsp::CrossedPair blended = dsp::CrossFeedPair(0.3f, -0.7f, 0.5f);
+    const float midpoint = 0.5f * (0.3f + -0.7f);
+    REQUIRE_NEAR(blended.a, midpoint, 1e-6f);
+    REQUIRE_NEAR(blended.b, midpoint, 1e-6f);
+}
+
+// Golden-vector regression: dsp::StereoDelay::Process's cross-feed now calls
+// the shared dsp::CrossFeedPair (dsp/StereoField.hpp) instead of carrying its
+// own copy of the weighted average. It passes dL/dR in the same order the
+// prior inline formula already read them, so this stage's own output at a
+// fixed input and knob grid -- including Stereo width's registered default
+// of 0.0 -- must reproduce exactly what production returned before the two
+// stages shared this definition. The literals below were captured by running
+// this same fixture against dsp::StereoDelay::Process before that
+// de-duplication.
+TEST_CASE(stereo_delay_cross_feed_reproduces_its_captured_output_exactly) {
+    struct Case {
+        float dwid;
+        float expectedL;
+        float expectedR;
+    };
+    const Case cases[] = {
+        {0.0f, -0x1.b3d768p-3f, -0x1.b3d768p-3f},
+        {0.5f, -0x1.5ac91ep-3f, -0x1.9256c4p-1f},
+        {1.0f, -0x1.727e56p-2f, 0x1.03a9fap-1f},
+    };
+    const float sr = 48000.0f;
+    for (const Case& c : cases) {
+        dsp::StereoDelay delay;
+        delay.SetSampleRate(sr);
+        dsp::DelayParams p;
+        p.dtim = 0.0f;  // shortest reachable delay time -- ~48-sample round trip at 48kHz.
+        p.dsnd = 1.0f;
+        p.dfbk = 0.5f;
+        p.dwid = c.dwid;
+        p.dfrz = 0.0f;
+        p.dmod = 0.0f;
+        p.dmix = 1.0f;
+        p.drev = 0.0f;
+        p.ddif = 0.0f;
+
+        dsp::DelayWetPair wet{};
+        for (int step = 0; step < 3000; ++step) {
+            const float input = std::sin(0.2f * static_cast<float>(step));
+            wet = delay.Process(input, p);
+        }
+        REQUIRE_TRUE(wet.l == c.expectedL);
+        REQUIRE_TRUE(wet.r == c.expectedR);
+    }
+}
+
+// Golden-vector regression: dsp::Reverb::Process's tank cross-feed now calls
+// the shared dsp::CrossFeedPair with its two line reads transposed, which is
+// what reproduces this stage's own pre-existing full swap at Diffusion's
+// registered default of 0.0 (dsp::CrossFeedPair's own comment,
+// dsp/StereoField.hpp, and this call site's own comment, dsp/Reverb.hpp).
+// The literals below were captured by running this same fixture against
+// dsp::Reverb::Process before the two stages shared this definition.
+TEST_CASE(reverb_cross_feed_reproduces_its_captured_output_exactly) {
+    struct Case {
+        float diffusionKnob;
+        float expectedL;
+        float expectedR;
+    };
+    const Case cases[] = {
+        {0.0f, -0x1.07977p-3f, -0x1.5abb06p-4f},
+        {0.5f, -0x1.55aa7ep-3f, -0x1.0238d4p-3f},
+        {1.0f, -0x1.c94aa4p-3f, -0x1.7d5756p-3f},
+    };
+    const float sr = 48000.0f;
+    for (const Case& c : cases) {
+        dsp::Reverb rv;
+        // Isolates the tank's own cross-feed mechanism from the separate
+        // wetAuthority ramp, the same technique
+        // reverb_process_matches_manual_tank_replica_at_neutral_mod_and_hold
+        // uses: Advance() becomes an exact identity at coefficient 1.0f, so
+        // Authority() stays pinned at full from the first sample.
+        rv.wetAuthority.level = dsp::kWetAuthorityFullLevel;
+        rv.wetAuthority.attackCoeff = 1.0f;
+        rv.wetAuthority.releaseCoeff = 1.0f;
+
+        dsp::StereoSample out{};
+        for (int step = 0; step < 3000; ++step) {
+            const float input = std::sin(0.15f * static_cast<float>(step));
+            out = rv.Process(dsp::StereoSample{input, input},
+                              /*mixKnob01=*/1.0f,
+                              /*sizeKnob01=*/0.0f,
+                              /*decayKnob01=*/0.5f,
+                              /*preKnob01=*/0.0f,
+                              /*dampKnob01=*/0.5f,
+                              /*widthKnob01=*/1.0f,
+                              c.diffusionKnob,
+                              sr);
+        }
+        REQUIRE_TRUE(out.l == c.expectedL);
+        REQUIRE_TRUE(out.r == c.expectedR);
+    }
+}
+
 // Feedback drive's placement: fbDrive multiplies the ARGUMENT of
 // Saturate only, so the per-sample write bound `|inSignal| + fbk` must hold
 // REGARDLESS of fbDrive -- checked here at fbDrive's own maximum (knob 1.0f
@@ -6953,9 +7062,9 @@ TEST_CASE(stereo_delay_default_knob_values_reproduce_original_output_exactly) {
 
 // =========================================================================
 // Diffusion (Delay slot 8): per-channel three-section Schroeder allpass
-// cascade on the wet tap (dsp/Delay.hpp SchroederAllpassSection/
-// DelayDiffuser/StereoDelay::ApplyDiffusion). dfrz/drev (slots 4/7) stay
-// inert -- not touched here.
+// cascade on the wet tap (dsp/StereoField.hpp SchroederAllpassSection/
+// DelayDiffuser, dsp/Delay.hpp StereoDelay::ApplyDiffusion). dfrz/drev
+// (slots 4/7) stay inert -- not touched here.
 // =========================================================================
 
 TEST_CASE(stereo_delay_diffusion_at_default_zero_is_bit_identical_to_no_diffusion) {

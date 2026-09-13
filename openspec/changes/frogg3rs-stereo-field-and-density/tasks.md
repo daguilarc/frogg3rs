@@ -266,7 +266,7 @@ stage and run in order.
       `PreFixReverbReplica::Step` in the same file carries no formula and only
       passes the knob down; its signature is one of 3.7's four renames.
       FOUND 6, CHANGED 0 at this task — it reports and ships no code.
-- [ ] 3.2 One definition, in a NEW `app/dsp/StereoField.hpp`. Not
+- [x] 3.2 One definition, in a NEW `app/dsp/StereoField.hpp`. Not
       `app/dsp/Limiter.hpp`: following `dsp::EqualPowerWetDry`'s precedent by
       destination rather than by shape would put a cross-feed and an allpass
       cascade in a file named for a limiter, which is the defect this change
@@ -314,7 +314,20 @@ stage and run in order.
       Delay's is half of a width blend that a separate balance scalar then
       multiplies, Reverb's bounds a tank cross. Two quantities sharing a value.
       Say so at both sites rather than leaving the asymmetry unexplained.
-- [ ] 3.3 Move `dsp::DelayDiffuser` into the same header together with
+      OUTCOME: `app/dsp/StereoField.hpp` declares `dsp::CrossFeedPair`,
+      returning a `dsp::CrossedPair`, identity at weight zero. Delay calls it in
+      reading order; Reverb calls it `CrossFeedPair(valB, valA, cross)`, passing
+      its two line reads transposed so the tank's swap at weight zero survives,
+      and the call site says why reading order would silently make it an
+      identity. `kTankCrossFeedScale` is defined beside Reverb's call; Delay's
+      `0.5f` stayed a literal and both sites say why two quantities share the
+      value. Two golden-vector cases assert with `==` against hexadecimal float
+      literals over knob 0.0, 0.5 and 1.0, the first of which is the registered
+      default where the tank is fully swapped. Transposing the operands at
+      Reverb's call site takes that position from -0x1.07977p-3 to
+      -0x1.4e1dfcp-2 and the case goes red; restoring returns it to green.
+      Reproduced independently by a context that did not write it.
+- [x] 3.3 Move `dsp::DelayDiffuser` into the same header together with
       `dsp::SchroederAllpassSection`, which it holds, so the header does not
       depend back on `app/dsp/Delay.hpp`. Both are declared in that file today.
       Moving one without the other creates a cycle; moving only the section
@@ -332,6 +345,17 @@ stage and run in order.
       symbol name alone: at least one breaking site names neither symbol on the
       line that breaks, referring to them positionally. Grep the PATH as well as
       the names, and repair each with a stated disposition.
+      OUTCOME: both symbols moved together, so the new header does not depend
+      back on `app/dsp/Delay.hpp`, and `kDiffusionCoeffScale` stayed on
+      `dsp::StereoDelay`, which is where the weight is applied. Delay's existing
+      diffusion is unchanged and its own parity pins still pass. The inbound
+      sweep repaired the references that broke. Postflight then found two the
+      sweep had not: the MOVED TEXT's own outward references, which said "below"
+      about `StereoDelay::ReadAt`, `WriteSample` and `StereoDelay::SetSampleRate`
+      after those stayed behind. A sweep that greps for references TO a moved
+      symbol does not see the moved file pointing outward. Both now name
+      `dsp/Delay.hpp`, and every surviving positional word in the new header
+      resolves inside it.
 - [ ] 3.4 MEASURE FIRST, read-only. Both cross-feeds are the same weighted
       average in isolation, so the direction each knob moves comes entirely from
       what surrounds them: on the Delay page the same knob also drives an L/R

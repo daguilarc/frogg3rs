@@ -61,6 +61,7 @@
 #include "Drive.hpp"     // reuse dsp::DigitalReorganizer AS-IS for the Grit knob (same reuse Delay.hpp makes of dsp::SampleRateReducer).
 #include "FilterFx.hpp"  // reuse dsp::PadeSaturator (same reuse Delay.hpp makes).
 #include "Limiter.hpp"
+#include "StereoField.hpp"  // dsp::CrossFeedPair, shared with dsp::StereoDelay::Process (dsp/Delay.hpp).
 
 #include <algorithm>
 #include <cmath>
@@ -601,9 +602,27 @@ struct Reverb
         const float fb = decayFb + (1.0f - decayFb) * std::min(holdKnob01, 0.999f);
 
         const float diffusion = diffusionKnob01;  // :461, direct passthrough
-        const float cross = diffusion * 0.5f;
-        const float aFb = valB * (1.0f - cross) + valA * cross;
-        const float bFb = valA * (1.0f - cross) + valB * cross;
+        // This tank's own coefficient scale, bounding the cross-feed weight
+        // the same way Delay's own `0.5f * widthBalance` bounds its
+        // cross-feed (dsp::StereoDelay::Process, dsp/Delay.hpp) -- kept as
+        // its own named constant rather than folded into Delay's, because
+        // Delay's 0.5f is half of a width blend a separate balance scalar
+        // then multiplies further, while this one bounds a tank cross
+        // outright. Two quantities that happen to share a value, not one
+        // quantity two call sites read.
+        static constexpr float kTankCrossFeedScale = 0.5f;
+        const float cross = diffusion * kTankCrossFeedScale;
+        // dsp::CrossFeedPair (dsp/StereoField.hpp) is identity on its FIRST
+        // argument at cross == 0, but this tank's own pre-existing zero-cross
+        // behavior is a full SWAP -- line A fed from line B's read and line B
+        // fed from line A's (see dsp::CrossFeedPair's own comment,
+        // dsp/StereoField.hpp). Passing the reads transposed (`valB` first,
+        // `valA` second) reproduces that swap exactly, rather than silently
+        // turning it into an identity the way passing them in reading order
+        // would.
+        const CrossedPair fed = CrossFeedPair(valB, valA, cross);
+        const float aFb = fed.a;
+        const float bFb = fed.b;
 
         // The reverb tank has an in-loop saturator, the same one used
         // elsewhere in this codebase, for consistency.
