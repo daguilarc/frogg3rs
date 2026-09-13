@@ -722,7 +722,7 @@ names or strings.
       A requirement whose only scenario check is its author's assertion that it
       is fine is self-certified, which is the pattern this change's gates and
       the omni rule both exist to stop. Run 5.2 after 5.2a, never as part of it.
-- [ ] 5.2a Restate "An insert effect page's master returns the dry signal at its
+- [x] 5.2a Restate "An insert effect page's master returns the dry signal at its
       floor" as a THIRD MODIFIED requirement in this delta, on what 3.4a
       returns. THIS WIDENS THE DELTA and is reported as such rather than slipped
       in: the requirement is promoted text this change did not originally touch,
@@ -742,6 +742,18 @@ names or strings.
       check carry the number.
       If 3.4a's result makes the existing wording true as it stands, record that
       and drop this task. An inconvenient result is the finding either way.
+      OUTCOME: restated as the delta's third MODIFIED requirement. All three
+      prose paragraphs and all eight scenarios carry forward, the offending
+      sentence dropped rather than re-measured into prose, since no check pins
+      the tank's wet level and a figure in prose cannot fail when it drifts.
+      NO `RESTATES-EXCEPT` ENTRY ACCOMPANIES IT, and that is a finding about the
+      gate rather than an omission. `join_wrapped` in
+      `app/check_modified_requirements_restate_promoted.py` collects only lines
+      opening with a dash, so a requirement's PROSE is never compared and never
+      counted as dropped. Declaring a prose sentence there matches nothing by
+      construction and turns the gate red. The gate confirms every bullet and
+      scenario carried forward verbatim; it says nothing about the paragraphs,
+      which is where this change's defect lived.
 - [ ] 5.3 Every scenario's `Check:` names a test that exists and passes, or is
       marked not yet delivered in the form the gate recognises. Nothing parses
       prose, which is why this is the cheapest claim in the document to make
