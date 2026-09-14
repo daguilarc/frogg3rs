@@ -344,10 +344,39 @@ def claim_parts(span):
     return [p for p in (piece.strip(TRIM) for piece in pieces) if p]
 
 
+CHANGES_PREFIX = "openspec/changes/"
+
+
+def in_a_change_this_checkout_does_not_have(token, repo):
+    """True for a path into a change directory absent from this checkout.
+
+    The changes tree is working-copy state rather than repository state. The
+    archive is not tracked at all, and a live change is untracked until whoever
+    owns it commits, so both exist only in the checkout holding them on disk. A
+    citation into either resolves there and fails in every worktree and every
+    fresh clone, which made this gate unrunnable outside one machine's main
+    checkout rather than catching anything.
+
+    A dangling path inside a change directory that IS present here is still
+    reported, so the gate keeps catching the references it can actually check.
+    """
+    if not token.startswith(CHANGES_PREFIX):
+        return False
+    rest = token[len(CHANGES_PREFIX):].strip("/").split("/")
+    if not rest or not rest[0]:
+        return False
+    change = rest[0]
+    if change == "archive":
+        change = "/".join(rest[:2]) if len(rest) > 1 else "archive"
+    return not os.path.isdir(os.path.join(repo, CHANGES_PREFIX + change))
+
+
 def resolve(token, repo, paths, members, scopes, declared, tests):
     """Why this token does not resolve, or None when it does or is prose."""
     if PATH_TOKEN.match(token) or DIR_TOKEN.match(token):
         if not under_indexed_root(token):
+            return None
+        if in_a_change_this_checkout_does_not_have(token, repo):
             return None
         if token in paths or os.path.isdir(os.path.join(repo, token.rstrip("/"))):
             return None
