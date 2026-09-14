@@ -278,6 +278,23 @@ and reports clean.
   Diffusion is a live control; both documents carry all 84 bank entries with no
   orphan either way.
 
+## One document claim traced but not pinned, recorded rather than hidden
+
+The Delay page's Stereo width entry now says the knob's cross-feed rides the
+feedback path and reaches the repeats once Feedback or Freeze leaves zero.
+Both halves are traced: `FreezeFeedback` returns `fbk + (1 - fbk) * freeze`
+unlatched, and both rows take `FroggersParamSpec`'s own `0.0f`.
+
+**The Freeze half is not pinned by any check.** Every Freeze case in the parity
+suite sets the width knob to `0.0f` to keep width out of its scope, and the
+cross-feed's own golden vector runs at a raised Feedback with Freeze at zero,
+so no case exercises Freeze opening the path on its own. The sentence meets
+the standard prose is held to — it was read out of the source rather than
+inferred — and no automated gate reads manual prose in any case. It is
+recorded here because a traced claim and a checked claim are different things,
+and this change has spent its length on figures that were one and not the
+other.
+
 ## Two gate limitations found and deliberately not repaired
 
 Recorded rather than fixed: repairing a shipping gate was not on the superseded

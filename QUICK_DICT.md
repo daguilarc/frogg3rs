@@ -73,11 +73,11 @@ Six banks — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 - **Send** (slot 1) — Signal sent into the delay line; 0 = bypass.
 - **Delay time** (slot 2) — Base delay length, ~1 ms–2 s.
 - **Feedback** (slot 3) — Repeat feedback, capped below 98%.
-- **Stereo width** (slot 4) — Cross-feed/time-spread between L/R taps.
+- **Stereo width** (slot 4) — Offsets the right tap's read time behind the left; also sets a cross-feed weight that rides the feedback path, so it reaches the repeats once Feedback or Freeze leaves 0. At the page's defaults the widening is all time offset.
 - **Freeze** (slot 5) — Crossfades the feedback loop from the ordinary Feedback level toward full, lossless recirculation; at 0 the loop runs at the Feedback level.
 - **Mod depth** (slot 6) — LFO wobble depth on delay time.
 - **Reverse blend** (`Reverse`, slot 7) — Blends in a backward-travelling read of the delay line against the forward tap; 0 = off, 1 = fully reversed.
-- **Diffusion** (slot 8) — Smears each repeat through a short allpass cascade; exact bypass at 0.
+- **Diffusion** (slot 8) — Smears each repeat through a short allpass cascade, after the feedback write; exact bypass at 0. Same cascade as Reverb's Density (slot 7), applied to the repeats instead of the tank's own feed.
 - **Feedback drive** (`FB drive`, slot 9) — Pre-gain into the feedback saturator, 0.25×–4×, unity at default.
 - **Feedback tone** (`FB tone`, slot 10) — Low-pass inside the feedback loop, ~800 Hz to bypass; bypass at default.
 - **Mod rate** (slot 11) — Delay-time LFO rate, 0.05–1.25 Hz.
@@ -91,9 +91,9 @@ Six banks — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 - **Room size** (slot 2) — Both tank delay-line lengths.
 - **Decay** (slot 3) — Tank feedback / tail length.
 - **Pre-delay** (slot 4) — Time before input reaches the tank, 0.02 ms to about 85 ms.
-- **Damping** (slot 5) — low-pass on the tank output; darker AND quieter tail at higher knob.
+- **Damping** (slot 5) — low-pass on the tank output; darker AND quieter tail at higher knob. Each tank line filters independently, so Stereo width's spread holds at every Damping setting.
 - **Stereo width** (slot 6) — Spread between the tank's two taps.
-- **Density** (slot 7) — Decorrelates the signal reaching the tank through a short allpass cascade; exact bypass at 0.
+- **Density** (slot 7) — Decorrelates the signal reaching the tank through a short allpass cascade; exact bypass at 0. Same cascade as Delay's Diffusion (slot 8), applied ahead of the tank instead of to already-repeating signal.
 - **Mod** (slot 8) — Sinusoidal wow depth on the tank's read taps, fixed 0.35 Hz rate.
 - **Hold** (slot 9) — Pushes tank feedback toward, never to, self-oscillation.
 - **Tank drive** (slot 10) — Pre-gain into the tank's feedback saturator, 0.25×–4×, unity at default.

@@ -216,7 +216,7 @@ defining by negation; no history the reader never saw; and no task numbers,
 change names, planning-document references or rule citations in comments, test
 names or strings.
 
-- [ ] 2.1 `MANUAL.md` and `QUICK_DICT.md` for both pages' Diffusion, Density and
+- [x] 2.1 `MANUAL.md` and `QUICK_DICT.md` for both pages' Diffusion, Density and
       Stereo width. The Drive controls are already updated and are not re-done.
       THE FILTER CONTROLS ARE ALSO NOT RE-DONE, and this line used to ask for
       them. "The two Filter controls" meant Peak gain and Comb/Peak, the two the
@@ -236,19 +236,19 @@ names or strings.
       it off zero. Where the label and the mechanism disagree the mechanism is
       the defect — but the mechanism here is not this change's to alter, so the
       document states what the code does.
-- [ ] 2.2 State on BOTH the Delay and Reverb pages what Diffusion and Density
+- [x] 2.2 State on BOTH the Delay and Reverb pages what Diffusion and Density
       each mean, so the difference is on the page rather than in the reader's
       memory. Delay's Diffusion drives an allpass cascade on its wet tap;
       Reverb's Density drives one on the tank's input.
-- [ ] 2.3 `MANUAL.md` states plainly that raising Density trades smoothness for
+- [x] 2.3 `MANUAL.md` states plainly that raising Density trades smoothness for
       coloration, and at roughly which part of the travel the coloration becomes
       audible, backed by the echo-density figures already in the tree: 0.0514,
       0.2342, 0.3403, 0.4132, 0.4782 across the travel.
-- [ ] 2.4 State what Damping now does to the stereo image. Each tank line has
+- [x] 2.4 State what Damping now does to the stereo image. Each tank line has
       its own filter, so damping the tail no longer closes the image; say so
       where Damping is described, because the superseded behaviour is what a
       returning reader remembers.
-- [ ] 2.5 Stage gate: full suite green, one postflight in a fresh context over
+- [x] 2.5 Stage gate: full suite green, one postflight in a fresh context over
       the whole stage, then one commit and a push.
 
 ## Stage 3 — the spec delta and archival

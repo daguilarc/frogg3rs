@@ -689,9 +689,13 @@ no output — an exact bypass.
 **Feedback** (slot 3) — how much of each repeat feeds back for another pass, clamped below 100%
 (98% max) so repeats always eventually die out even at maximum.
 
-**Stereo width** (slot 4) — cross-feed and time-spread between the left/right taps. At 0 the two
-channels behave almost identically; higher values spread the taps further apart in time and blend them
-into each other less.
+**Stereo width** (slot 4) — offsets when the right channel reads the delay line relative to the left;
+at 0 both taps read the same point in the line, and raising the knob spreads the right tap further
+behind the left in time. That time offset is the whole of the widening you hear on the page's own
+default patch. The knob also sets a cross-feed weight that blends each channel's repeats into the
+other, and that blend rides the feedback path: how much of it reaches the repeats follows Feedback
+(slot 3) and Freeze (slot 5) together, and both start at 0. Raise either one and the cross-feed comes
+in alongside the time offset.
 
 **Freeze** (slot 5) — crossfades the delay's feedback loop from its ordinary level toward full,
 lossless recirculation. Raising it both lets more of each repeat feed back, up to unity gain, and
@@ -709,7 +713,9 @@ history and loops with a short crossfade to avoid an audible click at the wrap p
 **Diffusion** (slot 8) — smears each repeat through a cascade of three short allpass sections applied
 once per repeat, after the feedback write and before the output limiter. At 0 this is an exact bypass;
 raising it progressively blurs the sharp attack of each repeat into a smoother, more diffuse tail, up
-to a comfortably stable maximum.
+to a comfortably stable maximum. Reverb's Density (slot 7) runs the same three-section allpass cascade,
+ahead of its tank rather than on an already-repeating signal: Diffusion smooths what this page's own
+repeats have already produced, Density smooths what reaches the tank in the first place.
 
 **Feedback drive** (`FB drive`, slot 9) — pre-gain (0.25×–4×, unity at the center default) into the
 feedback path's saturator. Raising it drives the repeats into more obvious saturation. The saturator's
@@ -767,12 +773,23 @@ half a decibel on a low sine. Nothing compensates for that on purpose — a fixe
 of those two is wrong for the other, and it would turn Damping into a volume control on the
 material it currently leaves alone. Use **Send** to put the level back.
 
+Line A and line B each run through their own filter, with no shared state between them, so the two
+taps stay as far apart as Stereo width (slot 6) sets them at every Damping setting. Damping shapes
+the tail's tone and its level; the stereo image stays Stereo width's to set.
+
 **Stereo width** (slot 6) — spread between the tank's two internal taps in the final left/right
 output.
 
 **Density** (slot 7) — decorrelates the signal before it reaches the tank, through a cascade of
 three short allpass sections applied to the pre-delay tap. At 0 this is an exact bypass; raising
-it progressively softens the attack of the tank's own reflections.
+it progressively softens the attack of the tank's own reflections. Delay's Diffusion (slot 8) runs the
+identical cascade on its own wet tap, after each repeat rather than before the tank; Density runs it
+ahead of the tank instead, on the signal before the reflections start.
+
+Raising Density trades smoothness for coloration: the early reflections lose their clean, sparse
+spacing and start to sound like short, quick repeats rather than a smooth wash. Most of that change
+happens early in the travel — turning the knob through roughly its first quarter already makes the
+coloration clearly audible, and the rest of the travel adds progressively less on top of it.
 
 **Mod** (slot 8) — depth of a slow sinusoidal wow on the tank's read taps, for chorus-y
 movement in the tail, at a fixed rate (0.35 Hz). 0 = no movement.
