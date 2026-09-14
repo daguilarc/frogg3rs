@@ -1009,6 +1009,77 @@ TEST_CASE(randomize_storm_holds_its_depth_working_set) {
     }
 }
 
+// The release decides what it may free. This pins that decision by arming two
+// depths on the same parameter and asserting the storm treats them
+// differently: one carrying a real value survives, one left at its neutral
+// default is collected.
+//
+// Asserting both halves is what makes this live. A release that stopped
+// running would leave the neutral depth alive and fail; a release whose gate
+// loosened -- a widened neutrality tolerance, a dropped scene-endpoint scan,
+// a route check removed -- would take the armed one and fail. Either direction
+// goes red, so neither a dead release nor an over-eager one passes.
+//
+// Deliberately not an RNG-sensitive count: the two depths are placed by hand
+// and identified by pointer, so what the randomizer happens to draw cannot
+// move the result.
+//
+// The storm is Randomize Page on a DIFFERENT bank. Randomize All would re-roll
+// the Drive bank's own depths, destroying the armed one as a normal part of
+// the roll and telling us nothing about the release. Randomize Page is scoped
+// to the selected bank, so Drive is never a randomize candidate, while the
+// release still runs -- it sits in the randomize drain, which both affordances
+// reach. That leaves the release as the only thing that could remove either
+// depth.
+TEST_CASE(release_keeps_an_armed_depth_and_takes_a_neutral_one) {
+    constexpr int kPresses = 25;
+    constexpr std::size_t kArmedSource = synth_froggers::kModSlotVco1Audio;
+    constexpr std::size_t kNeutralSource = synth_froggers::kModSlotVco2Audio;
+
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("release_keeps_armed_depth"));
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    synth::Parameter& target = model.PageParameter(synth_froggers::FroggersBankId::Drive, 8);
+
+    synth::Parameter* const armed = target.EnsureModulationDepth(kArmedSource);
+    synth::Parameter* const neutral = target.EnsureModulationDepth(kNeutralSource);
+    if (armed == nullptr || neutral == nullptr) {
+        throw std::runtime_error(std::string(__FILE__) + " release_keeps_an_armed_depth_and_takes_a_neutral_one: "
+                                 "EnsureModulationDepth returned null -- the setup could not arm anything");
+    }
+    armed->SceneCenter(0) = 1.0f;  // bipolar neutral is 0.5, so this is a real assignment.
+
+    rig.SelectBank(0, static_cast<std::size_t>(synth_froggers::FroggersBankId::Reverb));
+    rig.StartAt(0);
+    rig.RunBlocks(4);
+
+    if (target.ModulationDepthParameter(kArmedSource) != armed ||
+        target.ModulationDepthParameter(kNeutralSource) != neutral) {
+        throw std::runtime_error(std::string(__FILE__) + " release_keeps_an_armed_depth_and_takes_a_neutral_one: "
+                                 "a depth went missing before the storm -- the instrument is dead");
+    }
+
+    for (int press = 1; press <= kPresses; ++press) {
+        rig.Application().RequestRandomizePage();
+        rig.RunBlocks(4);
+    }
+
+    const bool armedSurvived = target.ModulationDepthParameter(kArmedSource) == armed;
+    const synth::Parameter* const neutralNow = target.ModulationDepthParameter(kNeutralSource);
+    const bool neutralTaken = neutralNow != neutral;
+
+    std::cout << "  [release gate] armed depth survived=" << (armedSurvived ? "yes" : "NO")
+              << "  neutral depth collected=" << (neutralTaken ? "yes" : "NO") << "\n";
+
+    if (!armedSurvived) {
+        throw std::runtime_error(std::string(__FILE__) + " release_keeps_an_armed_depth_and_takes_a_neutral_one: "
+                                 "the release took a depth carrying a non-neutral value -- its gate has loosened");
+    }
+    if (!neutralTaken) {
+        throw std::runtime_error(std::string(__FILE__) + " release_keeps_an_armed_depth_and_takes_a_neutral_one: "
+                                 "a depth left at its neutral default was never collected -- the release is not running");
+    }
+}
+
 // -----------------------------------------------------------------------
 // This IS the mechanism that fixes the operator's "audio never comes
 // back": before RecoverPoisonedUnitState()

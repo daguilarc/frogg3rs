@@ -143,3 +143,14 @@ prevents accumulation. The check passing there is correct behaviour.
 Kept in the record because the finding was specific and plausible, and because
 rejecting it rests on reading the comment rather than on preferring the
 artifact already written.
+
+## The release's gate, pinned by a check rather than by two agents failing to break it
+
+    shipping              armed depth survived=yes  neutral depth collected=yes  [PASS]
+    release removed       armed depth survived=yes  neutral depth collected=NO   [FAIL]
+
+The armed-half branch was also seen to fire, on an earlier mis-scoped version of
+the test that stormed the armed depth's own bank: Randomize All re-rolls that
+bank's depths, so the armed depth was destroyed by the roll rather than taken by
+the release. That was the instrument being wrong, not a finding, and it is why
+the shipped test storms a different bank.
