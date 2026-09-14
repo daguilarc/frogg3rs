@@ -43,3 +43,10 @@ to randomize exactly what is displayed and a floor is not part of that.
 - **AND** that peak is at least 120, so a release that took depths the current roll still uses could not make this pass with a dead instrument
 - **AND** both bounds are counts rather than timings, because the count is deterministic while per-block cost on this hardware varies by more than 2x with machine load
 - Check: `app/FroggersAudioRoutingTests.cpp`'s `randomize_storm_holds_its_depth_working_set`, which asserts the PEAK live depth count across the storm rather than the value after the last press -- that value is a post-release trough and reads 140 whether the release fires every press or every twenty-fifth. Delivered and passing at a peak of 214 against a ceiling of 250; red at 1072 with the release removed and at 284 with it firing every second press. Both of those controls were run. Results in `openspec/changes/frogg3rs-randomize-depth-reclaim/results.md`.
+
+#### Scenario: The release keeps what the roll is using and takes what it is not
+- **WHEN** one modulation depth on a parameter carries a non-neutral value and another on the same parameter is left at its neutral default, and a randomize is pressed twenty-five times on a different bank
+- **THEN** the depth carrying a value is still the same parameter afterwards, and the one left neutral has been collected
+- **AND** both halves are asserted, so a release that stopped running fails on the neutral depth and a release whose gate loosened fails on the armed one
+- **AND** the storm is scoped to a different bank than the armed depth, because a randomize covering that bank would re-roll the depth itself and say nothing about what the release may take
+- Check: `app/FroggersAudioRoutingTests.cpp`'s `release_keeps_an_armed_depth_and_takes_a_neutral_one`. Passing; red with the release removed, on the neutral half.
