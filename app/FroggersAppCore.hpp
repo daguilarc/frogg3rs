@@ -717,7 +717,8 @@ public:
                 // page." Back()-until-zero reaches the same "full
                 // Deselect(), level 0" state a genuine bank switch produces
                 // above, without reconstructing drillIn_ (same Bank&, no
-                // need) -- bounded to at most 2 iterations (the level cap).
+                // need) -- bounded to at most 3 iterations (the level cap,
+                // FroggersModulationDrillIn::kMaxDrillLevel).
                 // The `Level() > 0` guard is what keeps the pre-existing
                 // no-op preserved for a same-bank click that is ALREADY at
                 // level 0: nothing in this branch runs, so activeBankIx_/
@@ -786,6 +787,51 @@ public:
                 // header comment), and any operator-visible logging must
                 // instead read this atomic from the UI thread.
                 lastRandomizePartial_.store(anyPartial, std::memory_order_release);
+
+                // Second half of the re-roll. A randomize redraws every value
+                // from a clean slate, and the sources the new roll did not
+                // pick are left neutral -- but their depth parameters stay
+                // materialized, and every live depth costs a recursive
+                // Compute() descent at control rate from then on. Without
+                // this, fifty presses carry 1072 live depths where the
+                // current roll uses about 80, and per-block cost rises with
+                // the count until the audio callback has spent its whole
+                // budget.
+                //
+                // This sits inside the randomize branch, so it runs after
+                // Randomize All AND after Randomize Page; the reset drains do
+                // not reach it. Only Randomize All accumulates -- Randomize
+                // Page, Reset All and Reset Page leave the live depth count at
+                // its baseline of six over fifty presses each, measured with
+                // and without this call -- so the Page case is a neutrality
+                // scan that finds nothing, except after an All storm, where it
+                // legitimately releases.
+                //
+                // `CollectNeutralLocalParameters` keeps anything the current
+                // roll still uses: `Parameter::CanRecycleLocal` requires a
+                // local id, zero view pins, zero active routes, no non-null
+                // children, and near-default state on both scene endpoints.
+                //
+                // The ordering here is load-bearing: this runs BEFORE the
+                // parameter recompute below, so a depth the press just rolled
+                // holds its new value only in `sceneCenters_`. It survives
+                // because `HasNonZeroState`/`HasNonDefaultState` scan
+                // `sceneCenters_` directly. Moving this after the recompute
+                // would also be safe; removing that scan would silently
+                // discard freshly rolled depths.
+                //
+                // This runs on the audio thread, and it can push more slots
+                // onto `recycledLocalSlots_` than that vector's construction
+                // reserve of 96 holds: the recycled count crosses 96 during
+                // the first storm and the vector doubles once, after which it
+                // has headroom (measured high-water 154 over a hundred
+                // presses and 156 over fifty, both under the doubled 192).
+                // The same vector already takes ~999 pushes from this same
+                // thread whenever the operator drills out, which is the wider
+                // exposure and is not created here; sizing that reservation
+                // is a Sheaf-side question this change deliberately does not
+                // open.
+                context_->parameterManager->CollectNeutralLocalParameters();
             }
             // ONE reseed covering both drains above, for two different reasons.
             //

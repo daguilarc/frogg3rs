@@ -274,7 +274,7 @@ public:
         RegisterSources();
 
         // This materialization ceiling (915 L1 depths, plus one focused
-        // parameter's 225 L2 depths) exceeds the kMaxParameters=64 initial
+        // parameter's 225 L2 depths) exceeds the kMaxParameters=96 initial
         // batch (deliberately sized for only the 91 top-level parameters --
         // modulation-depth parameters are NOT sized for at that point, since
         // they ride ParameterGroup's own storage-batch request mechanism

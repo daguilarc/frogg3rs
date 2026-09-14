@@ -920,6 +920,95 @@ TEST_CASE(randomize_all_storm_test_never_blows_out_or_permanently_silences) {
     }
 }
 
+// A re-roll redraws every value from a clean slate but never releases the
+// depth storage for the sources the new roll did not pick, so repeated presses
+// accumulate depth parameters no current source assignment accounts for. Cost
+// is proportional to that live count, through the recursive Compute() descent,
+// so the accumulation is what eventually spends the whole audio-callback
+// budget on the browser build.
+//
+// ASSERTS THE PEAK ACROSS THE STORM, NOT THE FINAL VALUE. The release runs
+// inside the same ProcessFrame as the randomize, so the count read after a
+// press is a post-release trough and carries almost no information: measured,
+// a release firing only every Kth press gives a final count of 140 for
+// K = 1, 2, 5, 10 and 25 alike, because the verdict turns on whether the last
+// press happened to release rather than on how much release survived. The peak
+// separates those cases cleanly -- 214 when every press releases, against 284
+// at K=2, 441 at K=5, 652 at K=10, 962 at K=25, and 1072 with no release at
+// all.
+//
+// Bounds are counts, not timings: the count is deterministic while per-block
+// cost on this hardware varies by more than 2x with machine load.
+//
+// The ceiling of 250 is set from the measured distribution rather than from
+// one run. The correct system's peak over fifty presses is 190-214 across
+// twelve different randomizer stream offsets, and 220 is the widest value seen
+// over a thousand presses; the tightest regression above is 284. So 250 sits
+// about 14% above the widest correct peak and about 14% below the closest
+// failure, and it does not depend on which stream offset a future change
+// happens to leave the randomizer on.
+//
+// The ceiling carries two positive controls, both run: with the release
+// removed the peak is 1072, and with it firing only every second press the
+// peak is 284; both go red here. The floor carries NONE, and that is stated
+// rather than implied. An attempt to induce over-collection -- reverting every
+// parameter to its default before releasing, so in-use depths would read as
+// neutral -- did not move the peak off 214, because CanRecycleLocal also
+// requires activeRouteCount_ == 0 and route state protects a depth
+// independently of its value. So the floor is an unproven guard against a
+// release that frees depths the current roll still uses; the case that does
+// cover that direction is the pinned-or-sounding scenario, which is a separate
+// check. The floor is kept because it also catches a randomize that stops
+// materializing depths at all, which would otherwise leave the ceiling passing
+// on a dead instrument.
+//
+// It is deliberately NOT placed on the first press, which cannot distinguish
+// anything -- press one reads 71 whether the release is present or removed.
+//
+// Randomize All only. Randomize Page, Reset All and Reset Page never move the
+// live depth count off its baseline of six, measured over fifty presses each,
+// with and without the release.
+TEST_CASE(randomize_storm_holds_its_depth_working_set) {
+    constexpr int kPresses = 50;
+    constexpr std::size_t kPeakFloor = 120;
+    constexpr std::size_t kPeakCeiling = 250;
+
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("randomize_working_set"));
+    rig.StartAt(0);
+    rig.RunBlocks(8);
+
+    std::size_t peak = 0;
+    std::size_t afterFirst = 0;
+    for (int press = 1; press <= kPresses; ++press) {
+        rig.Application().RequestRandomizeAll();
+        rig.RunBlocks(4);
+        const std::size_t live = rig.Application().Parameters().Group().LiveLocalParameterCount();
+        if (press == 1) {
+            afterFirst = live;
+        }
+        peak = std::max(peak, live);
+    }
+    const std::size_t afterLast = rig.Application().Parameters().Group().LiveLocalParameterCount();
+
+    std::cout << "  [working set] peak across " << kPresses << " presses: " << peak
+              << " live local depths (first press " << afterFirst << ", last " << afterLast << ")\n";
+
+    if (peak > kPeakCeiling) {
+        std::ostringstream oss;
+        oss << __FILE__ << ":" << __LINE__ << " randomize_storm_holds_its_depth_working_set: peak of "
+            << peak << " live local depths across " << kPresses << " presses, above the ceiling of "
+            << kPeakCeiling << " -- the re-roll is banking storage it does not use";
+        throw std::runtime_error(oss.str());
+    }
+    if (peak < kPeakFloor) {
+        std::ostringstream oss;
+        oss << __FILE__ << ":" << __LINE__ << " randomize_storm_holds_its_depth_working_set: peak of only "
+            << peak << " live local depths across " << kPresses << " presses, below the floor of "
+            << kPeakFloor << " -- the release is taking depths the current roll still uses";
+        throw std::runtime_error(oss.str());
+    }
+}
+
 // -----------------------------------------------------------------------
 // This IS the mechanism that fixes the operator's "audio never comes
 // back": before RecoverPoisonedUnitState()
