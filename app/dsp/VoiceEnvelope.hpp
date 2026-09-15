@@ -364,6 +364,102 @@ struct VcoAdsrState
         return ExpMapCompute(kMinSustainLevel, 1.0f, clamped);
     }
 
+    // Floor on the curved branch's per-sample progress (see ComputeRampStep
+    // below) -- kept at 0.4f, not the floor equal to the exponential's own
+    // 1% point (~0.046), because the wider grid a stage's duration is
+    // measured over (every sample rate, every Sustain the knob reaches, not
+    // just the one the shipped sweep used to pin) put the smaller floor's
+    // worst multiple at 10.17x, over the completion requirement's own
+    // ceiling; 0.4f measures 2.60x over the same grid
+    // (research/curve-candidate-adjudication.md). mapCurve below is the
+    // clamped identity, so this constant has no warp counterpart to drift
+    // against anymore.
+    //
+    // Public: the parity tests sweep this constant's own effect densely and
+    // must read it from here rather than retyping it.
+    static constexpr float kCurveMinProgress = 0.4f;
+
+    // Natural log of 100: exp(-kReach99) == 0.01, so a unit-travel ramp
+    // driven by the exponential step alone (curveAmount==1) reaches 99% of
+    // its travel exactly when a linear ramp of the same stepMagnitude
+    // completes -- the rate that lands the curved branch's own duration
+    // near the linear one instead of scaling away from it.
+    //
+    // Public: same reason as kCurveMinProgress above.
+    static constexpr float kReach99 = 4.605170f;
+
+    // mapCurve and ComputeRampStep are pure functions of their arguments,
+    // static so the compiler forbids them from reading the state (in
+    // particular the sample rate), and public so the tests can sweep them
+    // densely instead of retyping their constants.
+
+    // Curve (Envelope slot 12) as the operator turns it. The exponential
+    // branch below (ComputeRampStep) does not need a warp: its duration is
+    // already bounded by the floor and sits near the linear duration across
+    // the knob's travel (worst multiple 2.60x, not the old one-pole
+    // family's unbounded 1/(1-c)), so there is no quantity left to
+    // linearise -- the knob passed straight through IS curveAmount, the
+    // blend's one direct parameter.
+    static float mapCurve(float knob)
+    {
+        return std::min(std::max(knob, 0.0f), 1.0f);
+    }
+
+    static float ComputeRampStep(float from, float target, float stepMagnitude, float curveAmount)
+    {
+        if (curveAmount <= 0.0f)
+        {
+            return (target >= from) ? std::min(target, from + stepMagnitude)
+                                     : std::max(target, from - stepMagnitude);
+        }
+        const float remaining = target - from;
+        const float absRemaining = std::fabs(remaining);
+        if (absRemaining <= stepMagnitude)
+        {
+            return target;  // finishing step, same snap-to-target the linear path uses.
+        }
+        // Shape: one law, expressed in remaining distance, for all three
+        // stages. The exponential step below moves fast while far from
+        // target and slows as it closes in, in proportion to how much
+        // distance is left -- Attack rises fast and flattens into its
+        // peak; Decay and Release, descending the same law, fall fast and
+        // linger into their target. curveAmount blends it with the plain
+        // linear step: 0 is all linear, 1 is all exponential.
+        const float exponentialStep = kReach99 * stepMagnitude * absRemaining;
+        const float appliedMagnitude = (1.0f - curveAmount) * stepMagnitude + curveAmount * exponentialStep;
+
+        // Under this law the crawl sits near the target, not far from it
+        // (the old one-pole shape's failure mode): unfloored, remaining
+        // distance decays as (1-r)^n forever, so a stage whose travel is
+        // small against the full 0..1 scale -- Release at a low Sustain,
+        // Decay at a high one -- takes longer to close the last stretch,
+        // and that is what completion time is bounded against here, not an
+        // unbounded far-from-target crawl. Floor the per-sample progress
+        // MAGNITUDE (toward target, whichever direction -- this covers
+        // descending Decay/Release the same as ascending Attack) at
+        // kCurveMinProgress of the linear step: below an absolute
+        // remaining distance of kCurveMinProgress/kReach99 (about 0.087),
+        // the floor takes over and the last 8.8% of the ramp's travel runs
+        // linear at the top of the knob -- the cost of bounding
+        // completion. Below Curve 0.5 the floor is inert (curveAmount is
+        // small enough that appliedMagnitude never falls under the floor
+        // for a remaining distance this ramp actually reaches).
+        //
+        // 1/kCurveMinProgress (2.5x at 0.4f) is a floor on the realized
+        // completion multiple, not a ceiling on it: the accumulator
+        // (`bounded = from + boundedProgress` below) quantizes the floored
+        // step to whole ulps of its float32 value, so the realized rate is
+        // slightly under nominal and the measured worst multiple over
+        // every sample rate, the knob grid and Sustain 0.05/0.5/0.95 is
+        // 2.60x, not 2.5x (research/curve-candidate-adjudication.md).
+        const float minProgressMagnitude = stepMagnitude * kCurveMinProgress;
+        const float boundedProgress = (appliedMagnitude < minProgressMagnitude)
+                                           ? std::copysign(minProgressMagnitude, remaining)
+                                           : std::copysign(appliedMagnitude, remaining);
+        const float bounded = from + boundedProgress;
+        return (remaining >= 0.0f) ? std::min(target, bounded) : std::max(target, bounded);
+    }
+
 private:
     // Exponential, not linear -- see kMinAttackSeconds's own comment. Every
     // other time/frequency control in the instrument already maps this way;
@@ -410,107 +506,6 @@ private:
     // (base^1-1)/(base-1) -- so the bit-exact zero the no-op requirement
     // rests on survives, which a floored ExpMapCompute could not give.
     float mapGrace(float knob) const { return GraceSecondsForKnob(knob); }
-
-    // Curve (Envelope slot 12), applied to Attack/Decay/Release alike (all
-    // three share this one idiom -- reused 3x, isolates the shape decision
-    // from the stage-transition logic, and keeps that decision testable in
-    // one place). curveAmount<=0.0f (the registered default) takes the
-    // FIRST branch, which is the original linear formula verbatim -- no
-    // curve arithmetic is even evaluated, so the default is bit-identical
-    // to the pre-Curve ramp by construction, not by a formula that merely
-    // happens to reduce to it.
-    // Hoisted out of ComputeRampStep so mapCurve below can derive its own
-    // constant from it. The two are not independent -- the warp exists to
-    // land the knob's top end exactly on the bound this floor enforces --
-    // and two copies of 0.4f would drift the day either is retuned.
-    static constexpr float kCurveMinProgress = 0.4f;
-
-    // Curve (Envelope slot 12) as the operator turns it, warped so that RAMP
-    // DURATION is what moves linearly with the knob rather than the blend
-    // coefficient. Unwarped, duration scales as 1/(1-c): nearly flat across
-    // most of the travel, then unbounded at the top, where the floor above
-    // clamps it and the last part of the knob does nothing at all.
-    //
-    // duration(knob) = 1 + k*knob is achieved by c = k*knob / (1 + k*knob).
-    // k is derived, not tuned: the floor bounds the slowdown at
-    // 1/kCurveMinProgress, so k = 1/kCurveMinProgress - 1 puts knob==1
-    // exactly at that bound. At 0.4f that is k=1.5, giving 1.0x, 1.375x,
-    // 1.75x, 2.125x, 2.5x across the knob's quarters -- even steps, and the
-    // floor becomes the endpoint instead of a clamp eating the top third.
-    float mapCurve(float knob) const
-    {
-        const float clamped = std::min(std::max(knob, 0.0f), 1.0f);
-        constexpr float k = 1.0f / kCurveMinProgress - 1.0f;
-        return (k * clamped) / (1.0f + k * clamped);
-    }
-
-    float ComputeRampStep(float from, float target, float stepMagnitude, float curveAmount) const
-    {
-        if (curveAmount <= 0.0f)
-        {
-            return (target >= from) ? std::min(target, from + stepMagnitude)
-                                     : std::max(target, from - stepMagnitude);
-        }
-        const float remaining = target - from;
-        const float absRemaining = std::fabs(remaining);
-        if (absRemaining <= stepMagnitude)
-        {
-            return target;  // finishing step, same snap-to-target the linear path uses.
-        }
-        // Shape: blend the constant linear step with a one-pole step whose
-        // rate is proportional to the remaining distance -- small steps
-        // while far from target, growing toward stepMagnitude as the ramp
-        // closes in (an ease-in, slow-start/fast-finish curve).
-        // curveAmount in (0,1] scales how much of that shaping is mixed in.
-        const float onePoleCoefficient = std::min(1.0f, stepMagnitude / absRemaining);
-        const float linearNext = from + std::copysign(stepMagnitude, remaining);
-        const float curvedNext = from + std::copysign(stepMagnitude * onePoleCoefficient, remaining);
-        const float blended = linearNext + curveAmount * (curvedNext - linearNext);
-
-        // At curveAmount==1.0 the
-        // linear term above vanishes entirely and per-sample progress
-        // toward target degenerates to stepMagnitude*onePoleCoefficient ==
-        // stepMagnitude^2/absRemaining -- proportional to how FAR from
-        // target the ramp still is, so a ramp that starts far away crawls,
-        // and integrating gives a duration that scales with
-        // 1/(1-curveAmount): UNBOUNDED as curveAmount approaches 1.0 (a
-        // "1-second" attack at 48kHz measured ~6.7 hours at curve==1.0).
-        // Floor the per-sample progress MAGNITUDE (toward target, whichever
-        // direction -- this covers descending Decay/Release ramps the same
-        // as ascending Attack) at a fixed fraction of the linear step, so
-        // every ramp is bounded at every curveAmount in [0,1]. BY-EAR-
-        // TUNABLE: this is a floor picked to keep the ease-in shape audibly
-        // present while bounding worst-case duration to roughly
-        // 1/kCurveMinProgress the knob's mapped linear time; retune by ear
-        // if the curve's FEEL needs it -- the bound itself is the
-        // requirement, not this particular number or
-        // shape.
-        //
-        // 0.4f, not an illustrative "~0.25" example: measured
-        // against the stop_silences_curve_one_grace_active_voice_within_bound
-        // regression test's own scenario (Decay knob 0.5 /
-        // mid, Grace knob 0.5 / mid, Curve == 1.0 exactly, the transport-
-        // stop path's own forced ~50ms release mapping,
-        // FroggersHeadlessTests.cpp) -- which that
-        // test pins to a hard Stop-to-AllIdle bound of 2.0s --
-        // 0.25f measured ~2.65s serial worst case (Decay ~2.0s + Grace 0.5s
-        // + Release ~0.2s), over budget. 0.4f measures ~1.84s, comfortably
-        // under, while still leaving a real ease-in dynamic range (the floor
-        // only clamps progress once the unfloored one-pole step would fall
-        // below 40% of the linear step, i.e. once the ramp is more than
-        // 2.5x its own step-size away from target -- most of a typical
-        // ramp's approach to target still runs the unfloored, audibly
-        // slow-start shape). If this value is ever retuned by ear, re-check
-        // it against that regression test's hard-coded 2.0s/2.5s bounds --
-        // they are NOT independent of this constant.
-        const float minProgressMagnitude = stepMagnitude * kCurveMinProgress;
-        const float progress = blended - from;
-        const float boundedProgress = (std::fabs(progress) < minProgressMagnitude)
-                                           ? std::copysign(minProgressMagnitude, remaining)
-                                           : progress;
-        const float bounded = from + boundedProgress;
-        return (remaining >= 0.0f) ? std::min(target, bounded) : std::max(target, bounded);
-    }
 
     void stepVoice(size_t voiceIndex,
                     float attackKnob,

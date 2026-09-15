@@ -339,7 +339,8 @@ TEST_CASE(randomize_all_with_ample_capacity_reports_not_partial) {
 // A minimal repro of the loud-stuck regime, kept as a suite test so
 // the regression it guards against cannot silently come back. Curve
 // (Envelope slot 12) at exactly 1.0, Grace (slot 13) active, VCO1's own
-// Decay/Sustain set so the ease-in Decay's slow start lingers near peak
+// Decay/Sustain set so the crawl the bound guards sits near the target,
+// where the exponential approach flattens and the floor takes over
 // (the loud-stuck regime) -- everything else default. Without a progress
 // floor in ComputeRampStep, this configuration
 // held output flat at 0.939 at t+10s post-Stop,
@@ -358,8 +359,9 @@ TEST_CASE(stop_silences_curve_one_grace_active_voice_within_bound) {
     model.PageParameter(FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;   // VCO1 pitch.
     model.PageParameter(FroggersBankId::Drive, 1).SceneCenter(0) = 0.8f;   // Gain.
     // Same recipe as the loud-stuck regime above:
-    // mid Decay + audible Sustain on VCO1 (ease-in Decay's slow start keeps
-    // level lingering near peak -- default fast Decay or silent Sustain
+    // mid Decay + audible Sustain on VCO1 (the crawl the bound guards sits
+    // near the target, where the exponential approach flattens and the
+    // floor takes over -- default fast Decay or silent Sustain
     // would fail to reproduce the bug for the WRONG reason), Curve at
     // exactly 1.0 (the value that would leave ComputeRampStep's per-sample
     // progress unbounded without its progress floor), Grace active (a pending release defers

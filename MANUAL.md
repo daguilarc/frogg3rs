@@ -449,9 +449,12 @@ defaults to the floor (fastest); Release VCO2 rests at 3 o'clock (about 0.9 s) a
 12 o'clock (about 110 ms). Stop always overrides this with a fast ~50 ms fade regardless of this knob's
 position.
 
-**Curve** (slot 12) — shared across all three voices. Reshapes every Attack/Decay/Release
-ramp from a straight linear ramp (bottom of travel, the default) toward an increasingly "slow start,
-fast finish" ease-in curve at the top. Sustain is a level rather than a ramp, so it is unaffected.
+**Curve** (slot 12) — shared across all three voices. Morphs every Attack/Decay/Release ramp from a
+straight line (bottom of travel, the default) toward the analog shape at the top: an attack that rises
+fast and flattens into its peak, a decay or release that falls fast and lingers into its target. Across
+the knob the ramp keeps roughly its length; at the top an attack reaches its peak sooner and a decay or
+release settles a little later than the straight ramp. Sustain is a level rather than a ramp, so it is
+unaffected.
 
 **Grace** (slot 13) — shared across all three voices. A minimum-hold: once a note reaches
 Sustain, Grace keeps it there for at least this long (0–1 s) before honoring a gate-close, so a very
@@ -576,8 +579,12 @@ floor rather than a fifth of the way up.
 
 **Fuzz** (slot 7) — blends between the sine-folded wet path (bottom of travel, the default) and a
 tanh-style saturator (top of travel) inside the waveshaper stage. The saturator's curve is smooth
-up to an input of 3 and clamps above that. The gain ahead of it drives well past 3, so the level
-reaching the curve is what makes the top of the knob sound hard.
+up to an input of 3 and clamps above that. What the blend sounds like depends on Gain (slot 1): at
+Gain's default the drive stage passes the signal unchanged and neither leg adds harmonics, so Fuzz
+barely changes the tone; with Gain raised, the folder at the bottom of the knob turns nearly all of
+the energy into harmonics while the saturator at the top keeps about half of it in the fundamental
+and cuts the energy above the fifth harmonic to a third, so the top of the knob reads cleaner than
+the bottom.
 
 The blend is floored the same way Comb/Peak's is, so both paths stay in the sound at every
 position: the held-back one sits about −22 dB at either extreme, and the two meet at −3 dB — a

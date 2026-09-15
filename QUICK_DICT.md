@@ -30,7 +30,7 @@ Six banks — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 - **Decay VCO1 / Decay VCO2 / Decay VCO3** (`D1`/`D2`/`D3`, slots 1/5/9) — Time to fall from Attack peak to Sustain level, exponential, 5 ms–1 s.
 - **Sustain VCO1 / Sustain VCO2 / Sustain VCO3** (`S1`/`S2`/`S3`, slots 2/6/10) — Held level while gate is open; floored at 25%, default full.
 - **Release VCO1 / Release VCO2 / Release VCO3** (`R1`/`R2`/`R3`, slots 3/7/11) — Time to fall to silence on gate-close, exponential, 5 ms–2.5 s.
-- **Curve** (slot 12) — Reshapes all three voices' Attack/Decay/Release ramps from linear (default) to ease-in.
+- **Curve** (slot 12) — Reshapes all three voices' Attack/Decay/Release ramps from a straight line (default) toward the analog shape: fast start, flattening into the target.
 - **Grace** (slot 13) — Minimum-hold before a gate-close is honored (0–1 s); no-op at default 0.
 
 ## Filter

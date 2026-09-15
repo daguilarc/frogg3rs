@@ -20,12 +20,14 @@
 #include "dsp/VoiceEnvelope.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -321,28 +323,168 @@ TEST_CASE(mix_osc_voices_applies_asr_per_voice_then_averages) {
     // 08b5fd3:src/core/FroggersEngine.hpp:774-784 (apply branch) + src/core/FroggersEngine.hpp:528 (plain average
     // return) -- the m_pairAr fallback at 08b5fd3:src/core/FroggersEngine.hpp:789-808 was never wired on
     // the firmware and is deleted there; not ported.
-    dsp::VcoAdsrState adsrForMix;
-    adsrForMix.init(1000.0f);
-    adsrForMix.setGate(true);
+    //
+    // Curve and Grace are one shared knob each for all three voices, unlike
+    // the per-VCO attack/decay/sustain/release quads (MixOscVoices's own
+    // comment). Forwarding them is this function's job and nothing below it
+    // can check the forwarding: every per-voice check drives apply()
+    // directly, so a call here that passes the shared Curve to the first
+    // voice and drops it on the other two leaves two thirds of every mixed
+    // voice running linear at any Curve setting, with the whole per-voice
+    // suite green. Both shared knobs are swept against a reference that
+    // forwards them to all three voices.
+    const float curveKnobs[] = {0.0f, 0.37f, 1.0f};
+    const float graceKnobs[] = {0.0f, 0.25f};
 
-    dsp::VcoAdsrState adsrReference;
-    adsrReference.init(1000.0f);
-    adsrReference.setGate(true);
+    for (float curveKnob : curveKnobs) {
+        for (float graceKnob : graceKnobs) {
+            dsp::VcoAdsrState adsrForMix;
+            adsrForMix.init(1000.0f);
+            adsrForMix.setGate(true);
 
-    for (int i = 0; i < 500; ++i) {
-        const float v1 = 0.5f;
-        const float v2 = -0.3f;
-        const float v3 = 0.9f;
-        const float mixed = dsp::MixOscVoices(adsrForMix, v1, v2, v3,
-                                               0.1f, 0.15f, 0.6f, 0.2f,
-                                               0.2f, 0.25f, 0.7f, 0.3f,
-                                               0.05f, 0.35f, 0.5f, 0.1f);
-        const float e1 = adsrReference.apply(0, v1, 0.1f, 0.15f, 0.6f, 0.2f);
-        const float e2 = adsrReference.apply(1, v2, 0.2f, 0.25f, 0.7f, 0.3f);
-        const float e3 = adsrReference.apply(2, v3, 0.05f, 0.35f, 0.5f, 0.1f);
-        const float expected = (e1 + e2 + e3) * (1.0f / 3.0f);
-        REQUIRE_NEAR(mixed, expected, 1e-6);
+            dsp::VcoAdsrState adsrReference;
+            adsrReference.init(1000.0f);
+            adsrReference.setGate(true);
+
+            for (int i = 0; i < 500; ++i) {
+                const float v1 = 0.5f;
+                const float v2 = -0.3f;
+                const float v3 = 0.9f;
+                const float mixed = dsp::MixOscVoices(adsrForMix, v1, v2, v3,
+                                                       0.1f, 0.15f, 0.6f, 0.2f,
+                                                       0.2f, 0.25f, 0.7f, 0.3f,
+                                                       0.05f, 0.35f, 0.5f, 0.1f,
+                                                       curveKnob, graceKnob);
+                const float e1 = adsrReference.apply(0, v1, 0.1f, 0.15f, 0.6f, 0.2f, curveKnob, graceKnob);
+                const float e2 = adsrReference.apply(1, v2, 0.2f, 0.25f, 0.7f, 0.3f, curveKnob, graceKnob);
+                const float e3 = adsrReference.apply(2, v3, 0.05f, 0.35f, 0.5f, 0.1f, curveKnob, graceKnob);
+                const float expected = (e1 + e2 + e3) * (1.0f / 3.0f);
+                REQUIRE_NEAR(mixed, expected, 1e-6);
+            }
+        }
     }
+}
+
+TEST_CASE(mix_osc_voices_forwards_the_shared_knobs_to_every_voice) {
+    // Curve and Grace are one knob each, shared by all three voices, unlike
+    // the per-VCO attack/decay/sustain/release quads. Handing them to every
+    // voice is MixOscVoices's own job, and nothing below it can check that
+    // job: every dense per-voice check drives apply() directly, so a mixer
+    // that drops or rewrites the shared Curve on its way to one voice leaves
+    // that voice linear at every knob position with the whole per-voice
+    // suite green.
+    //
+    // The mixed return cannot witness per-voice forwarding on its own. It is
+    // w1*v1 + w2*v2 + w3*v3, one float built from three, and the weights are
+    // all exactly a third at the default balance -- three per-voice
+    // deviations can cancel inside it. MixOscVoices exposes the three
+    // post-gate voice values it actually mixed through its outGated
+    // out-parameter, so the forwarding is read there, bit for bit, against a
+    // reference state that applies the same knobs to the same three voices.
+    //
+    // Both shared knobs are swept against every VCO Balance the sweep
+    // reaches, because Balance is an ordinary co-resident control that has
+    // no business gating whether a voice is shaped: a forwarding gate keyed
+    // to it passes any check that varies Curve only at the default Balance.
+    // Curve runs every hundredth so a gate keyed to a literal knob value
+    // has nowhere on the grid to hide.
+    const float balanceKnobs[] = {0.0f, 0.17f, 0.33f, 0.5f, 0.62f, 0.83f, 1.0f};
+    const float graceKnobs[] = {0.0f, 0.25f, 0.5f};
+    constexpr float kSampleRate = 1000.0f;
+    constexpr int kGateHighSamples = 300;
+    constexpr int kTotalSamples = 700;
+    // Distinct per voice, so a mixer that hands one voice another's quad is
+    // a mismatch too, and long enough at this rate that every stage ramps
+    // over tens of samples rather than snapping in one.
+    const float attack[3] = {0.55f, 0.65f, 0.45f};
+    const float decay[3] = {0.50f, 0.60f, 0.70f};
+    const float sustain[3] = {0.60f, 0.70f, 0.50f};
+    const float release[3] = {0.45f, 0.55f, 0.35f};
+    const float inputs[3] = {0.5f, -0.3f, 0.9f};
+
+    long combinations = 0;
+    long voiceComparisons = 0;
+    long mismatches = 0;
+    long mixMismatches = 0;
+
+    for (float balanceKnob : balanceKnobs) {
+        for (float graceKnob : graceKnobs) {
+            // Non-vacuity, per voice: the shared Curve must actually reach
+            // each voice through this call. Trajectories at Curve 0 and
+            // Curve 1 are accumulated and required to differ, so the
+            // bit-identity above cannot pass by both sides ignoring Curve.
+            double curveZeroTrajectory[3] = {0.0, 0.0, 0.0};
+            double curveTopTrajectory[3] = {0.0, 0.0, 0.0};
+
+            for (int c = 0; c <= 100; ++c) {
+                const float curveKnob = static_cast<float>(c) / 100.0f;
+
+                dsp::VcoAdsrState adsrForMix;
+                adsrForMix.init(kSampleRate);
+                adsrForMix.setGate(true);
+
+                dsp::VcoAdsrState adsrReference;
+                adsrReference.init(kSampleRate);
+                adsrReference.setGate(true);
+
+                for (int i = 0; i < kTotalSamples; ++i) {
+                    if (i == kGateHighSamples) {
+                        adsrForMix.setGate(false);
+                        adsrReference.setGate(false);
+                    }
+                    dsp::GatedVoices gated;
+                    const float mixed = dsp::MixOscVoices(adsrForMix, inputs[0], inputs[1], inputs[2],
+                                                           attack[0], decay[0], sustain[0], release[0],
+                                                           attack[1], decay[1], sustain[1], release[1],
+                                                           attack[2], decay[2], sustain[2], release[2],
+                                                           curveKnob, graceKnob, balanceKnob, &gated);
+                    const float reference[3] = {
+                        adsrReference.apply(0, inputs[0], attack[0], decay[0], sustain[0], release[0],
+                                            curveKnob, graceKnob),
+                        adsrReference.apply(1, inputs[1], attack[1], decay[1], sustain[1], release[1],
+                                            curveKnob, graceKnob),
+                        adsrReference.apply(2, inputs[2], attack[2], decay[2], sustain[2], release[2],
+                                            curveKnob, graceKnob),
+                    };
+                    const float mixerVoices[3] = {gated.v1, gated.v2, gated.v3};
+                    for (int v = 0; v < 3; ++v) {
+                        if (mixerVoices[v] != reference[v]) {
+                            ++mismatches;
+                        }
+                        ++voiceComparisons;
+                        if (c == 0) {
+                            curveZeroTrajectory[v] += static_cast<double>(reference[v]);
+                        } else if (c == 100) {
+                            curveTopTrajectory[v] += static_cast<double>(reference[v]);
+                        }
+                    }
+
+                    float w1 = 0.0f;
+                    float w2 = 0.0f;
+                    float w3 = 0.0f;
+                    dsp::ComputeVcoBalanceWeights(balanceKnob, w1, w2, w3);
+                    const float expectedMix = w1 * reference[0] + w2 * reference[1] + w3 * reference[2];
+                    if (mixed != expectedMix) {
+                        ++mixMismatches;
+                    }
+                }
+                ++combinations;
+            }
+
+            for (int v = 0; v < 3; ++v) {
+                REQUIRE_TRUE(curveZeroTrajectory[v] != curveTopTrajectory[v]);
+            }
+        }
+    }
+
+    REQUIRE_TRUE(mismatches == 0);
+    REQUIRE_TRUE(mixMismatches == 0);
+    REQUIRE_TRUE(combinations == 2121);
+    REQUIRE_TRUE(voiceComparisons == 4454100);
+
+    std::cout << "mix_osc_voices_forwards_the_shared_knobs_to_every_voice: " << combinations
+              << " balance/grace/curve combinations, " << voiceComparisons
+              << " per-voice comparisons, 0 mismatches\n";
 }
 
 // =========================================================================
@@ -740,97 +882,116 @@ TEST_CASE(compute_ramp_step_curve_zero_is_bit_identical_to_the_untouched_linear_
 // separate spec.
 // -----------------------------------------------------------------------
 TEST_CASE(compute_ramp_step_bounds_every_stage_duration_across_curve_and_knob_grid_at_multiple_sample_rates) {
+    // The value the completion requirement below was measured against;
+    // moving it is a design change and is seen here.
+    REQUIRE_TRUE(dsp::VcoAdsrState::kCurveMinProgress == 0.4f);
+
     const float curves[] = {0.0f, 0.5f, 0.9f, 0.999f, 1.0f};
     const float knobs[] = {0.0f, 0.5f, 1.0f};
-    const float sampleRates[] = {48000.0f, 96000.0f};
-    constexpr float kSustainKnob = 0.5f;
+    const float sampleRates[] = {44100.0f, 48000.0f, 96000.0f};
+    // The multiple depends on travel (1 - sustainLevel for Decay,
+    // sustainLevel for Release), not only on curve/knob/rate, so a single
+    // pinned Sustain knob does not cover the requirement's "every ...
+    // setting" the way sweeping it does (research/curve-candidate-adjudication.md).
+    const float sustainKnobs[] = {0.05f, 0.5f, 0.95f};
 
     double worstMultipleObserved = 0.0;
-    const char* worstLabel = "";
+    std::string worstLabel;
 
     for (float sampleRate : sampleRates) {
-        for (float curve : curves) {
-            for (float knob : knobs) {
-                const float sustainLevel = MapSustainRuntime(kSustainKnob);
+        for (float sustainKnob : sustainKnobs) {
+            for (float curve : curves) {
+                for (float knob : knobs) {
+                    const float sustainLevel = MapSustainRuntime(sustainKnob);
 
-                // -- Attack: 0 -> 1.0, isolated (fresh ADSR). ---------------
-                {
-                    dsp::VcoAdsrState adsr;
-                    adsr.init(sampleRate);
-                    adsr.setGate(true);
-                    const float step =
-                        1.0f / std::max(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMinAttackSeconds, dsp::VcoAdsrState::kMaxAttackSeconds) * sampleRate,
-                                        1.0f);
-                    const long cap = ConservativeStageCap(1.0f, step);
-                    const long samples =
-                        StepUntilLevelCrosses(adsr, knob, 0.0f, kSustainKnob, 0.0f, curve, true, 1.0f, cap).samples;
-                    const double linearSamples =
-                        std::max(static_cast<double>(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMinAttackSeconds, dsp::VcoAdsrState::kMaxAttackSeconds)) *
-                                     sampleRate,
-                                 1.0);
-                    const double multiple = static_cast<double>(samples) / linearSamples;
-                    if (multiple > worstMultipleObserved) {
-                        worstMultipleObserved = multiple;
-                        worstLabel = "Attack";
+                    // -- Attack: 0 -> 1.0, isolated (fresh ADSR). ---------------
+                    {
+                        dsp::VcoAdsrState adsr;
+                        adsr.init(sampleRate);
+                        adsr.setGate(true);
+                        const float step =
+                            1.0f / std::max(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMinAttackSeconds, dsp::VcoAdsrState::kMaxAttackSeconds) * sampleRate,
+                                            1.0f);
+                        const long cap = ConservativeStageCap(1.0f, step);
+                        const long samples =
+                            StepUntilLevelCrosses(adsr, knob, 0.0f, sustainKnob, 0.0f, curve, true, 1.0f, cap).samples;
+                        const double linearSamples =
+                            std::max(static_cast<double>(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMinAttackSeconds, dsp::VcoAdsrState::kMaxAttackSeconds)) *
+                                         sampleRate,
+                                     1.0);
+                        const double multiple = static_cast<double>(samples) / linearSamples;
+                        if (multiple > worstMultipleObserved) {
+                            worstMultipleObserved = multiple;
+                            std::ostringstream label;
+                            label << "Attack sr=" << sampleRate << " sustainKnob=" << sustainKnob << " curve=" << curve
+                                  << " knob=" << knob;
+                            worstLabel = label.str();
+                        }
                     }
-                }
 
-                // -- Decay: 1.0 -> sustainLevel, isolated (warm up Attack
-                // with attackKnob=0/curve=0 first -- fast and not what this
-                // pass measures). ---------------------------------------
-                {
-                    dsp::VcoAdsrState adsr;
-                    adsr.init(sampleRate);
-                    adsr.setGate(true);
-                    StepUntilLevelCrosses(adsr, /*attackKnob=*/0.0f, 0.0f, kSustainKnob, 0.0f, /*curveKnob=*/0.0f,
-                                           true, 1.0f, static_cast<long>(sampleRate));  // warm-up, ample cap.
-                    const float step = (1.0f - sustainLevel) /
-                                        std::max(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMinDecaySeconds, dsp::VcoAdsrState::kMaxDecaySeconds) *
-                                                      sampleRate,
-                                                  1.0f);
-                    const long cap = ConservativeStageCap(1.0f - sustainLevel, step);
-                    const long samples = StepUntilLevelCrosses(adsr, 0.0f, knob, kSustainKnob, 0.0f, curve, false,
-                                                                sustainLevel, cap)
-                                             .samples;
-                    const double linearSamples =
-                        std::max(static_cast<double>(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMinDecaySeconds, dsp::VcoAdsrState::kMaxDecaySeconds)) *
-                                     sampleRate,
-                                 1.0);
-                    const double multiple = static_cast<double>(samples) / linearSamples;
-                    if (multiple > worstMultipleObserved) {
-                        worstMultipleObserved = multiple;
-                        worstLabel = "Decay";
+                    // -- Decay: 1.0 -> sustainLevel, isolated (warm up Attack
+                    // with attackKnob=0/curve=0 first -- fast and not what this
+                    // pass measures). ---------------------------------------
+                    {
+                        dsp::VcoAdsrState adsr;
+                        adsr.init(sampleRate);
+                        adsr.setGate(true);
+                        StepUntilLevelCrosses(adsr, /*attackKnob=*/0.0f, 0.0f, sustainKnob, 0.0f, /*curveKnob=*/0.0f,
+                                               true, 1.0f, static_cast<long>(sampleRate));  // warm-up, ample cap.
+                        const float step = (1.0f - sustainLevel) /
+                                            std::max(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMinDecaySeconds, dsp::VcoAdsrState::kMaxDecaySeconds) *
+                                                          sampleRate,
+                                                      1.0f);
+                        const long cap = ConservativeStageCap(1.0f - sustainLevel, step);
+                        const long samples = StepUntilLevelCrosses(adsr, 0.0f, knob, sustainKnob, 0.0f, curve, false,
+                                                                    sustainLevel, cap)
+                                                 .samples;
+                        const double linearSamples =
+                            std::max(static_cast<double>(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMinDecaySeconds, dsp::VcoAdsrState::kMaxDecaySeconds)) *
+                                         sampleRate,
+                                     1.0);
+                        const double multiple = static_cast<double>(samples) / linearSamples;
+                        if (multiple > worstMultipleObserved) {
+                            worstMultipleObserved = multiple;
+                            std::ostringstream label;
+                            label << "Decay sr=" << sampleRate << " sustainKnob=" << sustainKnob << " curve=" << curve
+                                  << " knob=" << knob;
+                            worstLabel = label.str();
+                        }
                     }
-                }
 
-                // -- Release: sustainLevel -> 0.0, isolated (warm up Attack
-                // then Decay to Hold with attackKnob=decayKnob=0/curve=0,
-                // then force Release via gate-low with grace inactive). --
-                {
-                    dsp::VcoAdsrState adsr;
-                    adsr.init(sampleRate);
-                    adsr.setGate(true);
-                    StepUntilLevelCrosses(adsr, 0.0f, 0.0f, kSustainKnob, 0.0f, 0.0f, true, 1.0f,
-                                           static_cast<long>(sampleRate));
-                    StepUntilLevelCrosses(adsr, 0.0f, 0.0f, kSustainKnob, 0.0f, 0.0f, false, sustainLevel,
-                                           static_cast<long>(sampleRate));
-                    adsr.setGate(false);  // graceKnob defaults to 0.0f below -> inactive -> immediate Release.
-                    const float step =
-                        1.0f / std::max(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMinReleaseSeconds, dsp::VcoAdsrState::kMaxReleaseSeconds) * sampleRate,
-                                        1.0f);
-                    const long cap = ConservativeStageCap(sustainLevel, step);
-                    const long samples =
-                        StepUntilLevelCrosses(adsr, 0.0f, 0.0f, kSustainKnob, knob, curve, false, 0.0f, cap).samples;
-                    const double linearSamples =
-                        std::max(sustainLevel * static_cast<double>(MapKnobToSeconds(
-                                                     knob, dsp::VcoAdsrState::kMinReleaseSeconds,
-                                                     dsp::VcoAdsrState::kMaxReleaseSeconds)) *
-                                     sampleRate,
-                                 1.0);
-                    const double multiple = static_cast<double>(samples) / linearSamples;
-                    if (multiple > worstMultipleObserved) {
-                        worstMultipleObserved = multiple;
-                        worstLabel = "Release";
+                    // -- Release: sustainLevel -> 0.0, isolated (warm up Attack
+                    // then Decay to Hold with attackKnob=decayKnob=0/curve=0,
+                    // then force Release via gate-low with grace inactive). --
+                    {
+                        dsp::VcoAdsrState adsr;
+                        adsr.init(sampleRate);
+                        adsr.setGate(true);
+                        StepUntilLevelCrosses(adsr, 0.0f, 0.0f, sustainKnob, 0.0f, 0.0f, true, 1.0f,
+                                               static_cast<long>(sampleRate));
+                        StepUntilLevelCrosses(adsr, 0.0f, 0.0f, sustainKnob, 0.0f, 0.0f, false, sustainLevel,
+                                               static_cast<long>(sampleRate));
+                        adsr.setGate(false);  // graceKnob defaults to 0.0f below -> inactive -> immediate Release.
+                        const float step =
+                            1.0f / std::max(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMinReleaseSeconds, dsp::VcoAdsrState::kMaxReleaseSeconds) * sampleRate,
+                                            1.0f);
+                        const long cap = ConservativeStageCap(sustainLevel, step);
+                        const long samples =
+                            StepUntilLevelCrosses(adsr, 0.0f, 0.0f, sustainKnob, knob, curve, false, 0.0f, cap).samples;
+                        const double linearSamples =
+                            std::max(sustainLevel * static_cast<double>(MapKnobToSeconds(
+                                                         knob, dsp::VcoAdsrState::kMinReleaseSeconds,
+                                                         dsp::VcoAdsrState::kMaxReleaseSeconds)) *
+                                         sampleRate,
+                                     1.0);
+                        const double multiple = static_cast<double>(samples) / linearSamples;
+                        if (multiple > worstMultipleObserved) {
+                            worstMultipleObserved = multiple;
+                            std::ostringstream label;
+                            label << "Release sr=" << sampleRate << " sustainKnob=" << sustainKnob << " curve=" << curve
+                                  << " knob=" << knob;
+                            worstLabel = label.str();
+                        }
                     }
                 }
             }
@@ -840,13 +1001,1047 @@ TEST_CASE(compute_ramp_step_bounds_every_stage_duration_across_curve_and_knob_gr
     std::cout << "duration-bound sweep: worst multiple observed = " << worstMultipleObserved << " ("
               << worstLabel << ")\n";
     // The bound itself: a small multiple of the plain-linear duration, at
-    // EVERY grid point (including curve==1.0, every knob, both rates) --
-    // this is the actual pass/fail assertion. 10x is a generous test-side
-    // ceiling (kCurveMinProgress's own analytic bound is ~1/0.4 == 2.5x;
-    // this leaves ample room for retuning kCurveMinProgress lower without
-    // this sweep needing to change) while still catching a regression back
-    // toward unbounded.
-    REQUIRE_TRUE(worstMultipleObserved < 10.0);
+    // EVERY grid point (including curve==1.0, every knob, all three rates,
+    // all three Sustain knobs) -- this is the actual pass/fail assertion.
+    // The mechanism fixes the multiple at 1/kCurveMinProgress = 2.5 nominally
+    // and the float accumulator's step quantisation realises up to 2.6007
+    // measured; 2.75 is the requirement's stated bound.
+    REQUIRE_TRUE(worstMultipleObserved < 2.75f);
+}
+
+// The exponential curved branch's shape at the top of the knob, checked
+// against the analog family it targets: attack rises fast and flattens
+// toward its peak, decay and release fall fast and linger toward their
+// target, and turning Curve up moves every stage further in that
+// direction. One voice at 48 kHz, Sustain knob 0.5, Grace inactive, the
+// three stage knobs solved (research/ramp-shape-measurement.md) so each
+// stage's Curve-0 (linear) duration is 200 ms.
+TEST_CASE(envelope_curve_top_is_the_analog_shape_on_every_stage) {
+    constexpr float kSampleRate = 48000.0f;
+    constexpr float attackKnob = 0.959586f;
+    constexpr float decayKnob = 0.696236f;
+    constexpr float sustainKnob = 0.5f;
+    constexpr float releaseKnob = 0.593582f;
+    const long kWindowSamples = static_cast<long>(kSampleRate) / 100;  // 10 ms.
+    const long kStageSampleCap = 20 * static_cast<long>(kSampleRate);  // generous; a runaway ramp fails loud, not silently hangs.
+
+    struct StageTrace {
+        std::string name;
+        float startLevel;
+        float targetLevel;
+        long durationSamples;
+        std::vector<float> perSampleLevels;  // perSampleLevels[i - 1] is the level after the i-th step.
+    };
+
+    constexpr int kNumStages = 3;
+    const char* const stageNames[kNumStages] = {"Attack", "Decay", "Release"};
+    double quarterFraction[kNumStages][101] = {};
+    long quarterDuration[kNumStages][101] = {};
+
+    // Steps `adsr` forward sample by sample, recording every level, until it
+    // first crosses `targetLevel` (same crossing rule as StepUntilLevelCrosses
+    // above) -- the finishing-step snap makes the last recorded level exactly
+    // targetLevel, so downstream fraction math divides by an exact travel.
+    // `curve` is a parameter, not a capture, so this same lambda drives both
+    // the in-range sweep below and the out-of-range wiring rows after it.
+    auto runStage = [&](dsp::VcoAdsrState& adsr, float curve, const std::string& name, float startLevel,
+                         float targetLevel, bool ascending) -> StageTrace {
+        StageTrace trace{name, startLevel, targetLevel, 0, {}};
+        for (long sample = 1; sample <= kStageSampleCap; ++sample) {
+            const float level = adsr.apply(0, 1.0f, attackKnob, decayKnob, sustainKnob, releaseKnob, curve, 0.0f);
+            trace.perSampleLevels.push_back(level);
+            const bool reached = ascending ? (level >= targetLevel) : (level <= targetLevel);
+            if (reached) {
+                trace.durationSamples = sample;
+                return trace;
+            }
+        }
+        std::ostringstream oss;
+        oss << name << " did not reach target=" << targetLevel << " within cap=" << kStageSampleCap
+            << " (curve=" << curve << ").";
+        throw std::runtime_error(oss.str());
+    };
+
+    for (int curveIx = 0; curveIx <= 100; ++curveIx) {
+        const float curve = static_cast<float>(curveIx) / 100.0f;
+
+        dsp::VcoAdsrState adsr;
+        adsr.init(kSampleRate);
+        adsr.setGate(true);
+
+        const float sustainLevel = MapSustainRuntime(sustainKnob);
+        StageTrace traces[kNumStages] = {
+            runStage(adsr, curve, "Attack", 0.0f, 1.0f, true),
+            runStage(adsr, curve, "Decay", 1.0f, sustainLevel, false),
+            StageTrace{},  // Release, filled below -- it needs the gate-false edge first.
+        };
+        adsr.setGate(false);  // graceKnob defaults to 0.0f -> inactive -> Release resolved on the very next apply().
+        traces[2] = runStage(adsr, curve, "Release", sustainLevel, 0.0f, false);
+
+        for (int stageIx = 0; stageIx < kNumStages; ++stageIx) {
+            const StageTrace& trace = traces[stageIx];
+
+            // Liveness: this configuration actually drives the ramp, so the
+            // relations checked below are not vacuously true of a stuck voice.
+            REQUIRE_TRUE(trace.durationSamples > 0);
+            REQUIRE_TRUE(std::fabs(trace.targetLevel - trace.startLevel) > 0.0f);
+
+            const long quarterIndex = std::max<long>(
+                1, std::min<long>(trace.durationSamples,
+                                   static_cast<long>(std::llround(trace.durationSamples / 4.0))));
+            const float quarterLevel = trace.perSampleLevels[static_cast<size_t>(quarterIndex - 1)];
+            const double totalTravel = std::fabs(trace.targetLevel - trace.startLevel);
+            const double fraction = std::fabs(quarterLevel - trace.startLevel) / totalTravel;
+            quarterFraction[stageIx][curveIx] = fraction;
+            quarterDuration[stageIx][curveIx] = trace.durationSamples;
+
+            // The table prints the quarter points only; every hundredth is
+            // asserted below and the worst per-hundredth ratio is printed after.
+            if (curveIx % 25 == 0) {
+                std::cout << "envelope_curve_top_is_the_analog_shape_on_every_stage: Curve=" << curve
+                          << " stage=" << stageNames[stageIx]
+                          << " duration=" << (trace.durationSamples / kSampleRate * 1000.0) << "ms"
+                          << " quarterFraction=" << fraction << "\n";
+            }
+
+            // Windowed (10 ms) progress from the stage's start through its
+            // completion -- the final window is shorter than 10 ms whenever
+            // completion does not land on a tick.
+            std::vector<float> windowLevels;
+            windowLevels.push_back(trace.startLevel);
+            for (long tick = kWindowSamples; tick < trace.durationSamples; tick += kWindowSamples) {
+                windowLevels.push_back(trace.perSampleLevels[static_cast<size_t>(tick - 1)]);
+            }
+            windowLevels.push_back(trace.targetLevel);  // completion, exact snap.
+
+            std::vector<double> progress;
+            progress.reserve(windowLevels.size() - 1);
+            for (size_t k = 1; k < windowLevels.size(); ++k) {
+                progress.push_back(
+                    std::fabs(static_cast<double>(windowLevels[k]) - static_cast<double>(windowLevels[k - 1])));
+            }
+
+            if (curveIx == 100) {  // Curve 1.0: the analog shape assertions.
+                REQUIRE_TRUE(fraction > 0.25);
+                for (size_t k = 1; k < progress.size(); ++k) {
+                    // 1e-5, not a tighter bound: the floor's flat tail is constant per
+                    // sample, but a 10 ms window boundary that falls mid-transition (one
+                    // window mixing a few still-declining samples with floor-constant
+                    // ones, the next window landing fully in the floor) can leave that
+                    // window's own sum a few float32 ulps under the next, measured up to
+                    // 1.46e-6 on Release here -- two orders of magnitude under any real
+                    // per-window progress in this sweep.
+                    REQUIRE_TRUE(progress[k] <= progress[k - 1] + 1e-5);  // never grows, after the first window.
+                }
+            }
+        }
+    }
+
+    // Across the knob, at every hundredth: the quarter-duration fraction
+    // rises strictly for each stage as Curve turns from 0 (linear) up to 1.0
+    // (the analog shape), and no single hundredth carries more than 2.0
+    // times an even hundredth's share of the fraction's total rise -- the
+    // same relation and the same 2.0 literal the pure-function evenness
+    // check above applies to ComputeRampStep's own per-curveAmount
+    // increments. This end-to-end reading runs at one sample rate, one
+    // Sustain and three solved durations, so it never reaches the
+    // stepMagnitude/remaining combinations where the floor binds and the
+    // blend's slope reverses sign -- it complements the pure-function check,
+    // it does not replace it.
+    for (int stageIx = 0; stageIx < kNumStages; ++stageIx) {
+        const double travel = quarterFraction[stageIx][100] - quarterFraction[stageIx][0];
+        double worstRatio = 0.0;
+        for (int curveIx = 0; curveIx < 100; ++curveIx) {
+            const double increase = quarterFraction[stageIx][curveIx + 1] - quarterFraction[stageIx][curveIx];
+            REQUIRE_TRUE(increase > 0.0);
+            REQUIRE_TRUE(increase <= 2.0 * (travel / 100.0));
+            worstRatio = std::max(worstRatio, increase / (travel / 100.0));
+        }
+        std::cout << "envelope_curve_top_is_the_analog_shape_on_every_stage: " << stageNames[stageIx]
+                  << " per-hundredth evenness: worst increase-over-even-share ratio " << worstRatio << "\n";
+    }
+
+    // Evenness across the quarter-turns (knob indices 0, 25, 50, 75, 100),
+    // the same "work per quarter-turn" quantity the anti-alias crossfade
+    // test asserts on its own knob
+    // (drive_anti_alias_travel_does_not_dip_below_either_endpoint's sibling
+    // TEST_CASE above, worstQuarter/bestQuarter < 2.5): a knob map can be
+    // strictly rising and still badly uneven, spending nearly all of its
+    // travel in one quarter-turn and almost none in the others. Here the
+    // measured quantity is the per-quarter-turn increase of the
+    // quarter-duration fraction. Shipped: Attack ~1.43, Decay ~1.47, Release
+    // ~1.47; a `knob * knob` Curve map -- strictly rising, so it passes the
+    // loop above -- measures about six.
+    for (int stageIx = 0; stageIx < kNumStages; ++stageIx) {
+        const int quarterTurnIx[5] = {0, 25, 50, 75, 100};
+        double worstStep = 0.0, bestStep = 1.0e9;
+        for (int k = 0; k < 4; ++k) {
+            const double step =
+                quarterFraction[stageIx][quarterTurnIx[k + 1]] - quarterFraction[stageIx][quarterTurnIx[k]];
+            worstStep = std::max(worstStep, step);
+            bestStep = std::min(bestStep, step);
+        }
+        std::cout << "envelope_curve_top_is_the_analog_shape_on_every_stage: " << stageNames[stageIx]
+                  << " quarter-turn evenness: best " << bestStep << ", worst " << worstStep << ", ratio "
+                  << (worstStep / bestStep) << "\n";
+        REQUIRE_TRUE(worstStep / bestStep < 2.5);
+    }
+
+    // The wiring: stepVoice() calls mapCurve(curveKnob) before using the
+    // result, and mapCurve is the only thing bounding the blend once a
+    // cached knob leaves [0, 1] -- the sweep above never sees that clamp
+    // because it drives `curve` already inside [0, 1]. Drive the same three
+    // stages with an out-of-range Curve knob and require bit-exact
+    // agreement with the clamped-equivalent in-range row already recorded
+    // above (mapCurve(1.5f) == mapCurve(1.0f) == 1.0f, mapCurve(-0.5f) ==
+    // mapCurve(0.0f) == 0.0f, so stepVoice sees the identical curveAmount
+    // either way).
+    struct ClampRow {
+        float curveKnob;
+        int equivalentCurveIx;
+    };
+    const ClampRow clampRows[2] = {{1.5f, 100}, {-0.5f, 0}};
+    for (const ClampRow& row : clampRows) {
+        dsp::VcoAdsrState adsr;
+        adsr.init(kSampleRate);
+        adsr.setGate(true);
+
+        const float sustainLevel = MapSustainRuntime(sustainKnob);
+        StageTrace traces[kNumStages] = {
+            runStage(adsr, row.curveKnob, "Attack", 0.0f, 1.0f, true),
+            runStage(adsr, row.curveKnob, "Decay", 1.0f, sustainLevel, false),
+            StageTrace{},  // Release, filled below -- it needs the gate-false edge first.
+        };
+        adsr.setGate(false);
+        traces[2] = runStage(adsr, row.curveKnob, "Release", sustainLevel, 0.0f, false);
+
+        for (int stageIx = 0; stageIx < kNumStages; ++stageIx) {
+            const StageTrace& trace = traces[stageIx];
+            const long quarterIndex = std::max<long>(
+                1, std::min<long>(trace.durationSamples,
+                                   static_cast<long>(std::llround(trace.durationSamples / 4.0))));
+            const float quarterLevel = trace.perSampleLevels[static_cast<size_t>(quarterIndex - 1)];
+            const double totalTravel = std::fabs(trace.targetLevel - trace.startLevel);
+            const double fraction = std::fabs(quarterLevel - trace.startLevel) / totalTravel;
+
+            std::cout << "envelope_curve_top_is_the_analog_shape_on_every_stage: Curve=" << row.curveKnob
+                      << " stage=" << stageNames[stageIx]
+                      << " duration=" << (trace.durationSamples / kSampleRate * 1000.0) << "ms"
+                      << " quarterFraction=" << fraction << "\n";
+
+            REQUIRE_TRUE(trace.durationSamples == quarterDuration[stageIx][row.equivalentCurveIx]);
+            REQUIRE_TRUE(fraction == quarterFraction[stageIx][row.equivalentCurveIx]);
+        }
+    }
+}
+
+// The shape test above only checks aggregate quarter-turn timing, sampled
+// through the finishing-step-driven crossing rule. This checks every single
+// sample. VcoAdsrState::apply(voiceIndex, input, ...) returns
+// `input * m_level[voiceIndex]` (VoiceEnvelope.hpp) with nothing else
+// applied to that product, so at input=1.0f the return value IS
+// m_level, bit for bit -- no gate, Grace or smoother sits between the ramp
+// and what this test reads. stepVoice() drives Attack/Decay/Release each as
+// exactly one ComputeRampStep call from the voice's own current level toward
+// that stage's target, at a stepMagnitude/curveAmount derived from the
+// attack/decay/release/curve knobs through mapAttack/mapDecay/mapRelease
+// (private, ExpMapCompute over the public kMin*/kMax* constants, the same
+// map this file's own MapKnobToSeconds recomputes) and mapCurve (public).
+//
+// This drives one real voice and an independent ComputeRampStep iteration
+// in lockstep from the same start value, target and step, and requires the
+// two level sequences to be bit-identical at every sample of every stage.
+//
+// Every argument stepVoice() reads besides Curve is an input a wiring
+// defect can gate the blend on while every shape assertion in this file
+// stays green: the voice index, the Grace knob, and the four stage knobs,
+// which arrive as raw knob values and not only as the step magnitudes they
+// map to. Curve is one shared knob for all three voices (MixOscVoices passes
+// the same curveKnob to apply(0, ...), apply(1, ...) and apply(2, ...)),
+// so curve shaping honored only for voice 0 leaves two thirds of every
+// mixed voice running linear. Grace is an independent control on the same
+// call, so a blend suppressed while Grace is up leaves the shape law
+// holding only at Grace's default. A gate on a stage knob leaves the
+// shape law holding only at that knob's one tested value, and the
+// completion bound cannot see it: a bypassed blend runs the stage linear,
+// which is well inside the bound rather than past it. Every one of those
+// axes is swept here against the same reference iteration, so the
+// per-sample identity has to hold on every combination rather than at one
+// point of each.
+//
+// Grace does not change the reference. It cannot reach Attack or Decay at
+// all -- stepVoice()'s Grace block runs only under `m_releasePending`,
+// which setGate(false) sets and which is false for the whole gate-high
+// period -- and on Release it inserts a Hold plateau before the ramp
+// rather than altering it. Hold pins the level at exactly sustainLevel
+// every sample (stepVoice()'s `case Stage::Hold`), and Release's first
+// step moves at least kCurveMinProgress * releaseStep, which the loop
+// requires below to exceed one ulp of sustainLevel for every knob set, so
+// the first sample off the plateau is an exact marker. The plateau is
+// counted and required to be empty exactly when Grace is at its default,
+// which is what keeps the nonzero-Grace rows from passing vacuously; the
+// ramp itself is compared bit for bit, with no tolerance.
+TEST_CASE(envelope_voice_level_is_the_step_function_iterated_with_the_mapped_knob) {
+    constexpr float kSampleRate = 48000.0f;
+    const long kStageSampleCap = 20 * static_cast<long>(kSampleRate);  // generous; a runaway ramp fails loud.
+
+    // The four stage knobs reach stepVoice() as raw knob values, not only
+    // through the step magnitudes they map to, so they can gate the blend
+    // the same way the voice index and Grace can. One knob set leaves that
+    // gate open; these four close it across the mapped range and across
+    // Sustain, and they differ from one another stage by stage, so a gate
+    // keyed to any single one of the four is off its value in at least one
+    // set.
+    struct KnobSet {
+        const char* name;
+        float attack;
+        float decay;
+        float sustain;
+        float release;
+    };
+    const KnobSet knobSets[4] = {
+        // Solved so each stage's Curve-0 duration is 200 ms, the same set
+        // the shape test above uses.
+        {"solved200ms", 0.959586f, 0.696236f, 0.5f, 0.593582f},
+        {"short", 0.1f, 0.1f, 0.05f, 0.1f},
+        {"long", 1.0f, 0.9f, 0.95f, 0.7f},
+        {"mixed", 0.35f, 0.8f, 0.25f, 0.2f},
+    };
+
+    const float curveKnobs[] = {0.0f, 0.37f, 1.0f, 1.5f};
+    // The registered default plus four nonzero settings spanning the knob:
+    // 0.0158s, 0.0515s, 0.1667s and 1.0s of minimum hold, which is 0, 760,
+    // 2473, 8000 and 48000 samples at this rate. 0.5f lands on a whole
+    // sample count exactly and 0.1f/0.25f/1.0f do not, so both sides of the
+    // countdown's own fractional case are driven.
+    const float graceKnobs[] = {0.0f, 0.1f, 0.25f, 0.5f, 1.0f};
+
+    struct Stage {
+        const char* name;
+        float start;
+        float target;
+        float step;
+        bool ascending;
+    };
+
+    long combinations = 0;
+    long stagesCompared = 0;
+    long totalSamplesCompared = 0;
+
+    for (const KnobSet& knobs : knobSets) {
+    const float attackKnob = knobs.attack;
+    const float decayKnob = knobs.decay;
+    const float sustainKnob = knobs.sustain;
+    const float releaseKnob = knobs.release;
+    const float sustainLevel = MapSustainRuntime(sustainKnob);
+    const float attackStep =
+        1.0f / std::max(MapKnobToSeconds(attackKnob, dsp::VcoAdsrState::kMinAttackSeconds, dsp::VcoAdsrState::kMaxAttackSeconds) * kSampleRate,
+                         1.0f);
+    const float decayStep = (1.0f - sustainLevel) /
+                             std::max(MapKnobToSeconds(decayKnob, dsp::VcoAdsrState::kMinDecaySeconds, dsp::VcoAdsrState::kMaxDecaySeconds) * kSampleRate,
+                                       1.0f);
+    const float releaseStep =
+        1.0f / std::max(MapKnobToSeconds(releaseKnob, dsp::VcoAdsrState::kMinReleaseSeconds, dsp::VcoAdsrState::kMaxReleaseSeconds) * kSampleRate,
+                         1.0f);
+    // The plateau marker above is exact only while Release's first step is
+    // larger than one ulp of sustainLevel. Required, not assumed.
+    const float sustainUlp = std::nextafter(sustainLevel, 2.0f) - sustainLevel;
+    REQUIRE_TRUE(dsp::VcoAdsrState::kCurveMinProgress * releaseStep > sustainUlp);
+    for (size_t voiceIndex = 0; voiceIndex < dsp::VcoAdsrState::kNumVoices; ++voiceIndex) {
+    for (float graceKnob : graceKnobs) {
+    for (float curveKnob : curveKnobs) {
+        const float curveAmount = dsp::VcoAdsrState::mapCurve(curveKnob);
+
+        dsp::VcoAdsrState adsr;
+        adsr.init(kSampleRate);
+        adsr.setGate(true);
+        ++combinations;
+
+        const Stage stages[3] = {
+            {"Attack", 0.0f, 1.0f, attackStep, true},
+            {"Decay", 1.0f, sustainLevel, decayStep, false},
+            {"Release", sustainLevel, 0.0f, releaseStep, false},
+        };
+
+        for (int stageIx = 0; stageIx < 3; ++stageIx) {
+            const Stage& stage = stages[stageIx];
+            if (stageIx == 2) {
+                adsr.setGate(false);  // Grace decides how long Hold runs before Release starts.
+            }
+
+            float refLevel = stage.start;
+            long samplesCompared = 0;
+            long mismatches = 0;
+            long plateauSamples = 0;
+            bool ramping = (stageIx != 2);
+            bool reachedTarget = false;
+            for (long sample = 1; sample <= kStageSampleCap; ++sample) {
+                const float actual =
+                    adsr.apply(voiceIndex, 1.0f, attackKnob, decayKnob, sustainKnob, releaseKnob, curveKnob,
+                               graceKnob);
+                if (!ramping) {
+                    if (actual == sustainLevel) {
+                        ++plateauSamples;
+                        continue;
+                    }
+                    ramping = true;
+                }
+                refLevel = dsp::VcoAdsrState::ComputeRampStep(refLevel, stage.target, stage.step, curveAmount);
+                ++samplesCompared;
+                if (actual != refLevel) {
+                    ++mismatches;
+                }
+                const bool reached = stage.ascending ? (actual >= stage.target) : (actual <= stage.target);
+                if (reached) {
+                    reachedTarget = true;
+                    break;
+                }
+            }
+            if (!reachedTarget) {
+                std::ostringstream oss;
+                oss << "envelope_voice_level_is_the_step_function_iterated_with_the_mapped_knob: " << stage.name
+                    << " did not reach target=" << stage.target << " within cap=" << kStageSampleCap
+                    << " (knobs=" << knobs.name << " voiceIndex=" << voiceIndex
+                    << " curveKnob=" << curveKnob << " graceKnob=" << graceKnob << ").";
+                throw std::runtime_error(oss.str());
+            }
+
+            REQUIRE_TRUE(mismatches == 0);
+            // Non-vacuity: Grace above its default must actually have held
+            // this voice before Release, and Grace at its default must not.
+            if (stageIx == 2) {
+                REQUIRE_TRUE((plateauSamples > 0) == (graceKnob > 0.0f));
+            } else {
+                REQUIRE_TRUE(plateauSamples == 0);
+            }
+            ++stagesCompared;
+            totalSamplesCompared += samplesCompared;
+        }
+    }
+    }
+    }
+    }
+
+    std::cout << "envelope_voice_level_is_the_step_function_iterated_with_the_mapped_knob: " << combinations
+              << " knob/voice/Grace/Curve combinations, " << stagesCompared << " stages, "
+              << totalSamplesCompared << " samples compared, 0 mismatches\n";
+}
+
+// mapCurve is the clamped identity: every knob in range passes through
+// unchanged, and the out-of-range ends clamp to 0/1. The domain is finite --
+// about a billion floats between 0.0f and 1.0f inclusive -- and walking all
+// of them with std::nextafter takes seconds, so unlike a sampled check
+// (hundredths, say), nothing can hide between the knob values actually
+// tested.
+TEST_CASE(map_curve_is_the_identity_at_every_float_in_the_knob_range) {
+    const auto start = std::chrono::steady_clock::now();
+    std::uint64_t count = 0;
+    std::uint64_t failures = 0;
+    for (float knob = 0.0f;; knob = std::nextafter(knob, 2.0f)) {
+        if (dsp::VcoAdsrState::mapCurve(knob) != knob) {
+            ++failures;
+        }
+        ++count;
+        if (knob == 1.0f) {
+            break;
+        }
+    }
+    const auto end = std::chrono::steady_clock::now();
+    const double seconds = std::chrono::duration<double>(end - start).count();
+    // Printed before the assertion so the count and wall time are visible
+    // in the log even when the walk finds a defect and REQUIRE_TRUE throws.
+    std::cout << "map_curve_is_the_identity_at_every_float_in_the_knob_range: " << count
+              << " floats checked, " << failures << " failures, wall time " << seconds << "s\n";
+    REQUIRE_TRUE(failures == 0);
+    REQUIRE_TRUE(dsp::VcoAdsrState::mapCurve(-0.5f) == 0.0f);
+    REQUIRE_TRUE(dsp::VcoAdsrState::mapCurve(1.5f) == 1.0f);
+}
+
+// The exponential branch is alive across the whole step-magnitude range: at
+// unit remaining distance it always outruns the linear step, by exactly
+// kReach99 at curveAmount 1.0 and by less (but still more than linear) at a
+// half-blend. 200 log-spaced magnitudes from 1e-6 to 1e-1 so no single
+// decade of the knob's realized step size is left untested.
+TEST_CASE(compute_ramp_step_curves_at_every_step_magnitude) {
+    constexpr float from = 0.0f;
+    constexpr float target = 1.0f;
+    constexpr int kNumSteps = 200;
+    double smallestRatio = std::numeric_limits<double>::max();
+    int count = 0;
+    for (int i = 0; i < kNumSteps; ++i) {
+        const double exponent = -6.0 + (5.0 * i) / (kNumSteps - 1);
+        const float stepMagnitude = static_cast<float>(std::pow(10.0, exponent));
+
+        const float progressFull = dsp::VcoAdsrState::ComputeRampStep(from, target, stepMagnitude, 1.0f) - from;
+        REQUIRE_TRUE(progressFull > stepMagnitude);
+        const double ratioFull = static_cast<double>(progressFull) / static_cast<double>(stepMagnitude);
+        smallestRatio = std::min(smallestRatio, ratioFull);
+
+        const float progressHalf = dsp::VcoAdsrState::ComputeRampStep(from, target, stepMagnitude, 0.5f) - from;
+        REQUIRE_TRUE(progressHalf > stepMagnitude);
+        REQUIRE_TRUE(progressHalf < progressFull);
+        const double ratioHalf = static_cast<double>(progressHalf) / static_cast<double>(stepMagnitude);
+        smallestRatio = std::min(smallestRatio, ratioHalf);
+
+        ++count;
+    }
+
+    // Snap boundary, same 200 magnitudes, curveAmount swept at every
+    // hundredth from 0.00 to 1.00 (101 values) plus both directions: a ramp
+    // lands on its target only from within one step of it. An earlier snap
+    // would replace the flattening tail of every curved ramp with a jump,
+    // and nothing else in this suite bounds that abruptness -- the two
+    // checks above only bound slowness (progress exceeds stepMagnitude, the
+    // half-blend trails the full one), not how abruptly the ramp is allowed
+    // to finish. The snap must not depend on the blend at all, so it is
+    // checked across the blend rather than at a few values.
+    constexpr float snapFrom = 0.3f;
+    int snapCheckCount = 0;
+    int snapSkipCount = 0;
+    for (int i = 0; i < kNumSteps; ++i) {
+        const double exponent = -6.0 + (5.0 * i) / (kNumSteps - 1);
+        const float stepMagnitude = static_cast<float>(std::pow(10.0, exponent));
+        for (int curveIx = 0; curveIx <= 100; ++curveIx) {
+            const float curveAmount = static_cast<float>(curveIx) / 100.0f;
+            for (int dir = 0; dir < 2; ++dir) {
+                const float sign = (dir == 0) ? 1.0f : -1.0f;
+
+                // Relation (1): the target one step away, adjusted to the
+                // remaining ComputeRampStep itself will recompute (the same
+                // subtraction, so the same rounding) rather than the nominal
+                // stepMagnitude -- nudging the target one ulp toward `from`
+                // at a time until that recomputed remaining is within one
+                // step. The snap must fire on that recomputed boundary: the
+                // result is the adjusted target bit-for-bit, ascending and
+                // (the mirror) descending.
+                float snapTarget = snapFrom + sign * stepMagnitude;
+                float snapRemaining = std::fabs(snapTarget - snapFrom);
+                while (snapRemaining > stepMagnitude) {
+                    snapTarget = std::nextafter(snapTarget, snapFrom);
+                    snapRemaining = std::fabs(snapTarget - snapFrom);
+                }
+                const float snapResult =
+                    dsp::VcoAdsrState::ComputeRampStep(snapFrom, snapTarget, stepMagnitude, curveAmount);
+                REQUIRE_TRUE(snapResult == snapTarget);
+                ++snapCheckCount;
+
+                // Relation (1b): one float ulp past the boundary relation
+                // (1) lands on -- the smallest remaining distance that is
+                // still more than one step. Relations (3) and (2) start a
+                // quarter step and a whole step further out, so a snap
+                // widened by any factor under 1.25 sits between them and
+                // this is the only probe that reaches it. The shortfall
+                // the mechanism can express here is the blend's own
+                // distance from the plain linear step,
+                // curveAmount * (1 - kReach99 * remaining) of the step,
+                // floored at 1 - kCurveMinProgress of it; where that is
+                // not larger than one ulp of the target plus one ulp of
+                // the start value, the accumulator cannot represent a
+                // result short of the target at all, so the combination is
+                // skipped and counted rather than asserted.
+                {
+                    const float edgeTarget = std::nextafter(
+                        snapTarget, sign > 0.0f ? std::numeric_limits<float>::infinity()
+                                                : -std::numeric_limits<float>::infinity());
+                    const float edgeRemaining = std::fabs(edgeTarget - snapFrom);
+                    const float edgeUlp =
+                        std::nextafter(edgeTarget, std::numeric_limits<float>::infinity()) - edgeTarget;
+                    const float fromUlpEdge =
+                        std::nextafter(snapFrom, std::numeric_limits<float>::infinity()) - snapFrom;
+                    const float expressibleShortfall =
+                        stepMagnitude *
+                        std::min(curveAmount * (1.0f - dsp::VcoAdsrState::kReach99 * edgeRemaining),
+                                 1.0f - dsp::VcoAdsrState::kCurveMinProgress);
+                    if (!(edgeRemaining > stepMagnitude) ||
+                        !(expressibleShortfall > edgeUlp + fromUlpEdge)) {
+                        ++snapSkipCount;
+                    } else {
+                        const float edgeResult =
+                            dsp::VcoAdsrState::ComputeRampStep(snapFrom, edgeTarget, stepMagnitude, curveAmount);
+                        REQUIRE_TRUE(edgeResult != edgeTarget);
+                        const float edgeShortfall = std::fabs(edgeTarget - edgeResult);
+                        REQUIRE_TRUE(edgeShortfall > edgeUlp);
+                        ++snapCheckCount;
+                    }
+                }
+
+                // Relation (3): a quarter step past the one-step boundary
+                // relation (1) checks, by the same recomputed-remaining
+                // idiom -- not yet the two-step distance relation (2) probes.
+                // A snap widened by less than a quarter step leaves a
+                // terminal step within the tail's own scale, so that is
+                // where the relation stops: short of the target by more
+                // than a float ulp of it, at every hundredth of the blend
+                // and every magnitude, both directions.
+                {
+                    const float quarterTarget = snapFrom + sign * 1.25f * stepMagnitude;
+                    const float quarterRemaining = std::fabs(quarterTarget - snapFrom);
+                    if (!(quarterRemaining > stepMagnitude)) {
+                        ++snapSkipCount;
+                    } else {
+                        const float quarterResult =
+                            dsp::VcoAdsrState::ComputeRampStep(snapFrom, quarterTarget, stepMagnitude, curveAmount);
+                        const float quarterTargetUlp =
+                            std::nextafter(quarterTarget, std::numeric_limits<float>::infinity()) - quarterTarget;
+                        const float quarterShortfall = std::fabs(quarterTarget - quarterResult);
+                        REQUIRE_TRUE(quarterShortfall > quarterTargetUlp);
+                        ++snapCheckCount;
+                    }
+                }
+
+                // Relation (2): two steps away by the same recomputed
+                // remaining. A magnitude/direction whose doubled remaining
+                // rounds down to no longer exceed stepMagnitude is not a
+                // "two steps away" case at all -- skip it (counted) rather
+                // than assert something the construction no longer means.
+                // Otherwise: no early snap -- short of the target by more
+                // than a float ulp of it -- and the curved floor still
+                // holds (progress at least stepMagnitude * kCurveMinProgress,
+                // less one ulp of the start value for the accumulator's own
+                // quantization).
+                const float farTarget = snapFrom + sign * 2.0f * stepMagnitude;
+                const float farRemaining = std::fabs(farTarget - snapFrom);
+                if (!(farRemaining > stepMagnitude)) {
+                    ++snapSkipCount;
+                    continue;
+                }
+                const float farResult =
+                    dsp::VcoAdsrState::ComputeRampStep(snapFrom, farTarget, stepMagnitude, curveAmount);
+                const float targetUlp =
+                    std::nextafter(farTarget, std::numeric_limits<float>::infinity()) - farTarget;
+                const float shortfall = std::fabs(farTarget - farResult);
+                REQUIRE_TRUE(shortfall > targetUlp);
+
+                const float progress = std::fabs(farResult - snapFrom);
+                const float minProgress = stepMagnitude * dsp::VcoAdsrState::kCurveMinProgress;
+                const float fromUlp =
+                    std::nextafter(snapFrom, std::numeric_limits<float>::infinity()) - snapFrom;
+                REQUIRE_TRUE(progress >= minProgress - fromUlp);
+                ++snapCheckCount;
+            }
+        }
+    }
+    std::cout << "compute_ramp_step_curves_at_every_step_magnitude: " << snapCheckCount
+              << " snap checks, " << snapSkipCount << " skips\n";
+
+    std::cout << "compute_ramp_step_curves_at_every_step_magnitude: " << count
+              << " step magnitudes, smallest progress-over-linear ratio=" << smallestRatio << "\n";
+}
+
+// The progress floor holds at every curve amount, not just the ones the
+// shape test happens to visit: for every curveAmount in [0,1] (every
+// hundredth), every stepMagnitude/remaining combination on the grid below,
+// and both directions from a fixed start, per-sample progress never drops
+// below min(remaining, stepMagnitude * kCurveMinProgress) by more than one
+// float ulp of the start value (the accumulator quantizes to that grid).
+TEST_CASE(compute_ramp_step_never_progresses_below_the_floor_at_any_curve) {
+    constexpr float from = 0.3f;
+    const float stepMagnitudes[7] = {
+        1e-5f, 1e-4f, 1e-3f, 1e-2f,
+        // Largest step the attack map can actually produce at 44.1 kHz:
+        // 1 / (kMinAttackSeconds * sampleRate), kMinAttackSeconds read from
+        // VoiceEnvelope.hpp (0.001f).
+        1.0f / (dsp::VcoAdsrState::kMinAttackSeconds * 44100.0f),
+        // setSampleRate accepts any positive rate, and the same floor
+        // realizes a larger per-sample step at a lower rate: 1 / (0.001 *
+        // 32000) at 32 kHz, ...
+        0.03125f,
+        // ...and 1 / (0.001 * 8000) at 8 kHz.
+        0.125f,
+    };
+    const float remainders[6] = {1e-4f, 1e-3f, 1e-2f, 0.1f, 0.5f, 1.0f};
+    // The floor can only ever bind above the snap (remaining > stepMagnitude,
+    // otherwise ComputeRampStep's finishing branch returns target directly)
+    // and below kCurveMinProgress/kReach99 (~0.0868: the remaining distance
+    // at which the exponential step's own magnitude drops under the floor --
+    // see ComputeRampStep's "about 0.087" comment). The fixed remainders
+    // above miss that band for the larger stepMagnitudes: anything below the
+    // band is also below those stepMagnitudes (the snap branch, floor
+    // untouched), and anything above them is also above the band (floor
+    // inert by design). These step-relative remainders land inside the band
+    // whenever the step is small enough for the multiple to still clear it;
+    // skip (count, don't assert) the ones that don't.
+    const float stepRelativeMultipliers[3] = {1.5f, 2.0f, 4.0f};
+    const float floorBand = dsp::VcoAdsrState::kCurveMinProgress / dsp::VcoAdsrState::kReach99;
+    const float ulp = std::nextafter(from, std::numeric_limits<float>::infinity()) - from;
+    int count = 0;
+    int skipCount = 0;
+    double smallestMargin = std::numeric_limits<double>::max();
+    for (int c = 0; c <= 100; ++c) {
+        const float curveAmount = static_cast<float>(c) / 100.0f;
+        for (float stepMagnitude : stepMagnitudes) {
+            for (float remaining : remainders) {
+                for (int dir = 0; dir < 2; ++dir) {
+                    const float target = (dir == 0) ? (from + remaining) : (from - remaining);
+                    const float result = dsp::VcoAdsrState::ComputeRampStep(from, target, stepMagnitude, curveAmount);
+                    const float progress = std::fabs(result - from);
+                    const float floorValue = std::min(remaining, stepMagnitude * dsp::VcoAdsrState::kCurveMinProgress);
+                    const double margin =
+                        static_cast<double>(progress) - (static_cast<double>(floorValue) - static_cast<double>(ulp));
+                    smallestMargin = std::min(smallestMargin, margin);
+                    REQUIRE_TRUE(progress >= floorValue - ulp);
+                    ++count;
+                }
+            }
+            for (float multiplier : stepRelativeMultipliers) {
+                const float relRemaining = multiplier * stepMagnitude;
+                if (!(relRemaining < floorBand)) {
+                    ++skipCount;
+                    continue;
+                }
+                for (int dir = 0; dir < 2; ++dir) {
+                    const float target = (dir == 0) ? (from + relRemaining) : (from - relRemaining);
+                    const float result = dsp::VcoAdsrState::ComputeRampStep(from, target, stepMagnitude, curveAmount);
+                    const float progress = std::fabs(result - from);
+                    const float floorValue =
+                        std::min(relRemaining, stepMagnitude * dsp::VcoAdsrState::kCurveMinProgress);
+                    const double margin =
+                        static_cast<double>(progress) - (static_cast<double>(floorValue) - static_cast<double>(ulp));
+                    smallestMargin = std::min(smallestMargin, margin);
+                    REQUIRE_TRUE(progress >= floorValue - ulp);
+                    ++count;
+                }
+            }
+        }
+    }
+    std::cout << "compute_ramp_step_never_progresses_below_the_floor_at_any_curve: " << count
+              << " combinations, " << skipCount
+              << " step-relative remainders skipped (outside the ~0.0868 floor-binding band), smallest margin="
+              << smallestMargin << "\n";
+}
+
+// Neither sweep above bounds the blend's own magnitude between the five
+// points the shape test samples, or requires it to move in one direction
+// there -- an edit to ComputeRampStep could freeze a band of the knob and
+// jump, or double back near the top, while every existing check stays
+// green. This closes that gap directly on the pure function, at every
+// hundredth of curveAmount, for the same fixed `from`, the same seven
+// stepMagnitudes the floor sweep above uses, ten fixed remainings spanning
+// both slope regimes of the blend plus four step-relative ones, and both
+// directions. A (stepMagnitude, remaining) pair with remaining <=
+// stepMagnitude is skipped and counted: the finishing branch returns the
+// target outright, so progress is constant in the blend by construction.
+//
+// Relation (a) is exact, not approximate: appliedMagnitude is affine in
+// curveAmount (stepMagnitude * [1 - c * (1 - kReach99 * remaining)]), and
+// the floor clamp is a max of two affine functions, so progress is monotone
+// in the blend as a matter of structure -- the shipped mechanism has no
+// rounding path that could earn a nonzero tolerance here.
+//
+// Relation (b) bounds how much of the travel a single hundredth can carry.
+// The floor clamp is the only kink in an otherwise-affine run, and it binds
+// at curveAmount = 0.6 / (1 - kReach99 * remaining), which is at least 0.6
+// (1 - kCurveMinProgress) since the denominator is at most 1. The affine
+// run before that bind therefore spans at least 60 of the 100 hundredths,
+// so no single hundredth can carry more than travel/60, i.e. 1.667 times an
+// even hundredth's share -- 2.0 keeps headroom over that structural bound
+// and is written as a literal so a retune of the floor, which would also
+// move this bound, has to say so here rather than inherit it silently.
+// `fromUlp` is subtracted because the accumulator quantizes increments to a
+// whole ulp of `from`, which can lump the last hundredth's share by that
+// much; below that quantum an even share cannot be represented at all, so
+// those rows are skipped and counted rather than asserted on.
+TEST_CASE(compute_ramp_step_moves_the_blend_evenly_across_the_knob) {
+    constexpr float from = 0.3f;
+    const float stepMagnitudes[7] = {
+        1e-5f, 1e-4f, 1e-3f, 1e-2f,
+        1.0f / (dsp::VcoAdsrState::kMinAttackSeconds * 44100.0f),
+        0.03125f,
+        0.125f,
+    };
+    const float remainders[10] = {1e-4f, 1e-3f, 1e-2f, 0.05f, 0.0868f, 0.1f, 0.2172f, 0.3f, 0.5f, 1.0f};
+    const float stepRelativeMultipliers[4] = {1.5f, 2.0f, 4.0f, 10.0f};
+    const float fromUlp = std::nextafter(from, std::numeric_limits<float>::infinity()) - from;
+
+    int rowCount = 0;
+    int snapSkipCount = 0;
+    int belowUlpSkipCount = 0;
+    double worstBackwardUlp = 0.0;
+    double worstEvennessRatio = 0.0;
+
+    auto runPair = [&](float stepMagnitude, float remaining) {
+        if (!(remaining > stepMagnitude)) {
+            ++snapSkipCount;
+            return;
+        }
+        for (int dir = 0; dir < 2; ++dir) {
+            const float dirSign = (dir == 0) ? 1.0f : -1.0f;
+            const float target = from + dirSign * remaining;
+
+            double progress[101];
+            for (int c = 0; c <= 100; ++c) {
+                const float curveAmount = static_cast<float>(c) / 100.0f;
+                const float result = dsp::VcoAdsrState::ComputeRampStep(from, target, stepMagnitude, curveAmount);
+                progress[c] = std::fabs(static_cast<double>(result) - static_cast<double>(from));
+            }
+
+            const double endpointDelta = progress[100] - progress[0];
+            const double sign = (endpointDelta > 0.0) ? 1.0 : ((endpointDelta < 0.0) ? -1.0 : 0.0);
+            const double travel = std::fabs(endpointDelta);
+
+            double maxIncrement = 0.0;
+            for (int c = 1; c <= 100; ++c) {
+                const double increment = progress[c] - progress[c - 1];
+                const double backwardMove = std::max(0.0, -(increment * sign));
+                worstBackwardUlp = std::max(worstBackwardUlp, backwardMove / static_cast<double>(fromUlp));
+                REQUIRE_TRUE(increment * sign >= 0.0);
+                maxIncrement = std::max(maxIncrement, std::fabs(increment));
+            }
+
+            if (travel > 100.0 * static_cast<double>(fromUlp)) {
+                REQUIRE_TRUE(maxIncrement - fromUlp <= 2.0 * (travel / 100.0));
+                worstEvennessRatio = std::max(worstEvennessRatio,
+                                              (maxIncrement - static_cast<double>(fromUlp)) / (travel / 100.0));
+            } else {
+                ++belowUlpSkipCount;
+            }
+            ++rowCount;
+        }
+    };
+
+    for (float stepMagnitude : stepMagnitudes) {
+        for (float remaining : remainders) {
+            runPair(stepMagnitude, remaining);
+        }
+        for (float multiplier : stepRelativeMultipliers) {
+            runPair(stepMagnitude, multiplier * stepMagnitude);
+        }
+    }
+
+    std::cout << "compute_ramp_step_moves_the_blend_evenly_across_the_knob: " << rowCount << " rows, "
+              << snapSkipCount << " snap skips, " << belowUlpSkipCount
+              << " below one ulp per hundredth; worst backward move = " << worstBackwardUlp
+              << " ulp, worst evenness ratio = " << worstEvennessRatio << "\n";
+}
+
+// Both sweeps above vary remaining, step and blend but call
+// ComputeRampStep from one fixed level -- 0.3f here, 0.0f in the snap
+// sweep's first block. The law they check is written in remaining
+// distance and is one law for all three stages, so progress must not
+// depend on the level a ramp starts from at all. A term keyed to `from`
+// -- a level-dependent bias, or a ripple gated off at the levels those
+// sweeps happen to fix -- changes the shape of every ramp that starts
+// anywhere else, which is every retrigger landing mid-ramp, and nothing
+// above sees it: the floor relation is one-sided and the evenness
+// relation is about the blend axis, so a bias that is affine in `from`
+// satisfies both at every start value. This sweeps the same grid across
+// a set of start values and requires equal progress.
+//
+// A row-group whose start values do not all land on the same side of the
+// snap boundary is skipped and counted. `target = from +/- remaining`
+// rounds to a whole ulp of target, so a nominal remaining sitting at the
+// boundary recomputes to just over one step for one start and just under
+// for another; the snap is a genuine discontinuity of up to
+// (1 - kCurveMinProgress) * stepMagnitude, and comparing across it would
+// be comparing two different branches rather than two start levels.
+//
+// Tolerance: kTranslationUlpMultiple ulps of the largest of |from| and
+// |target| in the row. Two roundings feed the spread. The accumulator
+// (`from + boundedProgress`) rounds to a whole ulp of its own value, at
+// most half an ulp per start and so at most one ulp between two. And the
+// recomputed remaining differs between starts by at most half an ulp
+// each, which progress follows with slope curveAmount * kReach99 *
+// stepMagnitude -- at most 4.605170 * 0.125 = 0.576 ulp over this grid's
+// largest step. `|result - from|` is itself exact (Sterbenz: result and
+// from are within a factor of two here). That bounds the spread near 1.6
+// ulps; the shipped function measures 0.625. The literal 4.0 clears both
+// and is still five orders of magnitude under the smallest level-keyed
+// bias worth injecting at this grid's smallest step.
+TEST_CASE(compute_ramp_step_depends_on_remaining_distance_only) {
+    constexpr double kTranslationUlpMultiple = 4.0;
+    const float stepMagnitudes[7] = {
+        1e-5f, 1e-4f, 1e-3f, 1e-2f,
+        1.0f / (dsp::VcoAdsrState::kMinAttackSeconds * 44100.0f),
+        0.03125f,
+        0.125f,
+    };
+    const float remainders[10] = {1e-4f, 1e-3f, 1e-2f, 0.05f, 0.0868f, 0.1f, 0.2172f, 0.3f, 0.5f, 1.0f};
+    const float stepRelativeMultipliers[4] = {1.5f, 2.0f, 4.0f, 10.0f};
+    // Spanning the level range a voice actually occupies, plus (below) the
+    // largest start that still keeps the target inside [0, 1] for this
+    // row's own remaining and direction.
+    const float baseStarts[6] = {0.0f, 0.05f, 0.3f, 0.5f, 0.7f, 0.95f};
+
+    long rowCount = 0;
+    long singleStartSkips = 0;
+    long snapStraddleSkips = 0;
+    double worstSpreadUlps = 0.0;
+
+    auto runPair = [&](float stepMagnitude, float remaining) {
+        for (int dir = 0; dir < 2; ++dir) {
+            const float dirSign = (dir == 0) ? 1.0f : -1.0f;
+
+            std::vector<float> starts;
+            for (float start : baseStarts) {
+                const float target = start + dirSign * remaining;
+                if (target >= 0.0f && target <= 1.0f) {
+                    starts.push_back(start);
+                }
+            }
+            const float extremeStart = (dir == 0) ? (1.0f - remaining) : remaining;
+            if (extremeStart >= 0.0f && extremeStart <= 1.0f &&
+                std::find(starts.begin(), starts.end(), extremeStart) == starts.end()) {
+                starts.push_back(extremeStart);
+            }
+            if (starts.size() < 2) {
+                ++singleStartSkips;
+                continue;
+            }
+
+            bool firstSnaps = false;
+            bool straddles = false;
+            for (size_t i = 0; i < starts.size(); ++i) {
+                const float target = starts[i] + dirSign * remaining;
+                const bool snaps = std::fabs(target - starts[i]) <= stepMagnitude;
+                if (i == 0) {
+                    firstSnaps = snaps;
+                } else if (snaps != firstSnaps) {
+                    straddles = true;
+                }
+            }
+            if (straddles) {
+                ++snapStraddleSkips;
+                continue;
+            }
+
+            for (int c = 0; c <= 100; ++c) {
+                const float curveAmount = static_cast<float>(c) / 100.0f;
+                double lowest = std::numeric_limits<double>::max();
+                double highest = -1.0;
+                double rowUlp = 0.0;
+                for (float start : starts) {
+                    const float target = start + dirSign * remaining;
+                    const float result =
+                        dsp::VcoAdsrState::ComputeRampStep(start, target, stepMagnitude, curveAmount);
+                    const double progress = std::fabs(static_cast<double>(result) - static_cast<double>(start));
+                    lowest = std::min(lowest, progress);
+                    highest = std::max(highest, progress);
+                    const float larger = std::max(std::fabs(start), std::fabs(target));
+                    rowUlp = std::max(rowUlp, static_cast<double>(
+                                                   std::nextafter(larger, std::numeric_limits<float>::infinity()) -
+                                                   larger));
+                }
+                const double spreadUlps = (highest - lowest) / rowUlp;
+                worstSpreadUlps = std::max(worstSpreadUlps, spreadUlps);
+                REQUIRE_TRUE(spreadUlps <= kTranslationUlpMultiple);
+                ++rowCount;
+            }
+        }
+    };
+
+    for (float stepMagnitude : stepMagnitudes) {
+        for (float remaining : remainders) {
+            runPair(stepMagnitude, remaining);
+        }
+        for (float multiplier : stepRelativeMultipliers) {
+            runPair(stepMagnitude, multiplier * stepMagnitude);
+        }
+    }
+
+    std::cout << "compute_ramp_step_depends_on_remaining_distance_only: " << rowCount << " rows, "
+              << singleStartSkips << " single-start skips, " << snapStraddleSkips
+              << " snap-straddle skips; worst spread across start values = " << worstSpreadUlps << " ulp\n";
+}
+
+// The sweep above varies the level a ramp starts from, but it compares each
+// direction only against itself: its `dir` loop fixes the sign of remaining
+// and spreads across start values inside that sign. The floor and evenness
+// sweeps do the same -- they drive both directions but assert per-direction
+// relations (a one-sided floor, a monotone blend increment), and a uniform
+// per-direction scale factor keeps every one of those relations true. The
+// trajectory tests read each stage on its own: nothing there requires
+// Attack's measured shape to match Decay's or Release's at the same
+// remaining distance. So rising-versus-falling -- the one axis on which
+// Attack differs from Decay and Release at all -- is the axis no check
+// compares, and the law under test is one law for all three stages, written
+// in remaining distance, with no direction argument in it.
+//
+// This sweeps mirror pairs. For a start `lo` and a travel `r`, the ascending
+// call runs lo -> lo+r and the descending call runs lo+r -> lo. `(lo+r) - lo`
+// and `lo - (lo+r)` are exact negations of each other in IEEE arithmetic, so
+// both calls see a bit-identical |remaining|, a bit-identical stepMagnitude
+// and a bit-identical curveAmount; every quantity the function computes
+// before the accumulator is bit-identical too, and the two progress
+// magnitudes must agree.
+//
+// The mirror construction needs no skip rules, unlike the start-value sweep
+// above. A row inside the snap returns the target on both sides, so progress
+// is |r| exactly in both directions and the two agree bit for bit. No row on
+// this grid reaches the target clamp out of the curved branch: the largest
+// step is 0.125, appliedMagnitude is at most stepMagnitude * max(1, kReach99
+// * absRemaining), and that stays under absRemaining whenever stepMagnitude
+// is under absRemaining and kReach99 * stepMagnitude is under 1.
+//
+// Tolerance: kDirectionUlpMultiple ulps of the larger of |lo| and |lo+r|.
+// Only the accumulator separates the two sides. Ascending returns fl(lo + p)
+// and descending returns fl((lo+r) - p) for one shared magnitude p, each
+// rounded to at most half an ulp of its own value, and the progress this
+// check reads is a further difference against each side's own start, at most
+// another half ulp. That bounds the spread at two ulps of the row's larger
+// magnitude; the shipped function measures exactly 1.0. The literal 2.0
+// is that derived bound itself, not a margin above it: scaling the
+// descending exponential term by (1 - eps) separates the two sides by eps *
+// curveAmount * kReach99 * stepMagnitude * absRemaining, which at this
+// grid's worst row passes four ulps for any eps above about 4e-6.
+TEST_CASE(compute_ramp_step_is_the_same_law_ascending_and_descending) {
+    constexpr double kDirectionUlpMultiple = 2.0;
+    const float stepMagnitudes[7] = {
+        1e-5f, 1e-4f, 1e-3f, 1e-2f,
+        1.0f / (dsp::VcoAdsrState::kMinAttackSeconds * 44100.0f),
+        0.03125f,
+        0.125f,
+    };
+    const float remainders[10] = {1e-4f, 1e-3f, 1e-2f, 0.05f, 0.0868f, 0.1f, 0.2172f, 0.3f, 0.5f, 1.0f};
+    const float stepRelativeMultipliers[4] = {1.5f, 2.0f, 4.0f, 10.0f};
+    // Spanning the level range a voice actually occupies; a pair whose upper
+    // end would leave [0, 1] is out of range for a real ramp and is skipped.
+    const float baseStarts[6] = {0.0f, 0.05f, 0.3f, 0.5f, 0.7f, 0.95f};
+
+    long rowCount = 0;
+    long outOfRangeSkips = 0;
+    double worstSpreadUlps = 0.0;
+
+    auto runPair = [&](float stepMagnitude, float remaining) {
+        for (float lo : baseStarts) {
+            const float hi = lo + remaining;
+            if (!(hi >= 0.0f && hi <= 1.0f)) {
+                ++outOfRangeSkips;
+                continue;
+            }
+            REQUIRE_TRUE(std::fabs(hi - lo) == std::fabs(lo - hi));
+            const float larger = std::max(std::fabs(lo), std::fabs(hi));
+            const double rowUlp = static_cast<double>(
+                std::nextafter(larger, std::numeric_limits<float>::infinity()) - larger);
+            for (int c = 0; c <= 100; ++c) {
+                const float curveAmount = static_cast<float>(c) / 100.0f;
+                const float ascending =
+                    dsp::VcoAdsrState::ComputeRampStep(lo, hi, stepMagnitude, curveAmount);
+                const float descending =
+                    dsp::VcoAdsrState::ComputeRampStep(hi, lo, stepMagnitude, curveAmount);
+                const double ascendingProgress =
+                    std::fabs(static_cast<double>(ascending) - static_cast<double>(lo));
+                const double descendingProgress =
+                    std::fabs(static_cast<double>(descending) - static_cast<double>(hi));
+                const double spreadUlps = std::fabs(ascendingProgress - descendingProgress) / rowUlp;
+                worstSpreadUlps = std::max(worstSpreadUlps, spreadUlps);
+                REQUIRE_TRUE(spreadUlps <= kDirectionUlpMultiple);
+                ++rowCount;
+            }
+        }
+    };
+
+    for (float stepMagnitude : stepMagnitudes) {
+        for (float remaining : remainders) {
+            runPair(stepMagnitude, remaining);
+        }
+        for (float multiplier : stepRelativeMultipliers) {
+            runPair(stepMagnitude, multiplier * stepMagnitude);
+        }
+    }
+
+    std::cout << "compute_ramp_step_is_the_same_law_ascending_and_descending: " << rowCount << " rows, "
+              << outOfRangeSkips << " out-of-range skips; worst ascending-to-descending spread = "
+              << worstSpreadUlps << " ulp\n";
 }
 
 // -----------------------------------------------------------------------
