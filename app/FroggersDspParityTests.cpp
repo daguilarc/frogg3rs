@@ -28,6 +28,7 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -9532,6 +9533,52 @@ struct Correlation {
     }
 };
 
+// Shared stimulus and measurement for both stereo-delay width-travel checks
+// below: same fixed-seed noise burst, same 50 Hz shaper, same warmup and
+// measure lengths, same MapRowsToDelayParams call with send=1.0f. Feedback
+// and width are the only knobs that vary between call sites, so both tests
+// drive the identical rig and differ only in which point on it they read.
+static std::tuple<double, double, double, double> MeasureStereoDelayCorrelationAndBalance(
+    float feedback, float widthKnob) {
+    constexpr float sampleRate = 48000.0f;
+    constexpr int kWarmupSamples = 12000;
+    constexpr int kMeasureSamples = 12000;
+
+    std::uint32_t lcg = 20260913u;
+    std::vector<float> noise;
+    noise.reserve(kWarmupSamples + kMeasureSamples);
+    for (int i = 0; i < kWarmupSamples + kMeasureSamples; ++i) {
+        noise.push_back(0.5f * NextLcgBipolarSample(lcg));
+    }
+
+    dsp::StereoDelay delay;
+    delay.SetSampleRate(sampleRate);
+    dsp::OnePoleLowPass shaper;
+    shaper.SetAlphaFromNatFreq(50.0f / sampleRate);
+
+    const dsp::DelayParams p = dsp::MapRowsToDelayParams(
+        /*time=*/0.3f, /*send=*/1.0f, /*feedback=*/feedback, /*width=*/widthKnob,
+        /*freeze=*/0.0f, /*mod=*/0.0f, /*mix=*/1.0f, /*reverse=*/0.0f, /*diffusion=*/0.0f);
+
+    Correlation corr;
+    double sumSqL = 0.0, sumSqR = 0.0;
+    for (int i = 0; i < kWarmupSamples + kMeasureSamples; ++i) {
+        const float in = shaper.Process(noise[static_cast<std::size_t>(i)]);
+        const dsp::DelayWetPair wet = delay.Process(in, p);
+        if (i >= kWarmupSamples) {
+            const double l = static_cast<double>(wet.l);
+            const double r = static_cast<double>(wet.r);
+            corr.Add(l, r);
+            sumSqL += l * l;
+            sumSqR += r * r;
+        }
+    }
+    const double rmsL = std::sqrt(sumSqL / static_cast<double>(kMeasureSamples));
+    const double rmsR = std::sqrt(sumSqR / static_cast<double>(kMeasureSamples));
+    const double balance = (rmsL + rmsR) > 0.0 ? std::abs(rmsL - rmsR) / (rmsL + rmsR) : 1.0;
+    return std::make_tuple(std::abs(corr.Value()), balance, rmsL, rmsR);
+}
+
 // Feedback-path cross-feed is fixed at zero, so widthSpread's read-time
 // offset is the only mechanism Stereo width drives; this checks that the
 // resulting pair decorrelates across the width travel, stays level-balanced,
@@ -9546,50 +9593,10 @@ struct Correlation {
 // correlation probe at the first step and gives no dynamic range across the
 // travel.
 TEST_CASE(stereo_delay_cross_feed_removal_decorrelates_the_feedback_pair_across_width) {
-    constexpr float sampleRate = 48000.0f;
-    constexpr int kWarmupSamples = 12000;
-    constexpr int kMeasureSamples = 12000;
-
-    std::uint32_t lcg = 20260913u;
-    std::vector<float> noise;
-    noise.reserve(kWarmupSamples + kMeasureSamples);
-    for (int i = 0; i < kWarmupSamples + kMeasureSamples; ++i) {
-        noise.push_back(0.5f * NextLcgBipolarSample(lcg));
-    }
-
-    const auto measure = [&](float widthKnob) {
-        dsp::StereoDelay delay;
-        delay.SetSampleRate(sampleRate);
-        dsp::OnePoleLowPass shaper;
-        shaper.SetAlphaFromNatFreq(50.0f / sampleRate);
-
-        const dsp::DelayParams p = dsp::MapRowsToDelayParams(
-            /*time=*/0.3f, /*send=*/1.0f, /*feedback=*/0.7f, /*width=*/widthKnob,
-            /*freeze=*/0.0f, /*mod=*/0.0f, /*mix=*/1.0f, /*reverse=*/0.0f, /*diffusion=*/0.0f);
-
-        Correlation corr;
-        double sumSqL = 0.0, sumSqR = 0.0;
-        for (int i = 0; i < kWarmupSamples + kMeasureSamples; ++i) {
-            const float in = shaper.Process(noise[static_cast<std::size_t>(i)]);
-            const dsp::DelayWetPair wet = delay.Process(in, p);
-            if (i >= kWarmupSamples) {
-                const double l = static_cast<double>(wet.l);
-                const double r = static_cast<double>(wet.r);
-                corr.Add(l, r);
-                sumSqL += l * l;
-                sumSqR += r * r;
-            }
-        }
-        const double rmsL = std::sqrt(sumSqL / static_cast<double>(kMeasureSamples));
-        const double rmsR = std::sqrt(sumSqR / static_cast<double>(kMeasureSamples));
-        const double balance = (rmsL + rmsR) > 0.0 ? std::abs(rmsL - rmsR) / (rmsL + rmsR) : 1.0;
-        return std::make_tuple(std::abs(corr.Value()), balance, rmsL, rmsR);
-    };
-
     const float widths[] = {0.25f, 0.50f, 0.75f, 1.00f};
     double prevCorr = 2.0;  // above any reachable |corr|, so the first row's ordering check is vacuous.
     for (float w : widths) {
-        const auto [corrAbs, balance, rmsL, rmsR] = measure(w);
+        const auto [corrAbs, balance, rmsL, rmsR] = MeasureStereoDelayCorrelationAndBalance(0.7f, w);
         std::cout << "  [delay cross-feed removal] width=" << w << " |corr|=" << corrAbs
                   << " balance=" << balance << "\n";
         REQUIRE_TRUE(std::isfinite(rmsL) && rmsL != 0.0 && std::isfinite(rmsR) && rmsR != 0.0);  // liveness: this row's channels are neither dead nor non-finite.
@@ -9598,6 +9605,47 @@ TEST_CASE(stereo_delay_cross_feed_removal_decorrelates_the_feedback_pair_across_
         REQUIRE_TRUE(corrAbs < prevCorr);  // strictly falling row-to-row across width > 0.
         prevCorr = corrAbs;
     }
+}
+
+// At Feedback 0 the feedback path is dead, so cross-feed removal cannot be
+// what moves this pair -- widthSpread's read-time offset (the same
+// mechanism the test above exercises at Feedback 0.7) is the only thing
+// left that can act. A sweep at every hundredth of the travel bounds a
+// defect that hides between sampled widths to under a hundredth of the
+// travel, the same granularity the parameter model uses elsewhere in this
+// file for "indistinguishable from its floor" -- it says nothing narrower
+// than that, which is the sweep's own limit. Width 0 is the positive
+// control: two reads of the same signal on both channels must correlate
+// perfectly, so an instrument that is not actually live would not print
+// exactly 1.0 there. Each fall is asserted as a relation against the
+// previous row, never against a recorded figure.
+TEST_CASE(stereo_delay_width_travel_decorrelates_at_every_hundredth_of_travel_at_feedback_zero) {
+    double prevCorr = 2.0;  // above any reachable |corr|, so i==0's ordering check is vacuous.
+    double smallestFall = 1e9;
+    int smallestFallAt = -1;
+    for (int i = 0; i <= 100; ++i) {
+        const float w = static_cast<float>(i) / 100.0f;
+        const auto [corrAbs, balance, rmsL, rmsR] = MeasureStereoDelayCorrelationAndBalance(0.0f, w);
+        if (i % 10 == 0) {
+            std::cout << "  [delay width travel, feedback 0, hundredths] i=" << i << " width=" << w
+                      << " |corr|=" << corrAbs << " balance=" << balance << "\n";
+        }
+        REQUIRE_TRUE(std::isfinite(rmsL) && rmsL != 0.0 && std::isfinite(rmsR) && rmsR != 0.0);  // liveness: this row's channels are neither dead nor non-finite.
+        REQUIRE_TRUE(balance < 0.06);
+        if (i == 0) {
+            REQUIRE_TRUE(std::abs(corrAbs - 1.0) < 1e-6);  // positive control: width 0 reads two identical channels.
+        } else {
+            REQUIRE_TRUE(corrAbs < prevCorr);  // strictly falling row-to-row across every hundredth of the travel.
+            const double fall = prevCorr - corrAbs;
+            if (fall < smallestFall) {
+                smallestFall = fall;
+                smallestFallAt = i;
+            }
+        }
+        prevCorr = corrAbs;
+    }
+    std::cout << "  [delay width travel, feedback 0, hundredths] smallest adjacent fall=" << smallestFall
+              << " at i=" << smallestFallAt << "\n";
 }
 
 // Damping's shared filter used to hold the tank's two output taps close
@@ -10492,6 +10540,48 @@ static long long MeasureReadAtLagSamples(dsp::StereoDelay& delay, const dsp::Del
     return static_cast<long long>(peakIndex) - static_cast<long long>(impulseIndex);
 }
 
+// StereoDelay::ReadAt (Delay.hpp) is a two-point linear interpolation: an
+// impulse written to the line comes back split across two adjacent samples,
+// weighted (1.0f - frac, frac) by how far the true read position sits
+// between them. The sample-granularity peak above finds whichever of the
+// two happens to be larger, which is only ever the INTEGER part of the read
+// position -- the larger sample's own share of the two samples' combined
+// magnitude IS that interpolation fraction, so adding (or subtracting) that
+// share onto (or from) the peak index recovers the fractional read position
+// to sub-sample precision, without touching ReadAt's private state at all.
+static double MeasureReadAtLagFractional(dsp::StereoDelay& delay, const dsp::DelayParams& p, size_t impulseIndex,
+                                          size_t measureLen, float* peakAbsOut = nullptr) {
+    std::vector<float> wetR(measureLen, 0.0f);
+    for (size_t i = 0; i < measureLen; ++i) {
+        const float bumpIn = (i == impulseIndex) ? 1.0f : 0.0f;
+        wetR[i] = delay.Process(bumpIn, p).r;
+    }
+
+    size_t peakIndex = impulseIndex;
+    float peakAbs = 0.0f;
+    for (size_t i = impulseIndex + 1; i < measureLen; ++i) {
+        if (std::fabs(wetR[i]) > peakAbs) {
+            peakAbs = std::fabs(wetR[i]);
+            peakIndex = i;
+        }
+    }
+    if (peakAbsOut != nullptr) {
+        *peakAbsOut = peakAbs;
+    }
+
+    const float peakMag = std::fabs(wetR[peakIndex]);
+    const float leftMag = (peakIndex > 0) ? std::fabs(wetR[peakIndex - 1]) : 0.0f;
+    const float rightMag = (peakIndex + 1 < measureLen) ? std::fabs(wetR[peakIndex + 1]) : 0.0f;
+
+    double fractionalPeak = static_cast<double>(peakIndex);
+    if (rightMag > leftMag) {
+        fractionalPeak += static_cast<double>(rightMag) / static_cast<double>(peakMag + rightMag);
+    } else {
+        fractionalPeak -= static_cast<double>(leftMag) / static_cast<double>(peakMag + leftMag);
+    }
+    return fractionalPeak - static_cast<double>(impulseIndex);
+}
+
 // dsp::StereoDelay::Process's own `widthSpread` term (Delay.hpp) is bounded
 // so that `baseSeconds + modSeconds + widthSpread` never asks ReadAt for
 // more than the delay line actually holds. Reachable from the shipping UI:
@@ -10569,6 +10659,330 @@ TEST_CASE(stereo_delay_width_spread_bound_is_inert_away_from_capacity) {
 
     REQUIRE_TRUE(peakAbs > 0.01f);
     REQUIRE_NEAR(static_cast<float>(lagSamples), expectedLagSamples, 1.0f);
+}
+
+// The right tap's read-time offset (widthSpread, Delay.hpp) is a function of
+// Delay time, Stereo width and Width balance only -- Freeze and Feedback sit
+// on the write side (WriteSample's own gain terms), not the read side, so no
+// other knob or setter should move where the first echo lands. This checks
+// that claim once per input, one at a time off the reference point, at the
+// sub-sample resolution MeasureReadAtLagFractional above gives (a term small
+// enough to sit inside the old integer helper's one-sample tolerance, such
+// as a fixed Freeze offset or a Crush-driven one, still moves this lag and
+// still fails here).
+//
+// FOUND (every DelayParams field, every public StereoDelay setter -- read
+// off the two struct/class definitions in dsp/Delay.hpp):
+//   dtim, dsnd, dfbk, dwid, dfrz, dfrzLatched, dmod, dmix, drev, ddif;
+//   SetSampleRate, SetFeedbackDrive, SetFeedbackTone, SetModRate,
+//   SetWidthBalance, SetCrush.
+// SWEPT (below): dfbk, dfrz (0.5 and 0.9 only), dsnd, dmix,
+//   SetFeedbackDrive, SetFeedbackTone, SetCrush, SetSampleRate.
+// EXCLUDED, each for a reason unrelated to whether the read-time formula is
+// right to test:
+//   - dtim, dwid, Width balance (SetWidthBalance): these three ARE the
+//     offset under test (baseSeconds, widthSpreadRaw and its widthBalance
+//     factor) -- varying them varies the quantity being measured, not a
+//     claimed independence from it.
+//   - dmod: moves the read by design (the LFO term added to timeL/timeR).
+//   - SetModRate: only reachable through dmod, which this test leaves at
+//     its default 0.0f, so the rate it sets has nothing to multiply here --
+//     excluded for the same reason as dmod, not swept for having no effect.
+//   - drev, ddif: a reversed (DelayReverser) or diffused (DelayDiffuser)
+//     echo is a different read entirely, not the plain two-tap ReadAt this
+//     probe locates -- their own tests cover them.
+//   - dfrzLatched: not part of the row -> DelayParams mapping and nothing in
+//     this suite ever sets it; Process only reads it as a SINK when true.
+//   - Freeze 1.0 specifically (dfrz is otherwise swept): the line admits no
+//     new input there -- WriteSample's `inSignal * (1.0f - freezeEff)` term
+//     is exactly zero by design at freeze==1 (documented lossless-hold
+//     ceiling), so an impulse fired under it never enters the line and
+//     there is nothing to time.
+//
+// Each row above is also driven a second time with the order reversed --
+// SetWidthBalance(1.0f) before the row's own setter instead of after --
+// because a setter can overwrite widthBalance, an input of this offset, and
+// the order this suite already used for every row would hide exactly that
+// overwrite until reversed.
+TEST_CASE(stereo_delay_right_tap_lag_moves_with_delay_time_width_and_balance_only) {
+    const float sr = 48000.0f;
+    const size_t impulseIndex = 1000;
+    // 568 is the sibling integer test's own measured lag at these settings,
+    // kept as a literal so the reference window is fixed before this test's
+    // own measurement of it runs.
+    const size_t referenceWindow = impulseIndex + static_cast<size_t>(1.5 * 568.0);
+
+    const auto makeReferenceParams = []() {
+        dsp::DelayParams p;
+        p.dtim = 0.3f;
+        p.dwid = 0.6f;
+        p.dsnd = 1.0f;
+        p.dmix = 1.0f;
+        return p;
+    };
+
+    double referenceLag = 0.0;
+    {
+        dsp::StereoDelay delay;
+        delay.SetSampleRate(sr);
+        delay.SetWidthBalance(1.0f);
+        dsp::DelayParams p = makeReferenceParams();
+        const size_t capacity = dsp::StereoDelay::CapacityForSampleRate(sr);
+        for (size_t i = 0; i < capacity + 8; ++i) {
+            delay.Process(0.0f, p);
+        }
+        float peakAbs = 0.0f;
+        referenceLag = MeasureReadAtLagFractional(delay, p, impulseIndex, referenceWindow, &peakAbs);
+        std::cout << "  [right tap lag] reference lag=" << referenceLag << " peak=" << peakAbs << "\n";
+        REQUIRE_TRUE(peakAbs > 0.01f);
+        // Must reproduce the sibling integer test's own 568-sample
+        // measurement within one sample, or this test's grid is being
+        // compared against the wrong reference point.
+        REQUIRE_NEAR(referenceLag, 568.0, 1.0);
+    }
+
+    // One row: fresh StereoDelay, one input off its default (`apply`),
+    // warmed and measured at `rowRate`. Compared against the reference in
+    // samples when rowRate is the shared 48kHz default, or in SECONDS
+    // (lag / rate) when rowRate itself is the swept input -- lag in samples
+    // scales with rate by design, so comparing raw sample counts across
+    // rates would fail for that reason alone, not a real defect.
+    const auto checkRow = [&](const std::string& label, float rowRate, auto apply) {
+        dsp::StereoDelay delay;
+        delay.SetSampleRate(rowRate);
+        delay.SetWidthBalance(1.0f);
+        dsp::DelayParams p = makeReferenceParams();
+        apply(delay, p);
+
+        const size_t rowCapacity = dsp::StereoDelay::CapacityForSampleRate(rowRate);
+        for (size_t i = 0; i < rowCapacity + 8; ++i) {
+            delay.Process(0.0f, p);
+        }
+
+        // The reference window scaled by how much the lag itself scales
+        // with rowRate, plus a small margin -- at a higher rate the same
+        // widthSpread-in-seconds lands at a proportionally larger sample
+        // index, and a fixed window would miss it.
+        const double rateScale = static_cast<double>(rowRate) / static_cast<double>(sr);
+        const size_t rowWindow = impulseIndex + static_cast<size_t>(1.5 * 568.0 * rateScale) + 8;
+
+        float peakAbs = 0.0f;
+        const double lag = MeasureReadAtLagFractional(delay, p, impulseIndex, rowWindow, &peakAbs);
+        std::cout << "  [right tap lag] " << label << " lag=" << lag << " peak=" << peakAbs << "\n";
+        REQUIRE_TRUE(peakAbs > 0.01f);
+        if (rowRate == sr) {
+            REQUIRE_TRUE(std::fabs(lag - referenceLag) < 0.05);
+        } else {
+            const double lagSeconds = lag / static_cast<double>(rowRate);
+            const double referenceLagSeconds = referenceLag / static_cast<double>(sr);
+            REQUIRE_TRUE(std::fabs(lagSeconds - referenceLagSeconds) < 0.05 / 48000.0);
+        }
+    };
+
+    const auto rowLabel = [](const char* name, float value) {
+        std::ostringstream oss;
+        oss << name << "=" << value;
+        return oss.str();
+    };
+
+    // Same row, order reversed: SetWidthBalance(1.0f) first (SetSampleRate
+    // moved after it here, since it is the row's own setter whenever rowRate
+    // is what varies), the row's setter after. A setter that overwrites
+    // widthBalance internally now reaches the measurement instead of being
+    // erased by a later reset to 1.0.
+    const auto checkRowWidthFirst = [&](const std::string& label, float rowRate, auto apply) {
+        dsp::StereoDelay delay;
+        delay.SetWidthBalance(1.0f);
+        delay.SetSampleRate(rowRate);
+        dsp::DelayParams p = makeReferenceParams();
+        apply(delay, p);
+
+        const size_t rowCapacity = dsp::StereoDelay::CapacityForSampleRate(rowRate);
+        for (size_t i = 0; i < rowCapacity + 8; ++i) {
+            delay.Process(0.0f, p);
+        }
+
+        const double rateScale = static_cast<double>(rowRate) / static_cast<double>(sr);
+        const size_t rowWindow = impulseIndex + static_cast<size_t>(1.5 * 568.0 * rateScale) + 8;
+
+        float peakAbs = 0.0f;
+        const double lag = MeasureReadAtLagFractional(delay, p, impulseIndex, rowWindow, &peakAbs);
+        std::cout << "  [right tap lag] " << label << " lag=" << lag << " peak=" << peakAbs << "\n";
+        REQUIRE_TRUE(peakAbs > 0.01f);
+        if (rowRate == sr) {
+            REQUIRE_TRUE(std::fabs(lag - referenceLag) < 0.05);
+        } else {
+            const double lagSeconds = lag / static_cast<double>(rowRate);
+            const double referenceLagSeconds = referenceLag / static_cast<double>(sr);
+            REQUIRE_TRUE(std::fabs(lagSeconds - referenceLagSeconds) < 0.05 / 48000.0);
+        }
+    };
+
+    for (float v : {0.5f, 0.9f}) {
+        checkRow(rowLabel("dfbk", v), sr, [v](dsp::StereoDelay&, dsp::DelayParams& p) { p.dfbk = v; });
+    }
+    for (float v : {0.5f, 0.9f}) {
+        checkRow(rowLabel("dfrz", v), sr, [v](dsp::StereoDelay&, dsp::DelayParams& p) { p.dfrz = v; });
+    }
+    checkRow(rowLabel("dsnd", 0.5f), sr, [](dsp::StereoDelay&, dsp::DelayParams& p) { p.dsnd = 0.5f; });
+    for (float v : {0.0f, 0.5f}) {
+        checkRow(rowLabel("dmix", v), sr, [v](dsp::StereoDelay&, dsp::DelayParams& p) { p.dmix = v; });
+    }
+    for (float v : {0.5f, 1.0f}) {
+        checkRow(rowLabel("SetFeedbackDrive", v), sr,
+                 [v](dsp::StereoDelay& d, dsp::DelayParams&) { d.SetFeedbackDrive(v); });
+    }
+    for (float v : {0.5f, 1.0f}) {
+        checkRow(rowLabel("SetFeedbackTone", v), sr,
+                 [v](dsp::StereoDelay& d, dsp::DelayParams&) { d.SetFeedbackTone(v); });
+    }
+    for (float v : {0.5f, 1.0f}) {
+        checkRow(rowLabel("SetCrush", v), sr, [v](dsp::StereoDelay& d, dsp::DelayParams&) { d.SetCrush(v); });
+    }
+    for (float rate : {44100.0f, 96000.0f}) {
+        checkRow(rowLabel("SetSampleRate", rate), rate, [](dsp::StereoDelay&, dsp::DelayParams&) {});
+    }
+
+    for (float v : {0.5f, 0.9f}) {
+        checkRowWidthFirst(rowLabel("dfbk", v) + " after width balance", sr,
+                            [v](dsp::StereoDelay&, dsp::DelayParams& p) { p.dfbk = v; });
+    }
+    for (float v : {0.5f, 0.9f}) {
+        checkRowWidthFirst(rowLabel("dfrz", v) + " after width balance", sr,
+                            [v](dsp::StereoDelay&, dsp::DelayParams& p) { p.dfrz = v; });
+    }
+    checkRowWidthFirst(rowLabel("dsnd", 0.5f) + " after width balance", sr,
+                        [](dsp::StereoDelay&, dsp::DelayParams& p) { p.dsnd = 0.5f; });
+    for (float v : {0.0f, 0.5f}) {
+        checkRowWidthFirst(rowLabel("dmix", v) + " after width balance", sr,
+                            [v](dsp::StereoDelay&, dsp::DelayParams& p) { p.dmix = v; });
+    }
+    for (float v : {0.5f, 1.0f}) {
+        checkRowWidthFirst(rowLabel("SetFeedbackDrive", v) + " after width balance", sr,
+                            [v](dsp::StereoDelay& d, dsp::DelayParams&) { d.SetFeedbackDrive(v); });
+    }
+    for (float v : {0.5f, 1.0f}) {
+        checkRowWidthFirst(rowLabel("SetFeedbackTone", v) + " after width balance", sr,
+                            [v](dsp::StereoDelay& d, dsp::DelayParams&) { d.SetFeedbackTone(v); });
+    }
+    for (float v : {0.5f, 1.0f}) {
+        checkRowWidthFirst(rowLabel("SetCrush", v) + " after width balance", sr,
+                            [v](dsp::StereoDelay& d, dsp::DelayParams&) { d.SetCrush(v); });
+    }
+    for (float rate : {44100.0f, 96000.0f}) {
+        checkRowWidthFirst(rowLabel("SetSampleRate", rate) + " after width balance", rate,
+                            [](dsp::StereoDelay&, dsp::DelayParams&) {});
+    }
+}
+
+// The right channel of a dtim=0.3/dwid=0.6/Width balance=1.0 instance reads
+// the SAME buffer content as the left channel of a second, dwid=0.0
+// instance whose Delay time is set so its base read lands exactly at the
+// first instance's right-tap lag (dtim' = log(baseSeconds'/0.001) /
+// log(2000), baseSeconds' = the first instance's own right-tap read time --
+// see dsp::ExpMapCompute, dsp/DspMath.hpp). Process() writes one mono input
+// to both lines and reads the right channel at baseSeconds+modSeconds+
+// widthSpread while the left tap of the second instance reads its own
+// buffer at baseSeconds' -- with modulation at zero those are the same lag,
+// so the two channels carry the same signal apart from what daylights the
+// two lines apart. That daylight is the fixed-zero cross-feed weight into
+// the feedback path (dsp/Delay.hpp, `const float cross = 0.0f;` in
+// Process()): nothing in either instance's feedback loop correlates its own
+// L and R, so the two instances stay independent lines reading the same
+// history at their respective lags rather than two taps into one shared,
+// cross-fed loop. Modulation, Reverse blend and Diffusion are held at zero
+// because each makes the two instances legitimately differ: Modulation adds
+// a per-channel LFO offset the second instance's single tap does not share,
+// and Reverse/Diffusion each apply their own per-channel processing after
+// the forward read that the second instance's plain tap never sees.
+//
+// Floor measured by a since-removed temp_channel_independence_floor test,
+// same rig, same 24000-sample run, same last-12000-sample measurement
+// window, same fixed-seed LCG-through-50Hz-lowpass stimulus fed to both
+// instances: unlatched max|wet.r(first)-wet.l(second)| = 3.77800316e-05
+// against rmsR(first) = 0.0211719042 (ratio 0.0018, small against the
+// signal); latched (dfrzLatched engaged on both instances from sample 12000
+// on) max = 0.0012618117 against rmsR(first) = 0.0421889927 (ratio 0.0299).
+//
+// Each row's bound below is 4x that row's own measured floor -- not the
+// 100x this check first shipped with. That 100x figure was never derived
+// from a measurement: a positive-control run injecting three deliberate
+// cross-talk defects (a nonzero cross-feed weight into the feedback path, a
+// Reverse-blend-branch leak gated on the Freeze latch, and a small
+// dwid/dtim-scaled feedback cross-term) found the WEAKEST of the three
+// registered at only ~8x the floor of the row it landed on (the latched
+// row's feedback-cross-term defect, max 0.0105436333 against a floor of
+// 0.0012618117) -- comfortably under a 100x bound, so that bound passed
+// every injected defect silently and had to be rederived. 4x sits strictly
+// between the floor itself (1x, where the unperturbed check reads today)
+// and that weakest observed defect (8x), with margin on both sides: still
+// 4x clear of the float-accumulation floor, and still 2x clear of the
+// weakest defect this suite has actually measured.
+TEST_CASE(stereo_delay_right_channel_is_an_independent_line_at_its_own_lag) {
+    constexpr float sr = 48000.0f;
+    constexpr int kSamples = 24000;
+    constexpr int kMeasureStart = 12000;
+    constexpr int kLatchFrom = 12000;
+
+    const auto measureRow = [&](bool latch) {
+        dsp::StereoDelay first;
+        dsp::StereoDelay second;
+        first.SetSampleRate(sr);
+        second.SetSampleRate(sr);
+        first.SetWidthBalance(1.0f);
+        second.SetWidthBalance(1.0f);
+
+        dsp::DelayParams pFirst;
+        pFirst.dtim = 0.3f;
+        pFirst.dwid = 0.6f;
+        pFirst.dsnd = 1.0f;
+        pFirst.dmix = 1.0f;
+        pFirst.dfbk = 0.7f;
+
+        dsp::DelayParams pSecond;
+        pSecond.dtim = 0.3250786483083133f;  // dtim' = log(baseSeconds'/0.001)/log(2000), baseSeconds' = pFirst's right-tap read time.
+        pSecond.dwid = 0.0f;
+        pSecond.dsnd = 1.0f;
+        pSecond.dmix = 1.0f;
+        pSecond.dfbk = 0.7f;
+
+        std::uint32_t lcg = 20260913u;
+        dsp::OnePoleLowPass shaper;
+        shaper.SetAlphaFromNatFreq(50.0f / sr);
+
+        double maxDiff = 0.0;
+        double sumSqR = 0.0;
+        int measured = 0;
+        for (int i = 0; i < kSamples; ++i) {
+            if (latch && i >= kLatchFrom) {
+                pFirst.dfrzLatched = true;
+                pSecond.dfrzLatched = true;
+            }
+            const float in = shaper.Process(0.5f * NextLcgBipolarSample(lcg));
+            const dsp::DelayWetPair wetFirst = first.Process(in, pFirst);
+            const dsp::DelayWetPair wetSecond = second.Process(in, pSecond);
+            if (i >= kMeasureStart) {
+                const double diff = std::fabs(static_cast<double>(wetFirst.r) - static_cast<double>(wetSecond.l));
+                maxDiff = std::max(maxDiff, diff);
+                sumSqR += static_cast<double>(wetFirst.r) * static_cast<double>(wetFirst.r);
+                ++measured;
+            }
+        }
+        const double rmsR = std::sqrt(sumSqR / static_cast<double>(measured));
+        return std::make_tuple(maxDiff, rmsR);
+    };
+
+    const auto [maxDiffUnlatched, rmsRUnlatched] = measureRow(false);
+    std::cout << "  [right channel independence] unlatched max|wet.r(first)-wet.l(second)|=" << maxDiffUnlatched
+              << " rmsR(first)=" << rmsRUnlatched << "\n";
+    REQUIRE_TRUE(rmsRUnlatched > 0.01);                       // liveness.
+    REQUIRE_TRUE(maxDiffUnlatched < 4.0 * 3.77800316e-05);  // 4x this row's own measured floor; the weakest injected cross-talk this suite has measured registered ~8x the (latched-row) floor, so 4x still catches it with a 2x margin while staying 4x clear of the floor itself.
+
+    const auto [maxDiffLatched, rmsRLatched] = measureRow(true);
+    std::cout << "  [right channel independence] latched   max|wet.r(first)-wet.l(second)|=" << maxDiffLatched
+              << " rmsR(first)=" << rmsRLatched << "\n";
+    REQUIRE_TRUE(rmsRLatched > 0.01);                        // liveness.
+    REQUIRE_TRUE(maxDiffLatched < 4.0 * 0.0012618117);  // 4x this row's own measured floor; the weakest injected cross-talk this suite has measured registered ~8x this same floor, so 4x still catches it with a 2x margin while staying 4x clear of the floor itself.
 }
 
 // Sweeps a real dsp::StereoDelay across Delay time, Stereo width, Width
