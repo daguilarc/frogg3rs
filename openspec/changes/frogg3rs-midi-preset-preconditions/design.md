@@ -59,18 +59,22 @@ against a remote: (1) `git -C External/Sheaf status --short` is empty (a
 clean tree, the same condition Sheaf's own task 7.8 confirms before
 committing); (2) `git -C External/Sheaf show HEAD:openspec/changes/midi-controller-resilience/tasks.md
 | grep -c '^- \[ \]'` reports `0` — every task through 7.9 is ticked in the
-commit itself, not merely in the working tree; and (3) both symbols resolve
-out of that same commit object, not the working tree, and not a bare
-substring match that a comment or a TODO could also satisfy: `git -C
-External/Sheaf grep -n declaredPreconditions HEAD --
-projects/synth/include/synth/MidiAppCatalog.hpp | grep -v -E ':[[:space:]]*//'`
-and `git -C External/Sheaf grep -n HeldModifierClearSource HEAD --
-projects/synth/include/synth/MidiController.hpp | grep -v -E ':[[:space:]]*//'`
-(the second `grep -v` drops any matched line whose text, after `git grep
--n`'s own `path:line:` prefix, begins with `//`, so a stray comment or a
-`// TODO: add declaredPreconditions` naming the symbol does not pass a check
-meant to confirm a real declaration), each returning a real member or
-enumerator. None
+commit itself, not merely in the working tree, per the convention Sheaf's own
+task 7.8 states (its coordinator ticks 7.7, 7.8 and 7.9 themselves, 7.7
+whether its archive ran or was reported blocked, before committing); and (3)
+the declared symbols resolve out of that same commit object, not the working
+tree, and not a bare substring match a comment could also satisfy: `git -C
+External/Sheaf show HEAD:projects/synth/include/synth/MidiAppCatalog.hpp |
+sed 's#//.*##' | grep -n declaredPreconditions` and `git -C External/Sheaf
+show HEAD:projects/synth/include/synth/MidiController.hpp | sed 's#//.*##' |
+grep -nE '\bHeldModifierClearSource\b|\bTemplateChangeRateLimiter\b|\bkHeldModifierCeilingMicros\b'`
+(stripping everything from the first `//` on each line before grepping, so a
+trailing comment naming the symbol does not pass a check meant to confirm a
+real declaration — a declaration wrapped in a `/* */` block comment is a
+residual gap this line-oriented stripping does not close, which is why task
+4.1's own gate also probes for delivered, passing test cases and a real
+wasm-export entry, not only these declarations), each returning a real
+member, enumerator or constant. None
 of this is a claim about upstream, a pull request, or `main` on either
 repository — it is a property of this local checkout's own object store.
 Task 4.2 performs the pin advance from that same local checkout, not a
@@ -191,10 +195,15 @@ way.
 **"Only the Twister carries Shift or shifted jobs" needs a check that actually
 tests every device, not three named ones.** The existing
 `device_defaults_are_valid_and_address_exactly_the_documented_controls` case
-only negates `shiftedPress`/`Type::Shift` for the Twister's own buttons, a
-`{&generic, &ableton}` loop, and a separate Launchpad loop
-(`app/FroggersMidiCatalogTests.cpp:510`, `:587-596`). A future seventh default
-falls into none of them. The check this change adds is one loop over
+negates `shiftedPress` for the Twister's own buttons and for a
+`{&generic, &ableton}` loop (`app/FroggersMidiCatalogTests.cpp:510`); a
+separate case, `launchpad_defaults_positions_carry_their_own_controller`,
+negates it again for the Launchpad loop (`:596`). `Type::Shift` itself is
+asserted only positively, for the Twister's own Shift button (`:471`, `:474`)
+— no case anywhere negates it, since the guarantee "no other device has a
+Shift press" was never checked directly, only implied by `shiftedPress`'s own
+absence. A future seventh default falls into none of these three coverage
+sites. The check this change adds is one loop over
 `catalog.deviceDefaults` asserting, for every entry whose id is not the
 Twister's, that no association carries a `shiftedPress` and no
 `press.type == MessageIn::Type::Shift` — generic over however many device
@@ -202,6 +211,48 @@ defaults the catalogue holds, now or later, with the positive control that
 giving any non-Twister default a shifted press turns it red. This does not
 depend on group 4's gate: it can run against today's six device defaults
 immediately.
+
+**The seventh default's exercise of the Add/Block and wizard path is
+measured, not assumed.** Both `real_catalog_registers_one_descriptor_per_device_default`
+and `real_catalog_defaults_generate_and_accept_adds_through_the_view_model`
+(`app/FroggersControllersPageTests.cpp`) iterate `catalog.deviceDefaults`/
+`registry` by their live size, so task 5.1's Generic, analog-only default
+reaches both without an edit to either case. Built and run by path in a
+throwaway worktree at this branch's tip, with only the seventh default added
+(`git diff --stat` showed the one addition to
+`app/FroggersMidiCatalog.hpp` and nothing else):
+
+```
+$ nice make -C app -j2 app/build/froggers_controllers_page_tests app/build/froggers_midi_catalog_tests
+$ app/build/froggers_controllers_page_tests
+[FAIL] real_catalog_registers_one_descriptor_per_device_default: FroggersControllersPageTests.cpp:99 requirement failed: catalog.deviceDefaults.size() == 6
+[PASS] real_catalog_defaults_generate_and_accept_adds_through_the_view_model
+[PASS] twister_system_rows_carry_shift_editable_field_and_derived_choice_index
+[PASS] launchpad_presets_pair_with_the_port_names_a_host_reports
+EXIT=1
+$ app/build/froggers_midi_catalog_tests
+[FAIL] device_defaults_are_valid_and_address_exactly_the_documented_controls: FroggersMidiCatalogTests.cpp:399 requirement failed: catalog.deviceDefaults.size() == 6
+… (seven other cases, all [PASS])
+EXIT=1
+```
+
+and, with the default reverted, both binaries exit `0` — the two failures
+above are attributable to the added default alone. The only failures are the
+two count assertions task 5.5 already renames (`FroggersControllersPageTests.cpp:99`,
+`FroggersMidiCatalogTests.cpp:399`; `:99`'s own `REQUIRE_TRUE` throws before
+`:109`'s `registry.size() == 6` is ever reached, so that third assertion is
+unexecuted in this run, not separately confirmed failing — task 5.5 renames
+it on the same reasoning as the other two, since it reads the same `6`).
+`real_catalog_defaults_generate_and_accept_adds_through_the_view_model`
+passed with the seventh default present, driving it through
+`MakeControllerWizard`, `GenerateCatalogSlots`, `ConfigForm`/`GenerateProfile`,
+`AddController`, and every `AddSingle`/`AddBlock` call across the
+Encoders/SystemMessages/Analogs sections — an analog-only `Generic` default
+is accepted throughout. So the enumeration gap this paragraph closes is a
+citation gap, not a behavioural one: nothing in the Add/Block or wizard path
+needed a change for the seventh default, and task 5.5 names both the case and
+`GenerateCatalogSlots` as sites the seventh default exercises, so a future
+reader does not have to re-derive this measurement to know they are covered.
 
 **The manual's recovery is rewritten to the triggers, not to a new promise.**
 `MANUAL.md:319-320` currently says a stuck Shift clears when Shift is pressed and
@@ -359,37 +410,56 @@ subsections, heading-delimited, and applies three rules, all of which must
 pass; if either heading is not found at all, the check fails naming the
 missing heading, rather than vacuously passing an empty comparison.
 
-1. **Presence.** Each subsection contains at least one of a fixed set of
-   multi-word recovery phrases task 3.1's rewrite introduces verbatim —
-   "selecting a different preset", "rebuilds the row's mapping",
-   "unplugging and reconnecting the controller", "clears automatically
-   after" — failing when none is present. The set is multi-word and names an
-   action, not a bare noun: a single word like "unplugged" is not
-   sufficient, because the **current, unmodified** text already contains
-   that word as part of describing the *failure* ("If the controller is
-   unplugged while Shift is still held, its buttons stay shifted..."), not
-   as a stated recovery — a bare-word check would pass the very text this
-   check exists to reject.
+1. **Presence, as a conjunction over the triggers this change's own recovery
+   text offers, not a disjunction over any one.** Each subsection contains,
+   for every trigger available to it — Rebuild and Ceiling always, and
+   EndpointOpen wherever it applies — at least one of that trigger's own
+   multi-word phrases, verbatim, as task 3.1's rewrite introduces them:
+   Rebuild as "selecting a different preset" or "rebuilds the row's
+   mapping"; Ceiling as "clears automatically after"; EndpointOpen as
+   "unplugging and reconnecting the controller". A subsection naming only
+   one of these three families fails rule 1 by name for the missing ones —
+   an earlier, disjunctive form of this rule accepted a manual naming a
+   single trigger even though `spec.md`'s scenario says "the triggers"
+   (plural) and task 3.1 is instructed to name all three per subsection; the
+   conjunction is what actually enforces that instruction. The phrases are
+   multi-word and name an action, not a bare noun: a single word like
+   "unplugged" is not sufficient, because the **current, unmodified** text
+   already contains that word as part of describing the *failure* ("If the
+   controller is unplugged while Shift is still held, its buttons stay
+   shifted..."), not as a stated recovery — a bare-word check would pass the
+   very text this check exists to reject.
 2. **Absence.** Neither subsection contains "pressed and released again" (or
    any sentence naming the modifier's own button — Shift's own button for
    the Shift subsection, Hold Drill's own button for that subsection — as
    what clears it), because that is exactly the recovery `spec.md`'s
    scenario forbids: one that depends on the same address whose failure to
-   transmit is what strands the modifier in the first place. This rule is
-   what BLOCK-13's remedy adds: presence alone accepts the **current**
+   transmit is what strands the modifier in the first place. Implemented
+   mechanically as literal-substring absence of "pressed and released
+   again" (no trailing comma — the exact current text ends in a period, not
+   a comma, and a comma appended to the matched phrase would match nothing
+   in it); the broader "any other sentence naming the modifier's own
+   button" is a drafting rule for task 3.1's own prose, not a second
+   mechanical pattern — it names no fixed substring, and none is invented
+   here. Presence alone accepts the **current**
    `MANUAL.md:319-320` text unmodified, plus one appended sentence
-   containing a presence phrase, because nothing in a presence-only rule
+   containing every presence phrase, because nothing in a presence-only rule
    reads the rest of the subsection — the absence rule is what makes
    `MANUAL.md:319-320`'s own current sentence itself a positive control (see
    below), not only a hypothetical one.
-3. **Per-host coverage.** If a subsection contains "unplugging and
-   reconnecting the controller", the same subsection must also contain the
-   literal substring "not available in the plugin" — task 3.1's rewrite
-   states EndpointOpen is unavailable in the plugin build (design.md,
+3. **Per-host coverage, triggered on any reconnect-shaped phrase, not one
+   exact literal.** If a subsection contains a case-insensitive match for
+   `reconnect` (so "unplugging and reconnecting the controller",
+   "reconnecting it", or any other phrasing built on the same word all
+   trigger this rule, not only the one literal task 3.1 is instructed to
+   write), the same subsection must also contain the literal substring "not
+   available in the plugin" — task 3.1's rewrite states EndpointOpen is
+   unavailable in the plugin build (design.md,
    above), and task 3.1 is separately instructed "do not describe the
    plugin as having the reconnect route"; nothing before this rule checked
-   that instruction was followed. A subsection that lists the reconnect
-   phrase without also excluding the plugin fails.
+   that instruction was followed. A subsection that mentions reconnecting
+   the controller without also excluding the plugin fails, whatever
+   phrasing it uses for the reconnect itself.
 
 This half has no dependency on `declaredPreconditions` or the submodule pin,
 so task 1.8 authors it and runs it against the **current, unmodified**
@@ -401,13 +471,13 @@ replaces (a false-positive check committed against
 behaviour):
 
 - Against `MANUAL.md:319-320` as it reads today ("buttons stay shifted until
-  Shift is pressed and released again") the check must fail on rule 1
-  (presence) — none of the recovery phrases is present, only the bare word
-  "unplugged" and "pressed and released again". It must **also** fail on
-  rule 2 (absence) once a presence phrase is appended to this same
-  unmodified sentence without removing "pressed and released again" — this
-  is the control BLOCK-13 requires: presence-only would accept
-  `MANUAL.md:319-320` verbatim plus one appended sentence, and rule 2 is
+  Shift is pressed and released again.") the check must fail on rule 1
+  (presence) — none of the three phrase-families is present, only the bare
+  word "unplugged" and "pressed and released again". It must **also** fail on
+  rule 2 (absence) once all three presence phrases are appended to this same
+  unmodified sentence without removing "pressed and released again" —
+  presence alone would accept `MANUAL.md:319-320` verbatim plus one appended
+  sentence naming every trigger, and rule 2 is
   what this repository's own current text is used to prove red before
   task 3.1 removes the sentence rule 2 targets.
 - Against `MANUAL.md:308-313` (no recovery sentence at all today) the check
@@ -430,8 +500,8 @@ explicitly Sheaf's own change's to tune before it ships (its own Risks
 section calls it reversible), and freezing whatever number is current into
 this repository's manual text would go stale the next time Sheaf's change
 adjusts it, with nothing in either repository's check surface positioned to
-notice — the same class of frozen figure BLOCK-1 and SF-1 name elsewhere in
-this change. The recovery text names "clears automatically after" as the
+notice — the same class of frozen figure this change avoids elsewhere by
+citing a command instead of a number. The recovery text names "clears automatically after" as the
 trigger phrase (rule 1, above) without a number attached, describing the
 Ceiling as an automatic elapsed-time clear rather than committing to a
 duration this repository does not own and cannot re-verify at manual-render
@@ -560,17 +630,33 @@ module-level command above is filtered to `LOAD_CONST`/`LOAD_NAME`/
 itself show the fader CC numbers, which are built inside `make_slider` (a
 nested `def`) and a list comprehension (its own nested code object under
 every Python version this reading used). Reading those requires
-disassembling each nested code object individually, which is a second,
+disassembling each nested code object individually — a recursive walk over
+`co_consts` looking for nested code objects, since `dis.get_instructions`
+does not descend on its own — which is a second,
 separate reading, recorded here in the same form as the module-level one —
-same interpreter, `~/.local/bin/python3.11` (`python3 -V` reports `Python
-3.11.14` on this machine; the reading was run under this pinned interpreter
-specifically, not the system `python3`, which is version 3.13 and would
+same interpreter, `~/.local/bin/python3.11` (`~/.local/bin/python3.11 -V`
+reports `Python 3.11.14` on this machine; the reading was run under this
+pinned interpreter specifically, not the system `python3`, which
+`python3 -V` reports as `Python 3.13.5` on this machine and would
 inline a comprehension into its enclosing code object under PEP 709,
 producing a different, misleadingly complete instruction stream at module
 scope — not run for this reading):
 
 ```
-$ python3.11 disassembly of LaunchControlXL.pyc: make_slider and the four control-row comprehensions in _create_controls
+$ cd "/Applications/Ableton Live 12 Suite.app/Contents/App-Resources/MIDI Remote Scripts/Launch_Control_XL" && ~/.local/bin/python3.11 -c '
+import marshal, dis
+def walk(code):
+    if code.co_name in ("make_slider", "<listcomp>"):
+        consts = [c for c in code.co_consts if not hasattr(c, "co_code")]
+        print(f"== {code.co_name} (script line {code.co_firstlineno}) consts={consts}")
+        for x in dis.get_instructions(code):
+            print(f"{x.offset:5} {x.opname:14} {x.argrepr}")
+    for c in code.co_consts:
+        if hasattr(c, "co_code"):
+            walk(c)
+c = marshal.loads(open("LaunchControlXL.pyc", "rb").read()[16:])
+walk(c)
+'
 == make_slider (script line 88) consts=[None, ('name',)]
      2 LOAD_GLOBAL    NULL + SliderElement
     14 LOAD_GLOBAL    MIDI_CC_TYPE
@@ -684,8 +770,16 @@ full).
 **Hardware confirmation is a post-delivery operator check.** The Controllers
 page cannot be driven from a unit test that proves a physical fader sends a
 particular CC — that is a fact about the hardware, not the code, and no
-Launch Control XL is attached to this machine (`ioreg -p IOUSB -w 0` lists
-only a USB Hub, a Portable SSD T5, and a USB-to-DP/HDMI adapter). What the
+Launch Control XL is attached to this machine: `ioreg -p IOUSB -w 0` prints
+two host controllers (`AppleT8112USBXHCI`) and no peripheral device beneath
+either, which is consistent with nothing being attached but does not by
+itself distinguish that from "this command enumerates nothing on this
+machine regardless" — `system_profiler SPUSBDataType`, the control that
+would draw that distinction, itself prints no output at all on this machine,
+so it corroborates nothing either way; the disposition (no Launch Control XL
+attached) rests on there being no third-party peripheral entry in either
+command's output, not on a device-count claim neither command actually
+supports. What the
 code path can be shown to do, and what an operator can observe, is: moving
 fader 1 changes the on-screen scene blend value, via
 `AnalogMidiInProcessor::Process` (`External/Sheaf/projects/synth/src/MidiController.cpp:847`)
@@ -699,13 +793,19 @@ repository can drive a real fader.
 
 ## Risks / Trade-offs
 
-- **The manual is held by another active change.** `frogg3rs-delay-capacity-and-width-finish`
-  (present in this worktree's own `openspec/changes/`, since the branch is at
-  `main`'s tip; task count re-measured, not frozen — see task 3.2) holds
-  `MANUAL.md`/`QUICK_DICT.md`'s Delay bank entries (`MANUAL.md:678-742`). →
-  Disjoint section from this change's MIDI controllers section
-  (`MANUAL.md:258-390`); diff-review before staging and never stage a
-  whole-file `git add` while it is active.
+- **The manual can be held by another active change on `main` at any time.**
+  Whichever change `ls /Users/diegoaguilar-canabal/Desktop/frogg3rs/openspec/changes/`
+  names is the live party to check against, re-derived, not assumed — see
+  task 3.2 for the exact command and its two dispositions (empty vs.
+  non-empty `git status --short MANUAL.md QUICK_DICT.md` on the main
+  checkout). At this writing the live party is `frogg3rs-envelope-curve-direction`,
+  whose own edit (`git diff -U0 MANUAL.md | grep '^@@'` → `@@ -452,3 +452,6 @@`
+  and `@@ -579,2 +582,6 @@`) is disjoint from this change's MIDI controllers
+  section (`MANUAL.md:258-390`) and touches no `QUICK_DICT.md` line this
+  change cares about. → Diff-review before staging and never stage a
+  whole-file `git add` while any change named by that `ls` could still be
+  editing either file; a hunk that does overlap `:258-390` is task 3.2's own
+  STOP condition, not a silent merge.
 - **`declaredPreconditions` belongs to Sheaf's change and does not exist yet,
   and neither does `HeldModifierClearSource`.** → Group 4, and task 3.1's
   manual rewrite, gate on the submodule checkout carrying both symbols (tasks
@@ -730,8 +830,10 @@ repository can drive a real fader.
   /Users/diegoaguilar-canabal/Desktop/frogg3rs/External/Sheaf cat-file -e
   <sha>` exits non-zero for this commit). **No step before the operator's
   merge may remove this worktree or otherwise destroy that object store** —
-  a `git worktree remove` of a sibling has already destroyed one such store
-  once during this change's own preflight history.
+  `git worktree remove` of a checkout with a submodule destroys that
+  submodule's object store irrecoverably; treat this as an absolute
+  constraint on this worktree and its submodule checkout, not only a risk to
+  note.
   `.github/workflows/pages.yml` checks out with `submodules: recursive` on
   push to `main`, not to this branch, so that workflow does not even run
   against this push — the merge is the point at which the pin must resolve,
@@ -769,7 +871,7 @@ not). The Launch
 Control XL device default adds a catalogue entry and changes no existing one.
 Patches store mappings, not device defaults, so a patch saved before this
 change loads unchanged after it. The commit this change's own delivery (task
-6.6) pushes carries a submodule pin reachable from no remote until the
+6.7) pushes carries a submodule pin reachable from no remote until the
 operator's later merge (Risks, above); that does not block this change's own
 delivery step, which is a push and nothing more, but it does block anything
 that needs the pin published — task 5.4's live-site operator check is

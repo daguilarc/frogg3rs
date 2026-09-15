@@ -151,8 +151,12 @@ Consequently:
   change also fixes while it is touching this count).
 - Hardware confirmation is a post-delivery operator check, not a build-time
   test: no Launch Control XL is attached to this machine (`ioreg -p IOUSB -w
-  0` lists only a USB Hub, a Portable SSD T5, and a USB-to-DP/HDMI adapter),
-  and no unit test can drive a physical fader. On the live browser site,
+  0` prints two host controllers and no peripheral beneath either;
+  running system_profiler SPUSBDataType, the control that would distinguish
+  "nothing attached" from "this command enumerates nothing on this machine
+  regardless," itself prints no output at all — design.md carries both
+  commands and their literal output), and no unit test can drive a physical
+  fader. On the live browser site,
   selecting the preset and moving fader 1 should move the on-screen scene
   blend value, by the same `AnalogMidiInProcessor::Process` address-match
   dispatch the APC40 crossfader already exercises in production (design.md
@@ -168,40 +172,29 @@ same way.
 Re-derived directly, at this writing: `git worktree list`, then
 `git status --short` and `ls openspec/changes/` in each checkout it names.
 This table is a reading of a command's output, not a fact to trust from an
-earlier run — re-run all three before relying on it, since a sibling
-worktree has already been removed once during this change's own history
-(task 1.1) and `main` has since advanced past two more archived changes.
+earlier run — re-run all three before relying on it. This branch's own
+commit id and the set of other open `openspec/changes/` directories both
+change on every rebase and every sibling change's own lifecycle, independent
+of anything this change does, so neither is recorded as a frozen value below
+— confirm the condition each row states by re-running its own command.
 
-```
-$ git worktree list
-/Users/diegoaguilar-canabal/Desktop/frogg3rs                                    188b109 [main]
-/Users/diegoaguilar-canabal/Desktop/frogg3rs/.claude/worktrees/midi-resilience  d5fe3ca [worktree-midi-resilience]
-```
-
-Only these two checkouts exist now. The sibling worktrees
-`.claude/worktrees/midi-controller-resilience` (branch
-`worktree-midi-controller-resilience`, held `frogg3rs-density-documents-and-spec`)
-and `.claude/worktrees/randomize-depth-reclaim` (branch
-`worktree-randomize-depth-reclaim`, held `frogg3rs-randomize-depth-reclaim`)
-have both been removed; `frogg3rs-randomize-depth-reclaim` archived into
-`main` before its worktree went, `frogg3rs-density-documents-and-spec` did
-not survive at all (see task 1.1). `frogg3rs-delay-capacity-and-width-finish`
-has also archived into `main` since this section was last written
-(`main` is at `188b109`, three commits ahead of where this branch last
-rebased from). Re-running `ls openspec/changes/` in this worktree returns
-only this change's own directory.
+`git worktree list` must name exactly two checkouts: the main checkout (on
+`main`) and this worktree (on `worktree-midi-resilience`). Any third entry is
+a new sibling this table does not account for — STOP and report which
+change it holds rather than assuming it is unrelated. `ls openspec/changes/`
+in this worktree returns only this change's own directory.
 
 | checkout | `openspec/changes/` holds | overlap with this change | disposition |
 | --- | --- | --- | --- |
-| **this worktree** (`midi-resilience`) | `frogg3rs-midi-preset-preconditions` (this change) only | None — the two changes that once shared this tree (`frogg3rs-delay-capacity-and-width-finish`, `frogg3rs-randomize-depth-reclaim`) have both archived into `main`, and this branch is rebased onto that `main` (task 1.2). | No coordination party remains in this checkout. `MANUAL.md`/`QUICK_DICT.md` collisions with those two changes are moot now that their edits already landed; re-run `ls openspec/changes/` before staging in case a new change has opened in the meantime. |
-| **main checkout** | Whatever `ls openspec/changes/` there reports at the time of the eventual merge (this change, `frogg3rs-midi-preset-preconditions`, has not been delivered to `main`) — re-run rather than trusting this row, since `main` has already moved twice during this change's own lifetime. | Re-run `git -C <main checkout> status --short MANUAL.md QUICK_DICT.md` before staging; empty output is this row's own pass condition, not a fact recorded once and reused. | The eventual merge must diff-review `MANUAL.md`/`QUICK_DICT.md` rather than take either side wholesale, regardless of what is open there when this is read. |
+| **this worktree** (`midi-resilience`) | `frogg3rs-midi-preset-preconditions` (this change) only, confirmed by `ls openspec/changes/` returning a single entry. | None, so long as that `ls` keeps returning one entry and task 1.2 confirms this branch is at `main`'s tip. | No coordination party remains in this checkout as measured. Re-run `ls openspec/changes/` before staging in case a new change has opened here in the meantime. |
+| **main checkout** | Whatever `ls /Users/diegoaguilar-canabal/Desktop/frogg3rs/openspec/changes/` reports at the time this task runs (this change has not been delivered to `main`) — at this writing, `frogg3rs-envelope-curve-direction`. | Re-run `git -C /Users/diegoaguilar-canabal/Desktop/frogg3rs status --short MANUAL.md QUICK_DICT.md`; two dispositions: **empty** — no coordination party currently holds an uncommitted edit; proceed. **Non-empty** — read `git -C /Users/diegoaguilar-canabal/Desktop/frogg3rs diff -U0 MANUAL.md QUICK_DICT.md` and confirm every hunk's range is disjoint from this change's own `MANUAL.md:258-390` (this change touches no `QUICK_DICT.md` line at all); disjoint is safe to proceed against, diff-reviewed the same way, an overlapping hunk is a STOP. (Measured at this writing against `frogg3rs-envelope-curve-direction`'s own edit: `git -C /Users/diegoaguilar-canabal/Desktop/frogg3rs diff -U0 MANUAL.md \| grep '^@@'` reports `@@ -452,3 +452,6 @@` and `@@ -579,2 +582,6 @@`, both disjoint from `:258-390`; that change's own Delivery section also commits to a push to `main` and a message to this worktree's session that `main` is final — task 1.2's rebase step is what absorbs that push, not a STOP.) | The eventual merge must diff-review `MANUAL.md`/`QUICK_DICT.md` rather than take either side wholesale, regardless of what is open there when this is read. |
 
 Four Sheaf changes matter, read from `External/Sheaf/openspec/changes/`:
 
 | change | state | overlap | disposition |
 | --- | --- | --- | --- |
-| `midi-controller-resilience` | Its own artifacts carry a repair pass against a preflight adjudication; still **unexecuted** — `declaredPreconditions` exists in no source file yet (`grep -rn declaredPreconditions External/Sheaf/projects/synth/include/ External/Sheaf/projects/synth/src/ app/` returns nothing) and `openspec validate midi-controller-resilience --strict` reports it valid. Adds `declaredPreconditions` to `MidiAppDeviceDefault` (`synth-controller-wizards` requirement scw-6, tasks 6.1-6.2) and renders it on the Controllers page (`synth-runtime-ui` requirement sru-64, task 6.3), AND adds `HeldModifierClearSource`/`HeldModifierState` (`synth-midi-instrument`, group 3, task 3.1) — this change's own task 3.1 manual rewrite depends on that second symbol, not only on `declaredPreconditions`. The sibling worktree its own task 2.4 names no longer exists (see this change's task 1.1), so no divergent copy of `midi-controller-resilience` remains anywhere to reconcile. Its own task 7.9 states that this change performs no push, opens no pull request, and moves no pin in this cycle — the operator's later, separate rebase-and-merge step does that, under whatever branch name it uses; until then the commit this change's own task 4.2 pins is reachable from no remote, and exists in exactly one object store on this machine (task 4.2, task 6.7). Its own task 7.7 (archive in that repository) is a **known, self-reported block**: it requires `app-midi-catalog` (#13) and `shift-and-file-export` (#14) to have themselves archived first, which they have not; `midi-controller-resilience`'s own task 7.8 (the coordinator's commit) proceeds regardless, with 7.7 reported blocked rather than forced. | This change's group 4 (declared-preconditions population) and task 3.1 (manual rewrite) cannot proceed until Sheaf's change is complete through its own task 7.9, with the two symbols present in the commit task 7.8 makes. See task 4.1's gate. | This change populates `declaredPreconditions` for its own device defaults and starts group 4, and task 3.1, only after the submodule checkout confirms both symbols in that commit (task 4.1) and the pin is advanced (task 4.2). It does not define either field and does not render `declaredPreconditions`, and it does not archive `midi-controller-resilience` — that repository's archive step is the operator's own concern (see task 6.7). |
-| `app-midi-catalog` | 26/28 done, PR #13 | Owns `MidiAppDeviceDefault` at `projects/synth/include/synth/MidiAppCatalog.hpp:31-38` | Neither this change nor `midi-controller-resilience` redefines the struct; both land above #13. |
+| `midi-controller-resilience` | Still **unexecuted** — `declaredPreconditions` exists in no source file yet (`grep -rn declaredPreconditions External/Sheaf/projects/synth/include/ External/Sheaf/projects/synth/src/ app/` returns nothing) and `openspec validate midi-controller-resilience --strict` reports it valid. Adds `declaredPreconditions` to `MidiAppDeviceDefault` (`synth-controller-wizards` requirement scw-6, tasks 6.1-6.2) and renders it on the Controllers page (`synth-runtime-ui` requirement sru-64, task 6.3), AND adds `HeldModifierClearSource`/`HeldModifierState` (`synth-midi-instrument`, group 3, task 3.1) — this change's own task 3.1 manual rewrite depends on that second symbol, not only on `declaredPreconditions`. Its own task 7.9 states that this change performs no push, opens no pull request, and moves no pin in this cycle — the operator's later, separate rebase-and-merge step does that, under whatever branch name it uses; until then the commit this change's own task 4.2 pins is reachable from no remote, and exists in exactly one object store on this machine (task 4.2, task 6.7). Its own task 7.7 (archive in that repository) is a **known, self-reported block**: it requires `app-midi-catalog` (#13) and `shift-and-file-export` (#14) to have themselves archived first, which they have not; `midi-controller-resilience`'s own task 7.8 (the coordinator's commit) proceeds regardless, with 7.7 reported blocked rather than forced. | This change's group 4 (declared-preconditions population) and task 3.1 (manual rewrite) cannot proceed until Sheaf's change is complete through its own task 7.9, with the two symbols present in the commit task 7.8 makes. See task 4.1's gate. | This change populates `declaredPreconditions` for its own device defaults and starts group 4, and task 3.1, only after the submodule checkout confirms both symbols in that commit (task 4.1) and the pin is advanced (task 4.2). It does not define either field and does not render `declaredPreconditions`, and it does not archive `midi-controller-resilience` — that repository's archive step is the operator's own concern (see task 6.7). |
+| `app-midi-catalog` | `grep -c '^\- \[x\]'`/`'^\- \[ \]'` against its own `tasks.md` → 26/2, PR #13 — re-count rather than trusting these figures, since this change does not control that repository's pace. | Owns `MidiAppDeviceDefault` at `projects/synth/include/synth/MidiAppCatalog.hpp:31-38` | Neither this change nor `midi-controller-resilience` redefines the struct; both land above #13. |
 | `shift-and-file-export` | All 29 tasks checked (`grep -c '^\- \[x\]' .../shift-and-file-export/tasks.md` → 29, `'^\- \[ \]'` → 0); not yet archived, so still present in `External/Sheaf/openspec/changes/`. Already delivered `ShiftState`/`shift_` and the field's current spelling, `shift_->held`, into the tree both this change and `midi-controller-resilience` build on (`grep -n "struct ShiftState\|shift_ =" External/Sheaf/projects/synth/include/synth/MidiController.hpp` confirms it is live). Owns requirement smi-16, which `midi-controller-resilience`'s own MODIFIED requirements also amend. | This change's design.md and task 4.6 trace `shift_->held` at `MidiController.cpp:964-971` — code this change shipped, not `midi-controller-resilience`'s. `midi-controller-resilience`'s own task 3.1 renames this to `shift_->modifier.held`; design.md and task 4.6 name both spellings for that reason. | No `app/`-level file this table's coordination concern covers (`MANUAL.md`, `QUICK_DICT.md`, `app/FroggersMidiCatalog*`, `app/Makefile`) is touched by `shift-and-file-export`; the only overlap is the citation-spelling one already handled above. |
 | `launchpad-model-on-the-row` | 11/14 done (`grep -c '^\- \[x\]'`/`'^\- \[ \]'` against its own `tasks.md`); its own task 2.1 (adding `launchpadModel` to `MidiControllerProfileConfig`) is unchecked, and its delivery (task 6.1) is sequenced as "the next sequential pull request" from the fork, not this cycle. | Its own task 6.2 will, in a **separate, future** cycle, set a model on this catalogue's three Launchpad presets in `app/FroggersMidiCatalog.hpp` and move `External/Sheaf`'s submodule pin from `frogg3rs` — the same file and the same pin this change's own task 5.5/4.2 touch. | No collision in this delivery: `launchpad-model-on-the-row`'s task 2.1 has not started, so its frogg3rs-side task 6.2 is not reachable yet. The executor pinning the submodule after this change's own task 4.2 must re-run this row's task-count grep before assuming the baseline this table records still holds, rather than trusting this row indefinitely. |
 
@@ -241,14 +234,23 @@ Four Sheaf changes matter, read from `External/Sheaf/openspec/changes/`:
   carries the count twice, at `:1-4` ("six real device defaults") and again
   at `:7` ("so none of them ever drive these six shipping defaults") — both,
   not only the first, are updated to seven, naming the Launch Control XL
-  alongside the Twister and the two APC40 variants.
+  alongside the Twister and the two APC40 variants. Neither of these two
+  files' own count assertions is the only site the seventh default exercises:
+  `real_catalog_defaults_generate_and_accept_adds_through_the_view_model`
+  (`app/FroggersControllersPageTests.cpp`) and `GenerateCatalogSlots` both
+  iterate the catalogue by its live size and so drive the new default through
+  the wizard and Add/Block path without an edit to either; task 5.5 names
+  both explicitly for that reason, not because either changes.
 - `app/Makefile` — a new `check-docs-match-device-preconditions` target joins
   the twelve `check-*` prerequisites `test:` already runs (read from the Makefile
   itself, not copied here, since the list drifts). The underlying script is
   authored in two steps: task 1.8 creates it with only the recovery half
   (text-only, run before the manual is rewritten); task 4.8 extends it with
   the drift half (which needs `declaredPreconditions` to compile) once the
-  submodule pin lands.
+  submodule pin lands. `:127`'s own comment ("...`synth_froggers::FroggersMidiCatalog()`'s
+  six real device defaults...") is a fourth prose site stating the catalogue
+  count, alongside the two header comments above and
+  `FroggersMidiCatalogTests.cpp:8`; task 5.5 updates all four together.
 - A new small emitter binary under `app/` (task 4.8), built against
   `app/FroggersMidiCatalog.hpp` the way `app/FroggersMidiCatalogTests.cpp`
   already is, that the drift half runs to read `declaredPreconditions` off
@@ -257,6 +259,10 @@ Four Sheaf changes matter, read from `External/Sheaf/openspec/changes/`:
   same recovery treatment; `:336-339` — the settings paragraph, which becomes
   generated; `:341-351` and `:353-357` — the APC40 Generic/Ableton sections,
   which the split precondition declarations must stay consistent with; the
+  three Launchpad sections (Launchpad X, Launchpad Pro MK3, Launchpad Mini
+  MK3) each gain their own explicitly-empty `<!-- declaredPreconditions:<id> -->`
+  marker pair (task 4.7) even though none of the three states a device-side
+  precondition; the
   Overview's Preset selector list and a new Launch Control XL section are
   added, naming fader 1 and factory template 1; **`:271-272`**, the
   Overview's "A newly connected Twister, APC40, or Launchpad is also offered"
