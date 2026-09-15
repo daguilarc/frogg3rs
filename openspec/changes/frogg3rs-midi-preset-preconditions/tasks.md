@@ -1,63 +1,39 @@
 ## 1. Preflight
 
-- [ ] 1.1 **OPERATOR precondition — reconcile or delete two divergent
-      duplicates, before anything else in this list runs.** A second, fully
-      divergent copy of this change lives, untracked, at
-      `.claude/worktrees/midi-controller-resilience/openspec/changes/frogg3rs-midi-preset-preconditions/`
-      (`diff -rq` against this worktree's copy shows `proposal.md`, `design.md`,
-      `tasks.md` and the spec delta all differ). That same sibling worktree's
-      own `External/Sheaf` checkout separately carries an untracked copy of
-      `External/Sheaf/openspec/changes/midi-controller-resilience/` (this
-      worktree's own copy of that same relative path is the authoritative
-      one) that also diverges from this worktree's Sheaf copy (no
-      `synth-controller-wizards` delta, no `scw-6` requirement at all).
-      Traced directly, not carried forward from
-      an earlier report — `git worktree list` lists that worktree at `9838862`;
-      `ls .claude/worktrees/midi-controller-resilience` returns its full tree;
-      `git branch --list worktree-midi-controller-resilience` returns the
-      branch: as of this repair pass **both duplicates are still live**, not
-      already removed. Neither path is writable from this session's sandbox
-      (the sibling worktree belongs to another live session). The operator (or
-      whichever session owns that worktree) reconciles or deletes both paths
-      before task 1.2 runs. **The executor confirms this by running, from the
-      main checkout, `ls .claude/worktrees/midi-controller-resilience/openspec/changes/frogg3rs-midi-preset-preconditions`
-      and `ls .claude/worktrees/midi-controller-resilience/External/Sheaf/openspec/changes/midi-controller-resilience`
-      — both must return "No such file or directory" (deleted) or, if
-      reconciled instead of deleted, must no longer diverge from this
-      worktree's own copies (re-run the `diff -rq`/`scw-6` checks above and
-      confirm zero differences) — before treating this task as satisfied.**
-      Do not proceed past this task on the strength of a claim that the
-      duplicates were removed; run the listing yourself.
-- [ ] 1.2 **Bring this branch up to date with `main`** before baselining, so
-      1.6's baseline is not stale before this change's own diff starts.
-      Traced: `git rev-list --left-right --count main...HEAD` → `6 1` (main
-      has six commits this branch lacks; this branch has the one "Collect the
-      MIDI resilience work into one worktree" commit main lacks). Confirm
-      `git status --short openspec/changes/frogg3rs-delay-width-wysiwyg-repair`
-      is empty (no local edits there to lose), then `git fetch origin && git
-      merge origin/main` (a merge, not a rebase, so this branch's one existing
-      commit keeps its SHA — nothing has pinned that SHA anywhere yet, but a
-      rebase would force a later force-push for no benefit this task needs).
-      Those six commits on `main` delete
-      `openspec/changes/frogg3rs-delay-width-wysiwyg-repair/proposal.md` and
-      `tasks.md` outright (that change shipped and was archived as
-      `frogg3rs-delay-capacity-and-width-finish`) and touch `MANUAL.md` only
-      at `:444` (VCO release defaults) and `:691-732` (Delay Stereo
-      width/Width balance) — both outside this change's own `:258-390` MIDI
-      controllers section, so no line citation in this change's own artifacts
-      shifts. Confirm after merging: `git status --short` shows
-      `openspec/changes/frogg3rs-delay-width-wysiwyg-repair` removed with no
-      conflict, and `python3 app/check_artifact_symbols_resolve.py app`
-      reports 0 failures (all fifteen of today's failures live inside the two
-      files this merge deletes — verify this claim yourself if `main` has
-      moved further by execution time; it is a re-run, not a fixed count, for
-      the same reason `frogg3rs-randomize-depth-reclaim`'s own `Check:` counts
-      are treated as a moving target elsewhere in this file). If the merge
-      instead conflicts, or `check-artifact-symbols-resolve` is not fully
-      green afterward, STOP and report rather than resolving by guesswork:
-      this task's claim is the mechanism (the citing files are deleted
-      upstream), not a promise that `main` cannot change before this task
-      runs.
+- [ ] 1.1 **Precondition, already satisfied — confirm before anything else in
+      this list runs.** A sibling worktree at
+      `.claude/worktrees/midi-controller-resilience/` once carried a fully
+      divergent, untracked copy of this change (`openspec/changes/frogg3rs-midi-preset-preconditions/`,
+      differing in `proposal.md`, `design.md`, `tasks.md` and the spec delta)
+      and, inside its own `External/Sheaf` checkout, a divergent untracked
+      copy of `External/Sheaf/openspec/changes/midi-controller-resilience/`
+      (no `synth-controller-wizards` delta, no `scw-6` requirement at all).
+      That worktree and its branch no longer exist. **The executor confirms
+      this by running, from the main checkout,**
+      `ls .claude/worktrees/midi-controller-resilience/openspec/changes/frogg3rs-midi-preset-preconditions`
+      (must return `No such file or directory`) and
+      `git branch --list worktree-midi-controller-resilience` (must return no
+      output) — do not proceed past this task on the strength of this note; run
+      the commands yourself. Both duplicates were, before the worktree was
+      removed, md5-identical to the snapshots folded into this repository's own
+      commit `6e77142` ("Collect the MIDI resilience work into one worktree")
+      and Sheaf's commit `caae5c2` ("Carry the MIDI controller resilience
+      change into the submodule"), so nothing in either duplicate was lost.
+- [ ] 1.2 **Confirm this branch is at `main`'s tip** before baselining, so
+      1.6's baseline is not stale before this change's own diff starts. Check:
+      `git log --oneline HEAD..main | wc -l` → `0`. If this is nonzero when
+      this task runs, STOP and report rather than baselining against a stale
+      tree: this task's claim is that the branch is caught up as of the time
+      it is checked, not a promise that `main` cannot move further afterward.
+      While at `main`'s tip, `openspec/changes/frogg3rs-delay-width-wysiwyg-repair/`
+      does not exist in this tree (that change shipped and was archived as
+      `frogg3rs-delay-capacity-and-width-finish`) — confirm with
+      `ls openspec/changes/frogg3rs-delay-width-wysiwyg-repair` returning "No
+      such file or directory" — and `python3 app/check_artifact_symbols_resolve.py app`
+      reports `check-artifact-symbols-resolve: OK - 6 artifact file(s) resolve,
+      1 name(s) declared as not yet created`. If either check disagrees because
+      `main` has moved since this was written, STOP and report the actual state
+      rather than resolving by guesswork.
 - [ ] 1.3 Enumerate by operand, case-insensitively, across `app/`, `openspec/`
       and the documents: `sceneBlend`, `AnalogMidiInConfig`, `analogRange`,
       `appActions`, `kBpm`, `MidiAppDeviceDefault`, `declaredPreconditions`,
@@ -71,54 +47,60 @@
 - [ ] 1.6 Baseline every gate `app/Makefile`'s `test:` target runs, read from
       the Makefile's own `check-*` prerequisite list and its test-binary
       variables rather than copied here (the list drifts: an earlier version
-      of this task named eight scripts by line number and missed two,
-      including the one this change's own edits reach). This baseline runs
-      AFTER task 1.2's merge, against the merged tree, so it is not
-      invalidated by the pin advance the merge performs on `openspec/changes/`
-      content. Record, with its exit code, all ten `check-*` prerequisites
-      (`check-no-juce`, `check-no-firmware-includes`,
-      `check-microphone-usage`, `check-catalog-covers-screen-actions`,
-      `check-docs-match-parameter-table`, `check-spec-checks-resolve`,
-      `check-citations-resolve`, `check-modified-requirements-restate-promoted`,
-      `check-no-planning-history`, `check-artifact-symbols-resolve` — read from
-      `app/Makefile`'s `test:` line itself, not copied here, since the list
-      drifts) and the twelve test binaries the `test:` target links
-      (`$(TEST_BIN)`, `$(MONO_VALIDATION_BIN)`, `$(DSP_TEST_BIN)`,
-      `$(PARAMETER_MODEL_BIN)`, `$(MODULATION_BIN)`, `$(AUDIO_ROUTING_BIN)`,
-      `$(VISUALIZER_BIN)`, `$(SCOPE_ADVANCE_INDEX_BIN)`,
+      of this task named eight scripts by line number and missed two, and the
+      branch reaching `main`'s tip added two more). This baseline runs AFTER
+      task 1.2 confirms the branch is at `main`'s tip, against that tree.
+      Record, with its exit code, all twelve `check-*` prerequisites
+      (`check-no-juce`, `check-no-firmware-includes`, `check-microphone-usage`,
+      `check-catalog-covers-screen-actions`, `check-docs-match-parameter-table`,
+      `check-spec-checks-resolve`, `check-citations-resolve`,
+      `check-modified-requirements-restate-promoted`, `check-no-planning-history`,
+      `check-artifact-symbols-resolve`, `check-delay-capacity-parameters-are-swept`,
+      `check-delay-capacity-break-proofs` — read from `app/Makefile`'s `test:`
+      line itself, not copied here, since the list drifts) and the twelve test
+      binaries the `test:` target links (`$(TEST_BIN)`, `$(MONO_VALIDATION_BIN)`,
+      `$(DSP_TEST_BIN)`, `$(PARAMETER_MODEL_BIN)`, `$(MODULATION_BIN)`,
+      `$(AUDIO_ROUTING_BIN)`, `$(VISUALIZER_BIN)`, `$(SCOPE_ADVANCE_INDEX_BIN)`,
       `$(MARBLES_CLOCK_BIN)`, `$(SURFACE_BIN)`, `$(MIDI_CATALOG_BIN)`,
-      `$(CONTROLLERS_PAGE_BIN)`). If task 1.2's merge left
-      `check-artifact-symbols-resolve` green as expected, this baseline is
-      whatever the other nine `check-*` targets and the twelve binaries report
-      today; if it did not (main moved further, or the merge surfaced a new
-      dangling reference), record the actual failures here by cause and
-      location rather than assuming the pre-merge 15-name breakdown still
-      applies. `make -C app test` does not necessarily run any of the twelve
-      binaries if any `check-*` prerequisite is red — GNU Make 3.81 aborts a
-      linear prerequisite list at the first failing one — so if
-      `check-artifact-symbols-resolve` (or any other check) is still red after
-      1.2, run each of the twelve binaries by path directly, note which ran
-      and which did not, and say so explicitly rather than describing
-      `make -C app test` as this change's green gate. Also baseline
-      `./app/build-launcher.sh`. Cap builds at `-j2` under `nice`.
+      `$(CONTROLLERS_PAGE_BIN)`). Ten of the twelve `check-*` targets run
+      without compiling anything; run by path directly against this tree, all
+      ten report `OK`: `check-no-firmware-includes`, `check-microphone-usage`,
+      `check-catalog-covers-screen-actions`, `check-docs-match-parameter-table`,
+      `check-spec-checks-resolve`, `check-citations-resolve`,
+      `check-no-planning-history`, `check-artifact-symbols-resolve` (`OK - 6
+      artifact file(s) resolve, 1 name(s) declared as not yet created`),
+      `check-delay-capacity-parameters-are-swept`, and
+      `check-modified-requirements-restate-promoted` (`OK - 5 MODIFIED
+      requirement(s), 134 promoted clause(s) restated or declared, 9 declared
+      edit(s), 1 promoted scenario(s) no longer restated`, exit `0`) — this
+      last one also prints an informational `NOTE` naming the one promoted
+      scenario this change's own spec delta does not fully restate; read that
+      script's own header before treating a `NOTE` as a failure. The remaining
+      two, `check-no-juce` and `check-delay-capacity-break-proofs`, compile
+      code under `$(CXX)`; re-run them, and the twelve test binaries, and
+      `./app/build-launcher.sh`, only when actually building this change,
+      capped at `-j2` under `nice`, and record their exit codes here.
+      `make -C app test` does not necessarily run any of the twelve binaries
+      if any `check-*` prerequisite is red — GNU Make 3.81 aborts a linear
+      prerequisite list at the first failing one — so if any check is red when
+      this task runs, run each of the twelve binaries by path directly, note
+      which ran and which did not, and say so explicitly rather than
+      describing `make -C app test` as this change's green gate.
 - [ ] 1.7 §8.0 hygiene sweep over `app/` and `openspec/`. Name each directory.
-      (Task 1.2's merge is expected to have already removed
-      `frogg3rs-delay-width-wysiwyg-repair` and, with it, the fifteen dangling
-      citations `check-artifact-symbols-resolve` reports today; if any of the
-      three causes from the pre-merge trace above are somehow still present
-      after 1.2 — a reference to the removed pre-split directory this repair
-      pass confirmed absent (`openspec/changes/frogg3rs-midi-controller-resilience/`
-      does not exist), or to the directory this repair pass confirmed absent
-      from this branch before the merge (`openspec/changes/frogg3rs-randomize-depth-reclaim/`
-      does not exist, pre-1.2), or to the archived `RESEARCH2-drive-delay.md`
-      path — this sweep is where they are repaired: the pre-split-change
-      references are this change's own §8.0 obligation because this change is
-      that removed change's app-half successor for exactly the coordination
-      concern they name — MANUAL.md/QUICK_DICT.md editing conflicts — so
-      repoint them to this change's own directory,
-      `openspec/changes/frogg3rs-midi-preset-preconditions/`, not to Sheaf's
-      `midi-controller-resilience`, which is the engine half and does not
-      touch those documents.)
+      (`openspec/changes/frogg3rs-delay-width-wysiwyg-repair/` does not exist
+      in this tree — confirmed by task 1.2 — and
+      `check-artifact-symbols-resolve` reports OK, so no dangling citation to
+      it remains. If this sweep, re-run at execution time, nonetheless finds a
+      reference to that removed pre-split directory, or to the also-removed
+      `openspec/changes/frogg3rs-midi-controller-resilience/` (confirmed
+      absent), or to the archived `RESEARCH2-drive-delay.md` path — this sweep
+      is where it is repaired: such a reference is this change's own §8.0
+      obligation because this change is that removed change's app-half
+      successor for exactly the coordination concern it names —
+      MANUAL.md/QUICK_DICT.md editing conflicts — so repoint it to this
+      change's own directory, `openspec/changes/frogg3rs-midi-preset-preconditions/`,
+      not to Sheaf's `midi-controller-resilience`, which is the engine half
+      and does not touch those documents.)
 
 ## 2. The Launch Control XL fader map
 
@@ -181,30 +163,24 @@
       explains why). Do not describe the plugin as having the reconnect
       route.
 - [ ] 3.2 Coordinate every `MANUAL.md` edit with `frogg3rs-delay-capacity-and-width-finish`
-      (main checkout; task count moves between sessions — re-count with
+      (present in this worktree's own `openspec/changes/`, since this branch
+      is at `main`'s tip; task count moves between sessions — re-count with
       `grep -c '^- \[x\]'`/`'^- \[ \]'` on its `tasks.md` rather than trusting
-      a figure recorded here; 26/41 when this task was last written, per
-      `git -C <main checkout> show main:openspec/changes/frogg3rs-delay-capacity-and-width-finish/tasks.md`)
-      and `frogg3rs-density-documents-and-spec` (`midi-controller-resilience`
-      worktree, 0/14, Filter entries, `MANUAL.md:462-527`). Traced directly on
-      the main checkout, not assumed: `git -C <main checkout> status --short
-      MANUAL.md QUICK_DICT.md` returns nothing — neither file carries an
-      uncommitted edit there as of this writing; re-run that check rather than
-      relying on this note, since another session can change it at any time.
-      `frogg3rs-delay-width-wysiwyg-repair` (this worktree's former third
-      coordination party) no longer exists after task 1.2's merge, which
-      matches `main`'s own removal of it — confirm with
+      a figure recorded here). Traced directly on the main checkout, not
+      assumed: `git -C <main checkout> status --short MANUAL.md QUICK_DICT.md`
+      returns nothing — neither file carries an uncommitted edit there as of
+      this writing; re-run that check rather than relying on this note, since
+      another session can change it at any time.
+      `openspec/changes/frogg3rs-delay-width-wysiwyg-repair` does not exist in
+      this tree (that change shipped and was archived as
+      `frogg3rs-delay-capacity-and-width-finish`) — confirm with
       `ls openspec/changes/frogg3rs-delay-width-wysiwyg-repair` returning "No
-      such file or directory" before dropping it from this list; if it is
-      somehow still present, add it back to this coordination with its
-      current task count and section (`MANUAL.md:676-740`, Delay **Stereo
-      width**/**Width balance**). The two remaining parties' sections
-      (`frogg3rs-delay-capacity-and-width-finish`'s Delay bank, `MANUAL.md:676-740`-adjacent;
-      `frogg3rs-density-documents-and-spec`'s Filter bank, `MANUAL.md:462-527`)
-      are disjoint from this change's `MANUAL.md:258-390`. Diff-review
-      `MANUAL.md` section-by-section before staging; never stage a whole-file
-      `git add` while either is active. `QUICK_DICT.md` carries no MIDI content
-      for this change to edit (`grep -in "midi\|shift\|hold drill\|twister\|
+      such file or directory" — so it is not a separate coordination party.
+      `frogg3rs-delay-capacity-and-width-finish`'s Delay bank section
+      (`MANUAL.md:678-742`) is disjoint from this change's `MANUAL.md:258-390`.
+      Diff-review `MANUAL.md` section-by-section before staging; never stage a
+      whole-file `git add` while it is active. `QUICK_DICT.md` carries no MIDI
+      content for this change to edit (`grep -in "midi\|shift\|hold drill\|twister\|
       apc40\|launchpad" QUICK_DICT.md` returns nothing) — this change does not
       touch it.
 
@@ -322,7 +298,7 @@
       after confirming red. `spec.md`'s "SHALL NOT depend on a device setting
       it does not declare" ships unchecked this cycle — design.md's final
       paragraph states why; this task does not attempt a check for it. Wire
-      this script into `app/Makefile` beside the ten existing `check-*`
+      this script into `app/Makefile` beside the twelve existing `check-*`
       targets.
 
 ## 5. The Launch Control XL preset
@@ -414,14 +390,15 @@ device_defaults_declare_their_preconditions case group 4 adds.
 - [ ] 6.1 Re-run 1.3's enumeration against the diff.
 - [ ] 6.2 Re-run 1.7's §8.0 hygiene sweep against the change's final diff,
       naming each directory again.
-- [ ] 6.3 Re-run every gate baselined in 1.6 — the ten `check-*` prerequisites
-      and the twelve test binaries, against the tree as this change leaves it
-      — and report which moved and which were carried forward, measured now,
-      not assumed from 1.6's record. This change adds one target
-      (`check-docs-match-device-preconditions`) to the ten; state what each of
-      the other ten reports, rather than asserting in advance that none of
-      them moved. If task 1.2 left `check-artifact-symbols-resolve` green,
-      this change's own new citations (design.md, tasks.md, the spec delta)
+- [ ] 6.3 Re-run every gate baselined in 1.6 — the twelve `check-*`
+      prerequisites and the twelve test binaries, against the tree as this
+      change leaves it — and report which moved and which were carried
+      forward, measured now, not assumed from 1.6's record. This change adds
+      one target (`check-docs-match-device-preconditions`) to the twelve;
+      state what each of the other twelve reports, rather than asserting in
+      advance that none of them moved. Task 1.2 confirms `check-artifact-symbols-resolve` is green
+      as of the branch reaching `main`'s tip; this change's own new citations
+      (design.md, tasks.md, the spec delta)
       must not have reopened it — confirm by re-running the check, not by
       inference. This change does not certify forward any failure it did not
       itself cause; a failure whose cause is outside this change's own

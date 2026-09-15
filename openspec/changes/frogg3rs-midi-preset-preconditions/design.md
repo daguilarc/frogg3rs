@@ -24,9 +24,7 @@ not in the catalogue.
 **The field this change populates does not exist yet.** `declaredPreconditions`
 is added to `MidiAppDeviceDefault` by Sheaf's `midi-controller-resilience`
 change (`synth-controller-wizards` requirement scw-6, tasks 6.1-6.2), whose
-own artifacts still carry an unexecuted, operator-owned precondition of their
-own (a divergent duplicate of that change in a sibling worktree — see Risks,
-below, and proposal.md's overlap table) and are themselves still unexecuted:
+own artifacts are themselves still unexecuted:
 `grep -rn declaredPreconditions
 External/Sheaf/projects/synth/include/ External/Sheaf/projects/synth/src/
 app/` finds nothing anywhere in either repository, and
@@ -432,27 +430,13 @@ repository can drive a real fader.
 
 ## Risks / Trade-offs
 
-- **The manual is held by other active changes.** Task 1.2 brings this branch
-  up to `main`, which is expected to remove `frogg3rs-delay-width-wysiwyg-repair`
-  from this worktree entirely (already deleted on `main`, superseded as
-  `frogg3rs-delay-capacity-and-width-finish`) — confirm with task 3.2's own
-  check before relying on it. After that, `frogg3rs-delay-capacity-and-width-finish`
-  (main checkout, task count re-measured, not frozen — see task 3.2) and
-  `frogg3rs-density-documents-and-spec` (`midi-controller-resilience` worktree,
-  0/14) hold `MANUAL.md`/`QUICK_DICT.md`'s Delay and Filter entries
-  respectively. → Both are disjoint sections from this change's MIDI
-  controllers section (`MANUAL.md:258-390`); diff-review before staging and
-  never stage a whole-file `git add` while either is active.
-- **Two divergent duplicates exist in a sibling worktree.** Untracked copies
-  of `frogg3rs-midi-preset-preconditions` and, inside its own `External/Sheaf`
-  checkout, `midi-controller-resilience` both sit in the
-  `.claude/worktrees/midi-controller-resilience` worktree, each deltaing the
-  same capability with different text than this worktree's copies. Re-verified
-  directly during this repair pass — both are still live, not already removed
-  by anyone. → This worktree's copies are authoritative; task 1.1 makes both
-  duplicates' removal or reconciliation an operator precondition that must be
-  satisfied before task 1.2 runs, since neither path is writable from this
-  session's sandbox.
+- **The manual is held by another active change.** `frogg3rs-delay-capacity-and-width-finish`
+  (present in this worktree's own `openspec/changes/`, since the branch is at
+  `main`'s tip; task count re-measured, not frozen — see task 3.2) holds
+  `MANUAL.md`/`QUICK_DICT.md`'s Delay bank entries (`MANUAL.md:678-742`). →
+  Disjoint section from this change's MIDI controllers section
+  (`MANUAL.md:258-390`); diff-review before staging and never stage a
+  whole-file `git add` while it is active.
 - **`declaredPreconditions` belongs to Sheaf's change and does not exist yet.**
   → Group 4 gates on the submodule pin landing a commit that carries it
   (tasks 4.1-4.2); it does not define the field and does not render it — the
