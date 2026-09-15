@@ -11,9 +11,7 @@
     "npm.autoDetect": "on",
     "files.watcherExclude": {
       "**/node_modules/**": true,
-      "**/.emsdk/**": true,
-      "**/wasm/build/**": true,
-      "**/desktop/build/**": true
+      "**/.emsdk/**": true
     }
   }
 }

@@ -691,11 +691,10 @@ no output — an exact bypass.
 
 **Stereo width** (slot 4) — offsets when the right channel reads the delay line relative to the left;
 at 0 both taps read the same point in the line, and raising the knob spreads the right tap further
-behind the left in time. That time offset is the whole of the widening you hear on the page's own
-default patch. The knob also sets a cross-feed weight that blends each channel's repeats into the
-other, and that blend rides the feedback path: how much of it reaches the repeats follows Feedback
-(slot 3) and Freeze (slot 5) together, and both start at 0. Raise either one and the cross-feed comes
-in alongside the time offset.
+behind the left in time. That time offset is the whole of the widening: the knob sets nothing in the
+feedback path, so Feedback (slot 3) and Freeze (slot 5) change how long the repeats last, not how
+wide they are. The offset never asks for more than the line holds; near the top of Delay time
+(slot 2) the spread shrinks so the right tap's read stays inside the line.
 
 **Freeze** (slot 5) — crossfades the delay's feedback loop from its ordinary level toward full,
 lossless recirculation. Raising it both lets more of each repeat feed back, up to unity gain, and
@@ -729,9 +728,9 @@ the loop, the darkening compounds: each repeat passes the filter again.
 **Mod rate** (slot 11) — rate of the delay-time LFO whose depth Mod depth (slot 6) sets
 (0.05 Hz–1.25 Hz). 0.25 Hz at the center default.
 
-**Width balance** (`Width bal`, slot 12) — an overall scalar on how strongly Stereo width's cross-feed
-and time-spread apply. Full strength at the top of travel (the default); turning it down narrows the
-stereo image Width can produce.
+**Width balance** (`Width bal`, slot 12) — scales the time offset Stereo width (slot 4) produces.
+Full strength at the top of travel (the default); turning it down narrows the spread Stereo width
+can produce, to none at the bottom.
 
 **Crush** (slot 13) — a sample-rate reducer on the feedback tap only, so the repeats get
 progressively more bit-crushed as this is raised. Off at its default of 0; the dry signal is never

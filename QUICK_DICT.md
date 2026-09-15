@@ -73,7 +73,7 @@ Six banks — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 - **Send** (slot 1) — Signal sent into the delay line; 0 = bypass.
 - **Delay time** (slot 2) — Base delay length, ~1 ms–2 s.
 - **Feedback** (slot 3) — Repeat feedback, capped below 98%.
-- **Stereo width** (slot 4) — Offsets the right tap's read time behind the left; also sets a cross-feed weight that rides the feedback path, so it reaches the repeats once Feedback or Freeze leaves 0. At the page's defaults the widening is all time offset.
+- **Stereo width** (slot 4) — Offsets the right tap's read time behind the left. The offset is the whole of the widening; nothing rides the feedback path, and the read never leaves the line.
 - **Freeze** (slot 5) — Crossfades the feedback loop from the ordinary Feedback level toward full, lossless recirculation; at 0 the loop runs at the Feedback level.
 - **Mod depth** (slot 6) — LFO wobble depth on delay time.
 - **Reverse blend** (`Reverse`, slot 7) — Blends in a backward-travelling read of the delay line against the forward tap; 0 = off, 1 = fully reversed.
@@ -81,7 +81,7 @@ Six banks — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 - **Feedback drive** (`FB drive`, slot 9) — Pre-gain into the feedback saturator, 0.25×–4×, unity at default.
 - **Feedback tone** (`FB tone`, slot 10) — Low-pass inside the feedback loop, ~800 Hz to bypass; bypass at default.
 - **Mod rate** (slot 11) — Delay-time LFO rate, 0.05–1.25 Hz.
-- **Width balance** (`Width bal`, slot 12) — Overall scalar on Stereo width's own spread; default reproduces original fixed behavior.
+- **Width balance** (`Width bal`, slot 12) — Scales the time offset Stereo width produces; full at the top of travel (the default), none at the bottom.
 - **Crush** (slot 13) — Sample-rate reduction on the feedback tap only; off at default.
 
 ## Reverb

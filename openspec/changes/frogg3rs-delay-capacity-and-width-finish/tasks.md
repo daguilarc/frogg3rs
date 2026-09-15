@@ -147,24 +147,27 @@ and two more were lost the same way.
 
 ## Stage 2 — the documents
 
-- [ ] 2.1 `MANUAL.md` and `QUICK_DICT.md` Delay **Stereo width** entries. Both
-      still say the cross-feed rides the feedback path and reaches the repeats
-      once Feedback or Freeze leaves 0. The offset is the only mechanism now.
-- [ ] 2.2 The same two files' **Width balance** entries. House style: plain
-      present tense, what the control does, no history the reader never saw.
-- [ ] 2.3 `frogg3rs.code-workspace`'s THREE stale `files.watcherExclude`
-      entries — node_modules, wasm/build, desktop/build. Only .emsdk
-      resolves. Check each against the filesystem, not against this sentence.
-- [ ] 2.4 Before staging, run `git diff HEAD -- MANUAL.md QUICK_DICT.md` — a
+- [x] 2.1 `MANUAL.md` and `QUICK_DICT.md` Delay **Stereo width** entries now say
+      the offset is the whole of the widening, nothing rides the feedback path,
+      and the read never leaves the line.
+- [x] 2.2 The same two files' **Width balance** entries: scales the time offset
+      Stereo width produces, full at the default top of travel, none at the
+      bottom.
+- [x] 2.3 `frogg3rs.code-workspace`'s `files.watcherExclude`: checked against the
+      filesystem, the node_modules glob resolves (a vendored node tree and
+      Sheaf's browser install), so only the wasm/build and desktop/build
+      entries were stale; those two are removed.
+- [x] 2.4 Before staging, run `git diff HEAD -- MANUAL.md QUICK_DICT.md` — a
       bare `git diff` misses what the other session already staged — and stage
       only this change's hunks with `git add -p`. Re-run immediately before
       committing. If another session's edits are present, stop and report.
-- [ ] 2.5 Retire or rewrite `HANDOFF.md`. It is titled after a superseded
-      change, cites deleted paths, and describes a tree state that is false.
-      Decide between rewriting and removing, and say which and why.
-- [ ] 2.6 Stage gate: suite green, one postflight in a fresh context (NO
-      adversarial axis — this stage ships nothing whose job is to reject),
-      commit and push.
+- [x] 2.5 `HANDOFF.md` removed. It was titled after a deleted change and
+      described a tree state that no longer exists; rewriting it would
+      duplicate this file, which is the handoff. Its inbound mentions are all
+      records under `research/` and stay as history.
+- [x] 2.6 Stage gate: suite green (every gate OK, 191/191, 49/49, 9/9), one
+      postflight in a fresh context with no adversarial axis, zero findings
+      (`research/postflight-stage-2.md`); committed and pushed.
 
 ## Stage 3 — the spec delta and archival
 
