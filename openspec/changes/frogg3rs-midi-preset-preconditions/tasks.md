@@ -34,10 +34,23 @@
       `frogg3rs-delay-capacity-and-width-finish`) — confirm with
       `ls openspec/changes/frogg3rs-delay-width-wysiwyg-repair` returning "No
       such file or directory" — and `python3 app/check_artifact_symbols_resolve.py app`
-      reports `check-artifact-symbols-resolve: OK - 6 artifact file(s) resolve,
-      1 name(s) declared as not yet created`. If either check disagrees because
-      `main` has moved since this was written, STOP and report the actual state
-      rather than resolving by guesswork.
+      exits `0` and prints `check-artifact-symbols-resolve: OK -`, with a
+      "name(s) declared as not yet created" count that is not itself a
+      pass/fail condition (it counts backticked *occurrences* of this
+      change's own forward-declared names — currently
+      `app/check_docs_match_device_preconditions.py`, named once by task 1.8
+      and again by task 4.8 — not distinct names, so it moves whenever this
+      file's own wording does; only a nonzero count of *unresolvable* names,
+      which the script reports as `FAIL` with a nonzero exit code, is a
+      failure). Recording a specific number here for either script would be
+      the same frozen-literal defect this task's own second half already
+      guards against for `main`: the number of open `openspec/changes/`
+      directories elsewhere in the tree changes it independent of anything
+      this change does. If either check disagrees because `main` has moved
+      since this was written, or because this change's own artifacts (not
+      `main`) introduce a new unresolvable name, STOP and report the actual
+      state — naming which of the two causes it is — rather than resolving by
+      guesswork.
 - [ ] 1.3 Enumerate by operand, case-insensitively, across `app/`, `openspec/`
       and the documents: `sceneBlend`, `AnalogMidiInConfig`, `analogRange`,
       `appActions`, `kBpm`, `MidiAppDeviceDefault`, `declaredPreconditions`,
@@ -68,15 +81,20 @@
       `$(MARBLES_CLOCK_BIN)`, `$(SURFACE_BIN)`, `$(MIDI_CATALOG_BIN)`,
       `$(CONTROLLERS_PAGE_BIN)`). Ten of the twelve `check-*` targets run
       without compiling anything; run by path directly against this tree, all
-      ten report `OK`: `check-no-firmware-includes`, `check-microphone-usage`,
+      ten must exit `0`: `check-no-firmware-includes`, `check-microphone-usage`,
       `check-catalog-covers-screen-actions`, `check-docs-match-parameter-table`,
       `check-spec-checks-resolve`, `check-citations-resolve`,
-      `check-no-planning-history`, `check-artifact-symbols-resolve` (`OK - 6
-      artifact file(s) resolve, 1 name(s) declared as not yet created`),
+      `check-no-planning-history`, `check-artifact-symbols-resolve` (exit `0`
+      and an `OK -` line; see task 1.2 for why its "name(s) declared as not
+      yet created" count is not itself recorded as a fixed number here),
       `check-delay-capacity-parameters-are-swept`, and
-      `check-modified-requirements-restate-promoted` (`OK - 5 MODIFIED
-      requirement(s), 134 promoted clause(s) restated or declared, 9 declared
-      edit(s), 1 promoted scenario(s) no longer restated`, exit `0`) — this
+      `check-modified-requirements-restate-promoted` (exit `0` and an `OK -`
+      line naming some number of MODIFIED requirements, promoted clauses,
+      and declared edits — not recorded as fixed figures here, because this
+      script's counts sum over every `openspec/changes/` directory open in
+      the tree at run time, not only this change's own, and the number of
+      other open changes is outside this change's control; re-run it rather
+      than trusting a number written down before this task runs) — this
       last one also prints an informational `NOTE` naming the one promoted
       scenario this change's own spec delta does not fully restate; read that
       script's own header before treating a `NOTE` as a failure. The remaining
@@ -110,22 +128,38 @@
       `MANUAL.md` or the catalogue.** This half is pure text over `MANUAL.md`
       — it has no dependency on `declaredPreconditions` or the submodule pin
       (group 4's gate), so nothing here waits for it. Implement exactly the
-      recovery-half rule design.md's "The drift check has two independent
-      halves" section states: parse the `### Shift` and `### Hold Drill`
-      subsections, heading-delimited, and fail unless each contains at least
-      one of the multi-word recovery phrases task 3.1's rewrite introduces
-      verbatim ("selecting a different preset", "rebuilds the row's mapping",
+      recovery-half rule design.md's "Recovery half — rule, floor, positive
+      control" section states — three rules, all must pass, over the
+      `### Shift` and `### Hold Drill` subsections, heading-delimited;
+      fail naming the missing heading if either is not found at all:
+      (1) **presence** — each subsection contains at least one of the
+      multi-word recovery phrases task 3.1's rewrite introduces verbatim
+      ("selecting a different preset", "rebuilds the row's mapping",
       "unplugging and reconnecting the controller", "clears automatically
-      after"); fail naming the missing heading if either is not found at all.
-      Run it now, against the current, unmodified text, and record both
-      results here: against `MANUAL.md:319-320` ("buttons stay shifted until
-      Shift is pressed and released again" — none of the recovery phrases,
-      only the bare word "unplugged" describing the failure and "pressed and
-      released again", the mechanism that is unavailable when the recovery is
-      needed), the check must fail; against `MANUAL.md:308-313` (no recovery
-      sentence at all today), it must also fail, for the "heading found, no
-      phrase present" reason. If either does not fail, the check tests
-      nothing and this task is not done. Do not add the drift half here —
+      after"); (2) **absence** — neither subsection contains "pressed and
+      released again," or any other sentence naming the modifier's own
+      button as what clears it; (3) **per-host coverage** — if a subsection
+      contains "unplugging and reconnecting the controller," that same
+      subsection also contains the literal substring "not available in the
+      plugin." Run it now, against the current, unmodified text, and record
+      all results here: against `MANUAL.md:319-320` ("buttons stay shifted
+      until Shift is pressed and released again"), rule 1 must fail (none of
+      the recovery phrases is present, only the bare word "unplugged"
+      describing the failure and "pressed and released again"); against that
+      same unmodified sentence with a presence phrase appended but "pressed
+      and released again" left in place, rule 2 must fail — this is the
+      control BLOCK-13 of the third preflight adjudication requires,
+      proving the absence rule actually rejects the sentence it exists to
+      reject, not only the presence rule against different text; against
+      `MANUAL.md:308-313` (no recovery sentence at all today), rule 1 must
+      fail for the "heading found, no phrase present" reason; against a
+      constructed subsection stating "unplugging and reconnecting the
+      controller" with no "not available in the plugin" phrase anywhere in
+      it, rule 3 must fail. If any of these four does not fail, the check
+      tests nothing and this task is not done. The check does not assert a
+      numeric duration for the Ceiling trigger's "clears automatically
+      after" phrase — design.md's "The recovery text states no numeric
+      duration for the Ceiling trigger" states why. Do not add the drift half here —
       that half reads `declaredPreconditions`, which does not exist until
       group 4's gate (4.1-4.2) lands it, and is added by task 4.8, which
       extends this same file rather than creating a second one. Wire only
@@ -166,15 +200,17 @@
 ## 3. Documents
 
 - [ ] 3.1 **Gate.** This rewrite documents recoveries Sheaf's group 3 ("Held
-      modifier lifetime") creates, not group 6 — do not start until confirming
-      the same way task 4.1 confirms `declaredPreconditions`, but for the
-      other symbol: `grep -n HeldModifierClearSource
-      External/Sheaf/projects/synth/include/synth/MidiController.hpp` must
-      return a real enumeration; today it returns nothing. This is the same
-      submodule checkout task 4.1 confirms declares `declaredPreconditions`
-      (Sheaf's group 6); confirming both symbols from that one checkout is
-      sufficient, and this task does not require its own, separate submodule
-      advance beyond what task 4.2 performs. Then: rewrite `MANUAL.md:319-320`
+      modifier lifetime") creates, not group 6 — do not start until Sheaf's
+      `midi-controller-resilience` change is complete through its own task
+      7.9, the same condition task 4.1 confirms (see task 4.1 for the exact
+      commands: a clean tree, every task through 7.9 ticked in the commit
+      itself, and both `declaredPreconditions` and `HeldModifierClearSource`
+      resolving out of that commit — not the working tree, and not a bare
+      substring match a comment could also satisfy). This is the same
+      submodule checkout and the same confirmation task 4.1 performs;
+      confirming it once is sufficient, and this task does not require its
+      own, separate submodule advance beyond what task 4.2 performs. Then:
+      rewrite `MANUAL.md:319-320`
       (Shift) and add a matching recovery
       sentence to `MANUAL.md:308-313` (Hold Drill, which has none today), each
       naming which of `HeldModifierClearSource`'s five triggers are available
@@ -185,12 +221,15 @@
       available on every host, because `Engine::MessageThreadTick` — the
       pump that evaluates it — runs on all three (standalone's `Runtime.hpp`
       timer, the browser's `setInterval`, and the plugin's own JUCE timer);
-      state its duration as read at the time this task runs from
-      `External/Sheaf`'s own design.md (`grep -n
+      describe it as "clears automatically after" an elapsed time, WITHOUT
+      stating a number of seconds — the duration the constant `grep -n
       kHeldModifierCeilingMicros External/Sheaf/openspec/changes/midi-controller-resilience/design.md`
-      — currently 30 seconds, a reversible default per that design's own
-      Risks section, not a figure to hard-code here without re-checking, since
-      Sheaf's own change can tune it before it ships).
+      names (currently 30 seconds) is explicitly a reversible default that
+      Sheaf's own
+      change can tune before it ships, and design.md's "The recovery text
+      states no numeric duration for the Ceiling trigger" explains why
+      freezing whatever number is current into this manual would be the same
+      class of stale figure BLOCK-1 and SF-1 fix elsewhere in this change.
       **EndpointOpen** (unplugging and reconnecting the controller) is
       available in the standalone and browser builds, which manage their own
       MIDI ports, and NOT in the plugin, which takes MIDI through host
@@ -202,15 +241,26 @@
       recovery, only named as what ordinarily ends a hold. Write the recovery
       as an explicit list of actions using multi-word phrasing (e.g.
       "selecting a different preset", "unplugging and reconnecting the
-      controller", "clears automatically after" followed by the duration read
-      above), not a bare
+      controller", "clears automatically after" with no number attached), not
+      a bare
       mention of "unplugged" — task 1.8's check (already authored and proven
       red against today's text before this task runs) matches on these
       specific
       phrases, and a bare word is exactly what the current, unmodified text
       already has without stating a recovery (design.md's recovery-half rule
-      explains why). Do not describe the plugin as having the reconnect
-      route.
+      explains why). Also do not carry forward the sentence task 1.8's check
+      rejects — "pressed and released again," or any other wording that
+      names the modifier's own button as what clears it — the rewrite
+      replaces that sentence, it does not add beside it. Do not describe the
+      plugin as having the reconnect route: wherever this rewrite states
+      "unplugging and reconnecting the controller" for a subsection, that
+      same subsection must also contain the literal phrase "not available in
+      the plugin," naming the plugin specifically (e.g. "...unplugging and
+      reconnecting the controller, on the standalone and browser builds —
+      not available in the plugin, which takes MIDI through host automation
+      and opens no ports of its own") — task 1.8's own third check rule
+      fails a subsection that offers the reconnect phrase without this
+      exclusion.
 - [ ] 3.2 Coordinate every `MANUAL.md` edit with `frogg3rs-delay-capacity-and-width-finish`
       (present in this worktree's own `openspec/changes/`, since this branch
       is at `main`'s tip; task count moves between sessions — re-count with
@@ -235,61 +285,122 @@
 
 ## 4. Declared preconditions
 
-- [ ] 4.1 **Gate.** Do not start the rest of this group until
-      `External/Sheaf`'s submodule checkout — this worktree's own copy, the
-      same one Sheaf's `midi-controller-resilience` change is executed
-      against, sitting on branch `midi-resilience-merge` — has executed
-      Sheaf's tasks 6.1 (adds `declaredPreconditions` to `MidiAppDeviceDefault`,
-      `include/synth/MidiAppCatalog.hpp:31-38`) and 6.2 (threads it through
-      `ControllerWizardDescriptor` and `MakeControllerWizardRegistry`), AND
-      Sheaf's group 3, task 3.1 (adds `HeldModifierClearSource`,
-      `include/synth/MidiController.hpp`, alongside `ShiftState`/`HoldDrillState`)
-      — task 3.1's own manual rewrite depends on this second symbol, not only
-      on `declaredPreconditions`, so both are confirmed together here. Confirm
-      with two greps against the checkout as it actually stands:
-      `grep -n declaredPreconditions
-      External/Sheaf/projects/synth/include/synth/MidiAppCatalog.hpp` (must
-      return a real member; today it returns nothing) and
-      `grep -n HeldModifierClearSource
-      External/Sheaf/projects/synth/include/synth/MidiController.hpp` (must
-      return a real enumeration; today it returns nothing). This gate does not
-      name or depend on any remote branch or a push: Sheaf's own task 7.7
-      performs no push, opens no pull request, and moves no pin in this cycle
+- [ ] 4.1 **Gate.** Do not start the rest of this group — **except tasks 4.5
+      and 4.6, which do not depend on this gate and may run before it, as
+      each states at its own site** — until Sheaf's
+      `midi-controller-resilience` change — executed in `External/Sheaf`'s
+      submodule checkout, this worktree's own copy, on branch
+      `midi-resilience-merge` — is **complete through its own task 7.9**, not
+      merely through the three tasks (6.1, 6.2, and group 3's task 3.1) that
+      happen to add the two symbols this group needs. Completeness is a
+      property of a commit, not of the working tree, because the working
+      tree and a commit are different objects and only a commit is what a
+      submodule gitlink can name. Confirm all of the following against the
+      checkout as it actually stands, in order:
+      1. `git -C External/Sheaf status --short` reports nothing (a clean
+         tree — the same condition Sheaf's own task 7.8 confirms before its
+         coordinator commits).
+      2. `git -C External/Sheaf show HEAD:openspec/changes/midi-controller-resilience/tasks.md
+         | grep -c '^- \[ \]'` reports `0` — every task through 7.9 is
+         ticked in the commit at `HEAD`, not only in the working tree (task
+         7.7, archiving in that repository, may be reported *blocked* rather
+         than complete — it depends on two other Sheaf changes archiving
+         first — but is still ticked, since Sheaf's own task 7.7 states that
+         a blocked archive does not block 7.8's commit; if it is unticked,
+         that is a different, unresolved state and this gate does not pass).
+      3. `git -C External/Sheaf grep -n declaredPreconditions HEAD --
+         projects/synth/include/synth/MidiAppCatalog.hpp | grep -v -E
+         ':[[:space:]]*//'` returns a real member (today it returns nothing).
+      4. `git -C External/Sheaf grep -n HeldModifierClearSource HEAD --
+         projects/synth/include/synth/MidiController.hpp | grep -v -E
+         ':[[:space:]]*//'` returns a real enumeration (today it returns
+         nothing).
+      Reading the symbols out of `HEAD` (a commit), not the working tree,
+      and filtering out any matched line whose text begins with `//`, is
+      what stops a stray comment or a `// TODO: add declaredPreconditions`
+      from satisfying steps 3-4 without a real declaration existing. This
+      gate does not
+      name or depend on any remote branch or a push: Sheaf's own task 7.9
+      states that this change performs no push, opens no pull request, and
+      moves no pin in this cycle
       (its later, operator-driven rebase-and-merge step does that, under
       whatever branch name that step uses) — record only the exact commit SHA
-      `git -C External/Sheaf rev-parse HEAD` reports once both greps pass;
+      `git -C External/Sheaf rev-parse HEAD` reports once all four checks
+      pass;
       that SHA, not any branch name, is what 4.2 checks out (from this same
       local checkout, not by fetching a remote ref that may not exist) and
       what 4.2's own commit message names. Per the operator's decision that
       this delivery cycle ends at a push and nothing more (design.md and task
       6.6), the commit this gate confirms and 4.2 pins
       is reachable from no remote until the operator's later merge — that is
-      expected, not a defect this task can fix.
-- [ ] 4.2 **Submodule pin advance.** `git -C External/Sheaf checkout <the
+      expected, not a defect this task can fix — and until then it exists in
+      exactly one object store on this machine (see task 4.2).
+- [ ] 4.2 **Submodule pin advance — the last task in this change that touches
+      `External/Sheaf`'s checkout.** `git -C External/Sheaf checkout <the
       commit 4.1 confirmed> && git add External/Sheaf`, naming the exact
-      commit SHA in the commit message — no `fetch` is needed, since 4.1
-      confirmed the commit from this worktree's own already-present `Sheaf`
-      checkout, not from a remote ref. This checkout detaches
+      commit SHA in the commit message — no `fetch` is needed for *staging*
+      this pin, since 4.1 confirmed the commit from this worktree's own
+      already-present `Sheaf` checkout, not from a remote ref (a fetch is
+      needed later, by whoever resolves the pushed gitlink, which is the
+      operator's own merge step, not this task). This checkout detaches
       `External/Sheaf`'s `HEAD` from `midi-resilience-merge`; that is the
       normal, expected state for a pinned submodule gitlink (it is not a
       moving branch reference), the `midi-resilience-merge` branch ref itself
       is untouched by this checkout, and nothing here needs to "return" the
-      submodule to it. This
+      submodule to it. Because task 4.1 confirmed Sheaf's change is complete
+      through its own task 7.9 before this task runs, no Sheaf task still
+      needs this checkout on its branch — the detach costs nothing this
+      cycle, unlike a mid-change pin, which would leave a later Sheaf commit
+      landing on a detached `HEAD` its own branch ref never sees. This
       is the only task in this change that moves the pin; nothing else does.
+      **The commit this stages is reachable from no remote until the
+      operator's later merge, and until then exists in exactly one object
+      store on this machine** — this worktree's own submodule store,
+      `.git/worktrees/midi-resilience/modules/External/Sheaf` (confirm with
+      `cat External/Sheaf/.git`); the main checkout's own submodule store,
+      `.git/modules/External/Sheaf`, cannot resolve this commit
+      (`git -C /Users/diegoaguilar-canabal/Desktop/frogg3rs/External/Sheaf
+      cat-file -e <the pinned SHA>` exits non-zero). **No step before the
+      operator's merge may remove this worktree or otherwise destroy that
+      object store** — see task 6.7 for the same statement at delivery time.
+      **Re-run `python3 app/check_citations_resolve.py app` immediately after
+      this pin advance and before continuing.** That script verifies a cited
+      line number falls within the pinned tree's current file length; it
+      cannot tell a citation that still happens to be in range from one that
+      now points at different code, so a citation into `External/Sheaf` this
+      change's own artifacts wrote against the *old* pin — this change's own
+      `design.md` and task 4.6's citations of
+      `External/Sheaf/projects/synth/src/MidiController.cpp:932-976`,
+      `:964-971`, `:969` and `:975` foremost among them, since Sheaf's own
+      task 3.1 renames and moves code around those exact lines — needs a
+      by-hand re-check against the new pin, not only the script's exit code.
+      Re-read each such citation against the freshly pinned commit and
+      correct any that moved before task 4.6 or anything later relies on
+      them.
 - [ ] 4.3 Populate the Twister default's `declaredPreconditions` from the
-      precondition sentences at `app/FroggersMidiCatalog.hpp:14-18` (relative
+      precondition sentences at `app/FroggersMidiCatalog.hpp:14-19` (relative
       encoders, all six side buttons on CC Hold, "Bank Side Buttons"
-      unchecked), and reword the surviving comment at `:19-24` (the
-      button-layout description, which is not a precondition and is not
+      unchecked — the third precondition's own sentence ends mid-line at
+      `:19`, "...addresses whatever Twister bank is lit."), and reword the
+      surviving comment, which begins on that same line 19 ("The six side
+      buttons are five paired jobs...") and runs to `:24` (the button-layout
+      description, which is not a precondition and is not
       deleted) so it does not restate the declared settings and states CC
-      Hold's reason as "the promptest of the triggers that end a held
-      modifier" rather than "what ends Shift." Add a
+      Hold's reason as "what makes every side button address CC
+      127-on-press/0-on-release instead of the factory bank-switch behaviour
+      the middle pair defaults to; for Shift specifically, that release is
+      also the promptest of the triggers that end a held modifier" rather
+      than "what ends Shift." Add a
       device_defaults_declare_their_preconditions case to
       `app/FroggersMidiCatalogTests.cpp` asserting the Twister's three
       declarations.
 - [ ] 4.4 Populate both APC40 mkII defaults' `declaredPreconditions`, which are
       **not the same list**: the Generic default declares the Track 1 caveat
-      from `app/FroggersMidiCatalog.hpp:26-31`; the Ableton default declares an
+      from the comment block at `app/FroggersMidiCatalog.hpp:26-35` (the
+      Generic default's own sentence ends mid-line at `:30`, "...pressed
+      again."; the Ableton default's sentence begins on that same line and
+      runs to `:35` — read only the Generic half for this default's
+      declaration); the Ableton default declares an
       **empty list**, because its connect-time SysEx message
       (`app/FroggersMidiCatalog.hpp:186`) is sent by the app automatically and
       removes that caveat, and `MANUAL.md:353-357` names no manual precondition
@@ -460,7 +571,7 @@ device_defaults_declare_their_preconditions case group 4 adds.
       device this group adds.
 - [ ] 5.4 Once the default exists (5.1-5.2) **and, separately, once the
       operator's later rebase-and-merge has published the site this step
-      observes** (task 6.6: the branch this delivery pushes carries a
+      observes** (task 6.7: the branch this delivery pushes carries a
       submodule pin reachable from no remote until that merge, and
       `.github/workflows/pages.yml` builds the live site from `main` on
       push), this is an **operator step**, not
@@ -497,7 +608,18 @@ device_defaults_declare_their_preconditions case group 4 adds.
       not only `:1-4` ("FroggersMidiCatalog()'s six real device defaults") but
       also `:7` ("so none of them ever drive these six shipping defaults"),
       the same "six" repeated a second time in the same comment block — both
-      to seven, naming the Launch Control XL.
+      to seven, naming the Launch Control XL. Two more prose sites state the
+      same count and are not build-verified assertions, so nothing else
+      would ever catch them going stale: `app/Makefile:127` ("...
+      `synth_froggers::FroggersMidiCatalog()`'s six real device defaults...")
+      and `app/FroggersMidiCatalogTests.cpp:8` ("...and the three device
+      defaults validate against the library's per-kind support...") — the
+      latter is **already false today**, having drifted to "three" while its
+      own `:399` assertion reads `6`; update both to "seven" (and to name the
+      Launch Control XL where the surrounding sentence names the other
+      devices), fixing the pre-existing drift at `FroggersMidiCatalogTests.cpp:8`
+      as part of this same edit rather than leaving one wrong count for
+      another cycle to find.
 - [ ] 5.6 Add MANUAL.md's Launch Control XL section (after "Akai APC40 mkII
       (Ableton)" at `:353-357`, before "Launchpad X" at `:359`, matching the
       device-default order), wrapped in its own
@@ -550,24 +672,78 @@ device_defaults_declare_their_preconditions case group 4 adds.
 - [ ] 6.4 Every scenario in the delta either has a check that passes now, or
       says plainly it is not yet delivered and names what will deliver it.
 - [ ] 6.5 Independent review with a fresh context.
-- [ ] 6.6 **Deliver, in this order: postflight (6.1-6.5) passes → documentation
-      hygiene this change owes → `openspec archive frogg3rs-midi-preset-preconditions`
+- [ ] 6.6 **Rewrite every promoted `Check: not yet delivered` line before
+      archiving — no unrewritten deferral survives into the permanent
+      promoted spec.** `grep -h '^- Check:' openspec/changes/frogg3rs-midi-preset-preconditions/specs/*/spec.md
+      | grep -c 'not yet delivered'` names the count to rewrite (measure it
+      now; do not carry forward a number recorded before this task runs). By
+      the time this task runs, every task this change's own deferred `Check:`
+      lines name (1.8, 4.3, 4.4, 4.5, 4.6(a), 4.6(b), 4.8, 5.1, 5.2) is
+      ticked, so each such line is rewritten to name the test that now
+      exists in the form `app/check_spec_checks_resolve.py` already accepts
+      elsewhere in this repository — a repo-relative path indexed verbatim
+      from the tree, plus the real case name it defines, after a colon (a
+      bare basename is not accepted); the same form this delta's own
+      already-resolved lines already use — not left reading
+      "not yet delivered" against a task that is in fact done, which is
+      false the moment it is ticked and would be promoted false into
+      `openspec/specs/` at archive. This is this repository's own
+      obligation, parallel to what Sheaf's task 1.9 rule 2(b) mechanises for
+      its own deltas; frogg3rs's `check_spec_checks_resolve.py` does not
+      short-circuit on the "not yet delivered" prefix the way Sheaf's does
+      (its own header comment states why), so a line left unrewritten here
+      is not caught by that script alone — this task is the mechanism, and
+      the check below is what proves it ran.
+      **Check:** `grep -h '^- Check:' openspec/changes/frogg3rs-midi-preset-preconditions/specs/*/spec.md
+      | grep -c 'not yet delivered'` reports `0`, and
+      `python3 app/check_spec_checks_resolve.py app` exits `0`. Positive
+      control: leave exactly one `not yet delivered` line unrewritten and
+      confirm the first of those two commands reports a nonzero count — this
+      task is not done, and 6.7's archive must STOP, until that count is
+      `0` for real, not vacuously (an empty `specs/` directory would also
+      report `0`; this repository has one delta file with twelve `Check:`
+      lines today, so a `0` alongside zero total `Check:` lines found would
+      itself be a sign this task ran against the wrong path).
+- [ ] 6.7 **Deliver, in this order: postflight (6.1-6.5) passes → documentation
+      hygiene this change owes → 6.6's Check-line rewrite passes →
+      `openspec archive frogg3rs-midi-preset-preconditions -y`
       → commit → push branch `worktree-midi-resilience` to `origin` and
       nothing else.** No push to `main`, no pull request, no submodule-pin
       change on any `main`, no further rebase. This delivery ships groups 1, 3,
-      4 and 5, once task 4.1's gate is satisfied — the submodule checkout
-      confirmed (from this worktree's own `External/Sheaf` checkout, not from
-      any remote ref) to carry both `declaredPreconditions` (Sheaf group 6)
-      and `HeldModifierClearSource` (Sheaf group 3), and pinned by task 4.2 —
+      4 and 5, once task 4.1's gate is satisfied — Sheaf's change confirmed
+      complete through its own task 7.9 (from this worktree's own
+      `External/Sheaf` checkout, not from any remote ref), carrying both
+      `declaredPreconditions` (Sheaf group 6)
+      and `HeldModifierClearSource` (Sheaf group 3) in the commit task 7.8
+      made, and pinned by task 4.2 —
       which group 5's own declared-preconditions population (task 5.2) also
       depends on, and which task 3.1's manual rewrite (group 3) depends on
-      too, under the same confirmation, not earlier. **The commit this pin
+      too, under the same confirmation, not earlier. The `-y` flag skips
+      `openspec archive`'s interactive confirmation prompts — it does not
+      skip validation, and this task does not add `--skip-specs` or
+      `--no-validate`. It is used here for one known, disclosed reason: task
+      5.4 is by design an operator step sequenced after this delivery's own
+      push, so it is unticked (`- [ ]`) when this task runs, and `openspec
+      archive` would otherwise stop on an interactive "incomplete tasks
+      remain, continue?" prompt for that single, expected exception. If the
+      command's own output (or `--json`, if this runs non-interactively)
+      names any OTHER unticked task besides 5.4, or a validation failure,
+      STOP and report it — `-y` answering that one known prompt is not a
+      license to force past anything else the tool refuses to do silently.
+      **The commit this pin
       advances to, and so the commit `worktree-midi-resilience` carries once
-      pushed, is reachable from no remote until the operator's own later step**
-      (Sheaf's task 7.7 performs no push in this cycle) — `git branch -r
+      pushed, is reachable from no remote until the operator's own later step,
+      and until then exists in exactly one object store on this machine**
+      (Sheaf's task 7.9 states the same fact from its own side; see task 4.2
+      for the exact commands) — `git branch -r
       --contains <that commit>` against both `fork` and `origin` returns
       nothing today, and will keep returning nothing after this task's own
-      push, exactly as it does for the Sheaf commit itself. A fresh clone or a
+      push, exactly as it does for the Sheaf commit itself. **This worktree
+      must not be removed, and `External/Sheaf`'s submodule object store
+      inside it must not be destroyed, before the operator's later merge
+      publishes both repositories' commits together** — a `git worktree
+      remove` of a sibling has already destroyed one such store once during
+      this change's own preflight history. A fresh clone or a
       CI checkout of `worktree-midi-resilience` (`.github/workflows/pages.yml`
       triggers on push to `main`, not to this branch, so this push alone does
       not run it) cannot resolve `External/Sheaf`'s gitlink until the
@@ -581,7 +757,12 @@ device_defaults_declare_their_preconditions case group 4 adds.
       openspec/changes/archive/anything` (matches `.gitignore:31`) and
       `git ls-files openspec/changes/archive` returning nothing — so the
       archived copy lives only on this machine,
-      not in the pushed commit); this is expected, not a loss to fix. The
+      not in the pushed commit); this is expected, not a loss to fix. Sheaf's
+      own `midi-controller-resilience` change is not archived in this
+      cycle regardless of what its own task 7.7 reports — that repository's
+      archive is the operator's own upstream concern, sequenced after the
+      two Sheaf changes 7.7 itself names, not this task's to perform or wait
+      for. The
       operator performs the
       rebase and merge of `worktree-midi-resilience` into `main` afterward;
       this task does not do that, and does not wait for it.

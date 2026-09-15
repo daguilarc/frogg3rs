@@ -36,29 +36,59 @@ Group 4 therefore opens with a gate (task 4.1) and the mechanical step that
 closes it — advancing the submodule pin (task 4.2) — as its own numbered task,
 because no other task in this change performs it.
 
-**Sequencing, stated exactly.** Sheaf executes its own tasks 6.1 (the field)
-and 6.2 (threading it through `ControllerWizardDescriptor` and
-`MakeControllerWizardRegistry`), and its group 3, task 3.1 (adds
-`HeldModifierClearSource`, which this change's own task 3.1 needs to name the
-manual's recoveries), on its branch `midi-resilience-merge` — the same
-submodule checkout this worktree already carries. Sheaf's own task 7.7
-performs no push, opens no pull request, and moves no pin in this cycle; the
-operator's later, separate rebase-and-merge step pushes that work (or a
-rebased equivalent) to a remote, under whatever branch name that step uses.
-"Sheaf has landed" for this change therefore means exactly one thing, checked
-locally, never against a remote: this worktree's `External/Sheaf` submodule
-checkout carries both symbols — verified by `grep -n declaredPreconditions
-External/Sheaf/projects/synth/include/synth/MidiAppCatalog.hpp` and
-`grep -n HeldModifierClearSource
-External/Sheaf/projects/synth/include/synth/MidiController.hpp`, each
-returning a real member, not by any claim about upstream, a pull request, or
-`main` on either repository. Task 4.2 performs the pin advance (from this
-local checkout, not a fetch); task 4.1 is the gate confirming both symbols
-that says group 4 — and, under the same confirmation, task 3.1's manual
-rewrite — does not start before it. The commit task 4.2 pins is, by the same
-fact, reachable from no remote until the operator's later step publishes it
-(see Risks and Migration Plan below); that does not change what "landed"
-means here, which is a property of this local checkout, not of any remote.
+**Sequencing, stated exactly.** Sheaf executes its own `midi-controller-resilience`
+change to completion, through its own task 7.9, on its branch
+`midi-resilience-merge` — the same submodule checkout this worktree already
+carries. That includes tasks 6.1 (the field) and 6.2 (threading it through
+`ControllerWizardDescriptor` and `MakeControllerWizardRegistry`), and group
+3's task 3.1 (adds `HeldModifierClearSource`, which this change's own task
+3.1 needs to name the manual's recoveries) — but "Sheaf has landed" means the
+whole change is done, not just those three tasks, because the object this
+change confirms against and pins is the commit Sheaf's own task 7.8 makes,
+and that commit is only made once 7.1-7.7 have been reported (7.7 itself may
+be reported *blocked* rather than complete — it depends on two other Sheaf
+changes archiving first, which is outside either change's control this cycle
+— see "Overlapping active changes" in proposal.md). Sheaf's own task 7.9
+states that this change performs no push, opens no pull request, and moves
+no pin in this cycle; the operator's later, separate rebase-and-merge step
+pushes that work (or a rebased equivalent) to a remote, under whatever
+branch name that step uses.
+
+"Sheaf has landed" for this change therefore means, checked locally, never
+against a remote: (1) `git -C External/Sheaf status --short` is empty (a
+clean tree, the same condition Sheaf's own task 7.8 confirms before
+committing); (2) `git -C External/Sheaf show HEAD:openspec/changes/midi-controller-resilience/tasks.md
+| grep -c '^- \[ \]'` reports `0` — every task through 7.9 is ticked in the
+commit itself, not merely in the working tree; and (3) both symbols resolve
+out of that same commit object, not the working tree, and not a bare
+substring match that a comment or a TODO could also satisfy: `git -C
+External/Sheaf grep -n declaredPreconditions HEAD --
+projects/synth/include/synth/MidiAppCatalog.hpp | grep -v -E ':[[:space:]]*//'`
+and `git -C External/Sheaf grep -n HeldModifierClearSource HEAD --
+projects/synth/include/synth/MidiController.hpp | grep -v -E ':[[:space:]]*//'`
+(the second `grep -v` drops any matched line whose text, after `git grep
+-n`'s own `path:line:` prefix, begins with `//`, so a stray comment or a
+`// TODO: add declaredPreconditions` naming the symbol does not pass a check
+meant to confirm a real declaration), each returning a real member or
+enumerator. None
+of this is a claim about upstream, a pull request, or `main` on either
+repository — it is a property of this local checkout's own object store.
+Task 4.2 performs the pin advance from that same local checkout, not a
+fetch, and pins exactly the commit task 4.1 confirmed — the coordinator's
+task 7.8 commit, named by its SHA once confirmed, not whatever `HEAD`
+happens to be at some earlier, partial point in Sheaf's own execution. Task
+4.1 is the gate that says group 4 — and, under the same confirmation, task
+3.1's manual rewrite — does not start before this. Because Sheaf executes to
+completion before this change's group 4 begins, task 4.2's checkout of that
+commit detaches nothing Sheaf still needs: no Sheaf task after 7.8 touches
+that checkout, so the detach costs nothing this cycle (Risks, below, states
+the general consequence for the record). The commit task 4.2 pins is, by
+the same fact, reachable from no remote until the operator's later step
+publishes it, and until then it exists in exactly one object store on this
+machine — this worktree's own submodule store — which no step before that
+publication may destroy (see Risks and Migration Plan below); that does not
+change what "landed" means here, which is a property of this local
+checkout, not of any remote.
 
 ## Goals / Non-Goals
 
@@ -217,9 +247,14 @@ directly:
   Hold"` from `"CC Hold, permanently"` — they share the same prefix — so the
   positive control the previous design specified for exactly this edit could
   not turn the check red; and a marker-word reverse check (`must`, `set to`,
-  `unchecked`, `stay selected`, `Utility`) scores zero clause markers on six
-  of the seven device subsections as written (`Twister` scores 2; the other
-  six score 0 each — verified by direct count against the live manual), so it
+  `unchecked`, `stay selected`, `Utility`) scores zero clause markers on five
+  of today's six device subsections as written — `Twister` itself scores 3
+  occurrences across two distinct markers (`unchecked` once, `Utility`
+  twice), not zero, but that only proves *some* marker word is present
+  somewhere in the Twister's subsection, not that the specific declared
+  string deleted is missing (verified by direct count against the live
+  manual: `APC40 Generic`, `APC40 Ableton`, and all three Launchpad
+  subsections score 0 each), so it
   would stay silent if a real declared string were deleted from a device that
   states its precondition in different words, such as the APC40 Generic's
   "Keep Track 1 selected:".
@@ -320,33 +355,88 @@ down, not only the recovery half's.
 
 **Recovery half — rule, floor, positive control (text-only; authored and run
 early, in task 1.8).** The check parses the `### Shift` and `### Hold Drill`
-subsections, heading-delimited, and asserts each contains at least one of a
-fixed set of multi-word recovery phrases task 3.1's rewrite introduces
-verbatim — "selecting a different preset", "rebuilds the row's mapping",
-"unplugging and reconnecting the controller", "clears automatically after" —
-failing when none is present; if either heading is not found at all, the
-check fails naming the missing heading, rather than vacuously passing an
-empty comparison. The set is multi-word and names an action, not a bare noun:
-a single word like "unplugged" is not sufficient, because the **current,
-unmodified** text already contains that word as part of describing the
-*failure* ("If the controller is unplugged while Shift is still held, its
-buttons stay shifted..."), not as a stated recovery — a bare-word check would
-pass the very text this check exists to reject. This half has no dependency
-on `declaredPreconditions` or the submodule pin, so task 1.8 authors it and
-runs it against the **current, unmodified** manual before task 3.1 changes
-anything: against `MANUAL.md:319-320` ("buttons stay shifted until Shift is
-pressed and released again" — none of the recovery phrases, only the bare
-word "unplugged" and "pressed and released again", the very mechanism that is
-unavailable when the recovery is needed) the check must fail; against
-`MANUAL.md:308-313` (no recovery sentence at all today) it must also fail,
-for the "heading found, no phrase present" reason. If either control does not
-turn red, the check tests nothing, exactly as it did in the version this
-change replaces (a false-positive check committed against
+subsections, heading-delimited, and applies three rules, all of which must
+pass; if either heading is not found at all, the check fails naming the
+missing heading, rather than vacuously passing an empty comparison.
+
+1. **Presence.** Each subsection contains at least one of a fixed set of
+   multi-word recovery phrases task 3.1's rewrite introduces verbatim —
+   "selecting a different preset", "rebuilds the row's mapping",
+   "unplugging and reconnecting the controller", "clears automatically
+   after" — failing when none is present. The set is multi-word and names an
+   action, not a bare noun: a single word like "unplugged" is not
+   sufficient, because the **current, unmodified** text already contains
+   that word as part of describing the *failure* ("If the controller is
+   unplugged while Shift is still held, its buttons stay shifted..."), not
+   as a stated recovery — a bare-word check would pass the very text this
+   check exists to reject.
+2. **Absence.** Neither subsection contains "pressed and released again" (or
+   any sentence naming the modifier's own button — Shift's own button for
+   the Shift subsection, Hold Drill's own button for that subsection — as
+   what clears it), because that is exactly the recovery `spec.md`'s
+   scenario forbids: one that depends on the same address whose failure to
+   transmit is what strands the modifier in the first place. This rule is
+   what BLOCK-13's remedy adds: presence alone accepts the **current**
+   `MANUAL.md:319-320` text unmodified, plus one appended sentence
+   containing a presence phrase, because nothing in a presence-only rule
+   reads the rest of the subsection — the absence rule is what makes
+   `MANUAL.md:319-320`'s own current sentence itself a positive control (see
+   below), not only a hypothetical one.
+3. **Per-host coverage.** If a subsection contains "unplugging and
+   reconnecting the controller", the same subsection must also contain the
+   literal substring "not available in the plugin" — task 3.1's rewrite
+   states EndpointOpen is unavailable in the plugin build (design.md,
+   above), and task 3.1 is separately instructed "do not describe the
+   plugin as having the reconnect route"; nothing before this rule checked
+   that instruction was followed. A subsection that lists the reconnect
+   phrase without also excluding the plugin fails.
+
+This half has no dependency on `declaredPreconditions` or the submodule pin,
+so task 1.8 authors it and runs it against the **current, unmodified**
+manual before task 3.1 changes anything, and both controls below must turn
+red before task 3.1 exists to make them pass, not after — if either does
+not, the check tests nothing, exactly as it did in the version this change
+replaces (a false-positive check committed against
 `check_spec_checks_resolve`'s check-name resolution rather than its
-behaviour) — which is why task 1.8 runs both controls before task 3.1 exists
-to make them pass, not after. `spec.md`'s Check line for the scenario this
-half backs names task 1.8 and states this same phrase-set rule, not a second,
-differently-worded one.
+behaviour):
+
+- Against `MANUAL.md:319-320` as it reads today ("buttons stay shifted until
+  Shift is pressed and released again") the check must fail on rule 1
+  (presence) — none of the recovery phrases is present, only the bare word
+  "unplugged" and "pressed and released again". It must **also** fail on
+  rule 2 (absence) once a presence phrase is appended to this same
+  unmodified sentence without removing "pressed and released again" — this
+  is the control BLOCK-13 requires: presence-only would accept
+  `MANUAL.md:319-320` verbatim plus one appended sentence, and rule 2 is
+  what this repository's own current text is used to prove red before
+  task 3.1 removes the sentence rule 2 targets.
+- Against `MANUAL.md:308-313` (no recovery sentence at all today) the check
+  must fail for the "heading found, no phrase present" reason (rule 1).
+- Against a hypothetical rewrite that states "unplugging and reconnecting
+  the controller" without also stating "not available in the plugin"
+  anywhere in the same subsection, the check must fail on rule 3.
+
+Both controls are run before task 3.1 exists to make the rules pass, not
+after — a check whose positive control cannot be demonstrated against text
+that predates the fix proves nothing. `spec.md`'s Check line for the
+scenario this half backs names task 1.8 and states this same three-rule
+set, not a second, differently-worded one.
+
+**The recovery text states no numeric duration for the Ceiling trigger.**
+An earlier draft of task 3.1 had the manual state the Ceiling's duration in
+seconds, read at authoring time from `External/Sheaf`'s own design.md
+default (`kHeldModifierCeilingMicros`, currently 30 seconds). That default is
+explicitly Sheaf's own change's to tune before it ships (its own Risks
+section calls it reversible), and freezing whatever number is current into
+this repository's manual text would go stale the next time Sheaf's change
+adjusts it, with nothing in either repository's check surface positioned to
+notice — the same class of frozen figure BLOCK-1 and SF-1 name elsewhere in
+this change. The recovery text names "clears automatically after" as the
+trigger phrase (rule 1, above) without a number attached, describing the
+Ceiling as an automatic elapsed-time clear rather than committing to a
+duration this repository does not own and cannot re-verify at manual-render
+time. Task 3.1 states this explicitly; the recovery-half check's phrase set
+does not include or require any numeric text.
 
 **The undeclared-dependency SHALL ships unchecked this cycle, stated as
 such.** `spec.md`'s "A preset SHALL NOT depend on a device setting it does
@@ -463,16 +553,79 @@ $ cd "/Applications/Ableton Live 12 Suite.app/Contents/App-Resources/MIDI Remote
  242 STORE_NAME     LIVE_TEMPLATE_SYSEX
 ```
 
-and, from disassembling `make_slider` (script line 88) and the fader list
-comprehension (script line 101): `SliderElement(MIDI_CC_TYPE, LIVE_CHANNEL,
-identifier, name=...)` with identifiers `77 + i` for `i in range(8)`. The
-`.pyc`'s bytecode gives `LIVE_CHANNEL = 8` and the template byte `8` directly;
-the two paragraphs above corroborate what those two integers *mean*
-(channel 9 counted from 1; the first of the 8 factory templates) against the
-vendor's own Programmer's Reference Guide, which states the meaning of a
-zero-indexed channel and of template slots 08h-0Fh but not the values
-themselves. The CC numbers 77-84 rest on the disassembly alone — no vendor
-document states them at all, factory-template or otherwise.
+`dis.get_instructions` disassembles one code object and does not descend
+into the nested code objects a `def` or a comprehension compiles to — the
+module-level command above is filtered to `LOAD_CONST`/`LOAD_NAME`/
+`STORE_NAME`/`BUILD_TUPLE`/`BINARY_OP` at module scope only, so it cannot by
+itself show the fader CC numbers, which are built inside `make_slider` (a
+nested `def`) and a list comprehension (its own nested code object under
+every Python version this reading used). Reading those requires
+disassembling each nested code object individually, which is a second,
+separate reading, recorded here in the same form as the module-level one —
+same interpreter, `~/.local/bin/python3.11` (`python3 -V` reports `Python
+3.11.14` on this machine; the reading was run under this pinned interpreter
+specifically, not the system `python3`, which is version 3.13 and would
+inline a comprehension into its enclosing code object under PEP 709,
+producing a different, misleadingly complete instruction stream at module
+scope — not run for this reading):
+
+```
+$ python3.11 disassembly of LaunchControlXL.pyc: make_slider and the four control-row comprehensions in _create_controls
+== make_slider (script line 88) consts=[None, ('name',)]
+     2 LOAD_GLOBAL    NULL + SliderElement
+    14 LOAD_GLOBAL    MIDI_CC_TYPE
+    26 LOAD_GLOBAL    LIVE_CHANNEL
+    38 LOAD_FAST      identifier
+    40 LOAD_FAST      name
+    42 KW_NAMES
+    44 PRECALL
+    48 CALL
+    58 RETURN_VALUE
+== <listcomp> (script line 101) consts=[77, 'Volume_%d', 1]
+     0 COPY_FREE_VARS
+     4 BUILD_LIST
+     6 LOAD_FAST      .0
+     8 FOR_ITER       to 56
+    10 STORE_FAST     i
+    12 PUSH_NULL
+    14 LOAD_DEREF     make_slider
+    16 LOAD_CONST     77
+    18 LOAD_FAST      i
+    20 BINARY_OP      +
+    24 LOAD_CONST     'Volume_%d'
+    26 LOAD_FAST      i
+    28 LOAD_CONST     1
+    30 BINARY_OP      +
+    34 BINARY_OP      %
+    38 PRECALL
+    42 CALL
+    52 LIST_APPEND
+    54 JUMP_BACKWARD  to 8
+    56 RETURN_VALUE
+```
+
+(The three encoder-row comprehensions at script lines 93, 94 and 98, over the
+same `consts=[13, ...]`/`consts=[29, ...]`/`consts=[49, ...]` shape calling
+`make_encoder` instead of `make_slider`, are part of the same recorded
+disassembly and are not reproduced here since this requirement concerns the
+faders only.) `make_slider` itself loads `LIVE_CHANNEL` by name (`LOAD_GLOBAL
+LIVE_CHANNEL`, offset 26) rather than a literal, so the fader's channel is
+the same module-level constant read above, not a second value; the
+`<listcomp>` calls `make_slider` with `LOAD_CONST 77` plus the loop index
+`i`, one call per fader — CC 77 to CC 84 across the eight faders, labelled
+`Volume_%d`, which this change reads as the CC map for the row of faders and
+assigns fader 1 (`i = 0`, CC 77) to scene blend.
+
+The `.pyc`'s bytecode gives `LIVE_CHANNEL = 8` and the template byte `8`
+directly; the two paragraphs above corroborate what that one constant *means*
+in its two roles — the fader's channel (channel 9 counted from 1) and the
+`Change current template` message's own channel byte, since `LIVE_CHANNEL` is
+loaded once by name and reused in both the SysEx tuple and the slider
+factory, not two integers occupying two purposes — against the vendor's own
+Programmer's Reference Guide, which states the meaning of a zero-indexed
+channel and of template slots 08h-0Fh but not the values themselves. The CC
+numbers 77-84 rest on the disassembly alone — no vendor document states them
+at all, factory-template or otherwise.
 
 **What task 5.1's own check can and cannot prove.** The
 `device_defaults_declare_their_preconditions`/analog-section case task 5.1
@@ -560,14 +713,25 @@ repository can drive a real fader.
   `declaredPreconditions` — the render is Sheaf's own `synth-runtime-ui`
   requirement sru-64.
 - **The commit task 4.2 pins is reachable from no remote until the operator's
-  own later step.** → Sheaf's own task 7.7 performs no push, opens no pull
-  request, and moves no pin in this cycle; the operator has decided this
-  delivery cycle ends at a push of `worktree-midi-resilience` and nothing
-  more, so an unreachable pin until that operator's later merge is expected,
-  not a defect. Stated plainly rather than implied: a fresh clone or a
-  CI checkout of the branch this change's own task 6.6 pushes
+  own later step, and until then exists in exactly one object store on this
+  machine.** → Sheaf's own task 7.9 states that this change performs no
+  push, opens no pull request, and moves no pin in this cycle; the operator
+  has decided this delivery cycle ends at a push of `worktree-midi-resilience`
+  and nothing more, so an unreachable pin until that operator's later merge
+  is expected, not a defect. Stated plainly rather than implied: a fresh
+  clone or a CI checkout of the branch this change's own task 6.7 pushes
   (`worktree-midi-resilience`) cannot resolve `External/Sheaf`'s gitlink until
-  the operator's later rebase-and-merge publishes both commits together.
+  the operator's later rebase-and-merge publishes both commits together —
+  and, more than that, the pinned commit exists in exactly one object store
+  on this machine, `.git/worktrees/midi-resilience/modules/External/Sheaf`
+  (Sheaf's own task 7.9 states the same fact from its side); the main
+  checkout's own submodule store, `.git/modules/External/Sheaf`, cannot
+  resolve it (`git -C
+  /Users/diegoaguilar-canabal/Desktop/frogg3rs/External/Sheaf cat-file -e
+  <sha>` exits non-zero for this commit). **No step before the operator's
+  merge may remove this worktree or otherwise destroy that object store** —
+  a `git worktree remove` of a sibling has already destroyed one such store
+  once during this change's own preflight history.
   `.github/workflows/pages.yml` checks out with `submodules: recursive` on
   push to `main`, not to this branch, so that workflow does not even run
   against this push — the merge is the point at which the pin must resolve,

@@ -12,6 +12,16 @@ An operator whose Twister had "Bank Side Buttons" on lost three of six side
 buttons: the device moved their CC addresses, and the app reported nothing. The
 recovery the manual offers at `MANUAL.md:319-320` — press and release Shift
 again — was unreachable, because Shift was one of the addresses that had moved.
+(Sheaf's own `midi-controller-resilience` proposal records the same class of
+field incident in different terms — CC Hold also off, the Shift address
+ceasing to transmit rather than moving, and all five non-Shift buttons stuck
+in their shifted form rather than three of six addresses moving. Neither
+account is independently verified against the other, and nothing recorded
+settles which is more precise; this change states its own motivating incident
+as observed, and does not depend on the exact count or mechanism matching
+Sheaf's account — both agree the Twister can leave a side button, including
+Shift, unrecoverable through the manual's old text, which is what both
+changes fix.)
 
 **Scene blend and BPM are already assignable to faders, and the Launch Control
 XL is not catalogued.** `AnalogMidiInConfig::sceneBlend`
@@ -104,9 +114,15 @@ Reference Guide documents (`F0h 00h 20h 29h 02h 11h 77h Template F7h`) with a
 template byte of 8 — the first of the 8 factory templates, per the
 Programmer's Reference Guide's own "Launch Control XL MIDI Overview": "User
 templates occupy slots 00h-07h (0-7), whereas factory templates occupy slots
-08-0Fh (8-15)." Its channel constant is 8, and the Programmer's Reference
-Guide's "Device-to-Computer messages" section states the device's own MIDI
-channel is zero-indexed, so that channel is 9 counted from 1. Its
+08-0Fh (8-15)." Its channel constant is 8. The Programmer's Reference Guide's
+"Device-to-Computer messages" section states buttons output on a
+zero-indexed MIDI channel; no sentence in either document states channel
+numbering for faders specifically, but every message table in the Guide uses
+that same zero-indexed convention with no exception carved out for one
+control type, so reading the fader's channel constant the same way is
+consistent with the whole document rather than derived from a fader-scoped
+sentence (design.md, "Who read the script, by what command, and what it
+printed," carries the full reasoning) — giving channel 9 counted from 1. Its
 fader-building code assigns consecutive CC numbers starting at 77, one per
 fader, giving CC 77 to CC 84 across the eight faders. design.md, "The template
 is a declared precondition," carries the full citation and the reasoning for
@@ -127,7 +143,12 @@ Consequently:
 - The catalogue's device-default count moves from six to seven. The three
   catalogue-count assertions this changes — `app/FroggersMidiCatalogTests.cpp:399`,
   `app/FroggersControllersPageTests.cpp:99`, and
-  `app/FroggersControllersPageTests.cpp:109` — are named in tasks.md, task 5.5.
+  `app/FroggersControllersPageTests.cpp:109` — are named in tasks.md, task 5.5,
+  along with the prose sites that state the same count in comments rather
+  than assertions: `app/Makefile:127` and `app/FroggersMidiCatalogTests.cpp:8`
+  (the latter already reads "the three device defaults" today, contradicting
+  its own count assertion at `:399`, which is `6` — a pre-existing drift this
+  change also fixes while it is touching this count).
 - Hardware confirmation is a post-delivery operator check, not a build-time
   test: no Launch Control XL is attached to this machine (`ioreg -p IOUSB -w
   0` lists only a USB Hub, a Portable SSD T5, and a USB-to-DP/HDMI adapter),
@@ -144,43 +165,62 @@ same way.
 
 ## Overlapping active changes
 
-Re-derived directly: `git worktree list`, then `git status --short` and
-`ls openspec/changes/` in each checkout it names.
+Re-derived directly, at this writing: `git worktree list`, then
+`git status --short` and `ls openspec/changes/` in each checkout it names.
+This table is a reading of a command's output, not a fact to trust from an
+earlier run — re-run all three before relying on it, since a sibling
+worktree has already been removed once during this change's own history
+(task 1.1) and `main` has since advanced past two more archived changes.
 
 ```
 $ git worktree list
-/Users/diegoaguilar-canabal/Desktop/frogg3rs                                            634d292 [main]
-/Users/diegoaguilar-canabal/Desktop/frogg3rs/.claude/worktrees/midi-resilience          a66f651 [worktree-midi-resilience]
-/Users/diegoaguilar-canabal/Desktop/frogg3rs/.claude/worktrees/randomize-depth-reclaim  db65167 [worktree-randomize-depth-reclaim]
+/Users/diegoaguilar-canabal/Desktop/frogg3rs                                    188b109 [main]
+/Users/diegoaguilar-canabal/Desktop/frogg3rs/.claude/worktrees/midi-resilience  d5fe3ca [worktree-midi-resilience]
 ```
 
-The sibling worktree `.claude/worktrees/midi-controller-resilience` and its
-branch `worktree-midi-controller-resilience` no longer exist (see task 1.1);
-the change it held, `frogg3rs-density-documents-and-spec`, went with it and
-exists in no checkout.
+Only these two checkouts exist now. The sibling worktrees
+`.claude/worktrees/midi-controller-resilience` (branch
+`worktree-midi-controller-resilience`, held `frogg3rs-density-documents-and-spec`)
+and `.claude/worktrees/randomize-depth-reclaim` (branch
+`worktree-randomize-depth-reclaim`, held `frogg3rs-randomize-depth-reclaim`)
+have both been removed; `frogg3rs-randomize-depth-reclaim` archived into
+`main` before its worktree went, `frogg3rs-density-documents-and-spec` did
+not survive at all (see task 1.1). `frogg3rs-delay-capacity-and-width-finish`
+has also archived into `main` since this section was last written
+(`main` is at `188b109`, three commits ahead of where this branch last
+rebased from). Re-running `ls openspec/changes/` in this worktree returns
+only this change's own directory.
 
 | checkout | `openspec/changes/` holds | overlap with this change | disposition |
 | --- | --- | --- | --- |
-| **this worktree** (`midi-resilience`) | `frogg3rs-delay-capacity-and-width-finish`, `frogg3rs-midi-preset-preconditions` (this change), `frogg3rs-randomize-depth-reclaim` | `frogg3rs-delay-capacity-and-width-finish`'s Delay bank section (`MANUAL.md:678-742`) | Disjoint section: this change's MIDI controllers section is `MANUAL.md:258-390`. No line overlap. Diff-review `MANUAL.md` before staging; never stage a whole-file `git add` while it is active. `frogg3rs-randomize-depth-reclaim` touches neither `MANUAL.md`, `QUICK_DICT.md`, `app/FroggersMidiCatalog*`, nor `app/Makefile` (checked by name against its `proposal.md`); no overlap. |
-| **main checkout** | `frogg3rs-delay-capacity-and-width-finish`, `frogg3rs-randomize-depth-reclaim` (this change, `frogg3rs-midi-preset-preconditions`, has not been delivered to `main`) | `git -C <main checkout> status --short` shows uncommitted edits inside `frogg3rs-delay-capacity-and-width-finish`'s own directory and to `app/FroggersDspParityTests.cpp`, `app/check_delay_capacity_break_proofs.py`, and `openspec/specs/froggers-sheaf-parameter-model/spec.md` — none of it touches `MANUAL.md`, `QUICK_DICT.md`, `app/FroggersMidiCatalog*`, or `app/Makefile`. | Same disjoint-section reasoning as above; this row is in a different checkout so no working-tree collision is possible from here, but the eventual merge must diff-review `MANUAL.md`/`QUICK_DICT.md` rather than take either side wholesale. |
-| **`randomize-depth-reclaim` worktree** | `frogg3rs-delay-capacity-and-width-finish`, `frogg3rs-randomize-depth-reclaim` | None found by name against `MANUAL.md`, `QUICK_DICT.md`, `app/FroggersMidiCatalog*`, `app/Makefile`. | No action. |
+| **this worktree** (`midi-resilience`) | `frogg3rs-midi-preset-preconditions` (this change) only | None — the two changes that once shared this tree (`frogg3rs-delay-capacity-and-width-finish`, `frogg3rs-randomize-depth-reclaim`) have both archived into `main`, and this branch is rebased onto that `main` (task 1.2). | No coordination party remains in this checkout. `MANUAL.md`/`QUICK_DICT.md` collisions with those two changes are moot now that their edits already landed; re-run `ls openspec/changes/` before staging in case a new change has opened in the meantime. |
+| **main checkout** | Whatever `ls openspec/changes/` there reports at the time of the eventual merge (this change, `frogg3rs-midi-preset-preconditions`, has not been delivered to `main`) — re-run rather than trusting this row, since `main` has already moved twice during this change's own lifetime. | Re-run `git -C <main checkout> status --short MANUAL.md QUICK_DICT.md` before staging; empty output is this row's own pass condition, not a fact recorded once and reused. | The eventual merge must diff-review `MANUAL.md`/`QUICK_DICT.md` rather than take either side wholesale, regardless of what is open there when this is read. |
 
-Three Sheaf changes matter, read from `External/Sheaf/openspec/changes/`:
+Four Sheaf changes matter, read from `External/Sheaf/openspec/changes/`:
 
 | change | state | overlap | disposition |
 | --- | --- | --- | --- |
-| `midi-controller-resilience` | Its own artifacts carry a repair pass against a preflight adjudication; still **unexecuted** — `declaredPreconditions` exists in no source file yet (`grep -rn declaredPreconditions External/Sheaf/projects/synth/include/ External/Sheaf/projects/synth/src/ app/` returns nothing) and `openspec validate midi-controller-resilience --strict` reports it valid. Adds `declaredPreconditions` to `MidiAppDeviceDefault` (`synth-controller-wizards` requirement scw-6, tasks 6.1-6.2) and renders it on the Controllers page (`synth-runtime-ui` requirement sru-64, task 6.3), AND adds `HeldModifierClearSource`/`HeldModifierState` (`synth-midi-instrument`, group 3, task 3.1) — this change's own task 3.1 manual rewrite depends on that second symbol, not only on `declaredPreconditions`. The sibling worktree its own task 2.4 names no longer exists (see this change's task 1.1), so no divergent copy of `midi-controller-resilience` remains anywhere to reconcile. Its own task 7.7 performs no push, opens no pull request, and moves no pin in this cycle — the operator's later, separate rebase-and-merge step does that, under whatever branch name it uses; until then the commit this change's own task 4.2 pins is reachable from no remote. | This change's group 4 (declared-preconditions population) and task 3.1 (manual rewrite) cannot proceed until both symbols exist here. See task 4.1's gate. | This change populates `declaredPreconditions` for its own device defaults and starts group 4, and task 3.1, only after the submodule checkout confirms both symbols (task 4.1) and the pin is advanced (task 4.2). It does not define either field and does not render `declaredPreconditions`. |
+| `midi-controller-resilience` | Its own artifacts carry a repair pass against a preflight adjudication; still **unexecuted** — `declaredPreconditions` exists in no source file yet (`grep -rn declaredPreconditions External/Sheaf/projects/synth/include/ External/Sheaf/projects/synth/src/ app/` returns nothing) and `openspec validate midi-controller-resilience --strict` reports it valid. Adds `declaredPreconditions` to `MidiAppDeviceDefault` (`synth-controller-wizards` requirement scw-6, tasks 6.1-6.2) and renders it on the Controllers page (`synth-runtime-ui` requirement sru-64, task 6.3), AND adds `HeldModifierClearSource`/`HeldModifierState` (`synth-midi-instrument`, group 3, task 3.1) — this change's own task 3.1 manual rewrite depends on that second symbol, not only on `declaredPreconditions`. The sibling worktree its own task 2.4 names no longer exists (see this change's task 1.1), so no divergent copy of `midi-controller-resilience` remains anywhere to reconcile. Its own task 7.9 states that this change performs no push, opens no pull request, and moves no pin in this cycle — the operator's later, separate rebase-and-merge step does that, under whatever branch name it uses; until then the commit this change's own task 4.2 pins is reachable from no remote, and exists in exactly one object store on this machine (task 4.2, task 6.7). Its own task 7.7 (archive in that repository) is a **known, self-reported block**: it requires `app-midi-catalog` (#13) and `shift-and-file-export` (#14) to have themselves archived first, which they have not; `midi-controller-resilience`'s own task 7.8 (the coordinator's commit) proceeds regardless, with 7.7 reported blocked rather than forced. | This change's group 4 (declared-preconditions population) and task 3.1 (manual rewrite) cannot proceed until Sheaf's change is complete through its own task 7.9, with the two symbols present in the commit task 7.8 makes. See task 4.1's gate. | This change populates `declaredPreconditions` for its own device defaults and starts group 4, and task 3.1, only after the submodule checkout confirms both symbols in that commit (task 4.1) and the pin is advanced (task 4.2). It does not define either field and does not render `declaredPreconditions`, and it does not archive `midi-controller-resilience` — that repository's archive step is the operator's own concern (see task 6.7). |
 | `app-midi-catalog` | 26/28 done, PR #13 | Owns `MidiAppDeviceDefault` at `projects/synth/include/synth/MidiAppCatalog.hpp:31-38` | Neither this change nor `midi-controller-resilience` redefines the struct; both land above #13. |
 | `shift-and-file-export` | All 29 tasks checked (`grep -c '^\- \[x\]' .../shift-and-file-export/tasks.md` → 29, `'^\- \[ \]'` → 0); not yet archived, so still present in `External/Sheaf/openspec/changes/`. Already delivered `ShiftState`/`shift_` and the field's current spelling, `shift_->held`, into the tree both this change and `midi-controller-resilience` build on (`grep -n "struct ShiftState\|shift_ =" External/Sheaf/projects/synth/include/synth/MidiController.hpp` confirms it is live). Owns requirement smi-16, which `midi-controller-resilience`'s own MODIFIED requirements also amend. | This change's design.md and task 4.6 trace `shift_->held` at `MidiController.cpp:964-971` — code this change shipped, not `midi-controller-resilience`'s. `midi-controller-resilience`'s own task 3.1 renames this to `shift_->modifier.held`; design.md and task 4.6 name both spellings for that reason. | No `app/`-level file this table's coordination concern covers (`MANUAL.md`, `QUICK_DICT.md`, `app/FroggersMidiCatalog*`, `app/Makefile`) is touched by `shift-and-file-export`; the only overlap is the citation-spelling one already handled above. |
+| `launchpad-model-on-the-row` | 11/14 done (`grep -c '^\- \[x\]'`/`'^\- \[ \]'` against its own `tasks.md`); its own task 2.1 (adding `launchpadModel` to `MidiControllerProfileConfig`) is unchecked, and its delivery (task 6.1) is sequenced as "the next sequential pull request" from the fork, not this cycle. | Its own task 6.2 will, in a **separate, future** cycle, set a model on this catalogue's three Launchpad presets in `app/FroggersMidiCatalog.hpp` and move `External/Sheaf`'s submodule pin from `frogg3rs` — the same file and the same pin this change's own task 5.5/4.2 touch. | No collision in this delivery: `launchpad-model-on-the-row`'s task 2.1 has not started, so its frogg3rs-side task 6.2 is not reachable yet. The executor pinning the submodule after this change's own task 4.2 must re-run this row's task-count grep before assuming the baseline this table records still holds, rather than trusting this row indefinitely. |
 
 ## Impact
 
-- `app/FroggersMidiCatalog.hpp` — the precondition sentences at `:14-18`
-  promoted to declarations on each device default; the surrounding
-  button-layout comment at `:19-24` kept but reworded so it no longer restates
-  the declared settings and states CC Hold's reason as "the promptest of the
-  triggers that end a held modifier" rather than "what ends Shift"; the APC40
-  caveat comment at `:26-35` split between the Generic and Ableton defaults;
+- `app/FroggersMidiCatalog.hpp` — the precondition sentences at `:14-19`
+  (the third precondition's own sentence ends mid-line at `:19`, "...
+  addresses whatever Twister bank is lit.", where the button-layout
+  description's own sentence, "The six side buttons are five paired jobs...",
+  begins on the same line) promoted to declarations on each device default;
+  the surrounding button-layout comment, which begins mid-`:19` and runs to
+  `:24`, kept but reworded so it no longer restates the declared settings and
+  states CC Hold's reason as "what makes every side button address CC
+  127-on-press/0-on-release instead of the factory bank-switch behaviour the
+  middle pair defaults to; for Shift specifically, that release is also the
+  promptest of the triggers that end a held modifier" rather than "what ends
+  Shift"; the APC40 caveat comment at `:26-35` (the Generic default's own
+  sentence ends mid-line at `:30`, where the Ableton default's sentence
+  begins) split between the Generic and Ableton defaults;
   the APC40 entries' existing analog defaults at `:165-166` left as they are;
   **the file header comment at `:6-12`**, which enumerates the catalogue's
   "six device defaults" by name, is updated to seven, naming the Launch
