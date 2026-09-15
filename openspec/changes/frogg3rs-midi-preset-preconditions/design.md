@@ -1,7 +1,7 @@
 ## Context
 
 Device preconditions exist twice, as prose, with nothing joining them:
-`app/FroggersMidiCatalog.hpp:14-18` for the reader of the catalogue, and
+`app/FroggersMidiCatalog.hpp:14-19` for the reader of the catalogue, and
 `MANUAL.md:336-339` for the operator. They agree today. Nothing makes them
 agree, and neither is shown at the moment a preset is chosen.
 
@@ -55,26 +55,16 @@ pushes that work (or a rebased equivalent) to a remote, under whatever
 branch name that step uses.
 
 "Sheaf has landed" for this change therefore means, checked locally, never
-against a remote: (1) `git -C External/Sheaf status --short` is empty (a
-clean tree, the same condition Sheaf's own task 7.8 confirms before
-committing); (2) `git -C External/Sheaf show HEAD:openspec/changes/midi-controller-resilience/tasks.md
-| grep -c '^- \[ \]'` reports `0` — every task through 7.9 is ticked in the
-commit itself, not merely in the working tree, per the convention Sheaf's own
-task 7.8 states (its coordinator ticks 7.7, 7.8 and 7.9 themselves, 7.7
-whether its archive ran or was reported blocked, before committing); and (3)
-the declared symbols resolve out of that same commit object, not the working
-tree, and not a bare substring match a comment could also satisfy: `git -C
-External/Sheaf show HEAD:projects/synth/include/synth/MidiAppCatalog.hpp |
-sed 's#//.*##' | grep -n declaredPreconditions` and `git -C External/Sheaf
-show HEAD:projects/synth/include/synth/MidiController.hpp | sed 's#//.*##' |
-grep -nE '\bHeldModifierClearSource\b|\bTemplateChangeRateLimiter\b|\bkHeldModifierCeilingMicros\b'`
-(stripping everything from the first `//` on each line before grepping, so a
-trailing comment naming the symbol does not pass a check meant to confirm a
-real declaration — a declaration wrapped in a `/* */` block comment is a
-residual gap this line-oriented stripping does not close, which is why task
-4.1's own gate also probes for delivered, passing test cases and a real
-wasm-export entry, not only these declarations), each returning a real
-member, enumerator or constant. None
+against a remote: (1) `git -C External/Sheaf status --short` is empty and
+`git -C External/Sheaf rev-parse HEAD` names the exact commit Sheaf's own
+task 7.8 made, per that task's own stated tick convention; and (2) the Sheaf
+test binaries that carry `declaredPreconditions` and `HeldModifierClearSource`
+(Ceiling and EndpointOpen, on both the browser and the runtime binding) build
+and pass, by name, at that commit — task 4.1 names the exact binaries and
+cases. A declaration a comment could also spell, or a box ticked without the
+work behind it, is not what this checks: a real test binary either builds and
+its named case passes, or it does not, and neither outcome is satisfied by
+text. None
 of this is a claim about upstream, a pull request, or `main` on either
 repository — it is a property of this local checkout's own object store.
 Task 4.2 performs the pin advance from that same local checkout, not a
@@ -218,27 +208,44 @@ and `real_catalog_defaults_generate_and_accept_adds_through_the_view_model`
 (`app/FroggersControllersPageTests.cpp`) iterate `catalog.deviceDefaults`/
 `registry` by their live size, so task 5.1's Generic, analog-only default
 reaches both without an edit to either case. Built and run by path in a
-throwaway worktree at this branch's tip, with only the seventh default added
-(`git diff --stat` showed the one addition to
-`app/FroggersMidiCatalog.hpp` and nothing else):
+detached worktree at this branch's own tip (`$M`), with `External/Sheaf`
+checked out at the same commit this worktree's own gitlink pins, both
+binaries deleted first, and only the seventh default added to
+`app/FroggersMidiCatalog.hpp` (`git diff --stat` showed that one addition and
+nothing else):
 
 ```
-$ nice make -C app -j2 app/build/froggers_controllers_page_tests app/build/froggers_midi_catalog_tests
-$ app/build/froggers_controllers_page_tests
-[FAIL] real_catalog_registers_one_descriptor_per_device_default: FroggersControllersPageTests.cpp:99 requirement failed: catalog.deviceDefaults.size() == 6
+$ rm -f "$M/app/build/froggers_controllers_page_tests" "$M/app/build/froggers_midi_catalog_tests"
+$ nice make -C "$M/app" -j2 "$M/app/build/froggers_controllers_page_tests" "$M/app/build/froggers_midi_catalog_tests"
+$ "$M/app/build/froggers_controllers_page_tests"
+[FAIL] real_catalog_registers_one_descriptor_per_device_default: /private/tmp/.../app/FroggersControllersPageTests.cpp:99 requirement failed: catalog.deviceDefaults.size() == 6
 [PASS] real_catalog_defaults_generate_and_accept_adds_through_the_view_model
 [PASS] twister_system_rows_carry_shift_editable_field_and_derived_choice_index
 [PASS] launchpad_presets_pair_with_the_port_names_a_host_reports
 EXIT=1
-$ app/build/froggers_midi_catalog_tests
-[FAIL] device_defaults_are_valid_and_address_exactly_the_documented_controls: FroggersMidiCatalogTests.cpp:399 requirement failed: catalog.deviceDefaults.size() == 6
-… (seven other cases, all [PASS])
+$ "$M/app/build/froggers_midi_catalog_tests"
+[PASS] midi_app_action_walk_moves_the_state_the_screen_moves
+[PASS] midi_encoder_push_drills_like_the_screen_press
+[PASS] catalog_names_every_front_screen_action
+[FAIL] device_defaults_are_valid_and_address_exactly_the_documented_controls: /private/tmp/.../app/FroggersMidiCatalogTests.cpp:399 requirement failed: catalog.deviceDefaults.size() == 6
+[PASS] launchpad_defaults_open_sysex_is_programmer_mode
+[PASS] launchpad_defaults_positions_carry_their_own_controller
+[PASS] launchpad_defaults_pad_actions_resolve_against_the_catalog
+[PASS] launchpad_defaults_bank_column_covers_every_bank
+[PASS] launchpad_defaults_are_registered_with_expected_ids_and_kind
 EXIT=1
 ```
 
-and, with the default reverted, both binaries exit `0` — the two failures
-above are attributable to the added default alone. The only failures are the
-two count assertions task 5.5 already renames (`FroggersControllersPageTests.cpp:99`,
+The file paths in both `[FAIL]` lines print absolute, elided here as printed
+(`REQUIRE_TRUE`, `app/FroggersMidiCatalogTests.cpp:72-79`, embeds `__FILE__`;
+`app/Makefile` compiles every test source by its own absolute path, with no
+prefix-map flag to shorten it) — a relative-looking path or a bare basename
+in this block would not be this binary's own output. With the default
+reverted and both binaries rebuilt from a clean baseline, both exit `0` (all
+four `froggers_controllers_page_tests` cases and all nine
+`froggers_midi_catalog_tests` cases `[PASS]`) — the two failures above are
+attributable to the added default alone. The only failures are the two count
+assertions task 5.5 already renames (`FroggersControllersPageTests.cpp:99`,
 `FroggersMidiCatalogTests.cpp:399`; `:99`'s own `REQUIRE_TRUE` throws before
 `:109`'s `registry.size() == 6` is ever reached, so that third assertion is
 unexecuted in this run, not separately confirmed failing — task 5.5 renames
@@ -248,11 +255,22 @@ passed with the seventh default present, driving it through
 `MakeControllerWizard`, `GenerateCatalogSlots`, `ConfigForm`/`GenerateProfile`,
 `AddController`, and every `AddSingle`/`AddBlock` call across the
 Encoders/SystemMessages/Analogs sections — an analog-only `Generic` default
-is accepted throughout. So the enumeration gap this paragraph closes is a
-citation gap, not a behavioural one: nothing in the Add/Block or wizard path
-needed a change for the seventh default, and task 5.5 names both the case and
-`GenerateCatalogSlots` as sites the seventh default exercises, so a future
-reader does not have to re-derive this measurement to know they are covered.
+is accepted throughout, including its one real control (`AnalogGesture`,
+`sceneBlend` at channel 8 / CC 77): `KindSupport(Generic)` supports all three
+groups, so the Encoders/SystemMessages sections this default starts empty are
+filled by `AddSingle`/`AddBlock` from scratch, with no refusal.
+`launchpad_presets_pair_with_the_port_names_a_host_reports` also passed with
+the seventh default present, exercising the catalogue-derived `registry` its
+own case builds, though (task 5.5) it asserts against a local `kPortCount`
+literal, not the catalogue's own size, so it needs no rename. So the
+enumeration gap this paragraph closes is a citation gap, not a behavioural
+one: nothing in the Add/Block or wizard path needed a change for the seventh
+default, and task 5.5 names all three sites (the two count-bearing cases
+above and `GenerateCatalogSlots`, which the first drives) the seventh default
+exercises, so a future reader does not have to re-derive this measurement to
+know they are covered. This measurement is not repeated at execution time;
+task 5.5's own rename and this design's record of what passed and what failed
+stand as its evidence.
 
 **The manual's recovery is rewritten to the triggers, not to a new promise.**
 `MANUAL.md:319-320` currently says a stuck Shift clears when Shift is pressed and
@@ -410,19 +428,24 @@ subsections, heading-delimited, and applies three rules, all of which must
 pass; if either heading is not found at all, the check fails naming the
 missing heading, rather than vacuously passing an empty comparison.
 
-1. **Presence, as a conjunction over the triggers this change's own recovery
-   text offers, not a disjunction over any one.** Each subsection contains,
-   for every trigger available to it — Rebuild and Ceiling always, and
-   EndpointOpen wherever it applies — at least one of that trigger's own
-   multi-word phrases, verbatim, as task 3.1's rewrite introduces them:
-   Rebuild as "selecting a different preset" or "rebuilds the row's
-   mapping"; Ceiling as "clears automatically after"; EndpointOpen as
-   "unplugging and reconnecting the controller". A subsection naming only
-   one of these three families fails rule 1 by name for the missing ones —
-   an earlier, disjunctive form of this rule accepted a manual naming a
-   single trigger even though `spec.md`'s scenario says "the triggers"
-   (plural) and task 3.1 is instructed to name all three per subsection; the
-   conjunction is what actually enforces that instruction. The phrases are
+1. **Presence, as a conjunction over all three triggers, unconditionally, not
+   a disjunction over any one.** Each subsection contains, for every one of
+   the three triggers this change's own recovery text offers — Rebuild,
+   Ceiling and EndpointOpen, all three, regardless of host — at least one of
+   that trigger's own multi-word phrases, verbatim, as task 3.1's rewrite
+   introduces them: Rebuild as "selecting a different preset" or "rebuilds
+   the row's mapping"; Ceiling as "clears automatically after"; EndpointOpen
+   as "unplugging and reconnecting the controller". `MANUAL.md` is one
+   document read by every host's operator, not partitioned by host, so the
+   presence rule does not conditionally excuse a host from naming
+   EndpointOpen; what varies by host is only whether the same subsection
+   must also exclude the plugin (rule 3, below), never whether the phrase
+   itself is required. A subsection missing any one of these three families
+   fails rule 1 by name for the missing ones — an earlier, disjunctive form
+   of this rule accepted a manual naming a single trigger even though
+   `spec.md`'s scenario says "the triggers" (plural) and task 3.1 is
+   instructed to name all three per subsection; the conjunction is what
+   actually enforces that instruction. The phrases are
    multi-word and name an action, not a bare noun: a single word like
    "unplugged" is not sufficient, because the **current, unmodified** text
    already contains that word as part of describing the *failure* ("If the
@@ -658,6 +681,7 @@ c = marshal.loads(open("LaunchControlXL.pyc", "rb").read()[16:])
 walk(c)
 '
 == make_slider (script line 88) consts=[None, ('name',)]
+   [elided: offset 0, a RESUME instruction]
      2 LOAD_GLOBAL    NULL + SliderElement
     14 LOAD_GLOBAL    MIDI_CC_TYPE
     26 LOAD_GLOBAL    LIVE_CHANNEL
@@ -669,6 +693,7 @@ walk(c)
     58 RETURN_VALUE
 == <listcomp> (script line 101) consts=[77, 'Volume_%d', 1]
      0 COPY_FREE_VARS
+   [elided: offset 2, a RESUME instruction]
      4 BUILD_LIST
      6 LOAD_FAST      .0
      8 FOR_ITER       to 56
@@ -690,6 +715,17 @@ walk(c)
     56 RETURN_VALUE
 ```
 
+Both instructions are now marked as elided rather than silently missing: this
+section as it previously read dropped each function's own `RESUME` line (the
+offset gap — `0`→`2` in `make_slider`, `0`→`4` in `<listcomp>`, both left
+intact) with no elision mark, which reads as an oversight since one other
+elision in this design (the three encoder-row comprehensions, above) is
+marked. `RESUME` carries no operand relevant to this reading (it is CPython's
+own interpreter-entry marker on every code object, present identically on
+both), so this reading does not re-run the disassembly to recover its exact
+printed form; it marks the gap explicitly instead. No other instruction in
+this section is omitted.
+
 (The three encoder-row comprehensions at script lines 93, 94 and 98, over the
 same `consts=[13, ...]`/`consts=[29, ...]`/`consts=[49, ...]` shape calling
 `make_encoder` instead of `make_slider`, are part of the same recorded
@@ -701,6 +737,17 @@ the same module-level constant read above, not a second value; the
 `i`, one call per fader — CC 77 to CC 84 across the eight faders, labelled
 `Volume_%d`, which this change reads as the CC map for the row of faders and
 assigns fader 1 (`i = 0`, CC 77) to scene blend.
+
+This reading rests on one unread premise: `make_slider`'s own body constructs
+`SliderElement(MIDI_CC_TYPE, LIVE_CHANNEL, identifier, name)` positionally,
+and this disassembly does not descend into `SliderElement.__init__` itself —
+only Ableton's own `_Framework` module defines it — so which positional
+argument `SliderElement.__init__` treats as the MIDI channel and which as the
+CC number is read from `make_slider`'s call-site convention (channel before
+identifier, matching every other control factory in this script), not from a
+disassembly of `__init__`'s own parameter order. The shipped `CC 77 / channel
+8` mapping rests on that premise being right; it is stated here as unread, not
+corroborated.
 
 The `.pyc`'s bytecode gives `LIVE_CHANNEL = 8` and the template byte `8`
 directly; the two paragraphs above corroborate what that one constant *means*
