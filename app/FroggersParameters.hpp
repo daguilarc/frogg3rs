@@ -189,8 +189,11 @@ inline const std::array<FroggersBankLayout, kFroggersBankCount>& FroggersBankLay
         }}},
         {FroggersBankId::Envelope, "Envelope", synth::Color::Green, {{
             {"Attack VCO1", "A1"}, {"Decay VCO1", "D1"}, {"Sustain VCO1", "S1", 1.0f}, {"Release VCO1", "R1"},
-            {"Attack VCO2", "A2"}, {"Decay VCO2", "D2"}, {"Sustain VCO2", "S2", 1.0f}, {"Release VCO2", "R2"},
-            {"Attack VCO3", "A3"}, {"Decay VCO3", "D3"}, {"Sustain VCO3", "S3", 1.0f}, {"Release VCO3", "R3"},
+            // Release VCO2 rests at 3 o'clock and Release VCO3 at 12 o'clock: the
+            // knob sweeps 270 degrees from 7:30, so those are five sixths and one
+            // half of the travel. Release VCO1 stays at the floor.
+            {"Attack VCO2", "A2"}, {"Decay VCO2", "D2"}, {"Sustain VCO2", "S2", 1.0f}, {"Release VCO2", "R2", 5.0f / 6.0f},
+            {"Attack VCO3", "A3"}, {"Decay VCO3", "D3"}, {"Sustain VCO3", "S3", 1.0f}, {"Release VCO3", "R3", 0.5f},
             {"Curve", "Curv"}, {"Grace", "Grac"},
         }}},
         {FroggersBankId::Filter, "Filter", synth::Color::Blue, {{

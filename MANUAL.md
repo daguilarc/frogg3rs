@@ -444,8 +444,10 @@ gate stays open. Floored at 25% — it can never be modulated down to a true, si
 defaults to full level (100%) so a freshly launched app makes sound without touching any knob.
 
 **Release VCO1 / Release VCO2 / Release VCO3** (`R1`/`R2`/`R3`, slots 3/7/11) — time for that VCO's
-level to fall to silence once the gate closes, mapped exponentially from 5 ms to 2.5 s. Defaults to the
-floor (fastest). Stop always overrides this with a fast ~50 ms fade regardless of this knob's position.
+level to fall to silence once the gate closes, mapped exponentially from 5 ms to 2.5 s. Release VCO1
+defaults to the floor (fastest); Release VCO2 rests at 3 o'clock (about 0.9 s) and Release VCO3 at
+12 o'clock (about 110 ms). Stop always overrides this with a fast ~50 ms fade regardless of this knob's
+position.
 
 **Curve** (slot 12) — shared across all three voices. Reshapes every Attack/Decay/Release
 ramp from a straight linear ramp (bottom of travel, the default) toward an increasingly "slow start,
