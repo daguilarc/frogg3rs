@@ -2,15 +2,20 @@
 
 The promoted scenario "A missing release leaves Shift held until the next press
 and release" is REVERSED by this delta, not merely reworded. Its behaviour is
-replaced by the four triggers Sheaf's `midi-controller-resilience` gives a held
-modifier, and the manual sentence it points at is rewritten. This is stated here
-because a reader comparing the promoted spec to this one would otherwise see the
-scenario quietly disappear.
+replaced by the triggers Sheaf's `midi-controller-resilience` change's
+`HeldModifierClearSource` enumerates, and the manual sentence it points at is
+rewritten. This is stated here because a reader comparing the promoted spec to
+this one would otherwise see the scenario quietly disappear.
 
 ## MODIFIED Requirements
 
 ### Requirement: The MIDI Fighter Twister preset maps five buttons with shifted jobs and one Shift
-The MIDI Fighter Twister preset SHALL map its six side buttons on channel 3 (channel 4 counted from 1) at CC 8 to 13 as: CC 8 Bank Next, shifted Bank Previous; CC 9 Play, shifted Stop; CC 10 Freeze, shifted Reset Page; CC 11 Scene 1, shifted Scene 2; CC 12 Randomize Page, shifted Randomize All; CC 13 Shift. Reset All and Record SHALL remain on screen and SHALL NOT be on the Twister's side buttons. The preset SHALL declare CC Hold on every side button as a device precondition, because the button's release is the promptest of the triggers that end a held modifier, and SHALL remain usable in its unshifted form when that precondition is unmet. No other preset SHALL map a Shift button or a shifted job.
+The MIDI Fighter Twister preset SHALL map its six side buttons on channel 3 (channel 4 counted from 1) at CC 8 to 13 as: CC 8 Bank Next, shifted Bank Previous; CC 9 Play, shifted Stop; CC 10 Freeze, shifted Reset Page; CC 11 Scene 1, shifted Scene 2; CC 12 Randomize Page, shifted Randomize All; CC 13 Shift. Reset All and Record SHALL remain on screen and SHALL NOT be on the Twister's side buttons. The preset SHALL declare CC Hold on every side button as a device precondition, because the button's release is the promptest of the triggers that end a held modifier. A side button's press SHALL still dispatch a job — its ordinary job, or its shifted job if Shift is currently held — when that button's own CC Hold precondition is unmet; a button's press SHALL NOT be silently dropped for want of a release. When the unmet precondition is on Shift's own button, the other five side buttons SHALL remain usable in their shifted form, not their unshifted form, until Shift's held state is cleared by one of `HeldModifierClearSource`'s other triggers. No other preset SHALL map a Shift button or a shifted job.
+
+<!-- RESTATES-EXCEPT
+no APC40 or Launchpad association has a shifted press or a Shift press
+  keeps: a shifted press or a Shift press
+-->
 
 #### Scenario: The preset's side buttons are the eleven named jobs
 - **WHEN** the Twister device default is read
@@ -20,54 +25,64 @@ The MIDI Fighter Twister preset SHALL map its six side buttons on channel 3 (cha
 
 #### Scenario: Only the Twister carries Shift or shifted jobs
 - **WHEN** every device default is read
-- **THEN** no APC40 or Launchpad association has a shifted press or a Shift press
-- Check: `app/FroggersMidiCatalogTests.cpp: device_defaults_are_valid_and_address_exactly_the_documented_controls`
+- **THEN** no non-Twister device default has a shifted press or a Shift press
+- Check: not yet delivered; task 4.5 adds a loop-based case to app/FroggersMidiCatalogTests.cpp asserting this over every entry in the catalog's device defaults whose id is not the Twister's, with a positive control that a shifted press on any of them turns it red
+
+#### Scenario: A non-Shift side button's press still dispatches when its own CC Hold is unmet
+- **WHEN** a non-Shift Twister side button's press message is received and no matching release message ever arrives
+- **THEN** the button's currently-applicable job — ordinary, or shifted if Shift is held at that moment — still fires on that press
+- Check: not yet delivered; task 4.6(a) adds a case to app/FroggersMidiCatalogTests.cpp asserting this against the input processor's dispatch, which fires on the press edge before it inspects any release
+
+#### Scenario: The other side buttons stay in shifted form when Shift's own CC Hold is unmet
+- **WHEN** the Shift button's press message is received and no matching release message ever arrives
+- **THEN** every other side button with a shifted job dispatches that shifted job, not its ordinary one, on every subsequent press, until one of `HeldModifierClearSource`'s other triggers clears Shift's held state
+- Check: not yet delivered; task 4.6(b) adds a case to app/FroggersMidiCatalogTests.cpp asserting this against the same dispatch path
 
 #### Scenario: A Shift whose release never arrives ends by another trigger, and the manual says which
 - **WHEN** a controller is unplugged while its Shift button is down, or its Shift address stops transmitting
 - **THEN** the manual's Shift subsection states the triggers that end a held modifier and does not state a recovery that requires the Shift address to transmit
 - **AND** it states the same for Hold Drill
-- Check: not yet delivered; added by this change as `app/check_docs_match_device_preconditions.py`, which fails when the manual's recovery text names no trigger
+- Check: not yet delivered; task 4.8 adds a check script that fails when the manual's recovery text names no mechanism other than "pressed and released again"
 
 ## ADDED Requirements
 
 ### Requirement: A preset declares the device settings it depends on
-A device default SHALL carry its device-side preconditions as declared data, each naming the setting, the value the preset requires, and where that value is set. The Controllers page SHALL show a preset's declared preconditions where that preset is chosen. `MANUAL.md`'s per-device settings section SHALL be generated from those declarations, and a check SHALL fail when the generated text and the declarations disagree. A preset SHALL NOT depend on a device setting it does not declare.
+A device default SHALL populate `declaredPreconditions` (Sheaf's `synth-controller-wizards` requirement scw-6, on `MidiAppDeviceDefault`) with its device-side preconditions, each string naming the setting, the value the preset requires, and where that value is set. A device default with no device-side preconditions SHALL declare an empty list, distinguishing "declares none" from "was never asked." `MANUAL.md`'s per-device settings paragraph SHALL be generated from those declarations, and a check SHALL fail when the generated text and the declarations disagree. A preset SHALL NOT depend on a device setting it does not declare. Where a preset's declared preconditions are shown is Sheaf's `synth-runtime-ui` requirement sru-64; this requirement covers only the data and its agreement with the manual.
 
 #### Scenario: The Twister preset declares its three settings
 - **WHEN** the MIDI Fighter Twister device default is read
 - **THEN** it declares encoders set to relative "Enc 3FH/41H", all six side buttons set to "CC Hold", and "Bank Side Buttons" unchecked, each naming the Midi Fighter Utility as where it is set
-- Check: not yet delivered; added by this change as `app/FroggersMidiCatalogTests.cpp: device_defaults_declare_their_preconditions`
+- Check: not yet delivered; task 4.3 adds a device_defaults_declare_their_preconditions case to app/FroggersMidiCatalogTests.cpp
 
-#### Scenario: The APC40 preset declares its track-selection caveat
-- **WHEN** either APC40 mkII device default is read
+#### Scenario: The APC40 Generic preset declares its track-selection caveat
+- **WHEN** the APC40 mkII (Generic) device default is read
 - **THEN** it declares that Track 1 must stay selected, naming the consequence of selecting another track
-- Check: not yet delivered; added by this change as `app/FroggersMidiCatalogTests.cpp: device_defaults_declare_their_preconditions`
+- Check: not yet delivered; task 4.4 adds a device_defaults_declare_their_preconditions case to app/FroggersMidiCatalogTests.cpp
+
+#### Scenario: The APC40 Ableton preset declares no device-side precondition
+- **WHEN** the APC40 mkII (Ableton) device default is read
+- **THEN** its declared preconditions list is empty, because the app's own connect-time SysEx message (sent automatically) removes the Track 1 caveat and no other device-side setting is assumed
+- Check: not yet delivered; task 4.4 adds a device_defaults_declare_their_preconditions case to app/FroggersMidiCatalogTests.cpp
 
 #### Scenario: The manual and the declarations cannot disagree
-- **WHEN** a device default's declared preconditions differ from the manual's per-device settings section
+- **WHEN** a device default's declared preconditions differ from the manual's per-device settings paragraph
 - **THEN** the check fails and names the device and the setting that differs
-- Check: not yet delivered; added by this change as `app/check_docs_match_device_preconditions.py`
-
-#### Scenario: Choosing a preset shows what the device needs
-- **WHEN** a preset is selected in the Controllers page's Layout dropdown
-- **THEN** that preset's declared preconditions are shown on the page
-- Check: not yet delivered; added by this change as `app/FroggersControllersPageTests.cpp: layout_choice_shows_declared_preconditions`
+- Check: not yet delivered; task 4.8 adds this repository's device-preconditions drift check
 
 ### Requirement: A Launch Control XL preset carries scene blend on a fader
-The catalogue SHALL offer a Novation Launch Control XL device default of `Generic` kind, which the instrument model permits an analog section. That default SHALL assign scene blend to one of the device's faders other than fader 1, and SHALL declare the template its control map depends on as a device-side precondition. It SHALL NOT map a Shift button or a shifted job.
+The catalogue SHALL offer a Novation Launch Control XL device default of `Generic` kind, id `froggers.launchcontrolxl`, which the instrument model permits an analog section. That default SHALL assign scene blend to fader 1 (CC 77, channel 8 counted from 0), and SHALL declare factory template 1 as a device-side precondition, because the control map moves with the template. It SHALL NOT map a Shift button or a shifted job. The fader CC/channel map and the template both come from Ableton Live 12 Suite's control-surface script for the device, not from a vendor document — neither Novation document states the map. The lead read that script by disassembly; design.md carries the command and its literal output, and the check this requirement's scenarios cite is literal-against-literal against that one reading, not an independent confirmation of it (see design.md).
 
 #### Scenario: The preset offers scene blend on a fader
 - **WHEN** the Launch Control XL device default is read
-- **THEN** its kind is `Generic`, its analog section sets scene blend to a fader address, and that address is not fader 1's
-- Check: not yet delivered; added by this change as `app/FroggersMidiCatalogTests.cpp: device_defaults_are_valid_and_address_exactly_the_documented_controls`
+- **THEN** its kind is `Generic`, and its analog section sets scene blend to channel 8 CC 77
+- Check: not yet delivered; task 5.1 adds a case to app/FroggersMidiCatalogTests.cpp
 
 #### Scenario: The preset declares the template its map depends on
 - **WHEN** the Launch Control XL device default is read
-- **THEN** it declares which template the device must be on, because the control map moves with the template
-- Check: not yet delivered; added by this change as `app/FroggersMidiCatalogTests.cpp: device_defaults_declare_their_preconditions`
+- **THEN** it declares factory template 1 as the device the preset requires, because the control map moves with the template
+- Check: not yet delivered; task 5.2 adds a device_defaults_declare_their_preconditions case to app/FroggersMidiCatalogTests.cpp
 
 #### Scenario: Scene blend reaches the engine from that fader
-- **WHEN** the declared fader sends a control change on the declared template
+- **WHEN** fader 1 sends a control change on factory template 1
 - **THEN** the scene blend value changes by the same path the APC40 crossfader uses
-- Check: not yet delivered; added by this change as `app/FroggersControllersPageTests.cpp: launch_control_xl_fader_drives_scene_blend`
+- Check: operator step (not a build-time check) — once the default exists, select the preset on the live browser site, move fader 1, and observe the on-screen scene blend value move via `AnalogMidiInProcessor::Process`'s dispatch against `AnalogMidiInConfig::sceneBlend`, the same path the APC40 crossfader already exercises in production; task 5.4 names this

@@ -6,69 +6,208 @@ Two gaps, both found by running a preset against the hardware it names.
 The Twister preset needs three settings written into the device's own flash —
 encoders relative, all six side buttons on CC Hold, "Bank Side Buttons"
 unchecked. They are stated at `MANUAL.md:336-339` and again at
-`app/FroggersMidiCatalog.hpp:14-24`. Nothing ties the two together, nothing
+`app/FroggersMidiCatalog.hpp:14-18`. Nothing ties the two together, nothing
 shows them where the preset is chosen, and nothing notices when they are unmet.
 An operator whose Twister had "Bank Side Buttons" on lost three of six side
 buttons: the device moved their CC addresses, and the app reported nothing. The
 recovery the manual offers at `MANUAL.md:319-320` — press and release Shift
 again — was unreachable, because Shift was one of the addresses that had moved.
 
-**Scene blend and BPM are already assignable to faders, on no device this
-operator owns.** `AnalogMidiInConfig::sceneBlend`
+**Scene blend and BPM are already assignable to faders, and the Launch Control
+XL is not catalogued.** `AnalogMidiInConfig::sceneBlend`
 (`External/Sheaf/projects/synth/include/synth/MidiController.hpp:298`) is a
 first-class field, decoded more directly than BPM, and both are already
 defaulted to faders on the APC40 mkII entries — scene blend to the crossfader at
 channel 0 CC 15, BPM to the master fader at CC 14
 (`app/FroggersMidiCatalog.hpp:165-166`, `MANUAL.md:348`). The catalogue's other
-five devices cannot carry either: `synth-midi-instrument` pins kind support as
-"twister: encoders, system messages; launchpad: system messages only", so both
-kinds refuse analog sections outright. The operator's only device with faders,
-a Novation Launch Control XL, is not in the catalogue at all. The mechanism is
-not missing; the hardware entry is.
+four devices — the Twister and all three Launchpads — cannot carry either:
+`synth-midi-instrument` pins kind support as "twister: encoders, system
+messages; launchpad: system messages only", so both kinds refuse analog
+sections outright. A Novation Launch Control XL, which has eight faders, is
+not in the catalogue at all. The mechanism is not missing; the hardware entry
+is — and this delivery adds it (see "The Launch Control XL fader map" below).
 
 ## What Changes
 
-- A preset carries its device-side preconditions as declared data on its device
-  default rather than as a comment. The Controllers page shows them where the
-  preset is chosen, and `MANUAL.md`'s per-device settings table is generated
-  from the same declarations, with a check that fails when the two disagree.
-- `MANUAL.md:319-320`'s stuck-Shift recovery is rewritten against the four
-  triggers the Sheaf change gives a held modifier, and covers Hold Drill, which
-  has the same lifetime and a worse failure.
-- **A Launch Control XL device default is added**, of `Generic` kind, which the
-  spec already permits analog sections. Scene blend is defaulted to one of its
-  faders, and the template the CC map depends on is declared as a precondition
-  the same way the Twister's Utility settings are.
+- A preset carries its device-side preconditions as declared data
+  (`declaredPreconditions`) on its device default rather than as a comment,
+  and `MANUAL.md`'s per-device settings paragraph is generated from the same
+  declarations, with a check that fails when the two disagree. Where a
+  preset's declarations are shown is Sheaf's own `synth-runtime-ui`
+  requirement sru-64, not this change's concern.
+- `MANUAL.md:319-320`'s stuck-Shift recovery is rewritten against the triggers
+  Sheaf's `midi-controller-resilience` change's `HeldModifierClearSource`
+  enumerates, and covers Hold Drill, which has the same lifetime and a worse
+  failure. The Twister requirement is widened so every side button's press
+  keeps dispatching a job — never silently dropped — when that button's own
+  CC Hold precondition is unmet; true today of the dispatch code and now
+  asserted. This does not mean the other five buttons stay in their
+  unshifted form when the unmet precondition is on Shift itself — that case
+  leaves them shifted until another trigger clears Shift, which is exactly
+  why the recovery text above exists (design.md states both cases).
+- **A Launch Control XL device default is added** — `Generic` kind, which the
+  spec already permits analog sections, with scene blend on fader 1 (CC 77,
+  channel 8 counted from 0 — channel 9 counted from 1) and factory template 1
+  declared as a device precondition, id `froggers.launchcontrolxl`. Neither
+  vendor document states the device's fader CC/channel map; the lead read it
+  by disassembling Ableton Live 12 Suite's own control-surface script for the
+  device instead (design.md, "Who read the script, by what command, and what
+  it printed," carries the command and its literal output). See "The Launch
+  Control XL fader map" below.
 
 ## Capabilities
 
 ### Modified Capabilities
 - `froggers-midi-controller-mappings`: the Twister requirement's "the release is
-  what ends Shift" sentence becomes one of four triggers, and its preconditions
-  become declared data. Two requirements are added — one for declared
-  preconditions generally, one for the Launch Control XL preset.
+  what ends Shift" sentence becomes one of the triggers Sheaf's
+  `HeldModifierClearSource` enumerates, gains an unshifted-usability guarantee,
+  and its preconditions become declared data. Two requirements are added — one
+  for declared preconditions generally, one for the Launch Control XL preset.
+
+## The Launch Control XL fader map
+
+Task 2.1 fetched and read Novation's published Programmer's Reference Guide for
+the device in full — *Launch Control XL Programmer's Reference Guide*, Version
+2
+(https://fael-downloads-prod.focusrite.com/customer/prod/downloads/launch_control_xl_programmer_s_reference_guide.pdf,
+9 pages) — and the companion *Getting Started Guide*
+(https://fael-downloads-prod.focusrite.com/customer/prod/s3fs-public/downloads/Launch%20Control%20XL%20GSG%20v2.pdf,
+7 pages). Both documents describe the device's LED-lighting and System
+Exclusive protocol (`Set LEDs`, `Toggle button states`, `Change current
+template`) and state plainly that "8 factory templates are available. These
+output a fixed set of MIDI CCs (pots, LED colours and mode buttons) and Notes
+(Pads)" (Getting Started Guide, "Template Switching and the Template Editor" →
+"Factory Templates") — but neither document enumerates those fixed CC numbers
+or channels for any control, including the faders, on any template. The
+Programmer's Reference Guide's only indexed control lists (page 7, "Set LEDs" /
+"Toggle button states") number knobs and buttons for LED addressing and do not
+cover faders at all. This finding stands.
+
+Per the operator's ruling for this cycle, the map is read instead from the one
+source on this Mac that encodes it: Ableton Live 12 Suite's own control-surface
+script for the device, at `/Applications/Ableton Live 12 Suite.app/Contents/App-Resources/MIDI
+Remote Scripts/Launch_Control_XL/LaunchControlXL.pyc` (Ableton Live 12.4.3,
+read from the application's own `Info.plist`). That script's module-level
+constants build the same `Change current template` message the Programmer's
+Reference Guide documents (`F0h 00h 20h 29h 02h 11h 77h Template F7h`) with a
+template byte of 8 — the first of the 8 factory templates, per the
+Programmer's Reference Guide's own "Launch Control XL MIDI Overview": "User
+templates occupy slots 00h-07h (0-7), whereas factory templates occupy slots
+08-0Fh (8-15)." Its channel constant is 8, and the Programmer's Reference
+Guide's "Device-to-Computer messages" section states the device's own MIDI
+channel is zero-indexed, so that channel is 9 counted from 1. Its
+fader-building code assigns consecutive CC numbers starting at 77, one per
+fader, giving CC 77 to CC 84 across the eight faders. design.md, "The template
+is a declared precondition," carries the full citation and the reasoning for
+reading this map from a third-party script rather than a vendor document.
+
+**Fader 1 (CC 77) carries scene blend.** The eight faders are electrically
+identical and undistinguished by function in every source read for this
+change; the first is chosen rather than an arbitrary pick from the row's
+middle. **Factory template 1** is declared as a device precondition, the same
+way the Twister's Utility settings are, because the control map moves with the
+template; the Getting Started Guide's "Template Switching and the Template
+Editor" → "Template Switching" section (page 5) is where an operator sets it:
+"press and hold either the User or Factory template buttons... Press pads 1-8
+to select template 1-8."
+
+Consequently:
+
+- The catalogue's device-default count moves from six to seven. The three
+  catalogue-count assertions this changes — `app/FroggersMidiCatalogTests.cpp:399`,
+  `app/FroggersControllersPageTests.cpp:99`, and
+  `app/FroggersControllersPageTests.cpp:109` — are named in tasks.md, task 5.5.
+- Hardware confirmation is a post-delivery operator check, not a build-time
+  test: no Launch Control XL is attached to this machine (`ioreg -p IOUSB -w
+  0` lists only a USB Hub, a Portable SSD T5, and a USB-to-DP/HDMI adapter),
+  and no unit test can drive a physical fader. On the live browser site,
+  selecting the preset and moving fader 1 should move the on-screen scene
+  blend value, by the same `AnalogMidiInProcessor::Process` address-match
+  dispatch the APC40 crossfader already exercises in production (design.md
+  names the exact symbols). Task 5.4 states this.
+
+Everything else in "What Changes" — the declared-preconditions mechanism, the
+Twister and APC40 population, and the manual rewrite and unshifted-usability
+guarantee — has no hardware or documentation dependency and is delivered the
+same way.
 
 ## Overlapping active changes
 
-Two changes are active in this repository, and one in the submodule matters.
+Re-derived directly: `git worktree list`, then `git status --short` and
+`ls openspec/changes/` in each of the four checkouts it names.
+
+```
+$ git worktree list
+/Users/diegoaguilar-canabal/Desktop/frogg3rs                                              [main]
+.../  .claude/worktrees/midi-controller-resilience  [worktree-midi-controller-resilience]
+.../  .claude/worktrees/midi-resilience (this one)  [worktree-midi-resilience]
+.../  .claude/worktrees/randomize-depth-reclaim     [worktree-randomize-depth-reclaim]
+```
+
+| checkout | `openspec/changes/` holds | overlap with this change | disposition |
+| --- | --- | --- | --- |
+| **this worktree** (`midi-resilience`) | `frogg3rs-delay-width-wysiwyg-repair` (0/26), `frogg3rs-midi-preset-preconditions` (this change) | `frogg3rs-delay-width-wysiwyg-repair`'s tasks 2.1/2.2 own `MANUAL.md`/`QUICK_DICT.md`'s Delay **Stereo width** and **Width balance** entries (`MANUAL.md:692`, `:731-732`, `:779`; `QUICK_DICT.md:76`, `:84`) | Disjoint section: Delay bank is `MANUAL.md:676-740`; this change's MIDI controllers section is `MANUAL.md:258-390`. No line overlap. Diff-review `MANUAL.md` before staging; never stage a whole-file `git add` while it is active (0/26, unstarted). |
+| **main checkout** | `frogg3rs-delay-capacity-and-width-finish` (26/41 today — `git -C <main checkout> show main:openspec/changes/frogg3rs-delay-capacity-and-width-finish/tasks.md \| grep -c '^- \[x\]'` → 26, `grep -c '^- \[ \]'` → 15; this count moves between sessions and is not this change's to freeze), `frogg3rs-randomize-depth-reclaim` | Traced directly on the main checkout: `git -C <main checkout> status --short MANUAL.md QUICK_DICT.md` returns nothing — neither file carries an uncommitted edit there. `frogg3rs-delay-width-wysiwyg-repair` no longer exists on main (`git ls-tree -d --name-only main openspec/changes/` lists only `frogg3rs-delay-capacity-and-width-finish` and `frogg3rs-randomize-depth-reclaim`) — the two Delay changes are no longer concurrent; capacity-and-width-finish is the live one. | Same disjoint-section reasoning as above; this row is in a different checkout so no working-tree collision is possible from here, but the eventual merge must diff-review `MANUAL.md`/`QUICK_DICT.md` rather than take either side wholesale. `frogg3rs-randomize-depth-reclaim` on main touches neither `MANUAL.md`, `QUICK_DICT.md`, `app/FroggersMidiCatalog*`, nor `app/Makefile` (checked by name against its `proposal.md`); no overlap. |
+| **`midi-controller-resilience` worktree** | `frogg3rs-density-documents-and-spec` (0/14), an **untracked, textually divergent duplicate of `frogg3rs-midi-preset-preconditions`** | (a) `frogg3rs-density-documents-and-spec`'s tasks 2.1/2.3 edit `MANUAL.md` and `QUICK_DICT.md`'s Filter entries (`MANUAL.md:462-527` is the Filter bank — disjoint from this change's `:258-390`). (b) The duplicate `frogg3rs-midi-preset-preconditions` here (`?? openspec/changes/frogg3rs-midi-preset-preconditions/` in that worktree's `git status --short`) deltas the same `froggers-midi-controller-mappings` capability with different text in all four files (`diff -rq` confirms `proposal.md`, `design.md`, `tasks.md`, and the spec delta all differ). Its own `External/Sheaf` checkout separately carries an untracked `External/Sheaf/openspec/changes/midi-controller-resilience/` (this worktree's own copy of that same relative path is the authoritative one; the sibling worktree's is the divergent duplicate) that diverges from this worktree's Sheaf copy (no `synth-controller-wizards` delta, no `scw-6` requirement at all there). Re-verified directly just now, not carried forward from an earlier report: `git worktree list` still lists this worktree at `9838862`, `ls .claude/worktrees/midi-controller-resilience` still returns its full tree, and `git branch --list worktree-midi-controller-resilience` still returns it — both copies are still live. | (a) Third `MANUAL.md`/`QUICK_DICT.md` holder, disjoint section; add to the coordination task. (b) **This worktree's copy, and this worktree's `External/Sheaf` copy, are authoritative.** Both untracked duplicates in the `midi-controller-resilience` worktree — `openspec/changes/frogg3rs-midi-preset-preconditions/` and `External/Sheaf/openspec/changes/midi-controller-resilience/` — are the operator's to reconcile or delete, named by path in task 1.1 as a precondition that must be satisfied before the rest of this change executes, since neither path is writable from this session. |
+| **`randomize-depth-reclaim` worktree** | `frogg3rs-delay-capacity-and-width-finish`, `frogg3rs-randomize-depth-reclaim` | None found by name against `MANUAL.md`, `QUICK_DICT.md`, `app/FroggersMidiCatalog*`, `app/Makefile`. | No action. |
+
+Two Sheaf changes matter, read from `External/Sheaf/openspec/changes/`:
 
 | change | state | overlap | disposition |
 | --- | --- | --- | --- |
-| `frogg3rs-density-documents-and-spec` | 0/14, created 2026-09-13 | owns `MANUAL.md` and `QUICK_DICT.md` for the density chain's close-out, and holds them modified in the main checkout | This change edits `MANUAL.md` in two places. Sequence after it releases the file, or coordinate the two edits explicitly; do not edit it concurrently. |
-| Sheaf `midi-controller-resilience` | artifacts complete, not executed | adds the declared-preconditions field to `MidiAppDeviceDefault` and bounds held-modifier lifetime | This change populates the field and depends on its shape; it lands after. The manual rewrite in task 3.1 states the four triggers that change defines. |
-| Sheaf `app-midi-catalog` | 26/28, PR #13 | owns `MidiAppDeviceDefault` at `MidiAppCatalog.hpp:31-38` | Neither this change nor the Sheaf one redefines the struct; both land above #13. |
+| `midi-controller-resilience` | Its own artifacts carry a repair pass against a preflight adjudication; still **unexecuted** — `declaredPreconditions` exists in no source file yet (`grep -rn declaredPreconditions External/Sheaf/projects/synth/include/ External/Sheaf/projects/synth/src/ app/` returns nothing) and `openspec validate midi-controller-resilience --strict` reports it valid. Adds `declaredPreconditions` to `MidiAppDeviceDefault` (`synth-controller-wizards` requirement scw-6, tasks 6.1-6.2) and renders it on the Controllers page (`synth-runtime-ui` requirement sru-64, task 6.3). Its own tasks.md carries an operator-owned task naming the sibling worktree's divergent `midi-controller-resilience` copy (see the table above) as a precondition that change's own execution has not yet cleared either. Its own delivery task 7.7 pushes branch `midi-resilience-merge` to the `fork` remote (`daguilarc/Sheaf`) and nothing else — no PR, no pin change on any `main`. | This change's group 4 (declared-preconditions population) cannot compile until that field exists here. See group 4's gate tasks. | This change populates `declaredPreconditions` for its own device defaults and starts group 4 only after the submodule checkout is pinned to a Sheaf commit that carries the field (task 4.1/4.2). It does not define the field and does not render it. |
+| `app-midi-catalog` | 26/28 done, PR #13 | Owns `MidiAppDeviceDefault` at `projects/synth/include/synth/MidiAppCatalog.hpp:31-38` | Neither this change nor `midi-controller-resilience` redefines the struct; both land above #13. |
 
 ## Impact
 
-- `app/FroggersMidiCatalog.hpp` — the precondition comment at `:14-24` promoted
-  to declarations on each device default; the APC40 entries' existing analog
-  defaults at `:165-166` left as they are; a new Launch Control XL entry.
-- `MANUAL.md:319-320` — the recovery text; `:336-339` — the settings table,
-  which becomes generated.
+- `app/FroggersMidiCatalog.hpp` — the precondition sentences at `:14-18`
+  promoted to declarations on each device default; the surrounding
+  button-layout comment at `:19-24` kept but reworded so it no longer restates
+  the declared settings and states CC Hold's reason as "the promptest of the
+  triggers that end a held modifier" rather than "what ends Shift"; the APC40
+  caveat comment at `:26-35` split between the Generic and Ableton defaults;
+  the APC40 entries' existing analog defaults at `:165-166` left as they are;
+  **the file header comment at `:6-12`**, which enumerates the catalogue's
+  "six device defaults" by name, is updated to seven, naming the Launch
+  Control XL; a new `LaunchControlXlDeviceDefault()` (`Generic` kind, id
+  `froggers.launchcontrolxl`, scene blend on CC 77 channel 8) is appended to
+  `catalog.deviceDefaults`'s initializer list after the Ableton default and
+  before the Launchpads.
+- `app/FroggersMidiCatalogTests.cpp` and `app/FroggersControllersPageTests.cpp`
+  — both gain a device_defaults_declare_their_preconditions (or equivalent)
+  case, and `FroggersMidiCatalogTests.cpp` gains the rewritten Twister-only
+  Shift check and the unshifted-usability cases (ordinary-precondition-unmet
+  and Shift-precondition-unmet, stated separately); the Launch Control XL
+  default is added to the same declared-preconditions case, and the
+  catalogue-count assertions at `app/FroggersMidiCatalogTests.cpp:399`,
+  `app/FroggersControllersPageTests.cpp:99`, and
+  `app/FroggersControllersPageTests.cpp:109` move from six to seven.
+  **`app/FroggersControllersPageTests.cpp`'s own file header comment at
+  `:1-4`**, which names "six real device defaults," is updated to seven,
+  naming the Launch Control XL alongside the Twister and the two APC40
+  variants.
+- `app/Makefile` — a new `check-docs-match-device-preconditions` target joins
+  the ten `check-*` prerequisites `test:` already runs (read from the Makefile
+  itself, not copied here, since the list drifts).
+- `MANUAL.md:319-320` — the recovery text; `:308-313` (Hold Drill) gets the
+  same recovery treatment; `:336-339` — the settings paragraph, which becomes
+  generated; `:341-351` and `:353-357` — the APC40 Generic/Ableton sections,
+  which the split precondition declarations must stay consistent with; the
+  Overview's Preset selector list and a new Launch Control XL section are
+  added, naming fader 1 and factory template 1; **`:271-272`**, the
+  Overview's "A newly connected Twister, APC40, or Launchpad is also offered"
+  sentence, is reworded so it does not enumerate device families where the
+  set the configure flow offers is open-ended (a seventh family, the Launch
+  Control XL, joins it this cycle; naming families at all invites the same
+  drift the catalogue header comments are being fixed for).
+- `README.md:110-112` — "ready-made presets for the MIDI Fighter Twister, the
+  Akai APC40 mkII, and three Launchpad models" is updated to include the
+  Launch Control XL, the same enumeration-drift class as the two header
+  comments and `MANUAL.md:271-272` above.
 - `openspec/specs/froggers-midi-controller-mappings/spec.md` — the promoted
-  capability this change deltas.
-- A new check script under `app/`, joining the eight `app/Makefile` already runs
-  at `:176`, `:183`, `:191`, `:199`, `:208`, `:221`, `:228` and `:238`.
+  capability this change deltas (unedited by this change; updated only when
+  archived).
+- A new check script under `app/`.
 
 §8.0's sweep covers `app/`, `openspec/`, and the documents named above. It does
 not cover `External/Sheaf`, which the Sheaf change sweeps.
@@ -79,13 +218,3 @@ It adds no analog mechanism, because one exists and is already more first-class
 than BPM's. It does not enable analog sections on the Twister or Launchpad
 kinds: those are pinned by `synth-midi-instrument`, neither device has a fader,
 and changing them would be a Sheaf spec change serving no hardware.
-
-## Open question
-
-Which Launch Control XL fader carries scene blend by default, and on which
-template. The CC map moves with the template — captures on 2026-09-09 show
-fader 1 sending CC 77 on channel 6 under one template and CC 77 on channel 2
-under another — so the template is a declared precondition and the map is
-determined by task 2.1 rather than asserted here. Fader 1 is excluded: it is the
-control tied to an unreproduced SysEx flood on that device, recorded in this
-change's `preflight.md`, `preflight-2.md` and `preflight-3.md`.
