@@ -24,15 +24,12 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from check_common import strip_comments  # noqa: E402
+
 BANK_ORDER = ["Audio", "Envelope", "Filter", "Drive", "Delay", "Reverb"]
 PARAMS_PER_BANK = 14
 BANK_COUNT = len(BANK_ORDER)
-
-
-def strip_comments(text):
-    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    text = re.sub(r"//[^\n]*", "", text)
-    return text
 
 
 def fail(message):

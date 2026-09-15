@@ -886,9 +886,17 @@ TEST_CASE(randomize_all_storm_test_never_blows_out_or_permanently_silences) {
         const auto& output = rig.Output();
         bool everyFinite = true;
         bool anyOverScale = false;
-        float peak = 0.0f;
+        // One peak per channel, not one pooled across both: a single scalar
+        // maximum lets a dead channel hide behind a live one on the other
+        // side, so a channel that never rises above the silence floor must
+        // fail even while its sibling channel is loud.
+        std::vector<float> peakPerChannel;
         for (const auto& frame : output) {
-            for (const float sample : frame.channels) {
+            if (peakPerChannel.size() < frame.channels.size()) {
+                peakPerChannel.resize(frame.channels.size(), 0.0f);
+            }
+            for (std::size_t channel = 0; channel < frame.channels.size(); ++channel) {
+                const float sample = frame.channels[channel];
                 if (!std::isfinite(sample)) {
                     everyFinite = false;
                     continue;
@@ -896,7 +904,7 @@ TEST_CASE(randomize_all_storm_test_never_blows_out_or_permanently_silences) {
                 if (std::fabs(sample) > kOverScaleBound) {
                     anyOverScale = true;
                 }
-                peak = std::max(peak, std::fabs(sample));
+                peakPerChannel[channel] = std::max(peakPerChannel[channel], std::fabs(sample));
             }
         }
         if (!everyFinite && !rig.SawNaN()) {
@@ -905,7 +913,10 @@ TEST_CASE(randomize_all_storm_test_never_blows_out_or_permanently_silences) {
         if (anyOverScale) {
             ++overScaleFailures;
         }
-        if (peak <= kSilenceEpsilon) {
+        const bool anyChannelPermanentlySilent =
+            std::any_of(peakPerChannel.begin(), peakPerChannel.end(),
+                        [](float channelPeak) { return channelPeak <= kSilenceEpsilon; });
+        if (anyChannelPermanentlySilent) {
             ++permanentSilenceFailures;
         }
     }

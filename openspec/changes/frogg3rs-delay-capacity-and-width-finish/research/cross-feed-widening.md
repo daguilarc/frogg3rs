@@ -284,3 +284,54 @@ All four stay far under the 1.98 bound (worst observed ~0.80, consistent with th
 - L0 (today) stays balanced but, as task 1.1 already established, cross-feed does not decorrelate — this task adds that the story does not change when the read-time widthSpread offset is allowed to move alongside it.
 
 No law is recommended and none was implemented; this is a measurement report only.
+
+## Task 1.1a — the repaired law's grid, and the bounds it sets
+
+Measured with `cross = 0.0f` applied locally and uncommitted in
+`dsp::StereoDelay::Process`, against the pinned instrument (band-limited
+noise, 50 Hz `OnePoleLowPass` over the seed-20260913 LCG burst, `dtim = 0.3`,
+Send 1.0, Feedback 0.7, 12000-sample warmup discarded, 12000-sample measure,
+tap point `Process`'s returned `DelayWetPair`). `rmsL` and `rmsR` are nonzero
+at every row, so each `|corr|` is a real computation rather than
+`Correlation::Value()`'s zero-denominator fallback.
+
+```
+width,|corr|,balance
+0.00,1.000000,0.000000
+0.25,0.502056,0.049631
+0.50,0.312225,0.012696
+0.75,0.271011,0.015087
+1.00,0.240065,0.021091
+```
+
+Width 0 is excluded from the maxima below: there `timeL == timeR`, so the two
+taps are the same read and the 1.0 is a genuine correlation of an identical
+signal. Folding it in would force the correlation bound to at least 1.0, which
+no grid point could then exceed.
+
+Across width > 0, `|corr|` falls strictly at every step. The level-balance
+ratio does not, and nothing asserts that it should.
+
+The bounds: correlation `0.55`, above a measured maximum of `0.502056` at
+width 0.25. Level balance `0.06`, above a measured maximum of `0.049631`, also
+at width 0.25. The level-balance margin is the wider of the two in relative
+terms because that ratio is the smaller and noisier quantity.
+
+### The positive control
+
+The identical instrument with `cross` restored to `p.dwid * 0.5f * widthBalance`:
+
+```
+width,|corr|,balance
+0.00,1.000000,0.000000
+0.25,0.625328,0.022721
+0.50,0.467788,0.001723
+0.75,0.391410,0.002539
+1.00,0.369539,0.002566
+```
+
+Width 0.25 reads `0.625328`, above the `0.55` bound, so the bound
+discriminates between the two laws rather than passing both. The full-width
+figures reproduce the two values this document already records from the
+earlier sessions — `0.240` repaired and `0.370` shipped — which corroborates
+the harness against work that did not produce it.

@@ -43,6 +43,52 @@ def read(path):
         return fh.read()
 
 
+def strip_comments(text):
+    """Removes `//` line comments and `/* ... */` block comments from `text`,
+    leaving string literals (`"..."`, backslash escapes honoured) and
+    character literals (`'...'`) intact and every newline in place -- a
+    character walk rather than a regex, because a regex alternation of
+    string/comment patterns is exactly the shape that starts matching a
+    `//` or `/*` sitting inside a string literal instead of skipping it."""
+    result = []
+    i = 0
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if c == '"' or c == "'":
+            quote = c
+            result.append(c)
+            i += 1
+            while i < n:
+                result.append(text[i])
+                if text[i] == "\\" and i + 1 < n:
+                    i += 1
+                    result.append(text[i])
+                    i += 1
+                    continue
+                if text[i] == quote:
+                    i += 1
+                    break
+                i += 1
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "/":
+            i += 2
+            while i < n and text[i] != "\n":
+                i += 1
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "*":
+            i += 2
+            while i < n and not (text[i] == "*" and i + 1 < n and text[i + 1] == "/"):
+                if text[i] == "\n":
+                    result.append("\n")
+                i += 1
+            i = min(i + 2, n)
+            continue
+        result.append(c)
+        i += 1
+    return "".join(result)
+
+
 def path_index(repo, roots):
     """Every file's repo-relative path under `roots`, and only that -- the one
     spelling a citation may use to name a file.

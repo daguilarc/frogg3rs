@@ -9,7 +9,14 @@
 // because it searched only src/core/. A full original exists in
 // the retired simulator's DelayState.hpp + StereoDelay.hpp (absent from src/core/ because
 // the delay is a feature only the retired simulator and desktop app had -- the Daisy firmware never shipped it).
-// All nine params are ported here; nothing on this page is newly authored.
+// All nine params are ported here. Process() below is not fully so: its
+// per-term capacity bounds (the base, modulation and width-spread clamps
+// against the line's capacity) and its fixed-zero cross-feed weight have no
+// counterpart in the frozen source, which had no capacity guard and drove
+// cross-feed from Stereo width and Width balance directly. Both are
+// authored here; everything else on this page is either ported verbatim as
+// described above or, where noted at its own site, measured and tuned for
+// this app.
 //
 // Ported from:
 //   - the retired simulator's StereoDelay.hpp (whole file) -- DelayParams, WetPair (renamed
@@ -53,6 +60,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <vector>
@@ -249,6 +257,15 @@ struct StereoDelay
     static constexpr float kMaxDelaySeconds = 2.0f;
     static constexpr size_t kMaxDelaySamples = 96000;
 
+    // The line length SetSampleRate allocates for a given rate, in samples.
+    // Tests that need to know where the line ends derive it from here rather
+    // than recomputing the formula beside it.
+    static size_t CapacityForSampleRate(float rate)
+    {
+        const size_t samples = std::min(kMaxDelaySamples, static_cast<size_t>(std::ceil(kMaxDelaySeconds * rate)));
+        return samples < 4 ? size_t{4} : samples;
+    }
+
     // Per-channel wet-output limiters (see this file's header comment,
     // above the struct, for the tuning derivation). Per-channel, not one
     // instance driven by max(|dL|,|dR|): the codebase's own established
@@ -256,13 +273,14 @@ struct StereoDelay
     // (mirrors `outputLimiter_`/`filterChain_.peakLimiter` being separate,
     // independently-configured instances rather than a single shared one,
     // dsp/Limiter.hpp's own header comment on why one shared-tuning instance
-    // was wrong for two different jobs). Concretely for THIS stage: `dwid`'s
-    // cross-feed (`fbL = dL*(1-cross) + dR*cross`) already keeps L and R
-    // close to each other in practice, so the two channels rarely diverge
-    // enough for one limiter engaging alone to read as an image shift; a
-    // linked (max-driven) limiter would instead force BOTH channels to duck
-    // whenever EITHER one alone crossed threshold, which is exactly the
-    // whole-mix-ducking failure mode this stage exists to eliminate, just
+    // was wrong for two different jobs). Concretely for THIS stage: the
+    // cross-feed weight (`fbL = dL*(1-cross) + dR*cross`) is fixed at
+    // `0.0f`, so nothing in the feedback path correlates L and R before
+    // these limiters -- the two channels reach them however Reverse Blend,
+    // Diffusion and the read-time width spread above happen to have left
+    // them. A linked (max-driven) limiter would instead force BOTH channels
+    // to duck whenever EITHER one alone crossed threshold, which is exactly
+    // the whole-mix-ducking failure mode this stage exists to eliminate, just
     // narrowed from "the whole mix" to "the whole delay stage" -- a smaller
     // version of the same mistake. Per-channel keeps each channel's own
     // reduction tied to its own excess only, matching how every other
@@ -290,9 +308,10 @@ struct StereoDelay
     OnePoleLowPass fbToneL{1.0f};
     OnePoleLowPass fbToneR{1.0f};
 
-    // (Delay slot 12, "Width balance" / "WBal"): default 1.0f reproduces
-    // today's 0.35f/0.5f literals exactly (see Process() below and
-    // SetWidthBalance).
+    // (Delay slot 12, "Width balance" / "WBal"): scales only the width
+    // spread term's 0.35f weight in Process() below; default 1.0f leaves
+    // that weight at 0.35f exactly (see SetWidthBalance). The cross-feed
+    // weight is a fixed 0.0f and does not read this.
     float widthBalance = 1.0f;
 
     // (Delay slot 13, "Crush" / "Crsh"): feedback-tap crush, reused
@@ -534,11 +553,7 @@ struct StereoDelay
     void SetSampleRate(float hz)
     {
         sampleRate = hz;
-        capacity = std::min(kMaxDelaySamples, static_cast<size_t>(std::ceil(kMaxDelaySeconds * sampleRate)));
-        if (capacity < 4)
-        {
-            capacity = 4;
-        }
+        capacity = CapacityForSampleRate(sampleRate);
         lineL.assign(capacity, 0.0f);
         lineR.assign(capacity, 0.0f);
         writePos = 0;
@@ -614,24 +629,19 @@ struct StereoDelay
         lfoInc = 2.0f * 3.14159265f * hz / sampleRate;
     }
 
-    // Identity map -- widthBalance == knob01 directly, relying on the
-    // SAME [0,1] knob-range invariant `p.dwid` itself already relies on
-    // (Process()'s own pre-existing comment below: "p.dwid*0.5f cannot
-    // exceed 0.5"). Because both new weights in Process() are
-    // `<literal> * widthBalance * p.dwid` and widthBalance never exceeds
-    // 1.0f (it IS the raw [0,1] knob value), neither weight can exceed its
-    // OLD ceiling (0.35f / 0.5f respectively) at any knob position:
-    //   (a) cross-feed stays in [0,1]: max is 0.5*1.0*1.0 == 0.5, the same
-    //       ceiling as today, itself already inside [0,1].
-    //   (b) spread never exceeds today's own maximum
-    //       (0.35f*baseSeconds*dwid): widthBalance<=1 makes the new term a
-    //       pointwise-smaller-or-equal version of the old one for every
-    //       (dwid, baseSeconds) pair, so no combination of settings newly
-    //       reaches the pre-existing buffer-capacity overrun that did not
-    //       already reach it today -- reachability can only shrink, never
-    //       grow.
-    // Default knob 1.0f reproduces widthBalance == 1.0f exactly, i.e.
-    // today's fixed 0.35f/0.5f literals exactly.
+    // Identity map -- widthBalance == knob01 directly, on the SAME [0,1]
+    // knob-range invariant `p.dwid` itself already relies on. widthBalance
+    // scales only the width-spread term computed in Process() below
+    // (`widthSpreadRaw = p.dwid * baseSeconds * 0.35f * widthBalance`); the
+    // cross-feed weight there is a fixed `0.0f`, decoupled from both `dwid`
+    // and widthBalance, so this knob has no effect on it. Because
+    // widthBalance never exceeds 1.0f, it can only shrink or leave
+    // unchanged `widthSpreadRaw` relative to widthBalance == 1.0f -- it
+    // cannot push the requested spread past what Process()'s own
+    // `std::min(widthSpreadRaw, maxSpreadSeconds)` already caps it to,
+    // since that cap is read-capacity-derived and does not depend on
+    // widthBalance's value. Default knob 1.0f reproduces widthBalance ==
+    // 1.0f, i.e. today's shipped 0.35f width-spread weight, exactly.
     void SetWidthBalance(float knob01) { widthBalance = knob01; }
 
     // SampleRateReducer, reused AS-IS -- same mapping shape already
@@ -666,19 +676,50 @@ struct StereoDelay
             return lastWet;
         }
 
-        const float baseSeconds = ExpMapCompute(0.001f, kMaxDelaySeconds, p.dtim);
+        const float baseSecondsRaw = ExpMapCompute(0.001f, kMaxDelaySeconds, p.dtim);
         lfoPhase += lfoInc;
         if (lfoPhase > 6.2831853f)
         {
             lfoPhase -= 6.2831853f;
         }
-        const float modSeconds = std::sin(lfoPhase) * p.dmod * baseSeconds * 0.08f;
-        // 0.35f now scaled by widthBalance (SetWidthBalance, never
-        // exceeds 1.0f) -- see that setter's own comment for how bound (b)
-        // holds by construction.
-        const float widthSpread = p.dwid * baseSeconds * 0.35f * widthBalance;
+        const float capacitySeconds = static_cast<float>(capacity) / sampleRate;
+        // Three terms feed the read time, bounded against capacity in this
+        // order, each against what the terms before it leave remaining. The
+        // base term is bounded first, at its own computation site, so every
+        // bound after it works against a non-negative remainder by
+        // construction. Reading exactly capacitySeconds is correct and
+        // needs no headroom: the write for the current sample happens after
+        // the read within this same call, so the sample from exactly one
+        // full lap ago is still present when the read for that lap runs.
+        const float baseSeconds = std::min(baseSecondsRaw, capacitySeconds);
+        const float modSecondsRaw = std::sin(lfoPhase) * p.dmod * baseSeconds * 0.08f;
+        const float maxModSeconds = capacitySeconds - baseSeconds;
+        const float modSeconds = std::min(modSecondsRaw, maxModSeconds);
+        // 0.35f scaled by widthBalance (SetWidthBalance, an identity map on
+        // the [0,1] knob and never exceeding 1.0f) sets how much of
+        // baseSeconds this term asks for; the min() below is what actually
+        // keeps it in bounds, against whatever of the line's capacity the
+        // base and modulation terms above have not already spent.
+        const float widthSpreadRaw = p.dwid * baseSeconds * 0.35f * widthBalance;
+        const float maxSpreadSeconds = std::max(0.0f, capacitySeconds - baseSeconds - modSeconds);
+        const float widthSpread = std::min(widthSpreadRaw, maxSpreadSeconds);
         float timeL = std::max(0.001f, baseSeconds + modSeconds);
         float timeR = std::max(0.001f, baseSeconds + modSeconds + widthSpread);
+        // ReadAt wraps an over-capacity request modulo the line and returns
+        // a short, wrong lag rather than failing, so the three bounds above
+        // are the only thing keeping these two reads inside what the line
+        // holds. The parity suite samples the reachable knob grid; this
+        // holds for every caller and every knob combination. It proves the
+        // read stays in range, not that the bounds compute the right value.
+        // Compiled only where FROGGERS_DSP_CHECKS is defined -- app/Makefile
+        // passes it to every test and check binary it builds -- and by no
+        // shipping build. A bare assert would not give that: the browser
+        // build compiles without NDEBUG, so it would abort the audio
+        // worklet on a violation instead of playing a wrong lag.
+#if defined(FROGGERS_DSP_CHECKS)
+        assert(timeL <= capacitySeconds);
+        assert(timeR <= capacitySeconds);
+#endif
 
         float dL = ReadAt(timeL, lineL);
         float dR = ReadAt(timeR, lineR);
@@ -711,13 +752,11 @@ struct StereoDelay
         dL = (p.drev == 0.0f) ? dL : revBlendedL;
         dR = (p.drev == 0.0f) ? dR : revBlendedR;
 
-        // 0.5f now scaled by widthBalance -- see SetWidthBalance's own
-        // comment for how bound (a) (cross-feed stays in [0,1]) holds by
-        // construction. This 0.5f stays a literal, its own value for this
-        // cross-feed's own bound -- half of a width blend that widthBalance
-        // then scales further, not a quantity shared with any other call
-        // site's cross-feed weight.
-        const float cross = p.dwid * 0.5f * widthBalance;
+        // Fixed at 0.0f, decoupled from both p.dwid and widthBalance: Stereo
+        // width no longer drives any weight into the feedback path. The
+        // read-time offset (widthSpread above) is the only mechanism Stereo
+        // width drives here.
+        const float cross = 0.0f;
         // dsp::CrossFeedPair (dsp/StereoField.hpp) is identity on its first
         // argument at cross == 0, which is exactly this call's own zero-cross
         // behavior (fbL == dL, fbR == dR) -- passed in the same order the
@@ -961,11 +1000,26 @@ private:
         }
         const size_t idx0 = WrapIndex(static_cast<size_t>(idx0I));
         const size_t idx1 = WrapIndex(idx0 + 1);
+        // Process()'s two compares above bound timeL/timeR in seconds
+        // against capacitySeconds; these bound the indices actually
+        // computed against the vector actually indexed, so a WrapIndex
+        // that admits `capacity` or a line allocated shorter than
+        // `capacity` fires here rather than reading past the end.
+#if defined(FROGGERS_DSP_CHECKS)
+        assert(idx0 < line.size());
+        assert(idx1 < line.size());
+#endif
         return line[idx0] * (1.0f - frac) + line[idx1] * frac;
     }
 
     // :126-129 (writeSample).
-    void WriteSample(float sample, std::vector<float>& line) { line[writePos] = sample; }
+    void WriteSample(float sample, std::vector<float>& line)
+    {
+#if defined(FROGGERS_DSP_CHECKS)
+        assert(writePos < line.size());
+#endif
+        line[writePos] = sample;
+    }
 
     // :131-138 (wrapIndex).
     size_t WrapIndex(size_t idx) const

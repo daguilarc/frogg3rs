@@ -80,3 +80,63 @@ One layer J2 didn't state, which sharpens it further: task 1.3 offers two candid
 ## C6 — TRUE (both parts)
 
 Part 1: `ExpMapCompute(min,max,v) = min*(max/min)^v` (`app/dsp/DspMath.hpp:52-55`); at `dtim=1.0`, `ExpMapCompute(0.001,2.0,1.0)=2.0` exactly (verified: `0.001*(2000)^1.0=2.0`). `capacity = min(kMaxDelaySamples, ceil(kMaxDelaySeconds*sampleRate))` (`Delay.hpp:537`) = 96000 at 48kHz = exactly `kMaxDelaySeconds` in seconds. So `baseSeconds` equals capacity **exactly** at `dtim=1.0`, and any nonzero `widthSpread` (any nonzero `dwid`) pushes `timeR` past capacity — a stronger, more general case than the `dtim=0.99` example `proposal.md` uses. Part 2: the promoted THEN clause (`spec.md:140-141`) reads "the time-offset spread this balance produces never lengthens a read tap beyond the delay buffer's own capacity" — its grammatical subject is the *spread itself*. Clamping downstream inside `ReadAt` (`Delay.hpp:949`) leaves the spread's own computed value unbounded (still requesting more than capacity); only bounding `widthSpread` upstream makes the sentence literally true of the quantity it names. **Consequence:** blocks EXECUTION of task 1.3 as scoped — its tie-break rule ("if they differ audibly, report both and do not choose") has no clause for spec-literal conformance, so an executor could correctly pick the audibly-better option while still leaving the promoted sentence false. Needs an explicit tie-breaker or the sentence itself corrected.
+
+## The second route, measured through running code
+
+The material above traces the width term into `timeR`. It is not the only route
+into `ReadAt`'s unguarded modulo, and the change that recorded it did not know
+that.
+
+`capacity` equals `kMaxDelaySeconds` exactly at 48 kHz, so `baseSeconds` alone
+reaches exactly capacity at `dtim = 1.0` with no headroom for any other term.
+Reading exactly `capacity` is CORRECT and must not be clamped away: the write
+happens after the read within the same `Process` call, so `line[writePos]` still
+holds the sample from exactly one full lap ago. Measured, not argued — at
+`dtim = 1.0, dwid = 0.0` the true lag comes back as exactly 96000 samples:
+
+```
+dtim=1.0 dwid=0.0 (no width contribution at all): capacity=96000 actualLagLSamples=96000 actualLagLSeconds=2.000000 peakAbsL=0.797590
+```
+
+An earlier working criterion of `capacity - 1` was one sample too conservative,
+and a clamp built to it would shorten this correct read.
+
+### The modulation term, into `timeL`
+
+`modSeconds = sin(lfoPhase) * p.dmod * baseSeconds * 0.08` is added to BOTH
+`timeL` and `timeR`, and is signed. Nothing clamps `timeL` at all. At
+`dtim = 1.0` and `dmod = 1.0` — both ordinary knob endpoints — `modSeconds`
+swings about ±0.16 s around a `baseSeconds` already equal to capacity, so the
+positive half of every LFO cycle asks for more than the buffer holds.
+
+Measured through real `Process`, with Width, Feedback, Freeze, Reverse and
+Diffusion all zeroed so only this route is live, injecting a single-sample
+impulse at 24 points across one LFO period:
+
+```
+[mod route probe] k=49000 phase=1.60352125 requestedSamples=103675.888 measuredLagSamples=7389 peakMag=0.5859375
+[mod route probe] WORST: k=49000 phase=1.60352125 requestedSamples=103675.888 measuredLagSamples=7389
+```
+
+A request of about 103676 samples reads back at 7389 — off by essentially one
+full lap. Across the sweep, `requestedSamples` runs from about 88324 at the
+trough to about 103676 near phase pi/2, exceeding capacity for roughly half of
+every LFO cycle. The defect is periodic, not a one-off spike: the echo collapses
+from a ~2.1 s repeat to a ~0.15 s slapback and back, twice per cycle, while the
+knobs themselves move smoothly.
+
+### Nothing else reaches it
+
+`timeL` is built only from `baseSeconds` (driven solely by `p.dtim`) and
+`modSeconds` (driven by `p.dmod` and `baseSeconds`). No other `DelayParams`
+field and no other member of `StereoDelay` feeds it; `p.dwid` reaches `timeR`
+only. That enumeration is what makes "two routes" a closed claim rather than
+"two found so far".
+
+### Why the width-only bound is not the repair
+
+Bounding the width spread so `timeR` fits makes the promoted spec sentence about
+the spread literally true, and does not touch the modulation route. A capacity
+repair guarding one of two routes into the same unguarded modulo is a partial
+repair. The superseded change presented it as the whole of the second defect
+because this route had not been found.

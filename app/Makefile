@@ -19,7 +19,12 @@ SHEAF_SYNTH_DIR := $(APP_DIR)/../External/Sheaf/projects/synth
 
 CXX ?= clang++
 CXXFLAGS ?= -std=c++20 -Wall -Wextra -Wpedantic -O2
-CPPFLAGS := -I$(SHEAF_SYNTH_DIR)/include
+# FROGGERS_DSP_CHECKS compiles the DSP headers' invariant assertions in.
+# Every binary this Makefile builds is a test, a check or the unshipped
+# skeleton; the shipping builds (app/build-launcher.sh, app/standalone,
+# app/vst, app/browser) never pass it, so those assertions cost nothing
+# there and cannot abort a performance.
+CPPFLAGS := -I$(SHEAF_SYNTH_DIR)/include -DFROGGERS_DSP_CHECKS
 
 BUILD_DIR := $(APP_DIR)/build
 APP_NAME := froggers_skeleton
@@ -144,7 +149,7 @@ DSP_HEADERS := $(wildcard $(APP_DIR)/dsp/*.hpp)
 DSP_TEST_SOURCES := $(APP_DIR)/FroggersDspParityTests.cpp
 DSP_TEST_BIN := $(BUILD_DIR)/froggers_dsp_parity_tests
 
-.PHONY: all clean check-no-juce check-no-firmware-includes check-catalog-covers-screen-actions check-spec-checks-resolve check-citations-resolve check-modified-requirements-restate-promoted check-no-planning-history check-artifact-symbols-resolve test force
+.PHONY: all clean check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions check-docs-match-parameter-table check-spec-checks-resolve check-citations-resolve check-modified-requirements-restate-promoted check-no-planning-history check-artifact-symbols-resolve check-delay-capacity-parameters-are-swept check-delay-capacity-break-proofs test force
 
 all: check-no-firmware-includes $(APP)
 
@@ -237,6 +242,25 @@ check-no-planning-history:
 check-artifact-symbols-resolve:
 	@python3 $(APP_DIR)/check_artifact_symbols_resolve.py "$(APP_DIR)"
 
+# StereoDelay::Process's width-spread capacity bound (dsp/Delay.hpp) depends
+# on five reachable knobs: sample rate, Delay time, Stereo width, Width
+# balance and Mod depth. Three adversarial passes each found one of those
+# pinned to a single value across every check that could exercise the bound,
+# one instance at a time. This fails when that happens again to any of the
+# five, found and checked mechanically rather than off a fixed test-name
+# list -- see the script's own header.
+check-delay-capacity-parameters-are-swept:
+	@python3 $(APP_DIR)/check_delay_capacity_parameters_are_swept.py "$(APP_DIR)"
+
+# A passing DSP parity suite says the capacity compares in dsp/Delay.hpp
+# (compiled under FROGGERS_DSP_CHECKS) ran; it says nothing about whether
+# they still reject a broken capacity mechanism. This mutates the header one
+# known break at a time, in an isolated copy, and requires the real suite to
+# abort against each mutation -- see the script's own header for the table
+# and for why the base-term bound is deliberately not one of the entries.
+check-delay-capacity-break-proofs:
+	@python3 $(APP_DIR)/check_delay_capacity_break_proofs.py "$(APP_DIR)" "$(CXX)" "-I$(APP_DIR) $(CPPFLAGS) $(CXXFLAGS)" "$(DSP_TEST_SOURCES)"
+
 # --- no-JUCE-in-app-core target ---------------------------------------------
 $(NO_JUCE_CHECK): $(NO_JUCE_CHECK_SRC) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(DSP_HEADERS) | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) -I$(JUCE_DIR)/modules $(CXXFLAGS) $(NO_JUCE_CHECK_SRC) -o $@
@@ -317,7 +341,7 @@ check-catalog-covers-screen-actions:
 	@bash $(APP_DIR)/check_catalog_covers_screen_actions.sh "$(APP_DIR)" \
 	    kSceneBlend kEncoderPress kEncoderDrag kInputSelect kViewportNarrow
 
-test: check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions check-docs-match-parameter-table check-spec-checks-resolve check-citations-resolve check-modified-requirements-restate-promoted check-no-planning-history check-artifact-symbols-resolve $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN) $(CONTROLLERS_PAGE_BIN)
+test: check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions check-docs-match-parameter-table check-spec-checks-resolve check-citations-resolve check-modified-requirements-restate-promoted check-no-planning-history check-artifact-symbols-resolve check-delay-capacity-parameters-are-swept check-delay-capacity-break-proofs $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN) $(CONTROLLERS_PAGE_BIN)
 	$(TEST_BIN)
 	$(MONO_VALIDATION_BIN)
 	$(DSP_TEST_BIN)
