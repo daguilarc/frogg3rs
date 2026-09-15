@@ -1350,6 +1350,12 @@ TEST_CASE(gate_period_tracks_tempo_change) {
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
     model.PageParameter(synth_froggers::FroggersBankId::Drive, 1).SceneCenter(0) = 0.8f;
     model.PageParameter(synth_froggers::FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;
+    // This test measures gate behaviour through silence and needs the
+    // fastest release; the default patch rests Release VCO2 and VCO3
+    // above the floor.
+    model.PageParameter(synth_froggers::FroggersBankId::Envelope, 3).SceneCenter(0) = 0.0f;   // Release VCO1
+    model.PageParameter(synth_froggers::FroggersBankId::Envelope, 7).SceneCenter(0) = 0.0f;   // Release VCO2
+    model.PageParameter(synth_froggers::FroggersBankId::Envelope, 11).SceneCenter(0) = 0.0f;  // Release VCO3
 
     constexpr double kBaseTempoBpm = 1500.0;
     constexpr double kDoubledTempoBpm = kBaseTempoBpm * 2.0;
@@ -3077,6 +3083,15 @@ TEST_CASE(pristine_and_reset_arms_compared_over_many_draws_with_a_silence_capabl
         int held = 0;
         for (int draw = 0; draw < kDraws; ++draw) {
             Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths(scratchName));
+            // This test measures gate behaviour through silence and needs the
+            // fastest release; the default patch rests Release VCO2 and VCO3
+            // above the floor.
+            {
+                synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+                model.PageParameter(synth_froggers::FroggersBankId::Envelope, 3).SceneCenter(0) = 0.0f;   // Release VCO1
+                model.PageParameter(synth_froggers::FroggersBankId::Envelope, 7).SceneCenter(0) = 0.0f;   // Release VCO2
+                model.PageParameter(synth_froggers::FroggersBankId::Envelope, 11).SceneCenter(0) = 0.0f;  // Release VCO3
+            }
             rig.StartAt(0);
             rig.RunBlocks(8);
 
@@ -3658,10 +3673,20 @@ TEST_CASE(a_fast_parameter_sweep_with_no_reset_does_not_latch_the_instrument) {
     constexpr std::size_t kDiscardedWindows = 11;
     constexpr std::size_t kBlocksPerWindow = 4;
 
+    // This test measures gate behaviour through silence and needs the
+    // fastest release; the default patch rests Release VCO2 and VCO3
+    // above the floor.
+    const auto pinFastestRelease = [&](synth_froggers::FroggersParameterModel& model) {
+        model.PageParameter(synth_froggers::FroggersBankId::Envelope, 3).SceneCenter(0) = 0.0f;   // Release VCO1
+        model.PageParameter(synth_froggers::FroggersBankId::Envelope, 7).SceneCenter(0) = 0.0f;   // Release VCO2
+        model.PageParameter(synth_froggers::FroggersBankId::Envelope, 11).SceneCenter(0) = 0.0f;  // Release VCO3
+    };
+
     const auto run = [&](bool doSweep, const char* scratchName) {
         Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths(scratchName));
         rig.StartAt(0);
         rig.RunBlocks(8);
+        pinFastestRelease(rig.Application().Parameters());
 
         if (doSweep) {
             auto& model = rig.Application().Parameters();
@@ -3680,6 +3705,9 @@ TEST_CASE(a_fast_parameter_sweep_with_no_reset_does_not_latch_the_instrument) {
             // Back to the launch patch, through the same single definition
             // launch itself uses. No Reset, so nothing reseeds.
             synth_froggers::ApplyFroggersDefaultPatch(model);
+            // ApplyFroggersDefaultPatch() restores the shipped Release
+            // defaults, so the pin above needs reapplying here too.
+            pinFastestRelease(model);
         }
 
         rig.RunBlocks(kWarmUpBlocks + kDiscardedWindows * kBlocksPerWindow);
