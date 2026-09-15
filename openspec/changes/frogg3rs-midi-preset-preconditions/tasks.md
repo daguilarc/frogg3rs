@@ -136,18 +136,19 @@
       last one also prints an informational `NOTE` naming the one promoted
       scenario this change's own spec delta does not fully restate; read that
       script's own header before treating a `NOTE` as a failure.
-      `check-spec-checks-resolve` prints its own summary line in the form
-      `check-spec-checks-resolve: OK - <N> Check reference(s) resolved, <M>
-      declared as having no automated check`, counted over every
-      `openspec/specs/` requirement in the tree, not only this change's own —
-      record that exact line verbatim here as this task's baseline (at this
-      writing: `check-spec-checks-resolve: OK - 55 Check reference(s)
-      resolved, 18 declared as having no automated check`; re-run rather
-      than trusting this parenthetical, since another change's own delta can
-      move both figures before this task executes); task 6.6
-      compares its own post-rewrite run of the same script against the `<N>`
-      and `<M>` recorded here, so a number copied instead of measured at this
-      point makes that later comparison meaningless. The remaining
+      `check-spec-checks-resolve` prints its own summary line naming how many
+      `Check:` references resolved and how many are declared as having no
+      automated check, counted over every `openspec/specs/` requirement in
+      the tree, not only this change's own — record that exact line verbatim
+      here as this task's baseline, the same way the other eleven gates'
+      output is recorded, and re-run it rather than trusting a figure copied
+      from an earlier run, since another change's own delta can move it
+      before this task executes. No task in this change draws a
+      pass/fail condition from that line's two counts or from their movement:
+      task 6.6's own check (below) does not compare against this baseline —
+      an aggregate count moves for reasons outside this change's control, so
+      it is recorded here for the reader, not asserted as a delta anywhere.
+      The remaining
       two, `check-no-juce` and `check-delay-capacity-break-proofs`, compile
       code under `$(CXX)`; re-run them, and the twelve test binaries, and
       `./app/build-launcher.sh`, only when actually building this change,
@@ -181,7 +182,12 @@
       recovery-half rule design.md's "Recovery half — rule, floor, positive
       control" section states — three rules, all must pass, over the
       `### Shift` and `### Hold Drill` subsections, heading-delimited;
-      fail naming the missing heading if either is not found at all:
+      fail naming the missing heading if either is not found at all. Every
+      literal-substring match below runs against whitespace-normalised text
+      (runs of whitespace, including a hard-wrapped line break, collapsed to
+      a single space before matching), because `MANUAL.md` is hard-wrapped
+      and nothing about where a 26-42 character phrase happens to land on a
+      line should decide whether it is found:
       (1) **presence** — each subsection contains, for every trigger this
       change's own recovery text offers (Rebuild, Ceiling, and EndpointOpen,
       all three, unconditionally — `MANUAL.md` is one document read across
@@ -208,7 +214,9 @@
       "reconnecting it", or any other phrasing built on the same word all
       trigger it, not only the one literal task 3.1 is instructed to write),
       that same subsection also contains the literal substring "not
-      available in the plugin." Run it now, against the current, unmodified
+      available in the plugin" (bare — no trailing comma or period inside
+      the match, matching design.md's own spelling exactly). Run it now,
+      against the current, unmodified
       text, and record all results here: against `MANUAL.md:319-320`
       ("buttons stay shifted until Shift is pressed and released again."),
       rule 1 must fail (none of the three phrase-families is present, only
@@ -230,8 +238,17 @@
       that half reads `declaredPreconditions`, which does not exist until
       group 4's gate (4.1-4.2) lands it, and is added by task 4.8, which
       extends this same file rather than creating a second one. Wire only
-      this half into `app/Makefile` for now; task 4.8 adds the drift half's
-      own wiring once it exists.
+      this half into `app/Makefile` for now, as the new **last** entry in the
+      `test:` recipe's `check-*` segment (after `check-delay-capacity-break-proofs`,
+      before `$(TEST_BIN)`), not inserted earlier in that segment: every
+      `check-*` target in this list runs before any test binary, and GNU
+      Make's linear prerequisite list aborts at the first failing one (task
+      1.6), so this new, knowingly-red target must not sit ahead of any of
+      the twelve existing checks and starve them too during the window this
+      task itself discloses below — only the binaries are expected to be
+      unreachable through `make -C app test` in that window, not the other
+      checks. Task 4.8 adds the drift half's own wiring once it exists, at
+      the same position.
       **This wires a check into `test:` that is knowingly red until task 3.1
       rewrites `MANUAL.md`** (rule 1 fails against the current, unmodified
       text by this same task's own design, above) — for the whole window from
@@ -345,7 +362,7 @@
       plugin as having the reconnect route: wherever this rewrite states
       "unplugging and reconnecting the controller" for a subsection, that
       same subsection must also contain the literal phrase "not available in
-      the plugin," naming the plugin specifically (e.g. "...unplugging and
+      the plugin" (bare, no trailing comma), naming the plugin specifically (e.g. "...unplugging and
       reconnecting the controller, on the standalone and browser builds —
       not available in the plugin, which takes MIDI through host automation
       and opens no ports of its own") — task 1.8's own third check rule
@@ -402,53 +419,74 @@
       happen to add the two symbols this group needs. Completeness is a
       property of a commit, not of the working tree, because the working
       tree and a commit are different objects and only a commit is what a
-      submodule gitlink can name. Confirm the following against the checkout
-      as it actually stands:
-      1. `git -C External/Sheaf status --short` reports nothing (a clean
-         tree — the same condition Sheaf's own task 7.8 confirms before its
-         coordinator commits), and `git -C External/Sheaf rev-parse HEAD`
-         names the exact commit Sheaf's own task 7.8 made (its coordinator
-         ticks 7.7, 7.8 and 7.9 themselves in the working tree before
-         committing, per that task's own stated convention) — record this
-         SHA; it is what 4.2 checks out and what 4.2's own commit message
-         names.
-      2. Build and run, by path, every Sheaf test binary that carries a case
-         this change's own group 4 or task 3.1 depends on, and confirm each
-         named case reports `[PASS]` (or the equivalent this repository's own
-         test runner uses) at that commit — an assertion in a real test
-         binary that this gate's own current, unmet state already turns red
-         (today none of these files or cases exist, so the build itself
-         fails; that failure is this gate's own positive control, not a
-         second one to construct) is what actually confirms delivered
-         behaviour, not a declaration or a comment a text probe cannot tell
-         apart from real work:
-         - `$(ENGINE_TEST_BIN)` (`projects/synth/tests/engine_tests.cpp`):
-           `HeldModifierCeilingIsWallClockNotPumpCount`,
-           `HeldModifierCeilingDoesNotFireBeforeItElapses` (Ceiling).
-         - `$(BROWSER_MIDI_BRIDGE_TEST_BIN)`
-           (`projects/synth/tests/browser_midi_bridge_tests.cpp`):
-           `EndpointOpenClearsHeldModifierThroughTheAbiEntryPoint`,
-           `ReconcileAloneDoesNotClearAHeldModifier` (EndpointOpen, browser
-           binding).
-         - The `projects/synth/apps/miniapp/Makefile` `test` target's own
-           `MidiConnectionManagerReconcileTests.cpp`:
-           `EndpointOpenClearsHeldModifierAtRuntimeBinding` (EndpointOpen,
-           runtime binding — this is the miniapp target specifically; the
-           top-level `projects/synth` `test` target does not build this
-           file).
-         - `$(CONTROLLER_WIZARD_TEST_BIN)`
-           (`projects/synth/tests/controller_wizard_tests.cpp`):
-           `AppDeviceDefaultCarriesItsDeclaredPreconditionsOntoItsDescriptor`
-           (`declaredPreconditions` itself, the field this group populates).
-         Each of these binaries and Makefile variables is Sheaf's own, named
-         by its own tasks (group 3 for the first three, group 6 for the
-         fourth) — read that repository's own `Makefile`s for the exact
-         invocation rather than assuming a uniform build command, the same
-         discipline task 1.6 applies to this repository's own gates. If any
-         binary fails to build, or builds but any named case does not report
-         `[PASS]`, this gate does not pass, regardless of what the tasks.md
-         box count or the commit's own tick state says: a ticked box is not
-         evidence of delivered behaviour, and this gate no longer reads one.
+      submodule gitlink can name. Confirm all four of the following against
+      the checkout as it actually stands; this gate passes only when all four
+      commands do, and none of them is a declaration or a comment a text
+      probe cannot tell apart from real work:
+      (a) `git -C External/Sheaf rev-parse HEAD` names the exact commit the
+          Sheaf coordinator reports as task 7.8's completion commit — record
+          this SHA; it is what 4.2 checks out and what 4.2's own commit
+          message names.
+      (b) At that commit, `git -C External/Sheaf show
+          HEAD:openspec/changes/midi-controller-resilience/tasks.md | grep -c
+          '^- \[ \]'` reports `0`. This is the exact signal Sheaf task 7.8
+          states its coordinator commit produces, in its own words: "the
+          coordinator ... marks 7.7, 7.8 and 7.9 themselves `- [x]` in the
+          working tree ... then commits this branch
+          (`midi-resilience-merge`) with all three ticked, so that `grep -c
+          '^- \[ \]' openspec/changes/midi-controller-resilience/tasks.md`
+          run against that commit (not the working tree) reports `0`."
+          Zero is therefore the count of boxes left unticked at that commit —
+          every box in the file is ticked, and no other count satisfies that
+          sentence. An earlier commit taken at a group boundary (7.8's own
+          text permits the coordinator to make one) still carries unticked
+          boxes past that boundary and this grep reports a nonzero count
+          against it, so (a) and (b) together — not the tick state of this
+          change's own tasks.md, and not a restatement that (a) names "the
+          commit Sheaf's task 7.8 made" — are what distinguish the
+          completion commit from an intermediate one.
+      (c) Every Sheaf test binary that a Sheaf task adds a case to, across
+          all of Sheaf's groups, builds and passes in full at that commit,
+          run **by path** rather than through `make test` — `projects/synth`'s
+          own top-level `test` target does not build the miniapp's
+          JUCE-backed binaries, the same discipline task 1.6 applies to this
+          repository's own gates:
+          - `$(ENGINE_TEST_BIN)` (`projects/synth/tests/engine_tests.cpp`;
+            group 3).
+          - `$(INSTRUMENT_TEST_BIN)`
+            (`projects/synth/tests/instrument_tests.cpp`; groups 3 and 5).
+          - `$(BROWSER_MIDI_BRIDGE_TEST_BIN)`
+            (`projects/synth/tests/browser_midi_bridge_tests.cpp`; group 3).
+          - `$(BROWSER_CONTRACT_TEST_BIN)`
+            (`projects/synth/tests/browser_runtime_contract_tests.cpp`;
+            group 3).
+          - `$(RECONCILE_TEST_BIN)`
+            (`projects/synth/tests/reconcile_tests.cpp`; group 3).
+          - `$(RECONCILE_EXECUTOR_TEST_BIN)`
+            (`projects/synth/tests/reconcile_executor_tests.cpp`; group 3).
+          - `$(CONTROLLERS_PAGE_UI_TEST_BIN)`
+            (`projects/synth/tests/controllers_page_ui_tests.cpp`; group 4).
+          - `$(CONTROLLER_WIZARD_TEST_BIN)`
+            (`projects/synth/tests/controller_wizard_tests.cpp`; group 6).
+          - the `projects/synth/apps/miniapp/Makefile` `test` target's
+            `projects/synth/juce/MidiConnectionManagerReconcileTests.cpp`
+            (group 3 — task 3.7 wires this new binary into that Makefile's
+            `test:` prerequisite list the same way its existing
+            `juce/*Tests.cpp` files are wired, so it is reachable there and
+            only there; the top-level `projects/synth` `test` target does
+            not build it).
+          Excluded, and named so no later executor re-adds it by habit:
+          `tests/rig_tests.cpp`'s task-1.4 case is that task's own "scratch
+          `TEST_CASE` added **temporarily**" for a behavioural-premise
+          confirmation, not a case any later task depends on or that this
+          gate's own group depends on — nothing in group 4 or this change
+          reads it. If any binary above fails to build, or any test inside it
+          fails, this gate does not pass, regardless of what the tasks.md box
+          count or the commit's own tick state says: (b) and (c) are what
+          this gate reads, never a tick.
+      (d) `git -C External/Sheaf status --short` reports nothing (a clean
+          tree — the same condition Sheaf's own task 7.8 confirms before its
+          coordinator commits).
       This gate does not name or depend on any remote branch or a push:
       Sheaf's own task 7.9 states that this change performs no push, opens no
       pull request, and moves no pin in this cycle (its later,
@@ -537,7 +575,9 @@
       device_defaults_declare_their_preconditions case in
       `app/FroggersMidiCatalogTests.cpp`, including the empty-list assertion
       for Ableton.
-- [ ] 4.5 Add one loop-based case to `app/FroggersMidiCatalogTests.cpp`
+- [ ] 4.5 Add one loop-based case, named
+      only_the_twister_carries_a_shifted_press_or_a_shift_press, to
+      `app/FroggersMidiCatalogTests.cpp`
       asserting, for every entry in `catalog.deviceDefaults` whose id is not
       the Twister's, that no association carries a `shiftedPress` and no
       association has `press.type == synth::MessageIn::Type::Shift`. Prove the
@@ -559,11 +599,14 @@
       `SystemButtonMidiInProcessor::Process`
       (`External/Sheaf/projects/synth/src/MidiController.cpp:932-976`), which
       dispatches on the press edge before it ever inspects
-      `association->release` — neither depends on 4.1/4.2's gate. (a) A
+      `association->release` — neither depends on 4.1/4.2's gate. (a) Name it
+      a_non_shift_side_button_dispatches_without_a_release: a
       non-Shift Twister side button's press message, with no paired release
       ever arriving, still dispatches its currently-applicable job (ordinary
       or shifted, per whatever Shift's own held state is at the time) — the
-      job is never silently dropped. (b) When the button whose press-with-no-release
+      job is never silently dropped. (b) Name it
+      shift_side_buttons_stay_shifted_while_shifts_release_never_arrives.
+      When the button whose press-with-no-release
       is the Shift button itself, `shift_->held` is left `true`
       (`:969`, current pinned-tree spelling — Sheaf's group 3 renames this to
       `shift_->modifier.held` once its task 3.1 lands, a private member no
@@ -704,13 +747,26 @@ device_defaults_declare_their_preconditions case group 4 adds.
 - [ ] 5.1 Add the device default: id `froggers.launchcontrolxl` (design.md,
       "The device default's `id` is `froggers.launchcontrolxl`," carries the
       grep against the six existing ids and the reasoning), `Generic` kind,
-      input and output aliases `{"Launch Control XL"}` (Programmer's
-      Reference Guide, "Launch Control XL MIDI Overview": "Launch Control XL
-      has a single MIDI port named 'Launch Control XL n', where n is the
-      device ID of your unit (not shown for device ID 1)" — unconfirmed on
-      hardware, the same caveat MANUAL.md's Launchpad X and Pro MK3 sections
-      carry), and an analog section assigning scene blend to CC 77, channel 8
-      counted from 0 (task 2.2). The case this task adds is a
+      input and output aliases `{"Launch Control XL"}` — an exact match on
+      device ID 1's own port name only (Programmer's Reference Guide, "Launch
+      Control XL MIDI Overview": "Launch Control XL has a single MIDI port
+      named 'Launch Control XL n', where n is the device ID of your unit (not
+      shown for device ID 1)"). Unlike the Launchpad models' own
+      "unconfirmed on hardware" aliases, which each carry three or four
+      fallback strings for exactly this kind of naming uncertainty, this
+      default carries one, because the uncertainty here is not the string's
+      spelling but the device-ID suffix, which no alias list can enumerate in
+      advance: a unit set to device ID 2 or higher reports "Launch Control XL
+      2" and this alias will not match it. This is the same "(none) after
+      adding it, bind by hand from the port selectors" situation the
+      Launchpad X and Pro MK3 sections already document, not a smaller one —
+      task 5.6's manual section states it the same way, naming the device-ID
+      dependency specifically rather than reusing the Launchpad sections'
+      "have not been confirmed" wording verbatim, since the two uncertainties
+      are different in kind. Also add an analog section assigning scene
+      blend to CC 77, channel 8
+      counted from 0 (task 2.2). The case this task adds, named
+      launch_control_xl_offers_scene_blend_on_fader_1, is a
       literal-against-literal assertion (design.md, "What task 5.1's own
       check can and cannot prove") — it catches a later transcription slip,
       not a wrong reading of the device.
@@ -819,6 +875,13 @@ device_defaults_declare_their_preconditions case group 4 adds.
       blend and factory template 1 as the device precondition, citing the
       Getting Started Guide's "Template Switching" procedure as where it is
       set. This paragraph is subject to the same drift check task 4.8 adds.
+      State the port-matching caveat task 5.1 names: the preset matches the
+      unit's MIDI port by its device-ID-1 name only, and a unit set to a
+      different device ID reports a different port name this preset will not
+      match — if a connected one's MIDI in/out read "(none)" after adding it,
+      bind its ports by hand from the port selectors, the same recovery
+      Launchpad X and Pro MK3's own sections already state for their own
+      unconfirmed port names.
       Also reword `MANUAL.md:271-272` ("A newly connected Twister, APC40, or
       Launchpad is also offered through the page's configure flow.") so it
       does not enumerate device families by name — the configure flow's list
@@ -863,50 +926,67 @@ device_defaults_declare_their_preconditions case group 4 adds.
 - [ ] 6.5 Independent review with a fresh context.
 - [ ] 6.6 **Rewrite every promoted `Check: not yet delivered` line before
       archiving — no unrewritten deferral survives into the permanent
-      promoted spec.** `grep -hE '^[[:space:]]*-[[:space:]]*Check:' openspec/changes/frogg3rs-midi-preset-preconditions/specs/*/spec.md
-      | grep -c 'not yet delivered'` names the count to rewrite (measure it
-      now; do not carry forward a number recorded before this task runs). By
-      the time this task runs, every task this change's own deferred `Check:`
-      lines name (1.8, 4.3, 4.4, 4.5, 4.6(a), 4.6(b), 4.8, 5.1, 5.2) is
-      ticked, so each such line is rewritten to name the test that now
-      exists in the form `app/check_spec_checks_resolve.py` already accepts
-      elsewhere in this repository — a repo-relative path indexed verbatim
-      from the tree, plus the real case name it defines, after a colon (a
-      bare basename is not accepted); the same form this delta's own
-      already-resolved lines already use — not left reading
-      "not yet delivered" against a task that is in fact done, which is
-      false the moment it is ticked and would be promoted false into
-      `openspec/specs/` at archive. This is this repository's own
-      obligation, parallel to what Sheaf's task 1.9 rule 2(b) mechanises for
-      its own deltas; frogg3rs's `check_spec_checks_resolve.py` does not
-      short-circuit on the "not yet delivered" prefix the way Sheaf's does
-      (its own header comment states why), so a line left unrewritten here
-      is not caught by that script alone — this task is the mechanism, and
-      the check below is what proves it ran.
-      **Check:** `grep -hE '^[[:space:]]*-[[:space:]]*Check:' openspec/changes/frogg3rs-midi-preset-preconditions/specs/*/spec.md
-      | grep -c 'not yet delivered'` reports `0` (whitespace-anchored, not
-      `^- Check:`, so an indented deferred line cannot escape this count the
-      way it escapes a stricter anchor), and
-      `python3 app/check_spec_checks_resolve.py app` exits `0`. Verify by hand,
-      for each of the nine rewritten lines, that the test it now names is the
-      one the delivering task actually added — the file exists, the case name
-      is defined in it, and it is the case that task's own diff introduced,
-      not a pre-existing or unrelated one the script's own aggregate
-      resolution cannot distinguish by name alone; this is not a second
-      script, it is the same by-hand correctness the executor already owes
-      for writing the line in the first place. No `<M>`/`<N>` count is
-      asserted here: an aggregate figure over every `Check:` line in the tree
-      can rise or fall for reasons this task does not cause (another change's
-      own delta, a rewrite elsewhere), so it is not this task's own check to
-      carry, and the two conditions above — the literal deferred-line count
-      and the script's own exit code — are what a real break turns red.
+      promoted spec.** Ten lines carry this text today, not nine: task 1.8,
+      4.3, 4.4 (twice — the Generic scenario and the Ableton scenario), 4.5,
+      4.6(a), 4.6(b), 4.8, 5.1 and 5.2 — nine tasks delivering ten scenarios,
+      because 4.4 delivers two. By the time this task runs, every one of
+      those nine tasks is ticked, so each of the ten lines is rewritten to
+      name what now actually exists. Eight of the ten name the real
+      `TEST_CASE` their delivering task added to
+      `app/FroggersMidiCatalogTests.cpp`, in the form
+      `app/FroggersMidiCatalogTests.cpp: <case>` this delta's own
+      already-resolved lines already use (a bare basename is not accepted).
+      The remaining two — task 1.8's line and task 4.8's line — cannot take
+      that form at all: what each delivers is not a `TEST_CASE` but an
+      extension to the check *script* `app/check_docs_match_device_preconditions.py`
+      (task 1.8's recovery half, task 4.8's drift half), so rewrite each to
+      name that script bare, with no case after a colon —
+      `check_spec_checks_resolve.py` resolves a bare script name as a wired
+      gate (task 1.6 records it as `check-docs-match-device-preconditions`
+      in `app/Makefile`'s `test:` prerequisite list), and naming a case
+      beside it would assert something that file does not define.
+
+      **Check**, one condition in place of a deferred-line count and a bare
+      script exit code, because both of those are satisfied by a rewrite
+      that delivers nothing (a null `Check: none.` rewrite, or a
+      pre-existing case name attached to the wrong scenario, moves neither
+      figure): let `<base>` be the output of `git merge-base main HEAD`, run
+      now, not copied from an earlier run. Loop over all ten scenarios above,
+      in the form each one's rewritten line now takes, and record which
+      line, if any, fails to produce output — do not summarize this as a
+      single pass/fail:
+      - for the eight naming a case, `git diff <base>..HEAD --
+        app/FroggersMidiCatalogTests.cpp | grep '^+' | grep -F '<case>'`
+        must return at least one line for that scenario's case — the case
+        must appear in **this branch's own diff**, not merely somewhere in
+        the file, so neither a pre-existing case nor one another change
+        added can satisfy it;
+      - for the two naming the script, `git diff <base>..HEAD --
+        app/check_docs_match_device_preconditions.py | grep '^+' | wc -l`
+        must report a nonzero count.
+      Then run `python3 app/check_spec_checks_resolve.py app` and confirm it
+      exits `0`. No aggregate count over every `Check:` line in the tree is
+      asserted here, or anywhere else in this change: such a figure moves for
+      reasons this task does not cause, and — as demonstrated against this
+      exact task — it does not move at all across a rewrite that delivers
+      nothing, so it is not evidence and it is not this task's own check to
+      carry. The loop above is what a real break turns red.
+      Verify by hand, for each of the eight case-naming lines, that the case
+      the diff found is the one that scenario's own delivering task actually
+      added, not a shared or unrelated one the grep cannot distinguish by
+      name alone: device_defaults_declare_their_preconditions is
+      deliberately one case shared by four scenarios (the Twister's, both
+      APC40 defaults', and the Launch Control XL template's, tasks
+      4.3/4.4/4.4/5.2), each asserting its own device inside that one case —
+      confirm each device's own assertion is present in the diff, not only
+      the case's name once.
       **Positive control, stated as the archive step's own precondition:**
-      leave exactly one `not yet delivered` line unrewritten and confirm
-      `grep -hE '^[[:space:]]*-[[:space:]]*Check:' openspec/changes/frogg3rs-midi-preset-preconditions/specs/*/spec.md
-      | grep 'not yet delivered'` prints that line — its output must be
-      **empty** before 6.7's archive runs; a nonempty output is 6.7's own STOP
-      condition, not merely a warning here. Revert immediately after
-      confirming the control fires.
+      leave exactly one line as `Check: none.` and confirm the loop above
+      returns nothing for that one scenario while still returning a line for
+      every other. Its output must name a line for **every** scenario before
+      6.7's archive runs; one silent scenario is 6.7's own STOP condition,
+      not merely a warning here. Revert immediately after confirming the
+      control fires.
 - [ ] 6.7 **Deliver, in this order: postflight (6.1-6.5) passes → documentation
       hygiene this change owes → 6.6's Check-line rewrite passes →
       `openspec archive frogg3rs-midi-preset-preconditions -y`

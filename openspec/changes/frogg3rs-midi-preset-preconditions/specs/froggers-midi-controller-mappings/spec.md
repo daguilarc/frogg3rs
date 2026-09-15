@@ -26,23 +26,23 @@ no APC40 or Launchpad association has a shifted press or a Shift press
 #### Scenario: Only the Twister carries Shift or shifted jobs
 - **WHEN** every device default is read
 - **THEN** no non-Twister device default has a shifted press or a Shift press
-- Check: not yet delivered; task 4.5 adds a loop-based case to app/FroggersMidiCatalogTests.cpp asserting this over every entry in the catalog's device defaults whose id is not the Twister's, with a positive control (proven on the then-last entry, and re-proven on the Launch Control XL by task 5.3 once it exists) that a shifted press turns it red
+- Check: not yet delivered; task 4.5 adds a loop-based case, named only_the_twister_carries_a_shifted_press_or_a_shift_press once it exists, to app/FroggersMidiCatalogTests.cpp asserting this over every entry in the catalog's device defaults whose id is not the Twister's, with a positive control (proven on the then-last entry, and re-proven on the Launch Control XL by task 5.3 once it exists) that a shifted press turns it red
 
 #### Scenario: A non-Shift side button's press still dispatches when its own CC Hold is unmet
 - **WHEN** a non-Shift Twister side button's press message is received and no matching release message ever arrives
 - **THEN** the button's currently-applicable job — ordinary, or shifted if Shift is held at that moment — still fires on that press
-- Check: not yet delivered; task 4.6(a) adds a case to app/FroggersMidiCatalogTests.cpp asserting this against the input processor's dispatch, which fires on the press edge before it inspects any release
+- Check: not yet delivered; task 4.6(a) adds a case, named a_non_shift_side_button_dispatches_without_a_release once it exists, to app/FroggersMidiCatalogTests.cpp asserting this against the input processor's dispatch, which fires on the press edge before it inspects any release
 
 #### Scenario: The other side buttons stay in shifted form when Shift's own CC Hold is unmet
 - **WHEN** the Shift button's press message is received and no matching release message ever arrives
 - **THEN** every other side button with a shifted job dispatches that shifted job, not its ordinary one, on every subsequent press, until one of `HeldModifierClearSource`'s other triggers clears Shift's held state
-- Check: not yet delivered; task 4.6(b) adds a case to app/FroggersMidiCatalogTests.cpp asserting this against the same dispatch path
+- Check: not yet delivered; task 4.6(b) adds a case, named shift_side_buttons_stay_shifted_while_shifts_release_never_arrives once it exists, to app/FroggersMidiCatalogTests.cpp asserting this against the same dispatch path
 
 #### Scenario: A Shift whose release never arrives ends by another trigger, and the manual says which
 - **WHEN** a controller is unplugged while its Shift button is down, or its Shift address stops transmitting
 - **THEN** the manual's Shift subsection states the triggers that end a held modifier and does not state a recovery that requires the Shift address to transmit
 - **AND** it states the same for Hold Drill
-- Check: not yet delivered; task 1.8 adds this repository's device-preconditions check script's recovery half, which fails unless the Shift and Hold Drill subsections each (1) contain, for every trigger this change's recovery text offers, at least one of that trigger's own multi-word phrases verbatim ("selecting a different preset" or "rebuilds the row's mapping" for Rebuild; "clears automatically after" for Ceiling; "unplugging and reconnecting the controller" for EndpointOpen — a subsection naming only some of these fails), (2) do not contain "pressed and released again" or any other sentence naming the modifier's own button as what clears it, and (3), wherever any reconnect-shaped phrase appears (matched on the word "reconnect", not only the one literal phrasing above), also contain "not available in the plugin"
+- Check: not yet delivered; task 1.8 adds this repository's device-preconditions check script's recovery half, which fails unless the Shift and Hold Drill subsections each (1) contain, for every trigger this change's recovery text offers, at least one of that trigger's own multi-word phrases verbatim ("selecting a different preset" or "rebuilds the row's mapping" for Rebuild; "clears automatically after" for Ceiling; "unplugging and reconnecting the controller" for EndpointOpen — a subsection naming only some of these fails), (2) do not contain the literal substring "pressed and released again" (whitespace-normalised, no trailing comma), and (3), wherever any reconnect-shaped phrase appears (matched on the word "reconnect", not only the one literal phrasing above), also contain "not available in the plugin" (whitespace-normalised). Naming the modifier's own button as what clears it, beyond this one literal, is a drafting rule for task 3.1's own prose (design.md), not a second mechanical pattern this check enforces — none is invented here
 
 ## ADDED Requirements
 
@@ -75,7 +75,7 @@ The catalogue SHALL offer a Novation Launch Control XL device default of `Generi
 #### Scenario: The preset offers scene blend on a fader
 - **WHEN** the Launch Control XL device default is read
 - **THEN** its kind is `Generic`, and its analog section sets scene blend to channel 8 CC 77
-- Check: not yet delivered; task 5.1 adds a case to app/FroggersMidiCatalogTests.cpp
+- Check: not yet delivered; task 5.1 adds a case, named launch_control_xl_offers_scene_blend_on_fader_1 once it exists, to app/FroggersMidiCatalogTests.cpp
 
 #### Scenario: The preset declares the template its map depends on
 - **WHEN** the Launch Control XL device default is read

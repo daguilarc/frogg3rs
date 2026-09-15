@@ -55,15 +55,20 @@ pushes that work (or a rebased equivalent) to a remote, under whatever
 branch name that step uses.
 
 "Sheaf has landed" for this change therefore means, checked locally, never
-against a remote: (1) `git -C External/Sheaf status --short` is empty and
-`git -C External/Sheaf rev-parse HEAD` names the exact commit Sheaf's own
-task 7.8 made, per that task's own stated tick convention; and (2) the Sheaf
-test binaries that carry `declaredPreconditions` and `HeldModifierClearSource`
-(Ceiling and EndpointOpen, on both the browser and the runtime binding) build
-and pass, by name, at that commit — task 4.1 names the exact binaries and
-cases. A declaration a comment could also spell, or a box ticked without the
-work behind it, is not what this checks: a real test binary either builds and
-its named case passes, or it does not, and neither outcome is satisfied by
+against a remote: (1) `git -C External/Sheaf rev-parse HEAD` names the exact
+commit the Sheaf coordinator reports as task 7.8's completion commit; (2) at
+that commit, `git -C External/Sheaf show
+HEAD:openspec/changes/midi-controller-resilience/tasks.md | grep -c '^- \[
+\]'` reports `0` — the signal Sheaf's own task 7.8 states its coordinator
+commit produces, and the term that tells the completion commit apart from an
+earlier, permitted group-boundary commit that still carries unticked boxes;
+(3) every Sheaf test binary that a Sheaf task adds a case to, across all of
+Sheaf's groups — not only the two that carry `declaredPreconditions` and
+`HeldModifierClearSource` — builds and passes in full at that commit, by
+path; and (4) `git -C External/Sheaf status --short` is empty. Task 4.1 names
+the exact binaries. A declaration a comment could also spell, or a box ticked
+without the work behind it, is not what this checks: a real test binary
+either builds and passes, or it does not, and neither outcome is satisfied by
 text. None
 of this is a claim about upstream, a pull request, or `main` on either
 repository — it is a property of this local checkout's own object store.
@@ -426,7 +431,13 @@ down, not only the recovery half's.
 early, in task 1.8).** The check parses the `### Shift` and `### Hold Drill`
 subsections, heading-delimited, and applies three rules, all of which must
 pass; if either heading is not found at all, the check fails naming the
-missing heading, rather than vacuously passing an empty comparison.
+missing heading, rather than vacuously passing an empty comparison. Every
+literal-substring match below runs against whitespace-normalised text, not
+against `MANUAL.md`'s own hard-wrapped lines directly: nothing here or in
+task 1.8 or task 3.1 normalises whitespace before matching otherwise, and a
+26-42 character phrase landing across a line break, purely as an accident of
+where the executor's rewrite wraps, must not be able to hide it from a
+literal match.
 
 1. **Presence, as a conjunction over all three triggers, unconditionally, not
    a disjunction over any one.** Each subsection contains, for every one of
