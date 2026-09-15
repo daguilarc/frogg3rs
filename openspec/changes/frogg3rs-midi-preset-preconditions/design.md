@@ -38,16 +38,27 @@ because no other task in this change performs it.
 
 **Sequencing, stated exactly.** Sheaf executes its own tasks 6.1 (the field)
 and 6.2 (threading it through `ControllerWizardDescriptor` and
-`MakeControllerWizardRegistry`) on its branch `midi-resilience-merge`, then its
-own task 7.7 pushes that branch to the `fork` remote (`daguilarc/Sheaf`) and
-does nothing else. "Sheaf has landed" for this change means exactly one
-thing: this worktree's `External/Sheaf` submodule checkout is pinned to a
-commit reachable from `fork/midi-resilience-merge` that carries the field —
-verified by `grep -n declaredPreconditions
-External/Sheaf/projects/synth/include/synth/MidiAppCatalog.hpp` returning a
-real member, not by any claim about upstream, a pull request, or `main` on
-either repository. Task 4.2 performs that pin advance; task 4.1 is the gate
-that says group 4 does not start before it.
+`MakeControllerWizardRegistry`), and its group 3, task 3.1 (adds
+`HeldModifierClearSource`, which this change's own task 3.1 needs to name the
+manual's recoveries), on its branch `midi-resilience-merge` — the same
+submodule checkout this worktree already carries. Sheaf's own task 7.7
+performs no push, opens no pull request, and moves no pin in this cycle; the
+operator's later, separate rebase-and-merge step pushes that work (or a
+rebased equivalent) to a remote, under whatever branch name that step uses.
+"Sheaf has landed" for this change therefore means exactly one thing, checked
+locally, never against a remote: this worktree's `External/Sheaf` submodule
+checkout carries both symbols — verified by `grep -n declaredPreconditions
+External/Sheaf/projects/synth/include/synth/MidiAppCatalog.hpp` and
+`grep -n HeldModifierClearSource
+External/Sheaf/projects/synth/include/synth/MidiController.hpp`, each
+returning a real member, not by any claim about upstream, a pull request, or
+`main` on either repository. Task 4.2 performs the pin advance (from this
+local checkout, not a fetch); task 4.1 is the gate confirming both symbols
+that says group 4 — and, under the same confirmation, task 3.1's manual
+rewrite — does not start before it. The commit task 4.2 pins is, by the same
+fact, reachable from no remote until the operator's later step publishes it
+(see Risks and Migration Plan below); that does not change what "landed"
+means here, which is a property of this local checkout, not of any remote.
 
 ## Goals / Non-Goals
 
@@ -115,8 +126,15 @@ depends on that button's own release ever arriving.
 
 That job is not always the button's *unshifted* one. `:964-971` handles a
 press whose `association->press.type == MessageIn::Type::Shift` by setting
-`shift_->modifier.held = isPress` and returning — no message is pushed for
-Shift's own press. If Shift's own CC Hold is the precondition that is unmet,
+`shift_->held = isPress` and returning — no message is pushed for
+Shift's own press (`shift_` is a private member; Sheaf's group 3 later
+composes a `HeldModifierState modifier;` into `ShiftState` and renames every
+access to `shift_->modifier.held`, but the type name `ShiftState` itself is
+unchanged, and no case this change adds constructs a
+`SystemButtonMidiInProcessor` and reads that private field under either
+spelling — see task 4.6). If Sheaf's group 3 has already landed by the time a
+reader traces this paragraph, read `shift_->modifier.held` for `shift_->held`
+throughout; the dispatch this paragraph describes is the same either way. If Shift's own CC Hold is the precondition that is unmet,
 its release never arrives, so `held` is set `true` on the press and never
 cleared by a release; every subsequent press on the other five side buttons
 then reads `:975`'s `shifted = shift_ != nullptr && shift_->held &&
@@ -164,97 +182,180 @@ says which are available on which host, and covers Hold Drill, whose failure
 costs every encoder.
 
 **The drift check has two independent halves — declarations-vs-manual, and
-recovery-text — and each needs its own rule, floor and positive control.**
-Folding them into one paragraph is what let the first version of this check
-ship with neither written down; both are stated here before task 4.8 writes
-the script, so the script has an assertion to implement rather than a blank
-to fill.
+recovery-text — with different dependencies, so they are authored and run at
+different points, not folded into one task after the manual is already
+rewritten.** The recovery half is pure text over `MANUAL.md`; it has no
+dependency on Sheaf's field, so task 1.8 authors and runs it before task 3.1
+touches anything. The drift half reads `MidiAppDeviceDefault::declaredPreconditions`,
+which does not compile until the submodule pin lands it (tasks 4.1-4.2), and
+compares against text task 4.7 generates; it is authored in task 4.8, after
+both of those. Folding the two into one paragraph, and one task, is what let
+an earlier version of this check ship with neither its rule nor its ordering
+written down.
 
-**Drift half — correspondence rule.** For every entry in
-`catalog.deviceDefaults` (`FroggersMidiCatalog()`'s initializer list,
-currently seven: Twister, APC40 Generic, APC40 Ableton, Launch Control XL,
-Launchpad X, Launchpad Pro MK3, Launchpad Mini MK3), the check reads that
-device's `declaredPreconditions` list directly out of `app/FroggersMidiCatalog.hpp`'s
-source — parsed by function name (`TwisterDeviceDefault()`,
-`Apc40GenericDeviceDefault()`, `Apc40AbletonDeviceDefault()`,
-`LaunchControlXlDeviceDefault()`, and the three Launchpad factories), the same
-symbol-not-line-number discipline `check_docs_match_parameter_table.py`
-already uses for `FroggersBankLayouts()` — and compares it against that
-device's own subsection of `MANUAL.md`'s "MIDI controllers" section, delimited
-by that device's own `###` heading (`### MIDI Fighter Twister`, `### Akai
-APC40 mkII (Generic)`, `### Akai APC40 mkII (Ableton)`, `### Novation Launch
-Control XL`, and the three Launchpad headings) up to the next `###` heading or
-`---`. "Agree" means: every string in `declaredPreconditions` names a setting
-(the substring before the first comma, e.g. "encoders set to relative") that
-appears, case-insensitively, somewhere in that device's subsection prose; and
-the subsection names no device-setting-shaped clause (a sentence containing
-"must", "set to", "unchecked", "stay selected", or "Utility" outside the
-device's own name) that does not correspond to a string in
-`declaredPreconditions`. An empty `declaredPreconditions` list (Ableton, the
-three Launchpads) agrees with a subsection that names none of those clause
-markers.
+**Drift half — read the catalogue through the compiler, not through a text
+parse of `FroggersMidiCatalog.hpp`.** Three earlier designs of this half each
+parsed the header's source text — by device-setting substring, by function
+name, by marker word — and each is porous in a way tracing this file exposes
+directly:
 
-**Drift half — floor.** The check must locate exactly seven device
-subsections and seven `declaredPreconditions` lists before comparing
-anything; if either parse finds fewer than `catalog.deviceDefaults.size()`
-(read the same way `app/FroggersMidiCatalogTests.cpp`'s own count assertion
-does, not hard-coded), the check fails outright with that count, rather than
-reporting agreement over whatever subset it happened to find — a regex that
-matches nothing must not read as "nothing disagreed."
+- `Apc40AbletonDeviceDefault()` copy-constructs its return value from
+  `Apc40GenericDeviceDefault()` and only overwrites `id`, `displayName`, and
+  `config.openSysEx` (`app/FroggersMidiCatalog.hpp:182-187`); it never
+  restates `declaredPreconditions` in its own body. A parse keyed to a
+  function's own source text reads the Generic's declarations for both, and
+  cannot see that the Ableton default's true list is empty.
+- The three Launchpad factories (`LaunchpadXDeviceDefault()`,
+  `LaunchpadProMk3DeviceDefault()`, `LaunchpadMiniMk3DeviceDefault()`,
+  `app/FroggersMidiCatalog.hpp:265-292`) each call the shared
+  `LaunchpadDeviceDefault()` helper, which takes no preconditions parameter at
+  all. A by-function-name parse has no per-device text to read for three of
+  seven devices, by the code's own structure, not by a gap in the parser.
+- A parse anchored on the declared string's own text is a choice between two
+  failure modes proven against this manual as it reads today: a prefix
+  comparison (the substring before the first comma) cannot distinguish `"CC
+  Hold"` from `"CC Hold, permanently"` — they share the same prefix — so the
+  positive control the previous design specified for exactly this edit could
+  not turn the check red; and a marker-word reverse check (`must`, `set to`,
+  `unchecked`, `stay selected`, `Utility`) scores zero clause markers on six
+  of the seven device subsections as written (`Twister` scores 2; the other
+  six score 0 each — verified by direct count against the live manual), so it
+  would stay silent if a real declared string were deleted from a device that
+  states its precondition in different words, such as the APC40 Generic's
+  "Keep Track 1 selected:".
 
-**Drift half — positive controls, both directions.** (a) Declaration-edit
-direction: temporarily append a word to the Twister's `declaredPreconditions`
-entry for CC Hold (e.g. `"CC Hold, permanently"` in place of `"CC Hold"`) and
-confirm the check turns red, because `MANUAL.md`'s Twister subsection no
-longer contains that exact setting text. (b) Manual-edit direction:
-temporarily edit `MANUAL.md`'s Twister subsection to say "all six side
-buttons set to CC Toggle" in place of "CC Hold" and confirm the check turns
-red, because the source's declared string no longer appears in the edited
-prose. Both edits are reverted immediately after confirming red; neither
-ships.
+None of these is a defect in how carefully the text was parsed — they are
+the source text's actual shape: a shared factory function, a
+copy-constructing variant, and free prose with no fixed vocabulary. A fourth
+text-parsing design would need either a dedicated code path per factory-shape
+this file uses (defeating the point of the shared Launchpad helper and the
+Ableton copy-constructor existing at all, and with no guarantee a fifth shape
+introduced later is covered) or a real C++ parser, which no check script in
+this repository is or builds.
 
-**Recovery half — rule.** The check parses the `### Shift` and `### Hold
-Drill` subsections the same way (heading-delimited) and asserts each contains
-at least one of a fixed set of multi-word recovery phrases that this change's
-own rewrite (task 3.1) introduces — naming the specific action a phrase like
-"selecting a different preset", "rebuilds the row's mapping",
-"unplugging and reconnecting the controller", or "clears automatically after"
-— and fails when none of those phrases is present. The set is multi-word and
-names an action, not a bare noun: a single word like "unplugged" is not
-sufficient, because the **current, unmodified** text already contains that
-word as part of describing the *failure* ("If the controller is unplugged
-while Shift is still held, its buttons stay shifted..."), not as a stated
-recovery — a bare-word check would pass the very text this check exists to
-reject. Requiring the specific action phrases task 3.1's rewrite actually uses
-avoids that false pass; task 3.1's rewrite must use at least one of them
-verbatim so the check and the prose agree by construction, not by luck.
+**The alternative this task adopts: an emitter, built and run, not a text
+parse.** `app/check_docs_match_device_preconditions.py` builds a small
+emitter binary against `app/FroggersMidiCatalog.hpp` — the same header
+`app/FroggersMidiCatalogTests.cpp` already links against — whose `main()`
+constructs `synth_froggers::FroggersMidiCatalog()` and prints each entry in
+the live `catalog.deviceDefaults`, in order: its `id` and its
+`declaredPreconditions` list, one line of a fixed, parseable format per
+device. This reaches every device by construction: it reads the constructed
+object at runtime, not the source that built it, so the shared Launchpad
+helper and the Ableton copy-constructor are invisible to it — there is
+nothing to miss, because there is no per-call-site logic to write. It also
+gives the floor its count for free: the number of lines the emitter prints
+*is* `catalog.deviceDefaults.size()`, the same source
+`app/FroggersMidiCatalogTests.cpp:399`'s own count assertion reads, not a
+number written into the check. That count is six today; it becomes seven once
+task 5.1 appends the Launch Control XL, with no edit to the check either
+time. Stating the count as "whatever the compiled catalogue holds," rather
+than as a fixed number, is what keeps this paragraph correct on both sides of
+task 5.1's own boundary without needing an edit when it runs.
 
-**Recovery half — floor.** If the `### Shift` or `### Hold Drill` heading is
-not found at all, the check fails naming the missing heading, rather than
-vacuously passing an empty comparison.
+**Cost of the alternative, stated plainly.** The emitter costs one new small
+binary, wired into `app/Makefile` beside the twelve existing test binaries,
+plus a marker convention in `MANUAL.md` (below) that task 4.7 and 5.6 must
+produce. A fourth text-parsing design would cost, at minimum, one dedicated
+code path per factory-function shape this file uses today, permanently ahead
+of whatever shape a future device default introduces, plus a marker-word
+vocabulary already measured wrong against six of the seven subsections this
+change ships. Reading the compiled catalogue is bounded and exact and does
+not grow with the number of ways `FroggersMidiCatalog.hpp` is free to write a
+device default; parsing its text does.
 
-**Recovery half — positive control, satisfiable against today's text.** The
-control is running the check against the **current, unmodified**
-`MANUAL.md:319-320` — "buttons stay shifted until Shift is pressed and
-released again" — before task 3.1 touches it. That text contains none of the
-recovery phrase set above (it contains the bare word "unplugged", which the
-rule above deliberately does not accept alone, and "pressed and released
-again", which is not in the set because it is exactly the mechanism that is
-unavailable when the recovery is needed): the check must fail against it.
-`MANUAL.md:308-313`'s Hold Drill subsection carries no recovery sentence at
-all today — task 3.1 writes one — so the same control against Hold Drill
-fails for the floor reason (heading found, no recovery phrase present) rather
-than vacuously passing an absent paragraph. If either control does not turn
-red, the check tests nothing, exactly as it did in the version this change
-replaces (a false-positive check committed against
+**Drift half — comparison unit: a delimited region, byte for byte, not a
+substring search in free prose.** Tasks 4.7 and 5.6 wrap each device's
+generated settings text in an HTML-comment marker pair keyed by that device's
+own `id` — `<!-- declaredPreconditions:froggers.twister -->` ...
+`<!-- /declaredPreconditions:froggers.twister -->` — one pair per entry in
+`catalog.deviceDefaults`, including the three Launchpads and the Ableton
+default, whose markers bound explicitly empty generated text (a stated
+absence, not an unmarked one). The check renders the expected text for each
+device directly from the emitter's own output (one declared string per line,
+in list order, under a fixed heading) and compares it, byte for byte, against
+what is actually inside that device's checked-in markers, matched by `id`.
+Any difference — a hand-edit inside the markers, a stale value the emitter no
+longer produces, a marker moved or missing — is reported as a mismatch naming
+the device id. The floor requires exactly as many marker pairs in `MANUAL.md`
+as the emitter reports devices; fewer fails outright, naming the missing
+ids, rather than reporting agreement over whatever subset was found.
+
+This reaches the whole declared string, not a prefix — `"CC Hold"` and `"CC
+Hold, permanently"` differ as complete strings even though they share a
+comma-terminated prefix — and it reaches the setting, the value, and where it
+is set together, since the whole string travels from the emitter through the
+comparison, which is what `spec.md`'s ADDED requirement asks the declaration
+to carry.
+
+What it does not find: a device-setting-shaped sentence written *outside* the
+delimited region, elsewhere in the same subsection's hand-written prose.
+`spec.md`'s "SHALL NOT depend on a device setting it does not declare" already
+ships unchecked this cycle for a related reason (below); as cheap, disclosed
+supplementary coverage for the same gap, the check also runs the marker-word
+scan the earlier design specified — `must`, `set to`, `unchecked`, `stay
+selected`, `Utility`, plus `keep`, `leave`, `off`, and `template` (imperative
+forms this manual's own prose actually uses) — over each subsection's prose
+*outside* its marker pair, and reports a WARNING, never a failure, when one of
+those words appears there. This is stated plainly as a heuristic that can
+miss phrasing nobody anticipated, not a rule the check enforces; the exact
+region comparison above is the check's real assertion.
+
+**Drift half — positive controls, both directions, against the built
+mechanism.** (a) Declaration-edit direction: temporarily append a word to the
+Twister's declared CC Hold string in `app/FroggersMidiCatalog.hpp` (e.g.
+`"CC Hold, permanently"` in place of `"CC Hold"`), rebuild the emitter, and
+confirm the check turns red — the checked-in region in `MANUAL.md` still
+reads the old text, so the two no longer match byte for byte. (b) Manual-edit
+direction: temporarily edit the text *inside* `MANUAL.md`'s Twister marker
+pair (not merely somewhere in that subsection) to say "all six side buttons
+set to CC Toggle" in place of "CC Hold", and confirm the check turns red
+because the checked-in region no longer matches what the emitter currently
+produces. Revert both immediately after confirming red; neither ships. Run
+before task 4.7 has generated any marker pairs, the drift half instead fails
+on the floor (zero marker pairs found against a compiled catalogue of six) —
+this is the drift half's own "before" state, distinct from (a) and (b), and
+task 4.8 records it too, so both halves' expected early results are written
+down, not only the recovery half's.
+
+**Recovery half — rule, floor, positive control (text-only; authored and run
+early, in task 1.8).** The check parses the `### Shift` and `### Hold Drill`
+subsections, heading-delimited, and asserts each contains at least one of a
+fixed set of multi-word recovery phrases task 3.1's rewrite introduces
+verbatim — "selecting a different preset", "rebuilds the row's mapping",
+"unplugging and reconnecting the controller", "clears automatically after" —
+failing when none is present; if either heading is not found at all, the
+check fails naming the missing heading, rather than vacuously passing an
+empty comparison. The set is multi-word and names an action, not a bare noun:
+a single word like "unplugged" is not sufficient, because the **current,
+unmodified** text already contains that word as part of describing the
+*failure* ("If the controller is unplugged while Shift is still held, its
+buttons stay shifted..."), not as a stated recovery — a bare-word check would
+pass the very text this check exists to reject. This half has no dependency
+on `declaredPreconditions` or the submodule pin, so task 1.8 authors it and
+runs it against the **current, unmodified** manual before task 3.1 changes
+anything: against `MANUAL.md:319-320` ("buttons stay shifted until Shift is
+pressed and released again" — none of the recovery phrases, only the bare
+word "unplugged" and "pressed and released again", the very mechanism that is
+unavailable when the recovery is needed) the check must fail; against
+`MANUAL.md:308-313` (no recovery sentence at all today) it must also fail,
+for the "heading found, no phrase present" reason. If either control does not
+turn red, the check tests nothing, exactly as it did in the version this
+change replaces (a false-positive check committed against
 `check_spec_checks_resolve`'s check-name resolution rather than its
-behaviour).
+behaviour) — which is why task 1.8 runs both controls before task 3.1 exists
+to make them pass, not after. `spec.md`'s Check line for the scenario this
+half backs names task 1.8 and states this same phrase-set rule, not a second,
+differently-worded one.
 
 **The undeclared-dependency SHALL ships unchecked this cycle, stated as
 such.** `spec.md`'s "A preset SHALL NOT depend on a device setting it does
 not declare" cannot be verified by comparing generated text against
 declarations — both sides are written from the same source, so a dependency
-absent from both passes trivially. Checking it for real would mean tracing
+absent from both passes trivially. The drift half's best-effort WARNING scan
+(above) is a cheap, disclosed heuristic over prose *outside* the generated
+region, not a substitute: it can miss phrasing it has no word for and proves
+nothing when it finds nothing. Checking the SHALL for real would mean tracing
 every `MidiControllerSystemMessageAssociation`/`AnalogMidiInConfig` field a
 device default populates back to a specific device-side setting and
 confirming each one that matters is named in `declaredPreconditions` —
@@ -299,7 +400,14 @@ and, in "Template Switching and the Template Editor" → "Template Switching"
 either the User or Factory template buttons. The bottom row of pads then will
 light up, with the selected template brightly lit. Press pads 1-8 to select
 template 1-8" — but neither document enumerates a single CC number for any
-control. This finding stands.
+control. Narrower still: the Getting Started Guide's own enumeration of what a
+factory template controls ("pots, LED colours and mode buttons ... and Notes
+(Pads)") does not name faders as a category, so neither document states that
+fader CCs are template-scoped at all, only that pots, buttons and pads are.
+That the faders move with the template rests entirely on the Ableton script's
+own choice to select factory template 1 before constructing its sliders
+(below) — read here as the script author's evidence, not a vendor statement.
+This finding stands.
 
 Per the operator's ruling for this cycle, the map is read instead from the one
 source on this Mac that encodes it: Ableton Live 12 Suite's own
@@ -316,12 +424,20 @@ The script's module-level constants `PREFIX_TEMPLATE_SYSEX` and
 `LIVE_TEMPLATE_SYSEX` build exactly the `Change current template` message the
 Programmer's Reference Guide documents: `F0 00 20 29 02 11 77 08 F7` —
 template byte 8, the first of the 8 factory templates confirmed above — so the
-script selects **factory template 1**. Its `LIVE_CHANNEL` constant is 8; the
+script selects **factory template 1**. Its `LIVE_CHANNEL` constant is 8. The
 Programmer's Reference Guide's "Device-to-Computer messages" section states
-the device's own channel numbering is zero-indexed ("Buttons can output
-either note messages or CC messages on a zero-indexed MIDI channel n"), which
-is the corroboration that `LIVE_CHANNEL = 8` means channel 9 counted from 1,
-not channel 8. The script's slider factory constructs each fader as a
+one sentence about zero-indexing, and it is scoped to buttons, not faders or
+the device generally: "Buttons can output either note messages or CC messages
+on a zero-indexed MIDI channel n." No sentence in either document states
+channel numbering for faders or pots specifically. What corroborates
+`LIVE_CHANNEL = 8` meaning channel 9 counted from 1 is the Guide's own
+internal consistency, not a fader-scoped statement: every message table in
+the document — `Bnh`/`176+n` throughout Computer-to-Device Messages, the
+System Exclusive `Template` byte, the buttons' own zero-indexed channel above
+— uses the same `n`-is-zero-indexed convention with no exception carved out
+for any one control type, so reading the fader's channel constant the same
+way is consistent with the whole document, not derived from a sentence that
+names faders. The script's slider factory constructs each fader as a
 `SliderElement` on `LIVE_CHANNEL`, and its fader list comprehension assigns CC
 `77 + i` for `i` in `0..7` — CC 77 to CC 84, one per fader.
 
@@ -437,10 +553,26 @@ repository can drive a real fader.
   Disjoint section from this change's MIDI controllers section
   (`MANUAL.md:258-390`); diff-review before staging and never stage a
   whole-file `git add` while it is active.
-- **`declaredPreconditions` belongs to Sheaf's change and does not exist yet.**
-  → Group 4 gates on the submodule pin landing a commit that carries it
-  (tasks 4.1-4.2); it does not define the field and does not render it — the
-  render is Sheaf's own `synth-runtime-ui` requirement sru-64.
+- **`declaredPreconditions` belongs to Sheaf's change and does not exist yet,
+  and neither does `HeldModifierClearSource`.** → Group 4, and task 3.1's
+  manual rewrite, gate on the submodule checkout carrying both symbols (tasks
+  4.1-4.2); this change does not define either field and does not render
+  `declaredPreconditions` — the render is Sheaf's own `synth-runtime-ui`
+  requirement sru-64.
+- **The commit task 4.2 pins is reachable from no remote until the operator's
+  own later step.** → Sheaf's own task 7.7 performs no push, opens no pull
+  request, and moves no pin in this cycle; the operator has decided this
+  delivery cycle ends at a push of `worktree-midi-resilience` and nothing
+  more, so an unreachable pin until that operator's later merge is expected,
+  not a defect. Stated plainly rather than implied: a fresh clone or a
+  CI checkout of the branch this change's own task 6.6 pushes
+  (`worktree-midi-resilience`) cannot resolve `External/Sheaf`'s gitlink until
+  the operator's later rebase-and-merge publishes both commits together.
+  `.github/workflows/pages.yml` checks out with `submodules: recursive` on
+  push to `main`, not to this branch, so that workflow does not even run
+  against this push — the merge is the point at which the pin must resolve,
+  and task 5.4's live-site operator check is sequenced after it for that
+  reason.
 - **A generated manual paragraph can flatten prose.** → Only the settings
   paragraph is generated; the surrounding explanation stays hand-written.
 - **The LCXL map's source is a third-party control-surface script, not a
@@ -455,15 +587,29 @@ repository can drive a real fader.
 ## Migration Plan
 
 Additive. `declaredPreconditions` carries an empty default, so a preset that
-declares nothing behaves as today. Group 4 does not run until the submodule
-pin lands the field (tasks 4.1-4.2); until then this change's only executable
-work is the manual rewrite (group 3) and the two device-generic checks that do
-not depend on the field (the Twister-only-Shift rewrite and the
-unshifted-usability case). Group 5's Launch Control XL default also waits on
-that same pin (its declared-preconditions population, task 5.2). The Launch
+declares nothing behaves as today. Group 4, AND task 3.1's manual rewrite in
+group 3, do not run until the submodule checkout confirms both
+`declaredPreconditions` and `HeldModifierClearSource` (task 4.1) and the pin
+is advanced (task 4.2) — group 3's manual rewrite documents recoveries
+`HeldModifierClearSource` creates, so it is not executable ahead of that
+confirmation either. Until that
+confirmation passes, this change's only executable work is: the two
+device-generic checks that do not depend on either field (the
+Twister-only-Shift rewrite, task 4.5, and the unshifted-usability case, task
+4.6) and the check script's recovery half (task 1.8), all of which read
+today's tree directly and assert nothing about `declaredPreconditions` or
+`HeldModifierClearSource`. Group 5's Launch Control XL default also waits on
+the same confirmation (its declared-preconditions population, task 5.2; task
+5.1 itself, the bare catalogue entry with no declared preconditions, does
+not). The Launch
 Control XL device default adds a catalogue entry and changes no existing one.
 Patches store mappings, not device defaults, so a patch saved before this
-change loads unchanged after it.
+change loads unchanged after it. The commit this change's own delivery (task
+6.6) pushes carries a submodule pin reachable from no remote until the
+operator's later merge (Risks, above); that does not block this change's own
+delivery step, which is a push and nothing more, but it does block anything
+that needs the pin published — task 5.4's live-site operator check is
+sequenced after that merge for exactly this reason.
 
 ## Open Questions
 

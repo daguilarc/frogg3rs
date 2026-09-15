@@ -15,10 +15,14 @@
       `git branch --list worktree-midi-controller-resilience` (must return no
       output) — do not proceed past this task on the strength of this note; run
       the commands yourself. Both duplicates were, before the worktree was
-      removed, md5-identical to the snapshots folded into this repository's own
-      commit `6e77142` ("Collect the MIDI resilience work into one worktree")
-      and Sheaf's commit `caae5c2` ("Carry the MIDI controller resilience
-      change into the submodule"), so nothing in either duplicate was lost.
+      removed, folded into this repository's own commit `4da0206` ("Collect
+      the MIDI resilience work into one worktree") and Sheaf's commit
+      `caae5c2` ("Carry the MIDI controller resilience change into the
+      submodule"). `4da0206`, not `6e77142`, is the commit this branch can
+      actually reach — `git branch -a --contains 4da0206` names
+      `worktree-midi-resilience`, while the same command against `6e77142`
+      returns nothing, and the two commits' trees differ — so `4da0206` is
+      the one to cite and to verify the md5 assurance against, not `6e77142`.
 - [ ] 1.2 **Confirm this branch is at `main`'s tip** before baselining, so
       1.6's baseline is not stale before this change's own diff starts. Check:
       `git log --oneline HEAD..main | wc -l` → `0`. If this is nonzero when
@@ -101,6 +105,32 @@
       change's own directory, `openspec/changes/frogg3rs-midi-preset-preconditions/`,
       not to Sheaf's `midi-controller-resilience`, which is the engine half
       and does not touch those documents.)
+- [ ] 1.8 **Create NEW `app/check_docs_match_device_preconditions.py` with its
+      recovery half now, and run it, before task 3.1 or anything in group 4 changes
+      `MANUAL.md` or the catalogue.** This half is pure text over `MANUAL.md`
+      — it has no dependency on `declaredPreconditions` or the submodule pin
+      (group 4's gate), so nothing here waits for it. Implement exactly the
+      recovery-half rule design.md's "The drift check has two independent
+      halves" section states: parse the `### Shift` and `### Hold Drill`
+      subsections, heading-delimited, and fail unless each contains at least
+      one of the multi-word recovery phrases task 3.1's rewrite introduces
+      verbatim ("selecting a different preset", "rebuilds the row's mapping",
+      "unplugging and reconnecting the controller", "clears automatically
+      after"); fail naming the missing heading if either is not found at all.
+      Run it now, against the current, unmodified text, and record both
+      results here: against `MANUAL.md:319-320` ("buttons stay shifted until
+      Shift is pressed and released again" — none of the recovery phrases,
+      only the bare word "unplugged" describing the failure and "pressed and
+      released again", the mechanism that is unavailable when the recovery is
+      needed), the check must fail; against `MANUAL.md:308-313` (no recovery
+      sentence at all today), it must also fail, for the "heading found, no
+      phrase present" reason. If either does not fail, the check tests
+      nothing and this task is not done. Do not add the drift half here —
+      that half reads `declaredPreconditions`, which does not exist until
+      group 4's gate (4.1-4.2) lands it, and is added by task 4.8, which
+      extends this same file rather than creating a second one. Wire only
+      this half into `app/Makefile` for now; task 4.8 adds the drift half's
+      own wiring once it exists.
 
 ## 2. The Launch Control XL fader map
 
@@ -135,16 +165,32 @@
 
 ## 3. Documents
 
-- [ ] 3.1 Rewrite `MANUAL.md:319-320` (Shift) and add a matching recovery
+- [ ] 3.1 **Gate.** This rewrite documents recoveries Sheaf's group 3 ("Held
+      modifier lifetime") creates, not group 6 — do not start until confirming
+      the same way task 4.1 confirms `declaredPreconditions`, but for the
+      other symbol: `grep -n HeldModifierClearSource
+      External/Sheaf/projects/synth/include/synth/MidiController.hpp` must
+      return a real enumeration; today it returns nothing. This is the same
+      submodule checkout task 4.1 confirms declares `declaredPreconditions`
+      (Sheaf's group 6); confirming both symbols from that one checkout is
+      sufficient, and this task does not require its own, separate submodule
+      advance beyond what task 4.2 performs. Then: rewrite `MANUAL.md:319-320`
+      (Shift) and add a matching recovery
       sentence to `MANUAL.md:308-313` (Hold Drill, which has none today), each
       naming which of `HeldModifierClearSource`'s five triggers are available
       on which host — traced from Sheaf's `midi-controller-resilience`
       design.md, not invented here: **Rebuild** (selecting a different preset,
       or otherwise causing the row's mapping to rebuild) is available on every
-      host. **Ceiling** (an automatic elapsed-time clear, 30 seconds) is
+      host. **Ceiling** (an automatic elapsed-time clear) is
       available on every host, because `Engine::MessageThreadTick` — the
       pump that evaluates it — runs on all three (standalone's `Runtime.hpp`
-      timer, the browser's `setInterval`, and the plugin's own JUCE timer).
+      timer, the browser's `setInterval`, and the plugin's own JUCE timer);
+      state its duration as read at the time this task runs from
+      `External/Sheaf`'s own design.md (`grep -n
+      kHeldModifierCeilingMicros External/Sheaf/openspec/changes/midi-controller-resilience/design.md`
+      — currently 30 seconds, a reversible default per that design's own
+      Risks section, not a figure to hard-code here without re-checking, since
+      Sheaf's own change can tune it before it ships).
       **EndpointOpen** (unplugging and reconnecting the controller) is
       available in the standalone and browser builds, which manage their own
       MIDI ports, and NOT in the plugin, which takes MIDI through host
@@ -156,8 +202,11 @@
       recovery, only named as what ordinarily ends a hold. Write the recovery
       as an explicit list of actions using multi-word phrasing (e.g.
       "selecting a different preset", "unplugging and reconnecting the
-      controller", "clears automatically after 30 seconds"), not a bare
-      mention of "unplugged" — task 4.8's check matches on these specific
+      controller", "clears automatically after" followed by the duration read
+      above), not a bare
+      mention of "unplugged" — task 1.8's check (already authored and proven
+      red against today's text before this task runs) matches on these
+      specific
       phrases, and a bare word is exactly what the current, unmodified text
       already has without stating a recovery (design.md's recovery-half rule
       explains why). Do not describe the plugin as having the reconnect
@@ -187,22 +236,45 @@
 ## 4. Declared preconditions
 
 - [ ] 4.1 **Gate.** Do not start the rest of this group until
-      `External/Sheaf`'s submodule checkout is at a commit, reachable from
-      Sheaf's `fork/midi-resilience-merge` (its own task 7.7 delivers this
-      branch there and nothing else), that has executed Sheaf's tasks 6.1 (adds
-      `declaredPreconditions` to `MidiAppDeviceDefault`,
+      `External/Sheaf`'s submodule checkout — this worktree's own copy, the
+      same one Sheaf's `midi-controller-resilience` change is executed
+      against, sitting on branch `midi-resilience-merge` — has executed
+      Sheaf's tasks 6.1 (adds `declaredPreconditions` to `MidiAppDeviceDefault`,
       `include/synth/MidiAppCatalog.hpp:31-38`) and 6.2 (threads it through
-      `ControllerWizardDescriptor` and `MakeControllerWizardRegistry`). Confirm
-      with `grep -n declaredPreconditions
-      External/Sheaf/projects/synth/include/synth/MidiAppCatalog.hpp` — it
-      must return a real member; today it returns nothing. The branch name is
-      only how this task locates a candidate commit; it is not what task 4.2
-      pins. Once this gate is satisfied, record the exact commit SHA the grep
-      above was run against — that SHA, not the branch name, is what 4.2
-      checks out and what 4.2's own commit message names.
-- [ ] 4.2 **Submodule pin advance.** `git -C External/Sheaf fetch fork && git -C
-      External/Sheaf checkout <the commit 4.1 confirmed> && git add
-      External/Sheaf`, naming the exact commit SHA in the commit message. This
+      `ControllerWizardDescriptor` and `MakeControllerWizardRegistry`), AND
+      Sheaf's group 3, task 3.1 (adds `HeldModifierClearSource`,
+      `include/synth/MidiController.hpp`, alongside `ShiftState`/`HoldDrillState`)
+      — task 3.1's own manual rewrite depends on this second symbol, not only
+      on `declaredPreconditions`, so both are confirmed together here. Confirm
+      with two greps against the checkout as it actually stands:
+      `grep -n declaredPreconditions
+      External/Sheaf/projects/synth/include/synth/MidiAppCatalog.hpp` (must
+      return a real member; today it returns nothing) and
+      `grep -n HeldModifierClearSource
+      External/Sheaf/projects/synth/include/synth/MidiController.hpp` (must
+      return a real enumeration; today it returns nothing). This gate does not
+      name or depend on any remote branch or a push: Sheaf's own task 7.7
+      performs no push, opens no pull request, and moves no pin in this cycle
+      (its later, operator-driven rebase-and-merge step does that, under
+      whatever branch name that step uses) — record only the exact commit SHA
+      `git -C External/Sheaf rev-parse HEAD` reports once both greps pass;
+      that SHA, not any branch name, is what 4.2 checks out (from this same
+      local checkout, not by fetching a remote ref that may not exist) and
+      what 4.2's own commit message names. Per the operator's decision that
+      this delivery cycle ends at a push and nothing more (design.md and task
+      6.6), the commit this gate confirms and 4.2 pins
+      is reachable from no remote until the operator's later merge — that is
+      expected, not a defect this task can fix.
+- [ ] 4.2 **Submodule pin advance.** `git -C External/Sheaf checkout <the
+      commit 4.1 confirmed> && git add External/Sheaf`, naming the exact
+      commit SHA in the commit message — no `fetch` is needed, since 4.1
+      confirmed the commit from this worktree's own already-present `Sheaf`
+      checkout, not from a remote ref. This checkout detaches
+      `External/Sheaf`'s `HEAD` from `midi-resilience-merge`; that is the
+      normal, expected state for a pinned submodule gitlink (it is not a
+      moving branch reference), the `midi-resilience-merge` branch ref itself
+      is untouched by this checkout, and nothing here needs to "return" the
+      submodule to it. This
       is the only task in this change that moves the pin; nothing else does.
 - [ ] 4.3 Populate the Twister default's `declaredPreconditions` from the
       precondition sentences at `app/FroggersMidiCatalog.hpp:14-18` (relative
@@ -229,8 +301,15 @@
       asserting, for every entry in `catalog.deviceDefaults` whose id is not
       the Twister's, that no association carries a `shiftedPress` and no
       association has `press.type == synth::MessageIn::Type::Shift`. Prove the
-      positive control: giving any non-Twister default a shifted press must
-      turn this case red. Does not depend on 4.1/4.2's gate: it reads
+      positive control specifically on the **last** entry in
+      `catalog.deviceDefaults` at the time this task runs (today, Launchpad
+      Mini MK3) — not an arbitrary non-Twister default — since a loop bug that
+      drops the final iteration is exactly the shape a control on a middle
+      entry would miss. Task 5.3 re-proves this same control against the
+      Launch Control XL specifically, once it exists, because that device is
+      not yet in the catalogue for this task to target. Giving the targeted
+      default a shifted press must
+      turn this case red, then revert. Does not depend on 4.1/4.2's gate: it reads
       `synth_froggers::FroggersMidiCatalog()`'s live `catalog.deviceDefaults`
       each time the binary runs, not a list frozen at authoring time, so it
       covers whatever the catalogue holds at test-run time — six today,
@@ -245,11 +324,17 @@
       ever arriving, still dispatches its currently-applicable job (ordinary
       or shifted, per whatever Shift's own held state is at the time) — the
       job is never silently dropped. (b) When the button whose press-with-no-release
-      is the Shift button itself, `shift_->modifier.held` is left `true`
-      (`:969`) and every subsequent press on the other five side buttons then
+      is the Shift button itself, `shift_->held` is left `true`
+      (`:969`, current pinned-tree spelling — Sheaf's group 3 renames this to
+      `shift_->modifier.held` once its task 3.1 lands, a private member no
+      case outside `MidiController.cpp` can name either way; this case does
+      not construct a `SystemButtonMidiInProcessor` and inspect its private
+      state under either spelling, so it is unaffected by the rename) and
+      every subsequent press on the other five side buttons then
       dispatches its **shifted** job (`:975`), not its ordinary one, until
       cleared by one of `HeldModifierClearSource`'s other four triggers — this
-      case asserts the shifted dispatch, not an unshifted one, and exists so
+      case asserts the shifted dispatch on the message bus, never the private
+      `held` flag under either of its spellings, and exists so
       the requirement's guarantee is checked for both the button whose own
       precondition is unmet and for the other five when Shift's is. Do not
       assert or assume what a real Twister transmits when CC Hold is off the
@@ -257,49 +342,80 @@
       construct the press-with-no-release input directly, the same input
       shape a mismatched device precondition happens to be capable of
       producing, without a hardware claim about which device states produce
-      it.
+      it. Prove a positive control for both cases: temporarily gate the
+      `isPress` dispatch in `SystemButtonMidiInProcessor::Process` on
+      `association->release.has_value()` (i.e. require a release before
+      dispatching) and confirm both cases turn red, then revert — without
+      this, both cases are green on the unmodified tree with no demonstrated
+      failure mode.
 - [ ] 4.7 Generate, from the declarations, the per-device settings prose for
       every device default that receives one at this point in the sequence:
       the Twister's (`MANUAL.md:336-339`), the APC40 Generic's Track-1 caveat
       (currently prose inside `:341-351`), and the APC40 Ableton's explicit
       empty-preconditions statement (`:353-357`, which today names no
       precondition at all — this task makes that silence an intentional,
-      generated statement rather than an accident). The Launch Control XL's
-      section is written by task 5.6, once its default exists, and is subject
-      to the same generation and the same check (task 4.8) — it is not a
-      fifth device this task populates now. The three Launchpad sections
-      generate nothing (their declared-preconditions lists are empty and
-      their sections name no device-setting-shaped sentence today); task 4.8's
-      check confirms that agreement too, not just the four with content.
+      generated statement rather than an accident). Wrap the generated
+      sentence(s) for each of these three devices, AND a generated
+      (necessarily empty) region for each of the three Launchpad defaults, in
+      an HTML-comment marker pair keyed by that device's own `id` —
+      `<!-- declaredPreconditions:froggers.twister -->` ...
+      `<!-- /declaredPreconditions:froggers.twister -->`, one pair per entry
+      in `catalog.deviceDefaults` that exists at this point (six; the seventh,
+      the Launch Control XL, is task 5.6's) — so task 4.8's drift half has an
+      exact, delimited region to compare against rather than free prose. The
+      Launch Control XL's own marker pair and section are written by task 5.6,
+      once its default exists, and are subject to the same generation and the
+      same check (task 4.8) — it is not a fifth device this task populates
+      now. The three Launchpad sections' marker pairs bound explicitly empty
+      generated text (their declared-preconditions lists are empty); task
+      4.8's check confirms that agreement too, not just the three with
+      content.
       Name each device's section by its own `###` heading
       (`### MIDI Fighter Twister`, `### Akai APC40 mkII (Generic)`,
       `### Akai APC40 mkII (Ableton)`), not by the line numbers above, which
-      this task's own edits shift.
-- [ ] 4.8 Create NEW `app/check_docs_match_device_preconditions.py`,
+      this task's own edits shift; the marker pair, keyed by `id`, is what
+      task 4.8 actually matches on, not the heading text.
+- [ ] 4.8 Extend `app/check_docs_match_device_preconditions.py` (task 1.8
+      created it with only the recovery half) with the drift half,
       implementing exactly the rule, floor and positive controls design.md's
-      "The drift check has two independent halves" states — read that section
-      before writing this script; nothing here restates it. In outline: (1)
-      the drift half parses `declaredPreconditions` from
-      `app/FroggersMidiCatalog.hpp` per device-default factory function and
-      each device's `MANUAL.md` subsection by heading, requires finding all
-      seven devices on both sides before comparing anything, and fails on any
-      per-device mismatch; (2) the recovery half parses the `### Shift` and
-      `### Hold Drill` subsections and fails unless each contains at least one
-      of the specific multi-word recovery phrases task 3.1's rewrite uses.
-      Run and record, before task 3.1 or 4.3-4.7 change anything: against the
-      current, unmodified `MANUAL.md:319-320` (only "pressed and released
-      again," plus the bare word "unplugged" describing the failure, not a
-      recovery), the recovery half must fail; against the current
-      `MANUAL.md:308-313` (no recovery sentence at all), it must also fail,
-      for the "heading found, no phrase present" reason. Prove both drift-half
-      positive controls design.md states (a temporary edit to a declared
-      string, and a temporary edit to the matching manual sentence, each
-      independently turning the check red) and revert both edits immediately
-      after confirming red. `spec.md`'s "SHALL NOT depend on a device setting
-      it does not declare" ships unchecked this cycle — design.md's final
-      paragraph states why; this task does not attempt a check for it. Wire
-      this script into `app/Makefile` beside the twelve existing `check-*`
-      targets.
+      "The drift check has two independent halves" section states — read that
+      section before writing this script; nothing here restates it. In
+      outline: add a small emitter binary, built against
+      `app/FroggersMidiCatalog.hpp` the way `app/FroggersMidiCatalogTests.cpp`
+      already is, that prints each entry in the live `catalog.deviceDefaults`
+      (its `id` and its `declaredPreconditions` list) — this is the drift
+      half's only source for both the expected values and the floor count
+      (`len(deviceDefaults)`, not a hard-coded seven: today six, seven once
+      task 5.1 runs). The check regenerates each device's expected settings
+      text from the emitter's output and compares it byte-for-byte against
+      the `<!-- declaredPreconditions:<id> -->` ... `<!-- /declaredPreconditions:<id> -->`
+      region task 4.7 (and 5.6) wrapped in `MANUAL.md`, requiring exactly one
+      marker pair per compiled device default before comparing anything, and
+      failing on any mismatch, naming the device id and what differed. Run and
+      record, now, against the tree as it stands after task 4.7 (six devices,
+      six marker pairs, no Launch Control XL yet): the drift half must pass.
+      Also record what it does before task 4.7 runs (already true, but state
+      the observed fact here): zero marker pairs against a compiled catalogue
+      of six fails on the floor, naming the missing ids — the drift half's own
+      "before" state, distinct from the two positive controls below. Prove
+      both drift-half positive controls design.md states: (a) temporarily
+      append a word to the Twister's declared CC Hold string in
+      `app/FroggersMidiCatalog.hpp` (e.g. `"CC Hold, permanently"`), rebuild
+      the emitter, and confirm the check turns red because the checked-in
+      region still reads the old text; (b) temporarily edit the text inside
+      `MANUAL.md`'s Twister marker pair itself (not merely somewhere in that
+      subsection) to say "all six side buttons set to CC Toggle" in place of
+      "CC Hold", and confirm the check turns red because the checked-in region
+      no longer matches what the emitter currently produces. Revert both
+      immediately after confirming red; neither ships. `spec.md`'s "SHALL NOT
+      depend on a device setting it does not declare" ships unchecked this
+      cycle — design.md's final paragraph on it states why — but add the
+      best-effort WARNING scan design.md's rewritten section describes (the
+      five-word marker set plus `keep`/`leave`/`off`/`template`, run over each
+      subsection's prose *outside* its marker pair, reported as a warning, not
+      a failure) as cheap, disclosed-as-a-heuristic coverage for it. Wire the
+      now-complete script into `app/Makefile` beside the twelve existing
+      `check-*` targets, replacing task 1.8's recovery-half-only wiring.
 
 ## 5. The Launch Control XL preset
 
@@ -334,8 +450,20 @@ device_defaults_declare_their_preconditions case group 4 adds.
       Launch Control XL entry, that it carries no shifted press or Shift
       press. No separate check is written for this device specifically — only
       re-running the existing `FroggersMidiCatalogTests` binary after 5.1 is
-      needed to exercise it against the seventh entry.
-- [ ] 5.4 Once the default exists (5.1-5.2), this is an **operator step**, not
+      needed to exercise it against the seventh entry. As this task's own
+      positive control (task 4.5's own control, proven earlier, targeted the
+      then-last entry, Launchpad Mini MK3 — it could not target a device that
+      did not exist yet), temporarily give the Launch Control XL default
+      itself a shifted press or a `Type::Shift` press, confirm the loop case
+      turns red, then revert. Without this, nothing in this change's own
+      verification surface ever gives a shifted press specifically to the
+      device this group adds.
+- [ ] 5.4 Once the default exists (5.1-5.2) **and, separately, once the
+      operator's later rebase-and-merge has published the site this step
+      observes** (task 6.6: the branch this delivery pushes carries a
+      submodule pin reachable from no remote until that merge, and
+      `.github/workflows/pages.yml` builds the live site from `main` on
+      push), this is an **operator step**, not
       a build-time check: on the live browser site, select the Launch Control
       XL preset, move fader 1, and observe the on-screen scene blend value
       move — via `AnalogMidiInProcessor::Process`
@@ -346,7 +474,11 @@ device_defaults_declare_their_preconditions case group 4 adds.
       slider — the same code path the APC40 crossfader already exercises in
       production. There is no way to drive a physical fader from this
       repository's test binaries; this is what makes the observation
-      meaningful rather than what a unit test would additionally prove.
+      meaningful rather than what a unit test would additionally prove. Doing
+      this against a preview/staging build before the merge would still
+      exercise the code path, but would not confirm the value this catalogue
+      entry ships to the published site, since the submodule pin the preview
+      would use is the same not-yet-merged one.
 - [ ] 5.5 When the default is added, name and update the three
       catalogue-count assertions this changes: `app/FroggersMidiCatalogTests.cpp:399`
       (`catalog.deviceDefaults.size() == 6`), `app/FroggersControllersPageTests.cpp:99`
@@ -360,12 +492,18 @@ device_defaults_declare_their_preconditions case group 4 adds.
       same time, update the two file-header comments that enumerate the
       catalogue's defaults by name and count: `app/FroggersMidiCatalog.hpp:6-12`
       ("the six device defaults offered from the Controllers page's Layout
-      dropdown -- MIDI Fighter Twister, ...") and
-      `app/FroggersControllersPageTests.cpp:1-4` ("FroggersMidiCatalog()'s six
-      real device defaults"), both to seven, naming the Launch Control XL.
+      dropdown -- MIDI Fighter Twister, ...") and, in
+      `app/FroggersControllersPageTests.cpp`'s header, BOTH count statements —
+      not only `:1-4` ("FroggersMidiCatalog()'s six real device defaults") but
+      also `:7` ("so none of them ever drive these six shipping defaults"),
+      the same "six" repeated a second time in the same comment block — both
+      to seven, naming the Launch Control XL.
 - [ ] 5.6 Add MANUAL.md's Launch Control XL section (after "Akai APC40 mkII
       (Ableton)" at `:353-357`, before "Launchpad X" at `:359`, matching the
-      device-default order) and add "Novation Launch Control XL" to the
+      device-default order), wrapped in its own
+      `<!-- declaredPreconditions:froggers.launchcontrolxl -->` marker pair
+      the same way task 4.7 wraps the other six, and add "Novation Launch
+      Control XL" to the
       Overview's Preset selector list (`:264-265`). Name fader 1 as scene
       blend and factory template 1 as the device precondition, citing the
       Getting Started Guide's "Template Switching" procedure as where it is
@@ -394,7 +532,8 @@ device_defaults_declare_their_preconditions case group 4 adds.
       prerequisites and the twelve test binaries, against the tree as this
       change leaves it — and report which moved and which were carried
       forward, measured now, not assumed from 1.6's record. This change adds
-      one target (`check-docs-match-device-preconditions`) to the twelve;
+      one target (`check-docs-match-device-preconditions`, first wired by task
+      1.8 with only the recovery half, extended by task 4.8) to the twelve;
       state what each of the other twelve reports, rather than asserting in
       advance that none of them moved. Task 1.2 confirms `check-artifact-symbols-resolve` is green
       as of the branch reaching `main`'s tip; this change's own new citations
@@ -402,17 +541,47 @@ device_defaults_declare_their_preconditions case group 4 adds.
       must not have reopened it — confirm by re-running the check, not by
       inference. This change does not certify forward any failure it did not
       itself cause; a failure whose cause is outside this change's own
-      directory and outside the causes 1.2/1.7 already own is a new fact,
-      reported by name and location, not folded into "carried forward."
+      directory and outside the causes 1.2, 1.7, AND 4.2's own submodule pin
+      advance already own is a new fact,
+      reported by name and location, not folded into "carried forward" — a
+      test that regresses only because the pinned Sheaf commit changed
+      underneath it is this change's own effect, not an unrelated one, and is
+      reported as such rather than as background noise.
 - [ ] 6.4 Every scenario in the delta either has a check that passes now, or
       says plainly it is not yet delivered and names what will deliver it.
 - [ ] 6.5 Independent review with a fresh context.
-- [ ] 6.6 **Deliver: push branch `worktree-midi-resilience` to `origin` and
-      nothing else** — no push to `main`, no pull request, no submodule-pin
-      change on any `main`. This delivery ships groups 1, 3, 4 and 5, once
-      group 4's gate (4.1-4.2) is satisfied — the submodule checkout pinned to
-      a Sheaf `fork/midi-resilience-merge` commit that carries
-      `declaredPreconditions`, which group 5's own declared-preconditions
-      population (task 5.2) also depends on. The operator performs the
+- [ ] 6.6 **Deliver, in this order: postflight (6.1-6.5) passes → documentation
+      hygiene this change owes → `openspec archive frogg3rs-midi-preset-preconditions`
+      → commit → push branch `worktree-midi-resilience` to `origin` and
+      nothing else.** No push to `main`, no pull request, no submodule-pin
+      change on any `main`, no further rebase. This delivery ships groups 1, 3,
+      4 and 5, once task 4.1's gate is satisfied — the submodule checkout
+      confirmed (from this worktree's own `External/Sheaf` checkout, not from
+      any remote ref) to carry both `declaredPreconditions` (Sheaf group 6)
+      and `HeldModifierClearSource` (Sheaf group 3), and pinned by task 4.2 —
+      which group 5's own declared-preconditions population (task 5.2) also
+      depends on, and which task 3.1's manual rewrite (group 3) depends on
+      too, under the same confirmation, not earlier. **The commit this pin
+      advances to, and so the commit `worktree-midi-resilience` carries once
+      pushed, is reachable from no remote until the operator's own later step**
+      (Sheaf's task 7.7 performs no push in this cycle) — `git branch -r
+      --contains <that commit>` against both `fork` and `origin` returns
+      nothing today, and will keep returning nothing after this task's own
+      push, exactly as it does for the Sheaf commit itself. A fresh clone or a
+      CI checkout of `worktree-midi-resilience` (`.github/workflows/pages.yml`
+      triggers on push to `main`, not to this branch, so this push alone does
+      not run it) cannot resolve `External/Sheaf`'s gitlink until the
+      operator's later rebase-and-merge publishes both repositories' commits
+      together — that is expected under the operator's own ruling for this
+      cycle, not a defect this task can fix, and task 5.4's live-site operator check is sequenced after
+      that merge for exactly this reason. Archiving in this repository moves
+      the change directory out of the tracked tree
+      (`openspec/changes/archive/` is gitignored, `.gitignore:31`, zero
+      tracked files today — confirm with `git check-ignore -v
+      openspec/changes/archive/anything` (matches `.gitignore:31`) and
+      `git ls-files openspec/changes/archive` returning nothing — so the
+      archived copy lives only on this machine,
+      not in the pushed commit); this is expected, not a loss to fix. The
+      operator performs the
       rebase and merge of `worktree-midi-resilience` into `main` afterward;
-      this task does not do that.
+      this task does not do that, and does not wait for it.

@@ -81,7 +81,18 @@ output a fixed set of MIDI CCs (pots, LED colours and mode buttons) and Notes
 or channels for any control, including the faders, on any template. The
 Programmer's Reference Guide's only indexed control lists (page 7, "Set LEDs" /
 "Toggle button states") number knobs and buttons for LED addressing and do not
-cover faders at all. This finding stands.
+cover faders at all. Read even more narrowly: the Getting Started Guide's own
+enumeration of what a factory template controls ("pots, LED colours and mode
+buttons ... and Notes (Pads)") does not name faders as a category at all, so
+neither vendor document states that a fader's CC assignment changes with the
+selected template in the first place — only that pots, buttons and pads do.
+Whether the eight faders are template-scoped like the pots, or fixed
+regardless of template, is answered by neither vendor document; it rests
+entirely on Ableton's own control-surface script choosing to select factory
+template 1 before constructing its sliders (design.md, "The template is a
+declared precondition"), which this change reads as the script author's own
+evidence that the fader CCs are template-scoped, not as a vendor statement.
+This finding stands.
 
 Per the operator's ruling for this cycle, the map is read instead from the one
 source on this Mac that encodes it: Ableton Live 12 Suite's own control-surface
@@ -154,12 +165,13 @@ exists in no checkout.
 | **main checkout** | `frogg3rs-delay-capacity-and-width-finish`, `frogg3rs-randomize-depth-reclaim` (this change, `frogg3rs-midi-preset-preconditions`, has not been delivered to `main`) | `git -C <main checkout> status --short` shows uncommitted edits inside `frogg3rs-delay-capacity-and-width-finish`'s own directory and to `app/FroggersDspParityTests.cpp`, `app/check_delay_capacity_break_proofs.py`, and `openspec/specs/froggers-sheaf-parameter-model/spec.md` — none of it touches `MANUAL.md`, `QUICK_DICT.md`, `app/FroggersMidiCatalog*`, or `app/Makefile`. | Same disjoint-section reasoning as above; this row is in a different checkout so no working-tree collision is possible from here, but the eventual merge must diff-review `MANUAL.md`/`QUICK_DICT.md` rather than take either side wholesale. |
 | **`randomize-depth-reclaim` worktree** | `frogg3rs-delay-capacity-and-width-finish`, `frogg3rs-randomize-depth-reclaim` | None found by name against `MANUAL.md`, `QUICK_DICT.md`, `app/FroggersMidiCatalog*`, `app/Makefile`. | No action. |
 
-Two Sheaf changes matter, read from `External/Sheaf/openspec/changes/`:
+Three Sheaf changes matter, read from `External/Sheaf/openspec/changes/`:
 
 | change | state | overlap | disposition |
 | --- | --- | --- | --- |
-| `midi-controller-resilience` | Its own artifacts carry a repair pass against a preflight adjudication; still **unexecuted** — `declaredPreconditions` exists in no source file yet (`grep -rn declaredPreconditions External/Sheaf/projects/synth/include/ External/Sheaf/projects/synth/src/ app/` returns nothing) and `openspec validate midi-controller-resilience --strict` reports it valid. Adds `declaredPreconditions` to `MidiAppDeviceDefault` (`synth-controller-wizards` requirement scw-6, tasks 6.1-6.2) and renders it on the Controllers page (`synth-runtime-ui` requirement sru-64, task 6.3). The sibling worktree its own task 2.4 names no longer exists (see this change's task 1.1), so no divergent copy of `midi-controller-resilience` remains anywhere to reconcile. Its own delivery task 7.7 pushes branch `midi-resilience-merge` to the `fork` remote (`daguilarc/Sheaf`) and nothing else — no PR, no pin change on any `main`. | This change's group 4 (declared-preconditions population) cannot compile until that field exists here. See group 4's gate tasks. | This change populates `declaredPreconditions` for its own device defaults and starts group 4 only after the submodule checkout is pinned to a Sheaf commit that carries the field (task 4.1/4.2). It does not define the field and does not render it. |
+| `midi-controller-resilience` | Its own artifacts carry a repair pass against a preflight adjudication; still **unexecuted** — `declaredPreconditions` exists in no source file yet (`grep -rn declaredPreconditions External/Sheaf/projects/synth/include/ External/Sheaf/projects/synth/src/ app/` returns nothing) and `openspec validate midi-controller-resilience --strict` reports it valid. Adds `declaredPreconditions` to `MidiAppDeviceDefault` (`synth-controller-wizards` requirement scw-6, tasks 6.1-6.2) and renders it on the Controllers page (`synth-runtime-ui` requirement sru-64, task 6.3), AND adds `HeldModifierClearSource`/`HeldModifierState` (`synth-midi-instrument`, group 3, task 3.1) — this change's own task 3.1 manual rewrite depends on that second symbol, not only on `declaredPreconditions`. The sibling worktree its own task 2.4 names no longer exists (see this change's task 1.1), so no divergent copy of `midi-controller-resilience` remains anywhere to reconcile. Its own task 7.7 performs no push, opens no pull request, and moves no pin in this cycle — the operator's later, separate rebase-and-merge step does that, under whatever branch name it uses; until then the commit this change's own task 4.2 pins is reachable from no remote. | This change's group 4 (declared-preconditions population) and task 3.1 (manual rewrite) cannot proceed until both symbols exist here. See task 4.1's gate. | This change populates `declaredPreconditions` for its own device defaults and starts group 4, and task 3.1, only after the submodule checkout confirms both symbols (task 4.1) and the pin is advanced (task 4.2). It does not define either field and does not render `declaredPreconditions`. |
 | `app-midi-catalog` | 26/28 done, PR #13 | Owns `MidiAppDeviceDefault` at `projects/synth/include/synth/MidiAppCatalog.hpp:31-38` | Neither this change nor `midi-controller-resilience` redefines the struct; both land above #13. |
+| `shift-and-file-export` | All 29 tasks checked (`grep -c '^\- \[x\]' .../shift-and-file-export/tasks.md` → 29, `'^\- \[ \]'` → 0); not yet archived, so still present in `External/Sheaf/openspec/changes/`. Already delivered `ShiftState`/`shift_` and the field's current spelling, `shift_->held`, into the tree both this change and `midi-controller-resilience` build on (`grep -n "struct ShiftState\|shift_ =" External/Sheaf/projects/synth/include/synth/MidiController.hpp` confirms it is live). Owns requirement smi-16, which `midi-controller-resilience`'s own MODIFIED requirements also amend. | This change's design.md and task 4.6 trace `shift_->held` at `MidiController.cpp:964-971` — code this change shipped, not `midi-controller-resilience`'s. `midi-controller-resilience`'s own task 3.1 renames this to `shift_->modifier.held`; design.md and task 4.6 name both spellings for that reason. | No `app/`-level file this table's coordination concern covers (`MANUAL.md`, `QUICK_DICT.md`, `app/FroggersMidiCatalog*`, `app/Makefile`) is touched by `shift-and-file-export`; the only overlap is the citation-spelling one already handled above. |
 
 ## Impact
 
@@ -185,13 +197,22 @@ Two Sheaf changes matter, read from `External/Sheaf/openspec/changes/`:
   catalogue-count assertions at `app/FroggersMidiCatalogTests.cpp:399`,
   `app/FroggersControllersPageTests.cpp:99`, and
   `app/FroggersControllersPageTests.cpp:109` move from six to seven.
-  **`app/FroggersControllersPageTests.cpp`'s own file header comment at
-  `:1-4`**, which names "six real device defaults," is updated to seven,
-  naming the Launch Control XL alongside the Twister and the two APC40
-  variants.
+  **`app/FroggersControllersPageTests.cpp`'s own file header comment**
+  carries the count twice, at `:1-4` ("six real device defaults") and again
+  at `:7` ("so none of them ever drive these six shipping defaults") — both,
+  not only the first, are updated to seven, naming the Launch Control XL
+  alongside the Twister and the two APC40 variants.
 - `app/Makefile` — a new `check-docs-match-device-preconditions` target joins
   the twelve `check-*` prerequisites `test:` already runs (read from the Makefile
-  itself, not copied here, since the list drifts).
+  itself, not copied here, since the list drifts). The underlying script is
+  authored in two steps: task 1.8 creates it with only the recovery half
+  (text-only, run before the manual is rewritten); task 4.8 extends it with
+  the drift half (which needs `declaredPreconditions` to compile) once the
+  submodule pin lands.
+- A new small emitter binary under `app/` (task 4.8), built against
+  `app/FroggersMidiCatalog.hpp` the way `app/FroggersMidiCatalogTests.cpp`
+  already is, that the drift half runs to read `declaredPreconditions` off
+  the compiled catalogue rather than by parsing the header's source text.
 - `MANUAL.md:319-320` — the recovery text; `:308-313` (Hold Drill) gets the
   same recovery treatment; `:336-339` — the settings paragraph, which becomes
   generated; `:341-351` and `:353-357` — the APC40 Generic/Ableton sections,

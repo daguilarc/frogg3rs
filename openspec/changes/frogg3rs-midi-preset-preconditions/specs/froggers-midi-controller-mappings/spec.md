@@ -26,7 +26,7 @@ no APC40 or Launchpad association has a shifted press or a Shift press
 #### Scenario: Only the Twister carries Shift or shifted jobs
 - **WHEN** every device default is read
 - **THEN** no non-Twister device default has a shifted press or a Shift press
-- Check: not yet delivered; task 4.5 adds a loop-based case to app/FroggersMidiCatalogTests.cpp asserting this over every entry in the catalog's device defaults whose id is not the Twister's, with a positive control that a shifted press on any of them turns it red
+- Check: not yet delivered; task 4.5 adds a loop-based case to app/FroggersMidiCatalogTests.cpp asserting this over every entry in the catalog's device defaults whose id is not the Twister's, with a positive control (proven on the then-last entry, and re-proven on the Launch Control XL by task 5.3 once it exists) that a shifted press turns it red
 
 #### Scenario: A non-Shift side button's press still dispatches when its own CC Hold is unmet
 - **WHEN** a non-Shift Twister side button's press message is received and no matching release message ever arrives
@@ -42,7 +42,7 @@ no APC40 or Launchpad association has a shifted press or a Shift press
 - **WHEN** a controller is unplugged while its Shift button is down, or its Shift address stops transmitting
 - **THEN** the manual's Shift subsection states the triggers that end a held modifier and does not state a recovery that requires the Shift address to transmit
 - **AND** it states the same for Hold Drill
-- Check: not yet delivered; task 4.8 adds a check script that fails when the manual's recovery text names no mechanism other than "pressed and released again"
+- Check: not yet delivered; task 1.8 adds this repository's device-preconditions check script's recovery half, which fails unless the Shift and Hold Drill subsections each contain at least one of the multi-word recovery phrases task 3.1's rewrite uses verbatim ("selecting a different preset", "rebuilds the row's mapping", "unplugging and reconnecting the controller", "clears automatically after")
 
 ## ADDED Requirements
 
@@ -79,7 +79,7 @@ The catalogue SHALL offer a Novation Launch Control XL device default of `Generi
 
 #### Scenario: The preset declares the template its map depends on
 - **WHEN** the Launch Control XL device default is read
-- **THEN** it declares factory template 1 as the device the preset requires, because the control map moves with the template
+- **THEN** it declares factory template 1 as a device-side precondition, because the control map moves with the template
 - Check: not yet delivered; task 5.2 adds a device_defaults_declare_their_preconditions case to app/FroggersMidiCatalogTests.cpp
 
 #### Scenario: Scene blend reaches the engine from that fader
