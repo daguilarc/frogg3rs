@@ -126,8 +126,8 @@ MIDI_CATALOG_BIN := $(BUILD_DIR)/froggers_midi_catalog_tests
 # Engine/SynthRig, no JUCE) against synth_froggers::FroggersMidiCatalog()'s
 # six real device defaults, the catalog Sheaf's own Controllers page tests
 # never exercise (they build the wizard registry from an empty
-# synth::MidiAppCatalog{}, which only reaches the library's single Twister
-# descriptor).
+# synth::MidiAppCatalog{}, which only reaches the library's own
+# MfTwister/Launchpad/WRLD.Bldr descriptors).
 CONTROLLERS_PAGE_SOURCES := $(APP_DIR)/FroggersControllersPageTests.cpp
 CONTROLLERS_PAGE_BIN := $(BUILD_DIR)/froggers_controllers_page_tests
 

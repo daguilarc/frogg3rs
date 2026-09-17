@@ -3,9 +3,9 @@
 // FroggersMidiCatalog()'s six real device defaults (the MIDI Fighter
 // Twister, both APC40 mkII variants, and the three Launchpad models).
 // Sheaf's own page tests build the wizard registry from an empty
-// synth::MidiAppCatalog{}, which falls back to the library's single Twister
-// descriptor, so none of them ever drive these six shipping defaults
-// through the page. This proves the real catalog resolves through
+// synth::MidiAppCatalog{}, which falls back to the library's own
+// MfTwister/Launchpad/WRLD.Bldr descriptors, so none of them ever drive
+// these six shipping defaults through the page. This proves the real catalog resolves through
 // MakeControllerWizardRegistry()/MakeControllerWizard(), that each device's
 // wizard-generated profile installs as a real MidiControllerSlot, and that
 // every section/group the resulting slots offer accepts an Add or Block
@@ -92,25 +92,29 @@ std::vector<synth::MidiControllerSlot> GenerateCatalogSlots(
 }
 
 // ---------------------------------------------------------------------------
-// real_catalog_registers_one_descriptor_per_device_default
+// real_catalog_registers_one_descriptor_per_device_default_plus_the_uncovered_library_kind
 // ---------------------------------------------------------------------------
-TEST_CASE(real_catalog_registers_one_descriptor_per_device_default) {
+TEST_CASE(real_catalog_registers_one_descriptor_per_device_default_plus_the_uncovered_library_kind) {
     const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
     REQUIRE_TRUE(catalog.deviceDefaults.size() == 6);
 
     const std::vector<synth::ControllerWizardDescriptor> registry =
         synth::MakeControllerWizardRegistry(catalog);
-    // An empty catalog's registry falls back to the library's single
-    // Twister descriptor (ControllerWizard.cpp's MakeControllerWizardRegistry);
-    // matching the real catalog's own device-default count one-for-one is
-    // what proves the registry actually resolved this catalog rather than
-    // silently taking that fallback.
-    REQUIRE_TRUE(registry.size() == catalog.deviceDefaults.size());
-    REQUIRE_TRUE(registry.size() == 6);
-    for (std::size_t ix = 0; ix < registry.size(); ++ix) {
+    // A device stays reachable as a starting point in every app: the
+    // registry is the catalog's own devices, matched one-for-one (proving
+    // the registry actually resolved this catalog rather than silently
+    // falling back to the library-only registry an empty catalog gets),
+    // then one library descriptor for each of MfTwister/Launchpad/WRLD.Bldr
+    // the catalog has no device of. The real catalog covers MfTwister,
+    // Generic and Launchpad (via its own devices) but no WRLD.Bldr, so
+    // exactly one library descriptor (library.wrldbldr) is appended.
+    REQUIRE_TRUE(registry.size() == catalog.deviceDefaults.size() + 1);
+    for (std::size_t ix = 0; ix < catalog.deviceDefaults.size(); ++ix) {
         REQUIRE_TRUE(registry[ix].id == catalog.deviceDefaults[ix].id);
         REQUIRE_TRUE(registry[ix].kind == catalog.deviceDefaults[ix].kind);
     }
+    REQUIRE_TRUE(registry.back().id == "library.wrldbldr");
+    REQUIRE_TRUE(registry.back().kind == synth::MidiProfileKind::WrldBldr);
 }
 
 // ---------------------------------------------------------------------------
@@ -122,7 +126,12 @@ TEST_CASE(real_catalog_defaults_generate_and_accept_adds_through_the_view_model)
     const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
     const std::vector<synth::ControllerWizardDescriptor> registry =
         synth::MakeControllerWizardRegistry(catalog);
-    REQUIRE_TRUE(registry.size() == catalog.deviceDefaults.size());
+    // The catalog's own devices plus the one library descriptor
+    // (library.wrldbldr) appended for the one kind the catalog does not
+    // cover; GenerateCatalogSlots below builds one slot per registry entry,
+    // library descriptor included, so this loop also exercises that slot's
+    // kind (WrldBldr) as generically as every catalog device's.
+    REQUIRE_TRUE(registry.size() == catalog.deviceDefaults.size() + 1);
 
     std::vector<synth::MidiControllerSlot> slots = GenerateCatalogSlots(registry);
     REQUIRE_TRUE(slots.size() == registry.size());
@@ -234,11 +243,27 @@ TEST_CASE(real_catalog_defaults_generate_and_accept_adds_through_the_view_model)
                     const bool isLaunchpadSystemBlockEdgeOverflow =
                         slot.kind == synth::MidiProfileKind::Launchpad &&
                         section == synth::MidiConfigSection::SystemMessages && group == RowGroup::System;
+                    // WrldBldrDefaultProfileConfig() (MidiController.cpp)
+                    // already maps all 31 analog gesture addresses this kind
+                    // supports, so AddSingle above still finds one next-free
+                    // address beyond them, but widening it into a block
+                    // always runs back into an already-mapped neighbor.
+                    // Legitimate for the library WRLD.Bldr descriptor, whose
+                    // registry entry (MakeControllerWizardRegistry's
+                    // appended-for-uncovered-kinds descriptor) installs that
+                    // config verbatim; anything else refusing is a real
+                    // failure.
+                    const bool isLibraryWrldBldrAnalogGestureBlockFull =
+                        slot.kind == synth::MidiProfileKind::WrldBldr &&
+                        section == synth::MidiConfigSection::Analogs && group == RowGroup::AnalogGesture;
                     if (expectedRefusal.has_value()) {
                         REQUIRE_TRUE(!blockOk && blockReason == *expectedRefusal);
                     } else if (isLaunchpadSystemBlockEdgeOverflow) {
                         REQUIRE_TRUE(!blockOk && (blockReason == "launchpad coordinate is outside this controller's grid" ||
                                                   blockReason == "section would create a duplicate address"));
+                    } else if (isLibraryWrldBldrAnalogGestureBlockFull) {
+                        REQUIRE_TRUE(!blockOk &&
+                                     blockReason == "section would create a duplicate (channel, cc) address");
                     } else {
                         if (!blockOk) {
                             std::cout << "  [" << slot.name << "] AddBlock refused: " << blockReason << "\n";
