@@ -35,13 +35,14 @@
 // `audioContextUnavailable` when `audioOptions.audioContext` is unset, so
 // without this the Input device list is empty and Retry Input cannot help.
 // Browser MIDI does not need a lease either: main.ts constructs
-// `BrowserMidiManager` unconditionally in its constructor (main.ts:178),
-// and its own dispatch wiring calls `startUserActivation()` after every
-// dispatched UI action (main.ts:174-177, :267-276), which reaches
-// `startFromUserActivation()` -> `navigator.requestMIDIAccess({ sysex:
-// true })` (midi.ts:108-120) the same way it reaches audio. So MIDI is
-// reachable here too, from the app's own first in-app action, without
-// this page ever acquiring a lease.
+// `BrowserMidiManager` unconditionally in its constructor, but its dispatch
+// wiring calls `BrowserMidiManager.startFromUserActivation()` only when the
+// dispatched action is the sidebar Controllers action, not on every
+// dispatched action the way it starts audio. At load, before any action
+// dispatches, main.ts also asks the Permissions API whether Web MIDI with
+// sysex is already granted, and starts MIDI through the same manager when
+// it is, so a controller set up on an earlier visit works with no prompt.
+// Either way MIDI is reachable without this page ever acquiring a lease.
 //
 // `launchCatalogApplication` also passes `runtimeClientFactory` and
 // `frameIntervalMs`. Both are optional pass-throughs left undefined at
