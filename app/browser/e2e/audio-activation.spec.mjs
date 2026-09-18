@@ -1,5 +1,5 @@
 // Capture needs an `AudioContext` to attach to. `acquireInput`
-// (External/Sheaf/projects/synth/browser/src/audio.ts:213-216) releases with
+// (External/Sheaf/projects/synth/browser/src/audio.ts) releases with
 // `audioContextUnavailable` when `audioOptions.audioContext` is unset, before
 // it ever reaches the browser's permission prompt -- so the Input device list
 // is empty and Retry Input cannot help. The site supplies that context itself
@@ -14,9 +14,9 @@
 //
 // The text asserted on is the native runtime's own, recomputed from the numeric
 // status code that crosses the wasm ABI (`BrowserAudioInputStatusText`,
-// browser/BrowserAudioDevices.hpp:132) and rendered into the Audio page's
-// status line (`NodeIds::kAudioStatusLine`, RuntimePages.hpp:57,925-928). The
-// JS-side `"audio-context-unavailable"` diagnostic (audio.ts:36,215) is
+// browser/BrowserAudioDevices.hpp) and rendered into the Audio page's
+// status line (`NodeIds::kAudioStatusLine`, RuntimePages.hpp). The
+// JS-side `"audio-context-unavailable"` diagnostic (`AudioInputStatusCode.audioContextUnavailable`, audio.ts) is
 // internal `AudioBridge` state and is never rendered, so it is not a valid
 // target.
 import { expect, test } from "@playwright/test";

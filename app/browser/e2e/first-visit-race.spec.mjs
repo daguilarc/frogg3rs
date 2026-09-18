@@ -1,7 +1,5 @@
-// Permanent regression test for the first-visit COI boot race (see
-// openspec/changes/frogg3rs-first-visit-and-open-repairs/step-b1-report.md
-// for how this repro was found, and step-b2-report.md for the fix this
-// guards). On a genuine first visit to the deployed (no-isolation-headers)
+// Permanent regression test for the first-visit COI boot race. On a genuine
+// first visit to the deployed (no-isolation-headers)
 // configuration, coi-serviceworker.js's page branch kicks off an async
 // register/ready/reload sequence while site-boot.mjs's module boot races it
 // independently; a slow-enough machine (or, deterministically here, CPU

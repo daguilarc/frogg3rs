@@ -3,7 +3,7 @@
 //
 // Host-page CSS alone cannot restack this layout, because
 // FroggersUiSurface.hpp lays the chrome and grid blocks out as one outer
-// Row (FroggersUiSurface.hpp:856-859, Weight(2)/Weight(4) siblings) that
+// Row (`AppendLeftBlock`/`AppendRightBlock`, Weight(2)/Weight(4) siblings) that
 // Sheaf's browser UI backend positions as absolutely-bounded, wire-managed
 // DOM nodes an active render loop keeps rewriting.
 // Per-block

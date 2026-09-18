@@ -8,14 +8,14 @@ import { expect } from "@playwright/test";
 // FroggersNodeIds::kLeftBlock -- scope, transport, scenes, scene-blend, bpm.
 export const LEFT_BLOCK_SELECTOR = '[data-synth-node-id="froggers.layout.left"]';
 // FroggersNodeIds::kRightBlock -- the bank chrome + 16-slot encoder grid
-// (FroggersUiSurface.hpp:114).
+// (FroggersUiSurface.hpp).
 export const RIGHT_BLOCK_SELECTOR = '[data-synth-node-id="froggers.layout.right"]';
 // FroggersNodeIds::EncoderRow(0..3) -- the four 4-wide slices that make up
-// the 16-slot (4x4) encoder grid (FroggersUiSurface.hpp:201-206).
+// the 16-slot (4x4) encoder grid (FroggersUiSurface.hpp).
 export const ENCODER_ROW_SELECTORS = [0, 1, 2, 3].map((row) => `[data-synth-node-id="froggers.layout.right.row.${row}"]`);
 export const SYNTH_ROOT_SELECTOR = "#synth-root";
 // FroggersNodeIds::kRandomizePage/kRandomizeAll/kResetPage/kResetAll
-// (FroggersUiSurface.hpp:148-151), in the order
+// (FroggersUiSurface.hpp), in the order
 // FroggersCellMap::kRandomizeResetButtons lists them. The wide layout puts
 // them in two rows below the encoder grid; the narrow layout puts the same
 // four in a column inside the chrome block, beside the sliders.
@@ -31,7 +31,8 @@ export const BPM_SELECTOR = '[data-synth-node-id="froggers.bpm"]';
 // FroggersNodeIds::kLeftButtons -- the narrow chrome block's Randomize/Reset
 // column, whose box is what the shell places Sheaf's sidebar under.
 export const NARROW_BUTTON_COLUMN_SELECTOR = '[data-synth-node-id="froggers.layout.left.buttons"]';
-// Sheaf's own runtime page buttons (RuntimePages.hpp:37-41), in the order the
+// Sheaf's own runtime page buttons (`NodeIds::kSidebarAudio`/
+// `kSidebarControllers`/`kSidebarSync`/`kSidebarFile`, RuntimePages.hpp), in the order the
 // sidebar stacks them. The first one's LABEL is the app's own
 // (RuntimeConfig::audioPageTitle); its node id is the runtime's and does not
 // change with the rename.
@@ -42,21 +43,21 @@ export const SIDEBAR_BUTTON_SELECTORS = [
   "runtime.sidebar.file",
 ].map((id) => `[data-synth-node-id="${id}"]`);
 export const SURFACE_ROOT_SELECTOR = '[data-synth-node-id="froggers.root"]';
-// RuntimePages.hpp:34 `NodeIds::kSidebarRoot` -- Sheaf's own generic
+// RuntimePages.hpp's `NodeIds::kSidebarRoot` -- Sheaf's own generic
 // runtime-chrome sidebar (Audio/Controllers/Sync/File + CPU meter), a
 // sibling of `froggers.root` under the composite `runtime.main.root`
-// Sheaf's fitSurface actually scales (RuntimeMainComponent.hpp:197-214).
+// Sheaf's fitSurface actually scales (RuntimeMainComponent::BuildTree()).
 // Not a FroggersUiSurface node, but the mobile stack includes it as
 // a third stacked block, alongside everything else above or
 // below the grid.
 export const SIDEBAR_SELECTOR = '[data-synth-node-id="runtime.sidebar.root"]';
-// FroggersNodeIds::kPlay (FroggersUiSurface.hpp:222) -- a plain
+// FroggersNodeIds::kPlay (FroggersUiSurface.hpp) -- a plain
 // click-dispatch transport control (ControlStyle::action, not a drag
 // action), the same "reaches the app" path the mobile-stacking suite's
 // own scene-button test already exercises for a different control.
 export const PLAY_SELECTOR = '[data-synth-node-id="froggers.transport.play"]';
 // FroggersNodeIds::Encoder(ix) for the first slot of each of the 4 encoder
-// rows (ix = row * 4 -- FroggersUiSurface.hpp:466-469's own
+// rows (ix = row * 4 -- FroggersUiSurface.hpp's own
 // `{RightKind::EncoderRow, 0/4/8/12}` firstEncoderIndex values), one
 // canvas per row: the same per-row sampling convention
 // ENCODER_ROW_SELECTORS above already uses, rather than all 16. Each
@@ -67,7 +68,7 @@ export const PLAY_SELECTOR = '[data-synth-node-id="froggers.transport.play"]';
 export const ENCODER_CANVAS_SELECTORS = [0, 4, 8, 12].map(
   (ix) => `[data-synth-node-id="froggers.encoder.${ix}"] canvas`,
 );
-// RuntimePages.hpp:57 `NodeIds::kAudioStatusLine` -- the Audio page's own
+// RuntimePages.hpp's `NodeIds::kAudioStatusLine` -- the Audio page's own
 // requested/active input line (`ComposeBrowserAudioStatusLine`,
 // BrowserAudioDevices.hpp), the DOM's only rendering of the native
 // `BrowserAudioInputStatusText` for the current `BrowserAudioInputStatus`.
@@ -76,7 +77,7 @@ export const ENCODER_CANVAS_SELECTORS = [0, 4, 8, 12].map(
 // has a current diagnostic to show (RuntimePages.hpp's own `if
 // (!snapshot.statusLineText.empty())` guard around this node).
 export const AUDIO_STATUS_LINE_SELECTOR = '[data-synth-node-id="runtime.audio.status_line"]';
-// RuntimePages.hpp:52 `NodeIds::kAudioInput` -- the Audio page's Input device
+// RuntimePages.hpp's `NodeIds::kAudioInput` -- the Audio page's Input device
 // combo box. Only present once the app has requested at least one input
 // channel (`AudioPageSnapshot.showInputCombo`, BrowserAudioDevices.hpp's
 // `BuildBrowserAudioSnapshot`) and the Audio page has been opened

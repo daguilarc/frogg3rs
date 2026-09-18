@@ -3,7 +3,9 @@
 // (main.ts's `offerDownload`, called once the runtime hands back the
 // recorded bytes), the same worklet callback whose block counts Sheaf's own
 // audio-flow.spec.ts already asserts render
-// (External/Sheaf/projects/synth/browser/tests/audio-flow.spec.ts:904 and :987)
+// (External/Sheaf/projects/synth/browser/tests/audio-flow.spec.ts's "real
+// miniapp WASM runs DSP from the runtime-owned AudioWorklet callback" and
+// "runtime-owned AudioWorklet applies browser-time encoder actions promptly")
 // -- this spec depends on
 // that same rendering happening under Playwright's Chromium, and treats a
 // downloaded, non-trivial RIFF/WAV file as proof the capture ran end to end
@@ -12,7 +14,7 @@
 // The refusal case is the negative control: with the transport never
 // started, Record must show the app's own refusal text
 // (FroggersAppCore.hpp's `kRecordRefusalReason`,
-// FroggersUiSurface.hpp:2264's `transportNotice_ = app_->RecordRefusalReason()`)
+// FroggersUiSurface.hpp's `transportNotice_ = app_->RecordRefusalReason()`)
 // inside the left block rather than silently doing nothing, and the notice
 // must clear once Play actually starts the transport.
 import { expect, test } from "@playwright/test";

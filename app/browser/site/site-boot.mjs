@@ -26,8 +26,8 @@
 // activation stays anchored to the first in-app UI action (main.ts's own
 // `BrowserUiBackend` dispatch wiring calls `startUserActivation()` after
 // every dispatched action) -- the app's own Play control, same as every
-// other Sheaf host. No audio starts on load (sbw-4 covers input; this
-// covers output the same way): matches the e2e suite's "no audio start"
+// other Sheaf host. No audio starts on load, for input or output:
+// matches the e2e suite's "no audio start"
 // requirement.
 //
 // The context has to come from somewhere, because microphone capture
