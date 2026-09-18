@@ -1,8 +1,8 @@
 # Dedicated, CI-runnable build-level test for the frogg3rs browser (wasm)
 # build. Deliberately separate from app/Makefile: `cd app && make test`
-# (279/279 + check_no_juce) must stay untouched by this group. Run this one
-# explicitly via `cd app/browser && make test` (or `make -C app/browser
-# test`).
+# (its own binaries' pass count, plus check_no_juce) must stay untouched by
+# this group. Run this one explicitly via `cd app/browser && make test` (or
+# `make -C app/browser test`).
 .PHONY: build test package check-renamed-origin determinism-test package-test serve local-smoke
 
 build:

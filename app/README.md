@@ -12,11 +12,11 @@ at `External/Sheaf`. Development tracks a fork of it rather than upstream.
 ```
 
 Use the script rather than a hand-written `make` command. `EXTRA_APP_HEADERS`
-must list every header the app compiles: the sheaf-patch Makefile treats them as
-literal prerequisites (`Makefile:47-48`) and generates no `-MMD` dependency
-files, so a header left off the list is silently untracked and edits to it
-produce a build that succeeds while ignoring the change. The script globs, so
-the list cannot go stale.
+must list every header the app compiles: the sheaf-patch Makefile's
+`$(APP): $(APP_HEADERS)` rule treats them as literal prerequisites and
+generates no `-MMD` dependency files, so a header left off the list is
+silently untracked and edits to it produce a build that succeeds while
+ignoring the change. The script globs, so the list cannot go stale.
 
 ## Tests
 

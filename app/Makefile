@@ -314,8 +314,6 @@ $(MARBLES_CLOCK_BIN): $(MARBLES_CLOCK_SOURCES) $(APP_DIR)/FroggersModulation.hpp
 $(DSP_TEST_BIN): $(DSP_TEST_SOURCES) $(DSP_HEADERS) | $(BUILD_DIR)
 	$(CXX) -I$(APP_DIR) $(CPPFLAGS) $(CXXFLAGS) $(DSP_TEST_SOURCES) -o $@
 
-# --- stop-flush-repro target -----------------------------------------------------------
-
 # --- surface target -----------------------------------------------------------
 $(SURFACE_BIN): $(SURFACE_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersParameters.hpp $(APP_DIR)/FroggersModulation.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
 	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(SURFACE_SOURCES) $(SHEAF_LIB) -o $@

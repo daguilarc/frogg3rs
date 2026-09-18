@@ -5,11 +5,10 @@
 // scene selection, BPM), the library kinds the Controllers page keeps
 // around for this app (parameter inc/dec, absolute set, push, scene blend,
 // hold drill, shift), and the six device defaults offered from the
-// Controllers page's Layout dropdown -- MIDI Fighter Twister, Akai APC40
+// Controllers page's Preset dropdown -- MIDI Fighter Twister, Akai APC40
 // mkII (Generic), Akai APC40 mkII (Ableton), Launchpad X, Launchpad Pro
 // MK3, and Launchpad Mini MK3. Choosing one of the six installs its
-// mappings onto the selected slot; Custom leaves the slot's mappings
-// untouched and editable by hand.
+// mappings onto the selected slot; Custom adds an empty Generic row instead.
 //
 // Twister: the manual's Utility settings must match this default --
 // every encoder set to relative (Enc 3FH/41H, not the factory absolute
