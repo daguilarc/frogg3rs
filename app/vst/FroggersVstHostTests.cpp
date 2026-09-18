@@ -324,9 +324,9 @@ TEST_CASE(freeze_via_production_seam_holds_audio_and_reads_stopped_like_t7_3a) {
     std::cout << "  [Freeze] settledPeak=" << settledPeak << " heldPeak(frozen)=" << heldPeak
               << " (>= silence floor " << kSilenceFloorLinear << ")\n";
 
-    // Cleanup: release the latch and stop cleanly (does not restart
-    // transport -- not asserted further here, out of this test's
-    // scope).
+    // Cleanup: tears down the processor's resources. Does not touch the
+    // Freeze latch or the transport -- this test's assertions above are
+    // already complete by this point.
     processor.releaseResources();
 }
 

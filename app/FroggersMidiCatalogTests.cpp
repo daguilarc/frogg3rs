@@ -429,6 +429,22 @@ TEST_CASE(device_defaults_are_valid_and_address_exactly_the_documented_controls)
     REQUIRE_TRUE(twister.config.encoderInput.has_value());
     REQUIRE_TRUE(twister.config.encoderInput->turns.size() == 16);
     REQUIRE_TRUE(twister.config.encoderInput->pushes.size() == 16);
+
+    // Exactly one Twister turn carries a shifted job: the one at Crunchy's
+    // slot, and its job is Scene blend. No push carries one.
+    std::size_t twisterShiftedTurnCount = 0;
+    for (const synth::EncoderMidiMapping& turn : twister.config.encoderInput->turns) {
+        if (turn.shiftedJob != synth::EncoderShiftedJob::None) {
+            ++twisterShiftedTurnCount;
+            REQUIRE_TRUE(turn.position == synth_froggers::kFroggersCrunchySlot);
+            REQUIRE_TRUE(turn.shiftedJob == synth::EncoderShiftedJob::SceneBlend);
+        }
+    }
+    REQUIRE_TRUE(twisterShiftedTurnCount == 1);
+    for (const synth::EncoderMidiMapping& push : twister.config.encoderInput->pushes) {
+        REQUIRE_TRUE(push.shiftedJob == synth::EncoderShiftedJob::None);
+    }
+
     REQUIRE_TRUE(!twister.config.analogInput.has_value());
     REQUIRE_TRUE(twister.config.openSysEx.empty());
     REQUIRE_TRUE(twister.config.systemMessages.size() == 6);
@@ -517,12 +533,14 @@ TEST_CASE(device_defaults_are_valid_and_address_exactly_the_documented_controls)
             REQUIRE_TRUE(mapping.control.channel == 0);
             REQUIRE_TRUE(mapping.control.cc == static_cast<std::uint8_t>(48 + ix));
             REQUIRE_TRUE(mapping.position == ix);
+            REQUIRE_TRUE(mapping.shiftedJob == synth::EncoderShiftedJob::None);
         }
         for (std::size_t ix = 0; ix < 8; ++ix) {
             const synth::EncoderMidiMapping& mapping = device->config.encoderInput->turns[8 + ix];
             REQUIRE_TRUE(mapping.control.channel == 0);
             REQUIRE_TRUE(mapping.control.cc == static_cast<std::uint8_t>(16 + ix));
             REQUIRE_TRUE(mapping.position == 8 + ix);
+            REQUIRE_TRUE(mapping.shiftedJob == synth::EncoderShiftedJob::None);
         }
 
         REQUIRE_TRUE(device->config.analogInput.has_value());
@@ -560,6 +578,53 @@ TEST_CASE(device_defaults_are_valid_and_address_exactly_the_documented_controls)
     const std::vector<std::vector<std::uint8_t>> expectedSysEx = {
         {0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x41, 0x09, 0x07, 0x01, 0xF7}};
     REQUIRE_TRUE(ableton.config.openSysEx == expectedSysEx);
+}
+
+// ---------------------------------------------------------------------------
+// twister_shift_turns_crunchys_knob_into_the_scene_blend
+// ---------------------------------------------------------------------------
+//
+// Installs the real Twister device default as the app's own controller slot
+// 0 and feeds it exactly the raw bytes a Twister sends (SendMidi reaches
+// Engine::MidiInputProcessor(0), the same per-controller chain a connected
+// device's port would feed): Shift down (channel 3 CC 13, 127), encoder 16
+// turned clockwise (channel 0 CC 15, 65 -- decodes as +1 step, per
+// EncoderMidiInProcessor::DecodeDelta's Signed7Bit ticks = value - 64), Shift
+// up (0), then the same encoder turned clockwise again.
+TEST_CASE(twister_shift_turns_crunchys_knob_into_the_scene_blend) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("twister_shift_crunchy"));
+    rig.RunBlocks(4);
+    synth_froggers::FroggersApp& app = rig.Application();
+
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+    const synth::MidiAppDeviceDefault& twister = RequireDeviceDefault(catalog, "froggers.twister");
+
+    synth::MidiControllerSlot slot;
+    slot.name = twister.id;
+    slot.kind = twister.kind;
+    slot.config = twister.config;
+    synth::MidiInstrumentConfig instrument;
+    REQUIRE_TRUE(instrument.AddController(std::move(slot)));
+    rig.InstallInstrumentForTest(std::move(instrument));
+
+    constexpr float kTurnStep = 1.0f / 128.0f;  // EncoderMidiInConfig's default turnStep
+    const float blendBefore = rig.Engine().Manager().Scene().blend;
+    const float crunchyBefore = app.Parameters().Crunchy().GetRaw(0);
+
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 3, 13, 127));  // Shift down
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 0, 15, 65));   // encoder 16 clockwise, shifted
+    rig.RunBlocks(kSettleBlocks);
+
+    const float blendAfterShiftedTurn = rig.Engine().Manager().Scene().blend;
+    REQUIRE_TRUE(blendAfterShiftedTurn == std::clamp(blendBefore + kTurnStep, 0.0f, 1.0f));
+    REQUIRE_TRUE(app.Parameters().Crunchy().GetRaw(0) == crunchyBefore);
+
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 3, 13, 0));   // Shift up
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 0, 15, 65));  // encoder 16 clockwise, unshifted
+    rig.RunBlocks(kSettleBlocks);
+
+    REQUIRE_TRUE(rig.Engine().Manager().Scene().blend == blendAfterShiftedTurn);
+    REQUIRE_TRUE(app.Parameters().Crunchy().GetRaw(0) > crunchyBefore);
 }
 
 // ---------------------------------------------------------------------------

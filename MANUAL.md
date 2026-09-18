@@ -105,15 +105,18 @@ change what you can see and edit.
 while it runs, the shared envelope gate driving all three VCOs' Attack/Decay/Sustain/Release stages
 (Envelope bank) pulses automatically — **open for the first half of every quarter note, closed for the
 second half** — at whatever tempo the BPM control (30–300 BPM) is set to. That re-triggers the
-envelopes on every beat. This app takes no MIDI note input.
+envelopes on every beat. This app takes no MIDI note input. The Play plate swaps to its held colours
+while the transport runs and back to idle once it stops, the same swap Freeze and Record show while
+latched or armed.
 
 **Stop** fades all three voices out over about 50 ms whatever the Release knobs are set to, so Stop
 always reads as immediate, and clears the Delay/Reverb tails once every voice has gone silent.
 
 **Freeze** is a latch. Engaging it stops the transport and holds the envelope gate open, and keeps the
-delay recirculating, so the instrument drones on with the transport stopped.
-Releasing Freeze silences the instrument, the same teardown Stop triggers. Pressing Play disarms
-Freeze and starts the transport.
+delay recirculating, so the instrument drones on with the transport stopped. Releasing Freeze returns
+the transport to where it was when Freeze engaged: if it was running, the transport starts again, the
+same as pressing Play; if it was already stopped, releasing only silences the drone, the same teardown
+Stop triggers. Pressing Play always disarms Freeze and starts the transport.
 
 **Record** arms a capture of what the operator hears; press again to stop it. A finished recording is
 offered as a file named from today's date, `YYYY-MM-DD.wav` — the standalone through a save dialog on
@@ -331,11 +334,12 @@ knob again. On an absolute knob, the first turn after release jumps to the knob'
 
 ### Shift
 
-A button mapped to Shift is held rather than tapped. While it is held, any other button on the same
-controller that has a shifted job assigned does that job instead of its ordinary one. The shifted job
-is set in the Shift column on the button's own row on the Controllers page, editable per row and saved
-with the patch like every other mapping. If the controller is unplugged while Shift is still held, its
-buttons stay shifted until Shift is pressed and released again.
+A button mapped to Shift is held rather than tapped. While it is held, any other button or encoder
+turn on the same controller that has a shifted job assigned does that job instead of its ordinary
+one. If Hold Drill is also held on that controller, a knob drills instead. The shifted job is set in the Shift column on the button's or turn's own row on the Controllers
+page, editable per row and saved with the patch like every other mapping. If the controller is
+unplugged while Shift is still held, its buttons and knobs stay shifted until Shift is pressed and
+released again.
 
 ### MIDI Fighter Twister
 
@@ -344,7 +348,7 @@ a press paired with a second job under Shift:
 
 ![The MIDI Fighter Twister's 16 encoders and six side buttons, labelled with the job each one does as the preset works](assets/manual/twister-preset.png)
 
-![The same layout with Shift held: each side button's shifted press, and Shift itself marked as held](assets/manual/twister-preset-shift.png)
+![The same layout with Shift held: each side button's shifted press, Shift itself marked as held, and Crunchy's knob reading Scene Blend](assets/manual/twister-preset-shift.png)
 
 | Button | Press | Shift + press |
 |---|---|---|
@@ -354,6 +358,16 @@ a press paired with a second job under Shift:
 | Right top | Scene 1 | Scene 2 |
 | Right middle | Randomize Page | Randomize All |
 | Right bottom | Shift | (none) |
+
+Crunchy's own knob carries a shifted job too: turning it moves Crunchy while Shift is released and
+moves the scene blend while Shift is held; the same turn moves Crunchy again the moment Shift
+releases. No other Twister encoder has a shifted job.
+
+A Twister row added from the MIDI Fighter Twister preset before this version keeps its old mappings
+and shows Restore. Pressing Restore installs Shift + Crunchy and replaces edits made to that row. A
+patch saved earlier carries the old row, so load it, press Restore and save it again. A Twister row
+that shows no Restore predates the preset, so delete it and add the MIDI Fighter Twister preset
+again.
 
 Utility settings the device needs, set in the Midi Fighter Utility: every encoder's sensitivity/mode to
 "Enc 3FH/41H" (relative), all six side buttons to "CC Hold", and "Bank Side Buttons" unchecked, so the

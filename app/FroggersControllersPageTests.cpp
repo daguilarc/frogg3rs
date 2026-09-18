@@ -14,6 +14,7 @@
 #include "FroggersMidiCatalog.hpp"
 
 #include "synth/ControllerWizard.hpp"
+#include "synth/ControllersPageUI.hpp"
 #include "synth/MidiConfigViewModel.hpp"
 #include "synth/MidiController.hpp"
 
@@ -333,6 +334,207 @@ TEST_CASE(twister_system_rows_carry_shift_editable_field_and_derived_choice_inde
 
     REQUIRE_TRUE(vm.ShiftChoiceIndex(twisterIx, synth::MidiConfigSection::SystemMessages, 0) == bankPreviousIx);
     REQUIRE_TRUE(vm.ShiftChoiceIndex(twisterIx, synth::MidiConfigSection::SystemMessages, 5) == 0);
+}
+
+// ---------------------------------------------------------------------------
+// twister_crunchy_turn_row_shows_its_shifted_scene_blend
+// ---------------------------------------------------------------------------
+TEST_CASE(twister_crunchy_turn_row_shows_its_shifted_scene_blend) {
+    using Field = synth::MidiMappingRowVM::Field;
+    using Kind = synth::MidiMappingRowVM::Kind;
+    using RowGroup = synth::MidiMappingRowVM::RowGroup;
+
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+    const std::vector<synth::ControllerWizardDescriptor> registry =
+        synth::MakeControllerWizardRegistry(catalog);
+    std::vector<synth::MidiControllerSlot> slots = GenerateCatalogSlots(registry);
+
+    synth::MidiInstrumentConfig instrument;
+    synth::MidiConnectionState connection;
+    for (synth::MidiControllerSlot& slot : slots) {
+        REQUIRE_TRUE(instrument.AddController(std::move(slot)));
+        connection.controllers.push_back({});
+    }
+
+    std::size_t twisterIx = instrument.controllers.size();
+    for (std::size_t ix = 0; ix < instrument.controllers.size(); ++ix) {
+        if (instrument.controllers[ix].kind == synth::MidiProfileKind::MfTwister) {
+            twisterIx = ix;
+            break;
+        }
+    }
+    REQUIRE_TRUE(twisterIx < instrument.controllers.size());
+
+    synth::MidiConfigViewModel vm;
+    vm.SetMessageCatalog(synth::MakeUISystemMessageChoices(catalog));
+    vm.Rebuild(instrument, connection);
+
+    const std::vector<synth::MidiMappingRowVM> rows = vm.SectionRows(twisterIx, synth::MidiConfigSection::Encoders);
+
+    // ReconstructEncoderBlocks keeps a turn with a shifted job out of any
+    // block, so Crunchy's turn (the only one with one) is its own row and
+    // the other fifteen still read as one block.
+    std::size_t blockCount = 0;
+    std::size_t individualCount = 0;
+    std::size_t crunchyRowIx = rows.size();
+    for (std::size_t ix = 0; ix < rows.size(); ++ix) {
+        if (rows[ix].group != RowGroup::EncoderTurn) {
+            continue;
+        }
+        if (rows[ix].kind == Kind::Block) {
+            ++blockCount;
+        } else {
+            ++individualCount;
+            crunchyRowIx = ix;
+        }
+    }
+    REQUIRE_TRUE(blockCount == 1);
+    REQUIRE_TRUE(individualCount == 1);
+    REQUIRE_TRUE(crunchyRowIx < rows.size());
+    REQUIRE_TRUE(rows[crunchyRowIx].label.find("pos 15") != std::string::npos);
+
+    const bool hasShiftField = std::find(rows[crunchyRowIx].editableFields.begin(),
+                                         rows[crunchyRowIx].editableFields.end(),
+                                         Field::ShiftAction) != rows[crunchyRowIx].editableFields.end();
+    REQUIRE_TRUE(hasShiftField);
+    REQUIRE_TRUE(vm.EncoderTurnShiftedJobIndex(twisterIx, synth::MidiConfigSection::Encoders, crunchyRowIx) == 1);
+}
+
+// ---------------------------------------------------------------------------
+// twister_row_saved_before_the_shifted_turn_gains_it_on_restore
+// ---------------------------------------------------------------------------
+// A Twister row saved before this change carries the old preset: sixteen
+// turns, none with a shifted job. Pressing Restore on the Controllers page
+// installs the current preset onto that row, including Crunchy's shifted
+// job, and the page's own view model has to show the change in an already
+// open Encoders section instead of replaying the pre-Restore rows.
+TEST_CASE(twister_row_saved_before_the_shifted_turn_gains_it_on_restore) {
+    using Field = synth::MidiMappingRowVM::Field;
+    using Kind = synth::MidiMappingRowVM::Kind;
+    using RowGroup = synth::MidiMappingRowVM::RowGroup;
+
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+    const std::vector<synth::ControllerWizardDescriptor> registry =
+        synth::MakeControllerWizardRegistry(catalog);
+
+    const synth::ControllerWizardDescriptor* twisterDescriptor = nullptr;
+    for (const synth::ControllerWizardDescriptor& descriptor : registry) {
+        if (descriptor.id == "froggers.twister") {
+            twisterDescriptor = &descriptor;
+            break;
+        }
+    }
+    REQUIRE_TRUE(twisterDescriptor != nullptr);
+
+    std::unique_ptr<synth::ControllerWizard> wizard =
+        synth::MakeControllerWizard(registry, twisterDescriptor->id);
+    REQUIRE_TRUE(wizard != nullptr);
+    std::unique_ptr<synth::ControllerConfigForm> form = wizard->ConfigForm();
+    REQUIRE_TRUE(form != nullptr);
+    const synth::WizardGenerationContext context{
+        .name = "Twister",
+        .input = {.identifier = "twister.in", .name = "Midi Fighter Twister"},
+        .output = {.identifier = "twister.out", .name = "Midi Fighter Twister"}};
+    synth::WizardGenerationResult result = wizard->GenerateProfile(*form, context);
+    REQUIRE_TRUE(static_cast<bool>(result));
+    synth::MidiControllerSlot slot = std::move(*result.controller);
+
+    // Reproduce a row saved before this change: the preset's own sixteen
+    // turns, none carrying a shifted job.
+    REQUIRE_TRUE(slot.config.encoderInput.has_value());
+    std::size_t shiftedBefore = 0;
+    for (synth::EncoderMidiMapping& turn : slot.config.encoderInput->turns) {
+        if (turn.shiftedJob != synth::EncoderShiftedJob::None) {
+            ++shiftedBefore;
+        }
+        turn.shiftedJob = synth::EncoderShiftedJob::None;
+    }
+    REQUIRE_TRUE(shiftedBefore == 1);
+
+    synth::MidiInstrumentConfig backing;
+    REQUIRE_TRUE(backing.AddController(std::move(slot)));
+    synth::MidiConnectionState connection;
+    connection.controllers.push_back({});
+
+    bool saved = true;
+    synth::runtime_ui::ControllersPageCallbacks callbacks;
+    callbacks.instrumentSnapshot = [&] { return backing; };
+    callbacks.connectionState = [&] { return connection; };
+    callbacks.enumerateDevices = [] { return synth::MidiDeviceList{}; };
+    callbacks.commitInstrument = [&](synth::MidiInstrumentConfig out) {
+        backing = std::move(out);
+        return true;
+    };
+    callbacks.saveRuntimeConfiguration = [&] { return saved; };
+    callbacks.setStatus = [](std::string) {};
+    callbacks.layouts = registry;
+    callbacks.messageCatalog = synth::MakeUISystemMessageChoices(catalog);
+
+    synth::runtime_ui::ControllersPageSurface surface(callbacks);
+    surface.MarkDirty();
+    surface.RefreshOnTick();
+    surface.ViewModel().ToggleSection(0, synth::MidiConfigSection::Encoders);
+
+    REQUIRE_TRUE(!surface.ViewModel().Controllers()[0].matchesWizardProfile);
+    {
+        const std::vector<synth::MidiMappingRowVM> rows =
+            surface.ViewModel().SectionRows(0, synth::MidiConfigSection::Encoders);
+        std::size_t blockCount = 0;
+        std::size_t individualCount = 0;
+        for (const synth::MidiMappingRowVM& row : rows) {
+            if (row.group != RowGroup::EncoderTurn) {
+                continue;
+            }
+            if (row.kind == Kind::Block) {
+                ++blockCount;
+            } else {
+                ++individualCount;
+            }
+        }
+        REQUIRE_TRUE(blockCount == 1 && individualCount == 0);
+    }
+
+    surface.DispatchAction(synth::ui::Action::WithValue(
+        synth::runtime_ui::Actions::kControllerRestore,
+        synth::runtime_ui::NodeIds::ControllerActionToken(0, "Twister")));
+    REQUIRE_TRUE(surface.StatusText() == "Restored controller");
+    REQUIRE_TRUE(surface.ViewModel().Controllers()[0].matchesWizardProfile);
+
+    std::size_t crunchyRowIx = 0;
+    {
+        const std::vector<synth::MidiMappingRowVM> rows =
+            surface.ViewModel().SectionRows(0, synth::MidiConfigSection::Encoders);
+        std::size_t blockCount = 0;
+        crunchyRowIx = rows.size();
+        for (std::size_t ix = 0; ix < rows.size(); ++ix) {
+            if (rows[ix].group != RowGroup::EncoderTurn) {
+                continue;
+            }
+            if (rows[ix].kind == Kind::Block) {
+                ++blockCount;
+            } else {
+                crunchyRowIx = ix;
+            }
+        }
+        REQUIRE_TRUE(blockCount == 1);
+        REQUIRE_TRUE(crunchyRowIx < rows.size());
+        REQUIRE_TRUE(surface.ViewModel().EncoderTurnShiftedJobIndex(
+                         0, synth::MidiConfigSection::Encoders, crunchyRowIx) == 1);
+    }
+
+    synth::MidiInstrumentConfig afterEdit;
+    std::string editReason;
+    REQUIRE_TRUE(surface.ViewModel().ApplyMappingEdit(0, synth::MidiConfigSection::Encoders, crunchyRowIx,
+                                                       Field::Channel, 1.0, afterEdit, &editReason));
+    const synth::EncoderMidiMapping* editedCrunchy = nullptr;
+    for (const synth::EncoderMidiMapping& turn : afterEdit.controllers[0].config.encoderInput->turns) {
+        if (turn.position == synth_froggers::kFroggersCrunchySlot) {
+            editedCrunchy = &turn;
+            break;
+        }
+    }
+    REQUIRE_TRUE(editedCrunchy != nullptr);
+    REQUIRE_TRUE(editedCrunchy->shiftedJob == synth::EncoderShiftedJob::SceneBlend);
 }
 
 // ---------------------------------------------------------------------------

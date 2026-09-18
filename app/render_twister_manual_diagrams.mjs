@@ -64,10 +64,10 @@ for (const row of encoderRows) {
   if (encoders[position] !== null) {
     fail(`two "encoders" rows claim position ${position}`);
   }
-  if (typeof row.turn !== "string" || typeof row.push !== "string") {
-    fail(`"encoders" row at position ${position} is missing its turn or push label`);
+  if (typeof row.turn !== "string" || typeof row.push !== "string" || typeof row.shiftedTurn !== "string") {
+    fail(`"encoders" row at position ${position} is missing its turn, push, or shiftedTurn label`);
   }
-  encoders[position] = { turn: row.turn, push: row.push };
+  encoders[position] = { turn: row.turn, push: row.push, shiftedTurn: row.shiftedTurn };
 }
 if (encoders.some((entry) => entry === null)) {
   fail("not every encoder grid position has an \"encoders\" row");
@@ -75,9 +75,9 @@ if (encoders.some((entry) => entry === null)) {
 
 // Confirm every field on the raw preset's own encoder turns and pushes is
 // one this script has been taught to draw (via the resolved rows above) --
-// a field it does not recognize (a later shiftedJob, say) stops the script
-// here rather than reaching either diagram unlabelled.
-const KNOWN_ENCODER_MAPPING_FIELDS = new Set(["control", "slotIx", "position"]);
+// a field it does not recognize stops the script here rather than reaching
+// either diagram unlabelled.
+const KNOWN_ENCODER_MAPPING_FIELDS = new Set(["control", "slotIx", "position", "shiftedJob"]);
 function checkKnownEncoderFields(mapping, kind, index) {
   for (const field of Object.keys(mapping)) {
     if (!KNOWN_ENCODER_MAPPING_FIELDS.has(field)) {
@@ -144,10 +144,15 @@ function sideButtonHtml(button, shiftHeld) {
   return `<div class="side-btn${held ? " held" : ""}">${escapeHtml(label)}${escapeHtml(note)}</div>`;
 }
 
-function encoderHtml(encoder) {
+function encoderHtml(encoder, shiftHeld) {
+  // While Shift is held, a turn with a shifted job ("(none)" otherwise)
+  // does that job instead of its ordinary one -- the same swap
+  // sideButtonHtml makes for a shifted side button.
+  const shifted = shiftHeld && encoder.shiftedTurn !== "(none)";
+  const turnLabel = shifted ? encoder.shiftedTurn : encoder.turn;
   return (
-    `<div class="encoder">` +
-    `<div class="turn">${escapeHtml(encoder.turn)}</div>` +
+    `<div class="encoder${shifted ? " shifted" : ""}">` +
+    `<div class="turn">${escapeHtml(turnLabel)}</div>` +
     `<div class="push">${escapeHtml(encoder.push)}</div>` +
     `</div>`
   );
@@ -189,6 +194,7 @@ function pageHtml(shiftHeld) {
   }
   .encoder .turn { font-weight: 600; }
   .encoder .push { opacity: 0.7; font-size: 9.5px; margin-top: 2px; }
+  .encoder.shifted { border-color: #ffcc33; background: #3a2f00; color: #ffdd77; }
 </style>
 </head>
 <body>
@@ -197,7 +203,7 @@ function pageHtml(shiftHeld) {
   <div class="subtitle">The numbered knobs move those slots of whichever bank is shown; the bank sections list them.</div>
   <div class="row">
     <div class="side-col">${left.map((b) => sideButtonHtml(b, shiftHeld)).join("")}</div>
-    <div class="grid">${encoders.map(encoderHtml).join("")}</div>
+    <div class="grid">${encoders.map((encoder) => encoderHtml(encoder, shiftHeld)).join("")}</div>
     <div class="side-col">${right.map((b) => sideButtonHtml(b, shiftHeld)).join("")}</div>
   </div>
 </div>

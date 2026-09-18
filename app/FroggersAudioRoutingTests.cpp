@@ -704,7 +704,7 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
     model.PageParameter(synth_froggers::FroggersBankId::Drive, 1).SceneCenter(0) = 1.0f;   // maximum Gain
     // PLUS the operator's stated repro on top: Filter bank Crispy at max
     // scrambles all 8 bits of every Filter parameter per read. NOTE the
-    // accessor -- Crispy is NOT in pageParameters_ (9 wide); it lives in its
+    // accessor -- Crispy is NOT in pageParameters_ (kFroggersParamsPerBank, 14 wide); it lives in its
     // own `crispy_` array (FroggersParameters.hpp's `crispy_`), and
     // PageParameter(Filter, 14) throws std::out_of_range.
     model.Crispy(synth_froggers::FroggersBankId::Filter).SceneCenter(0) = 1.0f;
@@ -2149,8 +2149,8 @@ void PressPlay(Rig& rig) {
         synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
 }
 
-// Shared setup for the freeze-holds-the-ring, latch-release, and
-// encoder-edit-while-frozen tests below: the SAME self-sustaining-ring
+// Shared setup for every test below that starts from a drone held by a
+// Freeze engaged while the transport was running: the SAME self-sustaining-ring
 // recipe as
 // stopping_transport_silences_self_sustaining_delay_and_reverb above
 // (feedback/hold pushed to their near-unity extremes, so there is real
@@ -2169,8 +2169,12 @@ void PressPlay(Rig& rig) {
 // locals.
 constexpr float kFrozenRingFloorLinear = 1.0e-2f;
 
-std::uint64_t BuildLatchedRingHeldAcrossStop(Rig& rig) {
-    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+// The self-sustaining ring recipe both BuildLatchedRingHeldAcrossStop and
+// BuildRingHeldByFreezeEngagedWhileStopped below excite: feedback/hold
+// pushed to their near-unity extremes, so there is real recirculating
+// energy for the latch to hold, regardless of whether the transport ever
+// ran before Freeze engages.
+void SetSelfSustainingRingPatch(synth_froggers::FroggersParameterModel& model) {
     using synth_froggers::FroggersBankId;
 
     // Excites the ring at ~632 Hz regardless of where the pitch ceiling sits.
@@ -2189,8 +2193,16 @@ std::uint64_t BuildLatchedRingHeldAcrossStop(Rig& rig) {
     // changes_the_output_measurably's own Delay-only reasoning, below).
     model.PageParameter(FroggersBankId::Reverb, 9).SceneCenter(0) = 0.08f;  // Hold -> moderate.
     model.PageParameter(FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;   // Wet/dry fully wet.
+}
 
-    rig.StartAt(0);
+// Runs the ring built by SetSelfSustainingRingPatch through its excite
+// window, then confirms it is genuinely ringing above kFrozenRingFloorLinear
+// -- the positive control both BuildLatchedRingHeldAcrossStop (excites while
+// running, then freezes) and BuildRingHeldByFreezeEngagedWhileStopped
+// (freezes first, then excites while frozen) need before trusting anything
+// that follows. Returns the block count it ran, for the caller's own
+// timestamp bookkeeping.
+std::uint64_t ExciteAndConfirmSelfSustainingRing(Rig& rig) {
     std::uint64_t timestamp = 0;
 
     constexpr std::size_t kExciteBlocks = 300;
@@ -2205,6 +2217,15 @@ std::uint64_t BuildLatchedRingHeldAcrossStop(Rig& rig) {
     const float ringingPeak = PeakAbs(rig.Output());
     REQUIRE_TRUE(ringingPeak > kFrozenRingFloorLinear);  // actually ringing before trusting anything below.
 
+    return timestamp;
+}
+
+std::uint64_t BuildLatchedRingHeldAcrossStop(Rig& rig) {
+    SetSelfSustainingRingPatch(rig.Application().Parameters());
+
+    rig.StartAt(0);
+    const std::uint64_t timestamp = ExciteAndConfirmSelfSustainingRing(rig);
+
     // With the Freeze-stops-the-transport fix, a single Freeze press now
     // both engages the latch AND stops the
     // transport (FroggersUiSurface.hpp's kFreeze branch) -- no separate Stop
@@ -2215,6 +2236,23 @@ std::uint64_t BuildLatchedRingHeldAcrossStop(Rig& rig) {
     PressFreeze(rig);
 
     return timestamp;
+}
+
+// Same self-sustaining ring as BuildLatchedRingHeldAcrossStop above, but
+// engaged by Freeze directly from a transport that has never run --
+// spec.md's "Releasing a Freeze engaged while stopped silences and stays
+// stopped" scenario. Freeze forces the ADSR gate open regardless of the
+// transport (FroggersAppCore's `setGate(gateOpen || FreezeLatched())`), and
+// once latched, FreezeLatched() makes TransportTeardownActive() read false,
+// so the routed knobs above replace the stopped-state overrides that would
+// otherwise hold delay/reverb at unity/zero -- the ring builds up from the
+// gate opening alone, with no Play ever pressed.
+std::uint64_t BuildRingHeldByFreezeEngagedWhileStopped(Rig& rig) {
+    SetSelfSustainingRingPatch(rig.Application().Parameters());
+    REQUIRE_TRUE(!rig.Application().TransportRunning());  // never started.
+
+    PressFreeze(rig);  // engage from stopped.
+    return ExciteAndConfirmSelfSustainingRing(rig);
 }
 
 // Freeze pressed while playing, with NO Stop press -- the
@@ -2262,18 +2300,18 @@ TEST_CASE(freeze_alone_holds_the_ring_above_an_audible_floor_and_stops_the_trans
     REQUIRE_TRUE(!rig.Application().TransportRunning());  // still stopped -- nothing restarted it.
 }
 
-// The latch-release-while-stopped scenario is still live under the
-// current handling: Freeze pressed again tears
-// down and silences, with the transport staying stopped. A second Freeze
-// press, releasing the latch while stopped, is the escape hatch out of the
-// drone -- it must silence within the SAME bound an unlatched Stop
-// guarantees. Now driven
+// The latch-release-while-stopped scenario is still live under the current
+// handling, but only for a Freeze that engaged while the transport was
+// already stopped: releasing tears down and silences, with the transport
+// staying stopped -- it must silence within the SAME bound an unlatched
+// Stop guarantees (a Freeze engaged while RUNNING instead resumes on
+// release, see releasing_freeze_resumes_the_transport_it_stopped). Driven
 // through PressFreeze() (DispatchAction -> HandleAction) rather than a
-// direct SetFreezeLatched(false) call, per the rule that these
-// tests exercise the real handler, not the flag.
-TEST_CASE(freeze_latch_release_while_stopped_silences_within_the_bound) {
-    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_latch_release_while_stopped_silences"));
-    BuildLatchedRingHeldAcrossStop(rig);
+// direct SetFreezeLatched(false) call, per the rule that these tests
+// exercise the real handler, not the flag.
+TEST_CASE(freeze_engaged_while_stopped_releases_to_silence_within_the_bound) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_engaged_while_stopped_releases"));
+    BuildRingHeldByFreezeEngagedWhileStopped(rig);
 
     const auto [settleLeadBlocks, checkWindowBlocks, kBandSilenceFloorLinear] =
         ComputeSilenceSettleWindow(/*settleSeconds=*/0.25);
@@ -2287,9 +2325,11 @@ TEST_CASE(freeze_latch_release_while_stopped_silences_within_the_bound) {
     rig.RunBlocks(checkWindowBlocks);
     REQUIRE_TRUE(!rig.SawNaN());
     REQUIRE_TRUE(PeakAbs(rig.Output()) > kFrozenRingFloorLinear);
+    REQUIRE_TRUE(rig.Application().FreezeLatched());
+    REQUIRE_TRUE(!rig.Application().TransportRunning());  // engaged from stopped -- still stopped.
 
-    // Release the latch with a second Freeze press -- still stopped, no
-    // Play in between. Releasing the latch does not start the transport.
+    // Release the latch with a second Freeze press -- engaged from stopped,
+    // so release does not start the transport.
     PressFreeze(rig);
 
     rig.RunBlocks(settleLeadBlocks);
@@ -2299,7 +2339,8 @@ TEST_CASE(freeze_latch_release_while_stopped_silences_within_the_bound) {
     const auto& silencedOutput = rig.Output();
     RequireFiniteStereo(silencedOutput);
     REQUIRE_TRUE(PeakAbs(silencedOutput) < kBandSilenceFloorLinear);
-    REQUIRE_TRUE(!rig.Application().TransportRunning());  // release never starts the transport.
+    REQUIRE_TRUE(!rig.Application().FreezeLatched());
+    REQUIRE_TRUE(!rig.Application().TransportRunning());  // still stopped.
 }
 
 // This pins the behaviour the earlier handling got backwards -- Stop,
@@ -2371,10 +2412,11 @@ TEST_CASE(no_freeze_stop_press_sequence_leaves_the_instrument_sounding_after_sto
         PressStop(rig);
         RequireSilentAfter(rig, "Freeze->Stop");
     }
-    // Sequence 2: Freeze -> Freeze -> Stop (engage, release via a second
-    // Freeze press, then Stop on an already-unlatched-and-silent instrument
-    // -- Stop must still be a no-op-safe unconditional silence, not assume
-    // something is left to tear down).
+    // Sequence 2: Freeze -> Freeze -> Stop (engage from running, release via
+    // a second Freeze press -- which resumes playing, the drone having been
+    // engaged from a running transport -- then Stop over an
+    // unlatched-and-playing instrument, exactly as any other Stop must
+    // silence).
     {
         Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_stop_sequence_2"));
         BuildLatchedRingHeldAcrossStop(rig);
@@ -2421,11 +2463,7 @@ TEST_CASE(no_freeze_stop_press_sequence_leaves_the_instrument_sounding_after_sto
     }
 }
 
-// Releasing Freeze must NOT restart the transport --
-// the operator resumes with Play, not by releasing the latch.
-// (Operator-reported 2026-08-17, found in the built app: "why does
-// clicking play
-// not de-select freeze".) Play disarms the latch for the same reason Stop
+// Play disarms the latch for the same reason Stop
 // does -- and more urgently, because a latched Freeze holds the voice gate
 // open unconditionally (FroggersAppCore's `setGate(gateOpen ||
 // FreezeLatched())`). Starting the transport with the latch still engaged
@@ -2458,17 +2496,128 @@ TEST_CASE(play_disarms_the_freeze_latch_and_returns_the_voice_gate_to_the_transp
     REQUIRE_TRUE(!rig.SawNaN());
 }
 
-TEST_CASE(releasing_freeze_does_not_restart_the_transport) {
-    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("releasing_freeze_does_not_restart_transport"));
-    BuildLatchedRingHeldAcrossStop(rig);
+// Releasing a Freeze that engaged while the transport was running must
+// return it to running, exactly as if Play had been pressed -- the
+// operator resumes by releasing Freeze, not only with Play. Driven entirely
+// through PressPlay/PressFreeze (DispatchAction -> HandleAction), never a
+// raw StartAt/SetFreezeLatched call.
+TEST_CASE(releasing_freeze_resumes_the_transport_it_stopped) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("releasing_freeze_resumes_transport"));
 
+    PressPlay(rig);
     rig.RunBlocks(4);
-    REQUIRE_TRUE(!rig.Application().TransportRunning());  // Freeze engage stopped it.
+    // Positive control: genuinely running before Freeze, or "Freeze stopped
+    // it" below would be provable by a transport that was never running.
+    REQUIRE_TRUE(rig.Application().TransportRunning());
+    REQUIRE_TRUE(!rig.Application().FreezeLatched());
+
+    PressFreeze(rig);  // engage.
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().FreezeLatched());
+    REQUIRE_TRUE(!rig.Application().TransportRunning());  // Freeze stopped it.
 
     PressFreeze(rig);  // release.
     rig.RunBlocks(4);
     REQUIRE_TRUE(!rig.Application().FreezeLatched());
-    REQUIRE_TRUE(!rig.Application().TransportRunning());  // still stopped -- release did not restart it.
+    REQUIRE_TRUE(rig.Application().TransportRunning());  // release resumed it, exactly as Play would.
+    REQUIRE_TRUE(!rig.SawNaN());
+}
+
+// Freeze must record the transport's ACTUAL running state when it engages
+// (app_->TransportRunning()), not the surface's own desired-running record
+// of its presses -- a transport started by rig.StartAt (a raw
+// MessageIn::Start, bypassing FroggersUiSurface::StartTransport and its
+// SetDesiredTransportRunning call entirely) never sets desired-running, so a
+// release that resumed based on that flag instead of the clock would leave
+// the transport stopped here.
+TEST_CASE(freeze_release_resumes_a_transport_started_via_rig_start_at) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_release_resumes_transport_from_start_at"));
+
+    rig.StartAt(0);
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().TransportRunning());
+    REQUIRE_TRUE(!rig.Application().FreezeLatched());
+
+    PressFreeze(rig);  // engage.
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().FreezeLatched());
+    REQUIRE_TRUE(!rig.Application().TransportRunning());
+
+    PressFreeze(rig);  // release.
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(!rig.Application().FreezeLatched());
+    REQUIRE_TRUE(rig.Application().TransportRunning());
+    REQUIRE_TRUE(!rig.SawNaN());
+}
+
+// A second Freeze engage, after the latch already cycled once, must record
+// the transport's state at THAT engage, not stick with whatever the FIRST
+// engage recorded -- Play, Freeze (engage while running), Stop (disarms and
+// silences unconditionally), Freeze (engage a second time, genuinely from
+// stopped), Freeze (release) must stay silent and stopped, not resume as the
+// first engage's recorded state would.
+TEST_CASE(freeze_engaged_a_second_time_while_stopped_does_not_resume_on_release) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_second_engage_while_stopped"));
+
+    PressPlay(rig);
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().TransportRunning());
+
+    PressFreeze(rig);  // engage while running.
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().FreezeLatched());
+    REQUIRE_TRUE(!rig.Application().TransportRunning());
+
+    PressStop(rig);  // disarms the latch and silences, same as any other Stop.
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(!rig.Application().FreezeLatched());
+    REQUIRE_TRUE(!rig.Application().TransportRunning());
+
+    PressFreeze(rig);  // engage a second time, genuinely from stopped.
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().FreezeLatched());
+    REQUIRE_TRUE(!rig.Application().TransportRunning());
+
+    PressFreeze(rig);  // release: must stay stopped, not resume on the first engage's recorded state.
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(!rig.Application().FreezeLatched());
+    REQUIRE_TRUE(!rig.Application().TransportRunning());
+    REQUIRE_TRUE(!rig.SawNaN());
+}
+
+// The Freeze release must record desired-running the same way Play does
+// (StartTransport()), not merely push a Start message -- only the desired
+// flag survives an audio-device renegotiation (FroggersAppCore::
+// PrepareToPlay's re-assert path) and carries the transport forward through
+// Engine::Prepare(). A release that resumed the transport without recording
+// that flag would drop back to stopped the moment the renegotiation every
+// real device switch triggers (Runtime<App>::audioDeviceAboutToStart's own
+// Engine::Prepare() call) resets the clock.
+TEST_CASE(freeze_release_resumes_a_transport_that_survives_a_device_reprepare) {
+    Rig::AudioSettings realDeviceSettings;
+    realDeviceSettings.sampleRate = 44100.0;
+    realDeviceSettings.blockSize = 512;
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_release_resumes_survives_reprepare"),
+           realDeviceSettings);
+
+    PressPlay(rig);
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().TransportRunning());
+
+    PressFreeze(rig);  // engage while running.
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(!rig.Application().TransportRunning());
+
+    PressFreeze(rig);  // release: resumes, same as Play.
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().TransportRunning());
+
+    rig.Engine().Prepare(realDeviceSettings.sampleRate, realDeviceSettings.blockSize);
+    rig.ClearOutput();
+    rig.RunBlocks(8);
+    REQUIRE_TRUE(rig.Application().TransportRunning());
+    REQUIRE_TRUE(PeakAbs(rig.Output()) > 0.0f);
+    REQUIRE_TRUE(!rig.SawNaN());
 }
 
 // Parameter edits stay live while frozen -- an encoder edit made

@@ -1,0 +1,20 @@
+--- a/dsp/FilterFx.hpp
++++ b/dsp/FilterFx.hpp
+@@ -870,7 +870,7 @@
+         // combPath below -- so it catches exactly the residual the
+         // trim leaves behind, not instead of the trim (the trim stays;
+         // this is additive).
+-        const float peakPath = peakLimiter.Process(peakTrimmed);
++        const float peakPath = peakTrimmed;  // SCRATCH MOVE: the limiter now runs on the blended output below.
+         // Floored equal-power blend, single-sourced with FrogBlock's own
+         // Fold/Fuzz blend (dsp/Drive.hpp) rather than a second copy of the
+         // same floor/span/angle law -- see dsp::FlooredEqualPowerBlend's own
+@@ -880,7 +880,7 @@
+         tapPeakLeg = peakPath * blendGains.legA;
+         tapCombLeg = combPath * blendGains.legB;
+         tapMixed = mixed;
+-        return mixed;
++        return peakLimiter.Process(mixed);  // SCRATCH MOVE.
+     }
+ };
+ 

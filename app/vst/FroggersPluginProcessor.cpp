@@ -849,8 +849,8 @@ void FroggersPluginProcessor::timerCallback() {
         // check -- one NowMicros() call per pump, not two.
         if (!hostClockEngaged_) {
             // Engage. receiveTransport is deliberately left false (its
-            // SyncConfig default): 6.1 above pushes plain Origin::Internal
-            // Start/Stop -- exactly the Play/Stop buttons' own messages --
+            // SyncConfig default): the host transport producer above pushes
+            // plain Origin::Internal Start/Stop -- exactly the Play/Stop buttons' own messages --
             // not Origin::ExternalMidi transport commands, so the
             // transport-arming state machine HandleExternalTransport would
             // add (ArmedStart/ArmedContinue, splice-crossing enumeration) is
@@ -1199,10 +1199,11 @@ void FroggersPluginProcessor::PumpHostParameterBridge() {
                 // host -> core: DispatchAction(kFreeze) TOGGLES
                 // (FroggersUiSurface.hpp's own kFreeze branch: `engaging =
                 // !app_->FreezeLatched(); engaging ?
-                // LatchThenTransport(true, ...) : app_->SetFreezeLatched(false)`)
-                // -- converted here into "set to this absolute target" by
-                // only dispatching when the toggle would actually move the
-                // latch to match what the host asked for.
+                // LatchThenTransport(true, ...) : (freezeEngagedWhileTransportRunning_
+                // ? StartTransport() : app_->SetFreezeLatched(false))`) --
+                // converted here into "set to this absolute target" by only
+                // dispatching when the toggle would actually move the latch
+                // to match what the host asked for.
                 if (hostTarget != engine_.Application().FreezeLatched()) {
                     engine_.Application().PortableSurface().DispatchAction(
                         synth::ui::Action::Named(synth_froggers::FroggersActions::kFreeze));

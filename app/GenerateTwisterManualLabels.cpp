@@ -7,13 +7,14 @@
 // (synth::ToJSON on the MidiControllerProfileConfig FroggersMidiCatalog()
 // installs), embedded here as "preset" so the render script can confirm it
 // recognizes every field on an encoder turn or push -- this file never
-// re-types a control address by hand, and a later change to that mapping (a
-// per-encoder shifted job, say) fails the render instead of going unlabelled.
+// re-types a control address by hand, and a later change to that mapping
+// fails the render instead of going unlabelled.
 //
 // Alongside the raw preset, this program writes the two label tables the
 // render script and the drift check both read rather than re-deriving:
 // "encoders" (16 rows, one per physical grid position, each carrying what its
-// turn moves and what its push does) and "sideButtons" (6 rows, one per
+// turn moves, what it moves instead while Shift is held, and what its push
+// does) and "sideButtons" (6 rows, one per
 // physical place on the unit, derived from each button's own CC rather than
 // its position in the catalog's array). Every label comes from data the
 // preset or FroggersMidiCatalog() already carries -- an app action's display
@@ -230,6 +231,9 @@ int main(int argc, char** argv) {
 
     std::array<bool, kEncoderCount> turnSeen{};
     std::array<std::string, kEncoderCount> turnLabels;
+    // The turn's shifted job, in the same label vocabulary the Controllers
+    // page shows (EncoderShiftedJobCatalog(): "(none)" or "Scene Blend").
+    std::array<std::string, kEncoderCount> turnShiftedJobLabels;
     for (const synth::EncoderMidiMapping& turn : turns) {
         if (turn.position >= kEncoderCount || turnSeen[turn.position]) {
             std::fprintf(stderr, "GenerateTwisterManualLabels: encoder turn position %zu is out of range or duplicated\n",
@@ -248,6 +252,14 @@ int main(int argc, char** argv) {
         } else {
             turnLabels[turn.position] = "Slot " + std::to_string(turn.position);
         }
+        const std::vector<std::string>& shiftedJobCatalog = synth::EncoderShiftedJobCatalog();
+        const std::size_t shiftedJobIx = static_cast<std::size_t>(turn.shiftedJob);
+        if (shiftedJobIx >= shiftedJobCatalog.size()) {
+            std::fprintf(stderr, "GenerateTwisterManualLabels: encoder turn at position %zu has an unknown shifted job\n",
+                         turn.position);
+            return 1;
+        }
+        turnShiftedJobLabels[turn.position] = shiftedJobCatalog[shiftedJobIx];
     }
     for (std::size_t position = 0; position < kEncoderCount; ++position) {
         if (!turnSeen[position]) {
@@ -277,6 +289,10 @@ int main(int argc, char** argv) {
         synth::JSON entry = arena.Object();
         entry.SetNew("position", arena.Integer(static_cast<std::int64_t>(position)));
         entry.SetNew("turn", arena.String(turnLabels[position].c_str()));
+        // What this turn does while Shift is held: "(none)" (the ordinary
+        // turn keeps its job) or the shifted job's own Controllers-page
+        // label, e.g. "Scene Blend".
+        entry.SetNew("shiftedTurn", arena.String(turnShiftedJobLabels[position].c_str()));
         // Every encoder push drills into its own slot's modulation, exactly
         // like an on-screen press (MANUAL.md's "What can be mapped"); the
         // mapping carries no separate job field for this, so the fact drawn

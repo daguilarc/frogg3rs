@@ -4,81 +4,97 @@
     {
       "position": 0,
       "turn": "Slot 0",
+      "shiftedTurn": "(none)",
       "push": "Drill"
     },
     {
       "position": 1,
       "turn": "Slot 1",
+      "shiftedTurn": "(none)",
       "push": "Drill"
     },
     {
       "position": 2,
       "turn": "Slot 2",
+      "shiftedTurn": "(none)",
       "push": "Drill"
     },
     {
       "position": 3,
       "turn": "Slot 3",
+      "shiftedTurn": "(none)",
       "push": "Drill"
     },
     {
       "position": 4,
       "turn": "Slot 4",
+      "shiftedTurn": "(none)",
       "push": "Drill"
     },
     {
       "position": 5,
       "turn": "Slot 5",
+      "shiftedTurn": "(none)",
       "push": "Drill"
     },
     {
       "position": 6,
       "turn": "Slot 6",
+      "shiftedTurn": "(none)",
       "push": "Drill"
     },
     {
       "position": 7,
       "turn": "Slot 7",
+      "shiftedTurn": "(none)",
       "push": "Drill"
     },
     {
       "position": 8,
       "turn": "Slot 8",
+      "shiftedTurn": "(none)",
       "push": "Drill"
     },
     {
       "position": 9,
       "turn": "Slot 9",
+      "shiftedTurn": "(none)",
       "push": "Drill"
     },
     {
       "position": 10,
       "turn": "Slot 10",
+      "shiftedTurn": "(none)",
       "push": "Drill"
     },
     {
       "position": 11,
       "turn": "Slot 11",
+      "shiftedTurn": "(none)",
       "push": "Drill"
     },
     {
       "position": 12,
       "turn": "Slot 12",
+      "shiftedTurn": "(none)",
       "push": "Drill"
     },
     {
       "position": 13,
       "turn": "Slot 13",
+      "shiftedTurn": "(none)",
       "push": "Drill"
     },
     {
       "position": 14,
       "turn": "Crispy",
+      "shiftedTurn": "(none)",
       "push": "Drill"
     },
     {
       "position": 15,
       "turn": "Crunchy",
+      "shiftedTurn": "Scene Blend",
       "push": "Drill"
     }
   ],
@@ -281,7 +297,8 @@
             "type": "cc"
           },
           "slotIx": 0,
-          "position": 15
+          "position": 15,
+          "shiftedJob": "sceneBlend"
         }
       ],
       "pushes": [

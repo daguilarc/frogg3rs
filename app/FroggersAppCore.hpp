@@ -623,10 +623,13 @@ public:
     // tempoExternallyClocked_ below, same cross-thread contract -- lets the
     // surface (message thread) know whether the transport is currently
     // running without reading `context_->masterClock` directly (audio-
-    // thread-owned per AppContext.hpp). Used only to annotate the BPM
-    // control, which has zero audible effect while the gate is closed
-    // outright (ProcessBlock()'s own comment on `gateOpen`) -- no wiring
-    // change, this is a read-only discoverability aid.
+    // thread-owned per AppContext.hpp). Three readers: ArmRecording()
+    // above, which refuses to arm while stopped; and, in
+    // FroggersUiSurface.hpp, the Play plate's Draw node, which reads this
+    // fresh on every rebuild to swap to its held colours while the
+    // transport runs, and the kFreeze branch's ENGAGE side, which records
+    // it so the matching RELEASE knows whether to resume the transport or
+    // only clear the latch.
     bool TransportRunning() const { return transportRunningDisplay_.load(std::memory_order_acquire); }
 
     // Published once per block alongside
@@ -959,10 +962,15 @@ public:
             // to hold the voices open itself: while Freeze is engaged the
             // gate stays OPEN, voices sit at their sustain level, and the
             // chain keeps being fed for as long as the operator holds the
-            // latch. Releasing it drops the gate back to the transport's own
-            // answer (false while stopped), so the voices release and the
-            // teardown silences the instrument -- the escape hatch is
-            // unchanged.
+            // latch. Releasing the latch while the transport was stopped
+            // when Freeze engaged drops the gate back to the transport's own
+            // answer (false), so the voices release and the teardown
+            // silences the instrument. Releasing it while the transport was
+            // running when Freeze engaged instead restarts the transport
+            // (FroggersUiSurface.hpp's kFreeze release branch pushes the
+            // same MessageIn::Start the kPlay branch pushes), so the gate
+            // stays open on the transport's own answer and the drone
+            // continues as ordinary playback rather than silencing.
             audioAdsr_.setGate(gateOpen || FreezeLatched());
 
             // Stop-transport reset (see wasTransportRunning_'s own comment):

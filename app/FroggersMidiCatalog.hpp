@@ -20,7 +20,11 @@
 // Shift itself: left column top to bottom Bank Next/Bank Previous,
 // Play/Stop, Freeze/Reset Page; right column Scene 1/Scene 2, Randomize
 // Page/Randomize All; Shift sits at the bottom right. CC Hold is required
-// on every side button because the release is what ends Shift.
+// on every side button because the release is what ends Shift. The
+// encoder that moves Crunchy (position kFroggersCrunchySlot) carries a
+// shifted job too: while Shift is held, turning it moves the scene blend
+// instead and Crunchy does not move; released, the same turn moves
+// Crunchy again. No other Twister encoder has a shifted job.
 //
 // APC40 mkII (Generic): the unit's eight device knobs follow whichever
 // Track Select button is lit (track 1 = channel 0), so Track 1 must stay
@@ -98,6 +102,14 @@ inline synth::MidiAppDeviceDefault TwisterDeviceDefault() {
 
     synth::MidiControllerProfileConfig config;
     config.encoderInput = synth::EncoderMidiInConfig::TwisterDefault(0);
+    // Crunchy's own turn gets a second job under Shift: the scene blend.
+    // Found by slot, not by writing its CC number into this preset again.
+    for (synth::EncoderMidiMapping& turn : config.encoderInput->turns) {
+        if (turn.position == kFroggersCrunchySlot) {
+            turn.shiftedJob = synth::EncoderShiftedJob::SceneBlend;
+            break;
+        }
+    }
     config.encoderOutput = synth::EncoderMidiOutConfig::TwisterDefault(0);
     config.systemMessages = {
         AppActionButton(synth::MidiControlAddress{.channel = 3, .cc = 8}, FroggersActions::kBankNext, "",

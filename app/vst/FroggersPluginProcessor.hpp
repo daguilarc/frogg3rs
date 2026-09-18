@@ -87,14 +87,14 @@
 // binary runs no message loop, so juce::Timer callbacks never fire on
 // their own -- see PumpMessageThreadForTest()'s own comment).
 //
-// Host parameters (frogg3rs-vst-host spec, "Parameters are external via a
+// Host parameters (froggers-vst-host spec, "Parameters are external via a
 // stable automation surface"): every user parameter of the six-bank model
 // (FroggersParameterModel, app/FroggersParameters.hpp) is exposed as a
 // juce::AudioProcessorParameter with a flat stable ID, bridged
 // BIDIRECTIONALLY to FroggersParameterModel -- the app's single parameter
 // authority -- plus Freeze (already wired via DispatchAction).
-// SAME audio-thread/message-thread split as 6.1/6.3 above, extended, not
-// replaced: processBlock() (audio thread) additionally publishes each
+// SAME audio-thread/message-thread split as the host transport and tempo
+// producers above, extended, not replaced: processBlock() (audio thread) additionally publishes each
 // parameter's current value into a per-parameter atomic UIState snapshot
 // (Parameter::PopulateUIState(), the exact call synth::Engine's own
 // ProcessBlock already makes for its throttled UI publish -- see
@@ -103,7 +103,8 @@
 // one); timerCallback() (message thread, via PumpHostParameterBridge()) is
 // the ONLY thing that reads those snapshots to notify the host, and the
 // ONLY thing that pushes a host-driven write into the core (via the SAME
-// engine_.UiBus().Push()/DispatchAction() seams 6.1/6.3/Freeze already use)
+// engine_.UiBus().Push()/DispatchAction() seams the host transport, host
+// tempo, and Freeze producers already use)
 // -- processBlock() still never touches UiBus or DispatchAction itself. No
 // plugin-side MIDI mapping or MIDI learn exists anywhere in this class (per
 // the governing spec): DAW-side MIDI mapping reaches this instrument
@@ -249,7 +250,7 @@ public:
     void TestStartTransport();
     void TestStopTransport();
 
-    // --- 6.4 test seam ----------------------------------------------------
+    // --- timerCallback() test seam -----------------------------------------
     // A headless CTest binary runs no JUCE message loop, so a real
     // juce::Timer started via startTimerHz() never fires on its own --
     // juce_events' dispatch loop is what calls timerCallback(), and nothing
@@ -293,16 +294,16 @@ public:
     // releaseResourcesSeen_'s own comment).
     static constexpr std::uint64_t kStaleActivityWindowMicros = 1'000'000;
 
-    // Test-only accessors (6.4): the real consumer/producer state
+    // Test-only accessors (alongside the timerCallback() test seam above): the real consumer/producer state
     // app/vst/FroggersVstHostTests.cpp asserts against, rather than a
     // second, weaker copy of it. ApplicationForTest() is the same
     // FroggersApp& TestStartTransport()/timerCallback() already drive
     // (DisplayTempoBpm()/TempoExternallyClocked()/FreezeLatched()/
     // TransportRunning()/RequestTempoBpm() -- all real, existing
     // FroggersAppCore API, see that file's own comments). UiBusPendingCount
-    // ForTest() reads engine_.UiBus().Size() (MessageInBus::Size(),
-    // External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:1022) -- the actual SPSC ring buffer 6.1/6.3
-    // push onto, letting a test count messages AT THE BUS, without draining
+    // ForTest() reads engine_.UiBus().Size() (MessageInBus::Size() in
+    // External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp) -- the actual SPSC ring buffer the
+    // host transport and tempo producers push onto, letting a test count messages AT THE BUS, without draining
     // them (draining only happens inside
     // engine_.ProcessBlock(), i.e. only when the test itself calls
     // processBlock() again).
@@ -433,8 +434,8 @@ private:
     bool lastHostIsPlaying_ = false;
 
     // -- host tempo via external-clock slaving -------------------------
-    // Same audio-thread/message-thread split as 6.1 above: processBlock()
-    // republishes what it read from the playhead into these atomics;
+    // Same audio-thread/message-thread split as the host transport producer
+    // above: processBlock() republishes what it read from the playhead into these atomics;
     // timerCallback() is the only reader, and the only thing that acts on
     // them (engine_.RequestSyncConfiguration()/engine_.UiBus().Push()).
     // hostTempoValid_ covers BOTH "no playhead at all" and "playhead present

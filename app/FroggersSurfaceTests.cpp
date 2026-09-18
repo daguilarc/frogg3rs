@@ -3037,6 +3037,110 @@ TEST_CASE(transport_survives_audio_device_reprepare_after_play) {
     REQUIRE_TRUE(rig.Engine().Clock().TransportState() == synth::ClockTransportState::Stopped);
 }
 
+// --- Play plate reflects the transport ----------------------------------
+
+// A pure function of (bounds, running) -- no rig needed. Asserts the
+// EXCHANGE, not merely that the two command lists differ -- same shape as
+// freeze_draw_commands_genuinely_invert_plate_and_glyph_colours above.
+TEST_CASE(play_draw_commands_swap_plate_and_glyph_colours_while_running) {
+    const synth::ui::Bounds bounds{0.0f, 0.0f, synth_froggers::kTransportPlateSize,
+                                    synth_froggers::kTransportPlateSize};
+    const std::vector<synth::ui::DrawCommand> idle = synth_froggers::BuildPlayDrawCommands(bounds, false);
+    const std::vector<synth::ui::DrawCommand> held = synth_froggers::BuildPlayDrawCommands(bounds, true);
+
+    REQUIRE_TRUE(idle.size() == 2);
+    REQUIRE_TRUE(held.size() == 2);
+    REQUIRE_TRUE(idle[0].kind == synth::ui::DrawCommand::Kind::FillRoundedRect);
+    REQUIRE_TRUE(idle[1].kind == synth::ui::DrawCommand::Kind::FillPolygon);
+    REQUIRE_TRUE(held[0].kind == synth::ui::DrawCommand::Kind::FillRoundedRect);
+    REQUIRE_TRUE(held[1].kind == synth::ui::DrawCommand::Kind::FillPolygon);
+
+    REQUIRE_TRUE(idle[0].color == synth_froggers::kTransportPlateColor);
+    REQUIRE_TRUE(idle[1].color == synth::Color::Green);
+    REQUIRE_TRUE(held[0].color == synth::Color::Green);
+    REQUIRE_TRUE(held[1].color == synth_froggers::kTransportPlateColor);
+    // The exchange itself, asserted directly: held's plate is idle's glyph
+    // colour and vice versa.
+    REQUIRE_TRUE(held[0].color == idle[1].color);
+    REQUIRE_TRUE(held[1].color == idle[0].color);
+    REQUIRE_TRUE(idle[0].color != idle[1].color);  // the two colours are genuinely distinct to begin with.
+}
+
+// The Play plate's own current plate/glyph colours, read straight off a
+// freshly built tree -- reused below at every step of the press sequence so
+// each check reads live app state through the real surface, never a cached
+// snapshot.
+std::pair<synth::Color, synth::Color> ReadPlayPlateColors(synth::ui::Surface& surface) {
+    const synth::ui::NodeTree tree = surface.BuildTree();
+    const synth::ui::Node* playNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kPlay);
+    REQUIRE_TRUE(playNode != nullptr);
+    REQUIRE_TRUE(playNode->drawCommands.size() == 2);
+    return {playNode->drawCommands[0].color, playNode->drawCommands[1].color};
+}
+
+TEST_CASE(play_plate_is_held_while_the_transport_runs) {
+    // A transport started by a path that never goes through the surface (no
+    // SetDesiredTransportRunning call at all) must still show the held plate
+    // -- the plate reads the master clock's own published state
+    // (FroggersAppCore::TransportRunning), not a record of the surface's own
+    // presses.
+    {
+        synth_rig::SynthRig<synth_froggers::FroggersApp> startAtRig(
+            /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("play_plate_held_via_start_at"));
+        startAtRig.RunBlocks(4);
+        startAtRig.StartAt(0);
+        startAtRig.RunBlocks(1);
+        synth::ui::Surface& startAtSurface = startAtRig.Application().PortableSurface();
+        const auto [startAtPlate, startAtGlyph] = ReadPlayPlateColors(startAtSurface);
+        REQUIRE_TRUE(startAtPlate == synth::Color::Green);
+        REQUIRE_TRUE(startAtGlyph == synth_froggers::kTransportPlateColor);
+    }
+
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("play_plate_held_while_running"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+
+    const auto [idlePlate, idleGlyph] = ReadPlayPlateColors(surface);
+    REQUIRE_TRUE(idlePlate == synth_froggers::kTransportPlateColor);
+    REQUIRE_TRUE(idleGlyph == synth::Color::Green);
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
+    rig.RunBlocks(1);
+    const auto [heldPlate, heldGlyph] = ReadPlayPlateColors(surface);
+    REQUIRE_TRUE(heldPlate == synth::Color::Green);
+    REQUIRE_TRUE(heldGlyph == synth_froggers::kTransportPlateColor);
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
+    rig.RunBlocks(1);
+    const auto [stoppedPlate, stoppedGlyph] = ReadPlayPlateColors(surface);
+    REQUIRE_TRUE(stoppedPlate == idlePlate);
+    REQUIRE_TRUE(stoppedGlyph == idleGlyph);
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
+    rig.RunBlocks(1);
+    const auto [heldAgainPlate, heldAgainGlyph] = ReadPlayPlateColors(surface);
+    REQUIRE_TRUE(heldAgainPlate == heldPlate);
+    REQUIRE_TRUE(heldAgainGlyph == heldGlyph);
+
+    // Freeze engages: stops the transport while the drone holds -- the Play
+    // plate drops back to idle.
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kFreeze));
+    rig.RunBlocks(1);
+    const auto [frozenPlate, frozenGlyph] = ReadPlayPlateColors(surface);
+    REQUIRE_TRUE(frozenPlate == idlePlate);
+    REQUIRE_TRUE(frozenGlyph == idleGlyph);
+
+    // Freeze releases: this latch engaged while running, so release resumes
+    // the transport -- the Play plate is held again.
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kFreeze));
+    rig.RunBlocks(1);
+    const auto [resumedPlate, resumedGlyph] = ReadPlayPlateColors(surface);
+    REQUIRE_TRUE(resumedPlate == heldPlate);
+    REQUIRE_TRUE(resumedGlyph == heldGlyph);
+}
+
 // --- Record capture, app core only -----------------------------
 //
 // FroggersAppCore's own bounded mono capture buffer -- arm/stop API, refusal

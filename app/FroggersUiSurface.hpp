@@ -594,9 +594,15 @@ inline PlateAndInsetBox BuildPlateAndInsetBox(synth::ui::Bounds bounds, synth::C
     };
 }
 
-inline std::vector<synth::ui::DrawCommand> BuildPlayDrawCommands(synth::ui::Bounds bounds) {
+// `running` swaps the plate and glyph colours outright while the transport
+// runs -- the same genuine colour EXCHANGE BuildFreezeDrawCommands' own
+// `latched` and BuildRecordDrawCommands' own `armed` make, not a brightness
+// bump, so the plate says whether the instrument is playing.
+inline std::vector<synth::ui::DrawCommand> BuildPlayDrawCommands(synth::ui::Bounds bounds, bool running) {
+    const synth::Color plateColor = running ? synth::Color::Green : kTransportPlateColor;
+    const synth::Color glyphColor = running ? kTransportPlateColor : synth::Color::Green;
     std::vector<synth::ui::DrawCommand> commands;
-    const PlateAndInsetBox plate = BuildPlateAndInsetBox(bounds, kTransportPlateColor);
+    const PlateAndInsetBox plate = BuildPlateAndInsetBox(bounds, plateColor);
     commands.push_back(plate.plate);
     const float left = plate.inset.x;
     const float right = plate.inset.x + plate.inset.width;
@@ -608,7 +614,7 @@ inline std::vector<synth::ui::DrawCommand> BuildPlayDrawCommands(synth::ui::Boun
             synth::ui::Point{left, bottom},
             synth::ui::Point{right, (top + bottom) * 0.5f},
         },
-        synth::Color::Green));
+        glyphColor));
     return commands;
 }
 
@@ -622,9 +628,11 @@ inline std::vector<synth::ui::DrawCommand> BuildStopDrawCommands(synth::ui::Boun
 
 // Freeze, third transport plate beside Play/Stop -- same plate-plus-glyph idiom as
 // BuildPlayDrawCommands/BuildStopDrawCommands above (rounded-rect plate,
-// inset glyph at kTransportIconFraction), but with a `latched` parameter the
-// other two do not take. A diamond glyph, visually distinct from Play's
-// triangle and Stop's square.
+// inset glyph at kTransportIconFraction). BuildPlayDrawCommands takes a
+// `running` flag with the same swap-on-true shape as this function's own
+// `latched`; BuildStopDrawCommands alone takes no state flag -- Stop has no
+// held state, a stopped transport being Play's own idle state. A diamond
+// glyph, visually distinct from Play's triangle and Stop's square.
 //
 // WHY A Draw NODE AND NOT A Button: `StateColourFor` renders
 // `ControlStyle::selected` as `brighter(0.14f)` on
@@ -1279,7 +1287,20 @@ private:
                 playStyle.action = synth::ui::Action::Named(FroggersActions::kPlay);
                 playStyle.layout.main = synth::ui::Extent::Px(kTransportPlateSize);
                 playStyle.layout.cross = synth::ui::Extent::Px(kTransportPlateSize);
-                b.Draw(FroggersNodeIds::kPlay, BuildPlayDrawCommands, playStyle);
+                // A capturing lambda wrapping BuildPlayDrawCommands (it
+                // takes a `running` bool the DrawFactory signature --
+                // Bounds only -- has no room for), same idiom the Freeze
+                // lambda just below uses for its own `latched` bool. Reads
+                // app->TransportRunning() fresh on every call rather than a
+                // value cached at click time, so the plate follows the
+                // transport on the very next rebuild, whichever route
+                // started or stopped it.
+                b.Draw(
+                    FroggersNodeIds::kPlay,
+                    [app](synth::ui::Bounds bounds) {
+                        return BuildPlayDrawCommands(bounds, app != nullptr && app->TransportRunning());
+                    },
+                    playStyle);
 
                 synth::ui::ControlStyle stopStyle{};
                 stopStyle.action = synth::ui::Action::Named(FroggersActions::kStop);
@@ -2201,7 +2222,7 @@ private:
         // Generic, safe over the existing uiBus (see this file's header
         // comment): transport, scene select/blend, encoder drag.
         if (action.name == FroggersActions::kPlay) {
-            // Play disarms the Freeze latch (operator 2026-08-17): a
+            // Play disarms the Freeze latch: a
             // latched Freeze holds the voice gate OPEN unconditionally
             // (FroggersAppCore's `setGate(gateOpen || FreezeLatched())`),
             // so starting the transport with the latch still engaged would
@@ -2210,8 +2231,7 @@ private:
             // would not actually return the instrument to playing. See
             // LatchThenTransport's own comment for the happens-before
             // ordering this relies on.
-            LatchThenTransport(false, synth::MessageIn::Start(NowMicros()), true);
-            transportNotice_.clear();
+            StartTransport();
             return;
         }
         if (action.name == FroggersActions::kStop) {
@@ -2231,18 +2251,26 @@ private:
             // ENGAGE (latch false -> true): same as the kStop branch above,
             // including SetDesiredTransportRunning(false) -- see
             // LatchThenTransport's own comment for why both the ordering
-            // and the recorded intent matter here.
+            // and the recorded intent matter here. Records whether the
+            // transport was actually running right before it stops, in
+            // freezeEngagedWhileTransportRunning_ below, for RELEASE to read.
             //
-            // RELEASE (latch true -> false): do NOT start the transport --
-            // the operator resumes with Play, not by releasing Freeze. No
-            // MessageIn is pushed on release; FroggersAppCore's existing
-            // "latch released while already stopped" edge
-            // (`latchReleasedWhileStopped`, FroggersAppCore.hpp) is what
-            // notices the plain atomic flip and runs the teardown that
-            // silences the held drone.
+            // RELEASE (latch true -> false): returns the transport to where
+            // it was when Freeze engaged. If it was running,
+            // StartTransport() runs -- the same call the kPlay branch above
+            // makes, so releasing Freeze is pressing Play, exactly as the
+            // operator described it. If it was already stopped, this only
+            // clears the latch, same as before this branch existed;
+            // FroggersAppCore's existing "latch released while already
+            // stopped" edge (`latchReleasedWhileStopped`, FroggersAppCore.hpp)
+            // is what notices the plain atomic flip and runs the teardown
+            // that silences the held drone.
             const bool engaging = !app_->FreezeLatched();
             if (engaging) {
+                freezeEngagedWhileTransportRunning_ = app_->TransportRunning();
                 LatchThenTransport(true, synth::MessageIn::Stop(NowMicros()), false);
+            } else if (freezeEngagedWhileTransportRunning_) {
+                StartTransport();
             } else {
                 app_->SetFreezeLatched(false);
             }
@@ -2448,6 +2476,17 @@ private:
         app_->SetDesiredTransportRunning(running);
     }
 
+    // Starts the transport: disarms the Freeze latch, pushes the same
+    // MessageIn::Start every Play press pushes, records the desired-running
+    // intent, and clears the transport notice -- the one definition of
+    // "start the transport" the kPlay branch above and the Freeze release
+    // branch above both call, so the two can never drift apart in what
+    // starting means.
+    void StartTransport() {
+        LatchThenTransport(false, synth::MessageIn::Start(NowMicros()), true);
+        transportNotice_.clear();
+    }
+
     std::uint64_t NowMicros() const {
         if (context_ != nullptr && context_->now) {
             return context_->now();
@@ -2472,10 +2511,19 @@ private:
     // dispatched) renders exactly as before.
     bool narrowViewport_ = false;
     // The refusal text shown in the transport row until a recording arms or
-    // Play is pressed. Set by HandleAction's kRecord/kPlay branches below,
-    // read fresh into the transport row lambda every rebuild, same
-    // per-frame idiom as pluginHostMode_/narrowViewport_ above.
+    // the transport starts. Set by HandleAction's kRecord branch and
+    // cleared by StartTransport() (the kPlay branch, and the Freeze release
+    // that resumes playing), read fresh into the transport row lambda every
+    // rebuild, same per-frame idiom as pluginHostMode_/narrowViewport_
+    // above.
     std::string transportNotice_;
+    // Whether the transport was running the moment Freeze last engaged the
+    // latch (HandleAction's kFreeze branch, ENGAGE side) -- read on the
+    // matching RELEASE so releasing Freeze can return the transport to
+    // where it was: StartTransport() if it was running, a plain latch clear
+    // if it was already stopped. Meaningless while the latch is
+    // disengaged; only ever read immediately after `engaging` reads false.
+    bool freezeEngagedWhileTransportRunning_ = false;
     // See SetInputOptions()'s own comment. Defaults to just "None" (index
     // 0), the same "unavailable" reading a disabled/zero-channel bus
     // produces -- so a plugin-host construction that has not yet called

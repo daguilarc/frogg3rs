@@ -1,0 +1,56 @@
+--- a/FroggersAppCore.hpp
++++ b/FroggersAppCore.hpp
+@@ -1445,6 +1445,11 @@
+     // as `TestOutputLimiter()` above, but for the independently-tuned
+     // second instance rather than the master.
+     dsp::OutputLimiter& TestFilterPeakLimiter() { return filterChain_.peakLimiter; }
++    dsp::FilterFxChain& TestFilterChain() { return filterChain_; }
++    struct ScratchTaps {
++        std::vector<float> driveOut, filterOut, peakLeg, combLeg, masterInL, masterInR, combFb, combDelay, combDrive, mixed;
++    };
++    ScratchTaps* testTaps_ = nullptr;
+     // Test/inspection access to the MASTER output limiter, same
+     // convention as the accessors above -- lets tests call Process()/
+     // Reset() directly and read `envelope` without going through the full
+@@ -2083,6 +2088,18 @@
+         const float filterOut = RouteFilterBank(driveOut);
+         const dsp::StereoSample delayOut = RouteDelayBank(filterOut);
+         const dsp::StereoSample reverbOut = RouteReverbBank(delayOut);
++        if (testTaps_ != nullptr) {
++            testTaps_->driveOut.push_back(driveOut);
++            testTaps_->filterOut.push_back(filterOut);
++            testTaps_->peakLeg.push_back(filterChain_.tapPeakLeg);
++            testTaps_->combLeg.push_back(filterChain_.tapCombLeg);
++            testTaps_->masterInL.push_back(reverbOut.l);
++            testTaps_->masterInR.push_back(reverbOut.r);
++            testTaps_->combFb.push_back(filterChain_.comb.feedback);
++            testTaps_->combDelay.push_back(filterChain_.comb.delaySamples);
++            testTaps_->combDrive.push_back(filterChain_.comb.combDrive);
++            testTaps_->mixed.push_back(filterChain_.tapMixed);
++        }
+         return SanitizeOutputSample(reverbOut);
+     }
+ 
+--- a/dsp/FilterFx.hpp
++++ b/dsp/FilterFx.hpp
+@@ -681,6 +681,10 @@
+     // sound for no measured benefit -- the measurement traced the offender
+     // to the peak specifically, so only the peak gets treated.
+     OutputLimiter peakLimiter;
++    // SCRATCH TAPS (measurement only).
++    float tapPeakLeg = 0.0f;
++    float tapCombLeg = 0.0f;
++    float tapMixed = 0.0f;
+ 
+     // This struct's own contribution to the "every stateful unit in
+     // the audio path" enumeration -- lists ONLY the members declared above
+@@ -873,6 +877,9 @@
+         // comment (dsp/Limiter.hpp).
+         const FloorBlendGains blendGains = FlooredEqualPowerBlend(combPeakBlend);
+         const float mixed = peakPath * blendGains.legA + combPath * blendGains.legB;
++        tapPeakLeg = peakPath * blendGains.legA;
++        tapCombLeg = combPath * blendGains.legB;
++        tapMixed = mixed;
+         return mixed;
+     }
+ };

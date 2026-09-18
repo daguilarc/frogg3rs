@@ -1,0 +1,10 @@
+--- a/FroggersAudioRoutingTests.cpp
++++ b/FroggersAudioRoutingTestsBypass.cpp
+@@ -1348,6 +1348,7 @@
+ // -----------------------------------------------------------------------
+ TEST_CASE(gate_period_tracks_tempo_change) {
+     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("tempo_tracks_gate"));
++    rig.Application().TestFilterPeakLimiter().Configure(48000.0f, 1.0e6f, 2.0e6f, dsp::kPeakLimiterAttackSeconds, dsp::kPeakLimiterReleaseSeconds);
+     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+     model.PageParameter(synth_froggers::FroggersBankId::Drive, 1).SceneCenter(0) = 0.8f;
+     model.PageParameter(synth_froggers::FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;
