@@ -262,19 +262,26 @@ granted. A stopped recording downloads as `YYYY-MM-DD.wav`.
 The Controllers page exists in the standalone and browser builds (the plugin takes MIDI through host
 automation, as the Plugin subsection says). The add row at the bottom offers a **Preset** selector —
 **MIDI Fighter Twister**, **Akai APC40 mkII (Generic)**, **Akai APC40 mkII (Ableton)**,
-**Launchpad X**, **Launchpad Pro MK3**, **Launchpad Mini MK3**, or a **Custom** entry for each
-device kind — and an **Add** button. Choosing a named preset and pressing Add installs a new row
-carrying that preset's complete mapping; choosing Custom installs an empty, unbound row of that
-device kind. A row keeps the identity of the preset that created it for as long as the row exists,
-even after its mappings are edited by hand; if a row's mappings later diverge from what its preset
-installs, a **Restore** button appears on the row, and pressing it reinstalls the preset's mappings
-without renaming the row, changing its ports, or releasing it. A newly connected Twister, APC40, or
-Launchpad is also offered through the page's configure flow.
+**Launchpad X**, **Launchpad Pro MK3**, **Launchpad Mini MK3**, **WRLD.Bldr**, or **Custom** — and
+an **Add** button. Choosing a named preset and pressing Add installs a new row carrying that
+preset's complete mapping. Choosing Custom and pressing Add installs a row named **Custom** (with a
+number appended when that name is taken); it carries no mappings and no bound MIDI in/out ports, so
+its device reads "(none)" until a MIDI in device is bound. Rename it from the **Name** field in
+the row's expanded editor, the same as any row (see Renaming, below). The selector opens on its
+first entry, one of the named presets above, so pressing Add without choosing anything installs
+that preset rather than Custom. A row keeps the identity of the preset that created it for as long
+as the row exists, even after its mappings are edited by hand; if a row's mappings later diverge
+from what its preset installs, a **Restore** button appears on the row, and pressing it reinstalls
+the preset's mappings without renaming the row, changing its ports, or releasing it. A newly
+connected Twister, APC40, or Launchpad is also offered through the page's configure flow.
 
 ### Reading a controller row
 
 Each row is two lines. The first line shows the disclosure arrow, the controller's name, and its
-device (MF Twister, Generic, Launchpad). The second line holds a status dot before each of the
+device. The device is the preset that created the row (for example **MIDI Fighter Twister** or
+**Launchpad X**) for as long as that preset still resolves; otherwise it is the MIDI input the row
+is bound to, or "(none)" until one is bound. A Custom row has no preset, so it always shows this
+way. The second line holds a status dot before each of the
 **MIDI in** and **MIDI out** port selectors, then **Delete**; **Restore**, on a row created from a
 preset whose mappings no longer match it; and **Release**, on a row created from a preset the
 current build still recognises, once both ports are bound. A legend above the first row names the
