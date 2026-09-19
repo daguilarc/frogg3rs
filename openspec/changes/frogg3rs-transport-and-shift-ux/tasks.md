@@ -7,9 +7,10 @@ Sheaf `f73d4202`, and carried onto the next base by group 7. A Check that
 reports a run's counts reports that run; group 9 repeats every run on the
 current base.
 
-The open work runs in this order: the postflight (9.0), which reads the
-documentation, then 9.1, 9.2 and the commit to this worktree (9.3). Group 10
-runs after the operator approves the 9.2 screenshots.
+The open work runs in this order: group 11 (story 5, the block end fields),
+11.1 to 11.10 in order, then group 10 once the operator approves the
+screenshots 11.9 retakes together with the 9.2 screenshots it leaves
+standing. Groups 1 to 9 are done.
 
 ## 1. Sheaf: shifted encoder turns
 
@@ -688,29 +689,261 @@ Measurements section shows.
 ## 10. Delivery
 
 - [ ] 10.1 Deliver in the proposal's order, after the operator approves the
-      9.2 screenshots:
-      - fetch `shifted-encoder-turns` from this worktree's `External/Sheaf`
+      Delivery Gate screenshots (those 11.9 retakes and the 9.2 ones it
+      leaves standing):
+      - fetch `shifted-encoder-turns`, the one Sheaf branch, which carries
+        both Sheaf openspec changes, from this worktree's `External/Sheaf`
         into the main checkout's `External/Sheaf` and push it to the fork; if
         the fork's stack tip is no longer the Sheaf base 7.3 rebased onto,
-        rebase onto the new tip and redo 9.1 and 9.2 before this push;
+        rebase onto the new tip, redo 11.8, and retake every Delivery Gate
+        screenshot (9.2's and 11.9's) before this push;
       - open the next pull request against jvictor0/Sheaf `main`, after the
         open ones, with step-by-step testing instructions for Shift +
         Crunchy on a Twister, including Restore on a row made before this
-        version;
+        version, and for the block end fields (reading and typing a Twister
+        block's last CC, a WRLD.Bldr bank-select block's last y);
       - make the "Record the delivery" commit in this worktree's
-        `External/Sheaf`, fetch and push it the same way, and pin frogg3rs at
-        that commit once `fork/shifted-encoder-turns` in the main checkout's
-        `External/Sheaf` equals it;
-      - archive this change only; `shifted-encoder-turns` stays active in
-        Sheaf. Confirm the archive from its printed output and the directory
-        move, not the exit code, since `openspec archive` exits 0 when it
-        aborts;
+        `External/Sheaf`, naming both Sheaf changes, fetch and push it the
+        same way, and pin frogg3rs at that commit once
+        `fork/shifted-encoder-turns` in the main checkout's `External/Sheaf`
+        equals it;
+      - archive this change only; `shifted-encoder-turns` and
+        `block-end-fields-show-the-last-control` stay active in Sheaf.
+        Confirm the archive from its printed output and the directory move,
+        not the exit code, since `openspec archive` exits 0 when it aborts;
       - if frogg3rs `origin/main` has moved past the base 7.3 rebased onto,
         rebase this worktree's branch onto it, pin the Sheaf tip delivered
-        above, redo 9.1, and retake the 9.2 screenshots for the operator
-        before pushing;
+        above, redo 11.8, and retake every Delivery Gate screenshot for the
+        operator before pushing;
       - commit, and fast-forward push frogg3rs `main` from this worktree's
         branch.
       Check: `git status` is clean in both trees, with no scratch edits left
       from reverted-change controls; the frogg3rs pin equals
       `fork/shifted-encoder-turns` in the main checkout's `External/Sheaf`.
+
+## 11. Story 5: block end fields show the last control
+
+The Sheaf half is the openspec change
+`External/Sheaf/openspec/changes/block-end-fields-show-the-last-control/`,
+on the branch `shifted-encoder-turns` in this worktree's `External/Sheaf`,
+the same branch as `shifted-encoder-turns`' own change; its tasks are named
+here by that change's numbers. Every new or rewritten test is shown to fail
+against the behaviour it guards, as that change's tasks say, and the report
+says so. A test not named in these tasks that goes red is reported, never
+edited. Never two builds or suites at once, background included. The
+executor's deliverable is a report; code changes are a side effect of it.
+
+- [x] 11.1 Hygiene before preflight: the Sheaf change's task 1, and a sweep
+      of the frogg3rs files story 5 touches (`app/FroggersControllersPageTests.cpp`,
+      `openspec/specs/froggers-sheaf-runtime-app/spec.md`, and the MIDI
+      controllers section of MANUAL.md) for dead code, names and paths that
+      do not resolve, and false comments or text. Fixes land in this change,
+      and both full suites run after them.
+      Check: the report names each file swept in both trees, with FOUND and
+      CHANGED per item; `make check-citations-resolve check-no-planning-history`
+      passes in `app/`; each suite's per-binary counts after the fixes match
+      its counts before them.
+- [x] 11.2 Both of the Sheaf proposal's open questions are ruled, not
+      waiting on the operator: O1, the headers of the fields a CC block and
+      a Note block share and of an analog block's first gesture, is one
+      header per field, true on every row it heads, with NEW
+      `Field::BlockStartGesture`, NEW `Field::BlockStartNote` and NEW
+      `Field::BlockEndNote` giving an analog block and a Note-addressed
+      block their own headers; O2, the rectangle-cost fix, is fixed here.
+      The Sheaf change's task 2 records both.
+      Check: the Sheaf change's task 2 names both rulings and O1's header
+      texts, and records O2 as fixed here;
+      `openspec validate --strict block-end-fields-show-the-last-control`
+      passes in `External/Sheaf`.
+- [x] 11.3 Preflight over story 5, in both trees, after 11.1 and 11.2, by
+      contexts that wrote none of it. Its axes:
+      - executability: one delegate is the executor and attempts every task
+        of the Sheaf change and of this group, resolving each named symbol,
+        file and test for existence, access and reachability;
+      - spec against code: sru-28, sru-67 and this change's
+        `specs/froggers-sheaf-runtime-app/spec.md` against the tree;
+      - blast radius: every name story 5 creates (the two translation
+        functions, the direction rule, each new header and reason, each new
+        test) grepped by operand, case-insensitively, with FOUND against
+        CHANGED per name, zeros included; and the other active changes in
+        both trees, with their overlap;
+      - the attack on the story-5 refusal code, by attackers who did not
+        write it, runs after 11.4 and 11.5 against the shipped code.
+      Before execution, its behavioural premises run in a program outside
+      the tree, built against `ee679e48`: a view model holding a row whose
+      sixteen turns on ccs 0..15 form one block reads 16 from the block's
+      end field; committing 15 there leaves fifteen turns; on a WRLD.Bldr
+      row holding only a scene-select block with start y 3 and stored end y
+      1, committing start y 1 is refused. A premise that does not reproduce
+      stops the group, and the Sheaf proposal is rewritten before 11.4.
+      Check: the report gives each axis's findings, each naming what breaks
+      if it is not fixed, and the premise program's command and output;
+      every finding is fixed in this change or recorded as open before 11.4
+      starts.
+
+      Ran, by a context that wrote none of the change. All three premises
+      reproduced, in `premises.cpp` (built against `ee679e48`): a row whose
+      sixteen turns on ccs 0..15 form one block reads "Start CC" 0, "End CC"
+      16; committing "End CC" 15 gives `ok=1`, fifteen turns committed
+      (ccs 0..14); the default WRLD.Bldr bank-select block reads
+      "Start X" 0, "End X" 8, "Start Y" 3, "End Y" 1, and committing
+      "Start Y" 1 gives `ok=0 reason="system block y range must be
+      non-empty (endY != startY)"`; the same holds on a row built to hold
+      only a scene-select block. `froggers.cpp` reproduced the same commit
+      through the frogg3rs page against a pre-shift Twister row. Of the
+      preflight's four findings: F2 (a test comment saying an edit "moves"
+      a block's row when it stretches it) and F4 (the corner check must run
+      ahead of `ExpandGridBlock`'s `size_t` overflow guard on wasm32) are
+      confirmed fixed, by reading `tests/viewmodel_tests.cpp` and Sheaf
+      task 10's text above; F3 is resolved by the O1 ruling giving a
+      Note-addressed block its own headers. F1 (wording only: the stated
+      reason for the x/y accept range must not claim the lower bound
+      protects x, which only ever runs upward) is fixed in the text: every
+      place that gives the reason already separates the two axes --
+      `proposal.md` "an x end, which only ever computes `last + 1`, takes
+      the same range for consistency" and "an x range only ever computes
+      `last + 1`, so only the upper exclusion is load-bearing for it";
+      sru-67 (`spec.md`) "an x end, whose exclusive end only ever adds one,
+      shares [the range] for consistency"; the `ApplyGridLastCoordinate`
+      comment (`MidiConfigViewModel.cpp`) "an x range, which only ever
+      computes `last + 1`, shares it". No sentence claims the lower bound
+      is load-bearing for x.
+
+      The attack ran after 11.4 and 11.5, against the shipped code, by two
+      attackers who did not write it. One typed 29 adversarial values
+      (domain edges, direction reversal, off-grid corners, an
+      `AddressType` switch mid-session) through the real
+      `ApplyMappingEdit` commit path and found no story-5 defect: every
+      value inside sru-67's documented domain was accepted and every value
+      outside it was refused, matching the spec. The other typed values
+      through the page's own field-commit action and found two cases that
+      get through: a decimal that rounds to a whole number in a `double`
+      (`"15.9999999999999999"` stored as 16) is wrongly accepted, and a
+      value with trailing whitespace (`"15 "`) is wrongly refused with
+      "value must be a finite number" while the same value with leading
+      whitespace is accepted. Both are in `ParseFiniteNumericToken`, the
+      page's shared text-field parser, used by every numeric field on the
+      page. What predates story 5 is `ParseFiniteNumericToken`'s own
+      `std::stod` path: grepping story 5's diff for `ParseFiniteNumericToken`
+      and `std::stod` against `ControllersPageUI.hpp` gives no hits from
+      story 5's own execution. Story 5's diff does add six uses of the
+      existing `IsIntegerInRange` helper in `MidiConfigViewModel.cpp` (the
+      new end-field range checks, e.g. "last x must be an integer from
+      -2147483647 to 2147483646"), an unrelated symbol -- story 5 validates
+      its own new fields with it, and never touches the parser. Fixed here
+      as a standalone parser fix, not part of story 5's end-field
+      behaviour: `ParseFiniteNumericToken` now takes whether the field is
+      an integer field (`FieldIsInteger`) and, for one, trims leading and
+      trailing whitespace and requires the trimmed text to be wholly an
+      integer literal, so a fractional value that rounding would turn into
+      a whole number is refused and a trailing space no longer differs from
+      a leading one.
+
+      A non-author read of this record found the refusal for a rejected
+      integer field still said "value must be a finite number", which is
+      false for a value like `12.5` that is finite but not a whole number.
+      Fixed: `HandleMappingFieldCommit` now refuses with "value must be an
+      integer" when the field is an integer field. Settled by committing
+      `12.5` into a Last CC field through `attack.cpp`'s harness:
+      ```
+      before: type Last CC "12.5" -> status "Refused: value must be a finite number" committed=no
+      after:  type Last CC "12.5" -> status "Refused: value must be an integer" committed=no
+      ```
+- [x] 11.4 Execute the Sheaf change's tasks 3 to 11, in order. Task 12's
+      full-suite run is discharged by 11.8's full run, not run here.
+      Check: each of tasks 3 to 11's Checks, reported with its evidence.
+- [x] 11.5 The device-label clause: a Twister row created before this
+      change, whose stored config now diverges from the current preset
+      because the preset changed under it, still offers Restore and still
+      reads "MIDI Fighter Twister" as its device label. The operator
+      confirms this by screenshot, not by an automated test (task 11.9's
+      Delivery Gate retake, before and after Restore).
+      Rewrite the "not yet delivered" Check line in this change's
+      `specs/froggers-sheaf-runtime-app/spec.md` as the operator step below.
+      Check: operator step: the Delivery Gate screenshots of an old Twister
+      row before and after Restore, both labelled 'MIDI Fighter Twister'.
+- [ ] 11.6 One non-author read of both trees, after 11.4 and 11.5 land and
+      after 11.3's attack on the story-5 refusal code has run, for false
+      text and a failing story, including any fixes the attack's findings
+      require. A finding blocks only if the story fails for a player, the
+      change fails to build, run or ship, or text is left stating something
+      false. Nothing is committed until it passes.
+      Check: the report lists each finding with what breaks; every blocking
+      finding is fixed before 11.7.
+- [ ] 11.7 The documentation step, after 11.6 passes: no documentation
+      change. Story 5 makes no MANUAL.md or QUICK_DICT.md statement false, so
+      none needs correcting.
+      Check: none.
+- [x] 11.8 After the last edit to either tree, run both full suites on the
+      exact tree to be committed, as 9.1 runs them, and
+      `make -C External/Sheaf/projects/synth/apps/miniapp test`, which
+      builds and runs the JUCE page simulation story 5 edits.
+      Check: per-binary pass and fail counts as measured, from a run started
+      after the last edit; `Frogg3rs.app`'s `CFBundleExecutable` names the
+      binary in `Contents/MacOS/`. The only failures allowed are the two 96
+      kHz deadline tests 9.1 names, named as such; every other failure is
+      fixed in this change.
+
+      Both full suites, run after the last edit to either tree, passed
+      everywhere except `braid4_deadline_tests`, which failed 5 tests under
+      load.
+
+      On a quiet machine, the base `f6266560`'s binary and this tree's
+      binary were run alternately three times each. Both failed exactly the
+      two 96 kHz tests this Check allows, with overlapping timings:
+
+      | Run | Binary | Pass | Fail | avg/p99 (44.1k / 48k / sparse-48k) | 96k avg/p99 (both fail cases) |
+      |---|---|---|---|---|---|
+      | 1 | base | 44100, 48000, sparse-48000 | 96000, sparse-96000 | 1.946/3.953ms · 1.834/2.389ms · 1.866/2.860ms | fails `avg ≤ block*0.60` |
+      | 1 | worktree | same 3 | same 2 | 1.843/2.640ms · 1.887/2.664ms · 1.843/2.428ms | fails `avg ≤ block*0.60` |
+      | 2 | base | same 3 | same 2 | 1.795/2.395ms · 1.778/2.295ms · 1.818/2.465ms | fails |
+      | 2 | worktree | same 3 | same 2 | 1.786/2.416ms · 1.801/2.466ms · 1.850/2.482ms | fails |
+      | 3 | base | same 3 | same 2 | 1.793/2.395ms · 1.809/2.593ms · 1.846/2.422ms | fails |
+      | 3 | worktree | same 3 | same 2 | 1.799/2.368ms · 1.817/2.601ms · 1.843/2.529ms | fails |
+
+      No code this change edits runs in the timed path. The working tree's
+      touched files (`ControllersPageUI.hpp`, `MidiConfigBlocks.*`,
+      `MidiConfigViewModel.*`) are not linked into `braid4_deadline_tests`
+      at all (`nm` on the built binary: zero occurrences of
+      `ControllersLayout` or `MidiConfigViewModel`). The committed diff's
+      files that are linked (`MidiController.*`, `ParameterModulation.*`)
+      add only new, additive code behind conditions the deadline test's
+      timed loop never satisfies (it never constructs an
+      `EncoderMidiInProcessor` and never pushes MIDI or message-bus
+      traffic); no pre-existing instruction the timed loop executes was
+      altered.
+
+      Evidence: the full-suite, under-load run is the final message of
+      `/private/tmp/claude-501/-Users-diegoaguilar-canabal-Desktop/95b3e152-30a4-4d05-ad3a-a46a2d50d5a3/tasks/acb45504c8b876330.output`;
+      the quiet-machine alternation and the link-closure trace are the
+      final message of
+      `/private/tmp/claude-501/-Users-diegoaguilar-canabal-Desktop/95b3e152-30a4-4d05-ad3a-a46a2d50d5a3/tasks/a2d7a4795fbbbb22c.output`.
+- [ ] 11.9 Retake, from the app built in 11.8, only the Delivery Gate
+      screenshots whose content story 5 changes -- the Twister row's
+      encoder section and the Twister row created before this change,
+      before and after Restore -- and the screenshots story 5 adds, for the
+      operator. The Twister row's system-message section and the Custom
+      row's encoder section (9.2's screenshots) hold no block row, so their
+      content does not change; they are not retaken.
+      Check: one screenshot per Controllers-page state the Delivery Gate
+      lists as changed or added by story 5, each showing the headers and
+      values the Delivery Gate says it shows.
+- [x] 11.10 Make a new commit in each tree: the Sheaf work, with both Sheaf
+      openspec changes' edits, on `shifted-encoder-turns`, and the frogg3rs
+      work on `frogg3rs-transport-and-shift-ux` with `External/Sheaf` pinned
+      at that Sheaf commit. Amend neither tree's history. Nothing is pushed.
+      Check: `git status` is clean in both trees, with no scratch edits left
+      from reverted-change controls; `git -C External/Sheaf branch --show-current`
+      prints `shifted-encoder-turns`; `git ls-tree HEAD External/Sheaf`
+      names the commit `git -C External/Sheaf rev-parse HEAD` prints.
+
+      Sheaf: `20606fda` ("Show a block's end fields as the last control
+      they cover"), on `shifted-encoder-turns`, carrying both Sheaf
+      openspec changes' edits. frogg3rs: this commit, pinning
+      `External/Sheaf` at `20606fda` and carrying the
+      `specs/froggers-sheaf-runtime-app/` addition and this change's own
+      `proposal.md`/`tasks.md` edits. Neither tree's history is amended;
+      nothing is pushed. `git status --short` is clean in both trees after
+      both commits; `git -C External/Sheaf branch --show-current` prints
+      `shifted-encoder-turns`; `git ls-tree HEAD External/Sheaf` names
+      `20606fda...`, equal to `git -C External/Sheaf rev-parse HEAD`.

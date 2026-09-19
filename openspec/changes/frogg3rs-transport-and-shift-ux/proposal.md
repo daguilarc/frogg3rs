@@ -12,7 +12,7 @@ based on `37c1b9c`, and the Sheaf branch `shifted-encoder-turns` on
 ## Why
 
 The operator plays Froggers from the screen and from a MIDI Fighter Twister.
-Four things behave in ways a player does not expect.
+Five things behave in ways a player does not expect.
 
 1. **Play gives no sign that the transport is running.** Freeze and Record
    swap their plate and glyph colours while latched or armed. On the base,
@@ -36,8 +36,22 @@ Four things behave in ways a player does not expect.
    unlimited. The section "The Filter page's limiter moves to the page's
    output" below holds the mechanism, the operator's ruling and the
    measurements.
+5. **The Controllers page names a block's end by a control the block does
+   not use.** A block row's end field shows the block's exclusive end, one
+   past its last control, under the header "End CC", "End X", "End Y",
+   "X Max" or "Y Max", and stores a typed value the same way. A Twister
+   row's sixteen encoders on CCs 0 to 15 read "Start CC 0, End CC 16"; a
+   player who types 15, the last encoder's CC, keeps fifteen turns and
+   loses the sixteenth. The operator's story: every block field that names
+   an end shows, and accepts, the last control the block uses, and each
+   block field's header says what the field does. The same story corrects
+   a promoted frogg3rs scenario that says a row offering Restore names no
+   preset, while the requirement above it, and the page, name the preset in
+   the row's device label. The subsection "Story 5: block end fields show
+   the last control" under What Changes summarizes the change; the Sheaf
+   change's proposal holds the mechanism, the decisions and their evidence.
 
-The four are one change because each makes the instrument do what a player
+The five are one change because each makes the instrument do what a player
 expects of it.
 
 ## What Changes
@@ -196,6 +210,60 @@ of a registry whose catalog has its own Twister default, as Froggers' does, so
 those rows show no Restore; the manual tells a player with such a row to
 delete it and add the MIDI Fighter Twister preset again.
 
+### Story 5: block end fields show the last control
+
+The Sheaf half is the openspec change
+`External/Sheaf/openspec/changes/block-end-fields-show-the-last-control/`,
+written on the branch `shifted-encoder-turns`. Its proposal holds the
+mechanism, every decision with its trace, both rulings and the evidence;
+this section summarizes it.
+
+- **Sheaf.** The block model keeps its exclusive ends. NEW
+  `BlockLastFromEnd` and NEW `BlockEndFromLast`, in
+  `External/Sheaf/projects/synth/include/synth/MidiConfigBlocks.hpp`, are
+  the one translation between a stored end and the last control a range
+  covers, with the y direction rule defined once beside them. The view
+  model's read path (`BlockFieldValue`) and write path (the four
+  `Apply*BlockField` functions) go through it, so every end field shows,
+  and accepts, the last control. A typed start y keeps the last y the page
+  shows. A CC end accepts 0 to 127, an x or y end -2147483647 to
+  2147483646. The headers "End CC", "End X", "End Y" become "Last CC",
+  "Last X", "Last Y", and a grid block's "X Min", "X Max", "Y Min",
+  "Y Max" become "Start X", "Last X", "Start Y", "Last Y", since a grid
+  block's rows may run downward. The refusals an end edit can reach name
+  the start and last. Sheaf spec: sru-28 modified, sru-67 added; sru-10 is
+  left as `shifted-encoder-turns` modifies it.
+- **O1, ruled.** One header per field, true on every row it heads; where a
+  field's meaning differs by a block's form or address type, the row
+  carries its own field. NEW `Field::BlockStartGesture`, NEW
+  `Field::BlockStartNote` and NEW `Field::BlockEndNote` give an analog
+  block and a Note-addressed encoder-push or generic system block their
+  own headers,
+  "Start Gesture", "Start Note" and "Last Note"; the page's header-row rule
+  is unchanged. The Sheaf change's task 2 records the ruling before its
+  task 3 runs.
+- **O2, ruled fixed here.** A start and last typed millions apart make
+  expansion enumerate or reserve that many cells, which the start fields
+  already allow; the new end fields reach this defect. Both expansions
+  check the two corner cells against the controller's grid, through
+  int64_t-widened corner arithmetic that cannot overflow, before
+  enumerating or reserving. The Sheaf change's task 2 records the ruling
+  and its task 10 runs.
+- **frogg3rs.** The promoted scenario "Restore appears only when there is
+  something to restore" says a row offering Restore "names no preset
+  anywhere on it". The requirement's own text says the row's device label
+  names the preset that created it, and the page shows
+  `ControllersLayout::ControllerDeviceLabel`, which returns the preset's
+  display name whenever the row's wizard id resolves; the page offers
+  Restore only on such a row (Evidence, "Story 5"). The spec
+  delta in `specs/froggers-sheaf-runtime-app/` corrects that clause and
+  carries every other clause and scenario of "Each controller row control
+  does one job" as it is. The operator confirms it: the Delivery Gate
+  screenshots of a Twister row created before this change, before and
+  after Restore, both labelled "MIDI Fighter Twister".
+- **No saved document changes.** Blocks are never serialized, and a block
+  expands to the same persisted mappings for the same cells.
+
 ## Data flow
 
 **Play plate.** Play press → `HandleAction` kPlay → `StartTransport()` →
@@ -227,6 +295,19 @@ held and shifted job Scene blend → `DecodeDelta` gives +1 turn step →
 `IncDecSceneBlend` → blend rises, Crunchy untouched → UI state mirrors the
 blend and the on-screen slider moves. Shift up → held false → the next turn
 pushes `ParamIncDec` for Crunchy.
+
+**Block end field.** Read: persisted profile config → section opened →
+reconstruction → block with an exclusive end in the open section →
+`MidiConfigViewModel::RowFieldValue` → `BlockFieldValue` →
+`BlockLastFromEnd` → the field's text under its `FieldShortLabel()` header,
+on the one render path the standalone and browser builds share. Write:
+typed text → the page's field-commit action →
+`MidiConfigViewModel::ApplyMappingEdit` → the row's `Apply*BlockField` →
+`BlockEndFromLast` into the open section's block →
+`FlushSectionPresentationToSlot` → expansion → persisted profile config →
+the page's commit and save. A refusal reaches the page's status line as
+"Refused:" (a field refusal, open section unchanged) or "Warning:" (an
+expansion refusal, open section keeping the edit).
 
 ## Decisions a reviewer should check
 
@@ -547,6 +628,21 @@ The Sheaf half follows how every Sheaf addition in this project has shipped.
   Sheaf edit is whether an app author who has never heard of frogg3rs would
   want it. Shift on knobs passes that test, and so does a Restore that
   resolves.
+- **Story 5 is not additive.** The block end fields change meaning: a value
+  that was an exclusive end is now the last control. No saved document
+  changes, since blocks are never serialized, and a block expands to the
+  same persisted mappings for the same cells. An app author who has never
+  heard of frogg3rs reads the same "End CC 16" on a sixteen-encoder
+  controller and would want the fix.
+- **One branch, one pull request, two openspec changes.** The Sheaf work
+  for all five stories ships in the `shifted-encoder-turns` pull request.
+  The branch carries two openspec changes:
+  `External/Sheaf/openspec/changes/shifted-encoder-turns/` (Shift on knobs,
+  the sweep finding, the Restore fix) and
+  `External/Sheaf/openspec/changes/block-end-fields-show-the-last-control/`
+  (story 5), written at the branch tip `ee679e48`. frogg3rs pins the
+  branch's tip once story 5's commit lands on it. Both Sheaf changes stay
+  active until upstream merges the stack.
 - **On the fork, as the next PR in the stack.** The work is done in this
   change's worktree's `External/Sheaf` on a branch named after the Sheaf
   openspec change, `shifted-encoder-turns`, based on the stack tip `f6266560`
@@ -563,13 +659,14 @@ The Sheaf half follows how every Sheaf addition in this project has shipped.
   pull request against jvictor0/Sheaf `main`, after #19. Nothing in the stack
   is merged into either Sheaf `main`, and frogg3rs runs on the stack tip. The
   pull request description carries step-by-step testing instructions for
-  Shift + knob on a Twister.
+  Shift + knob on a Twister and for the block end fields.
 - **Order.** The worktree's `External/Sheaf` git directory is private to the
   worktree. Its commits are fetched into the main checkout's `External/Sheaf`
   (`git -C <main>/External/Sheaf fetch <worktree gitdir> shifted-encoder-turns:shifted-encoder-turns`)
   and pushed to the fork from there, before frogg3rs `main` moves its pin, so
   `main` never pins an unfetchable commit. Once the pull request is open, a
-  "Record the delivery of shifted-encoder-turns: pushed to the fork as
+  "Record the delivery of shifted-encoder-turns and
+  block-end-fields-show-the-last-control: pushed to the fork as
   jvictor0/Sheaf#N, pin moved on frogg3rs main" commit is made in this
   worktree's `External/Sheaf`, fetched and pushed the same way, and frogg3rs
   pins that tip only after `fork/shifted-encoder-turns` in the main checkout's
@@ -593,10 +690,17 @@ The Sheaf half follows how every Sheaf addition in this project has shipped.
   cost level" names the limiter at the Filter page's output in its Check; a
   new requirement, "The Filter page limits its output after the Comb/Peak
   blend".
+- `froggers-sheaf-runtime-app`: "Each controller row control does one job"
+  corrects the "Restore appears only when there is something to restore"
+  clause that says a diverged row names no preset.
 
-### Sheaf capabilities (in the Sheaf change's `specs/`)
-- `synth-midi-instrument`: smi-16 modified, smi-17 added.
-- `synth-runtime-ui`: sru-10 and sru-15 modified, sru-66 added.
+### Sheaf capabilities (in the Sheaf changes' `specs/`)
+- `shifted-encoder-turns`, `synth-midi-instrument`: smi-16 modified, smi-17
+  added.
+- `shifted-encoder-turns`, `synth-runtime-ui`: sru-10 and sru-15 modified,
+  sru-66 added.
+- `block-end-fields-show-the-last-control`, `synth-runtime-ui`: sru-28
+  modified, sru-67 added.
 
 ## Impact
 
@@ -651,6 +755,38 @@ The Sheaf half follows how every Sheaf addition in this project has shipped.
   `parameter_modulation_tests.cpp`, `viewmodel_tests.cpp`, `blocks_tests.cpp`,
   `portable_ui_tests.cpp`, `controllers_page_ui_tests.cpp`. The Sheaf change
   directory `External/Sheaf/openspec/changes/shifted-encoder-turns/`.
+- Story 5, Sheaf, under `External/Sheaf/projects/synth/`:
+  `External/Sheaf/projects/synth/include/synth/MidiConfigBlocks.hpp` and
+  `External/Sheaf/projects/synth/src/MidiConfigBlocks.cpp` (the
+  translation, the y direction rule, the expansion reasons, and the corner
+  checks (O2 ruled fixed here)),
+  `External/Sheaf/projects/synth/src/MidiConfigViewModel.cpp`
+  (`BlockFieldValue`, the `Apply*BlockField` functions, `FieldShortLabel`),
+  `External/Sheaf/projects/synth/include/synth/MidiConfigViewModel.hpp`
+  (the `MidiMappingRowVM::Field` comments; NEW `Field::BlockStartGesture`,
+  NEW `Field::BlockStartNote` and NEW `Field::BlockEndNote`),
+  `External/Sheaf/projects/synth/include/synth/ControllersPageUI.hpp`
+  (`FieldEditorWidth`'s new column widths, and `ParseFiniteNumericToken` and
+  its caller `HandleMappingFieldCommit`, fixed as a standalone parser fix,
+  not part of story 5: an integer field now requires the trimmed typed text
+  to be wholly an integer literal rather than parsing it as a double, is
+  refused with "value must be an integer" rather than "value must be a
+  finite number" when it is not, and with "value is out of range" when it
+  is a well-formed integer literal too large for `long long` or larger in
+  magnitude than 2^53), and
+  `External/Sheaf/projects/synth/docs/coverage.md`. Tests:
+  `External/Sheaf/projects/synth/tests/blocks_tests.cpp`,
+  `External/Sheaf/projects/synth/tests/viewmodel_tests.cpp`,
+  `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`,
+  `External/Sheaf/projects/synth/juce/ControllersPageSimulationTests.cpp`.
+  The Sheaf change directory
+  `External/Sheaf/openspec/changes/block-end-fields-show-the-last-control/`.
+- Story 5, frogg3rs: this change's `specs/froggers-sheaf-runtime-app/spec.md`
+  only. No `app/` file changes (`git status --short -- app` prints nothing):
+  story 5 is a Sheaf-only UI change, confirmed by operator screenshot rather
+  than an automated frogg3rs test. No documentation change either (11.7):
+  MANUAL.md's MIDI controllers section makes no block-row statement this
+  change would need to correct.
 - `External/Sheaf`: pin bump to the `shifted-encoder-turns` tip.
 - Documentation step (after postflight): `MANUAL.md` (Play's held plate;
   Freeze release; the Shift subsection covers knobs; the Twister subsection
@@ -859,6 +995,63 @@ e8894727:projects/synth/include/synth/Engine.hpp:698:    const MidiAppCatalog& M
 e8894727:projects/synth/tests/engine_tests.cpp:3044:    synth::MidiAppCatalog MidiCatalog() const { return catalog; }
 ```
 
+**Story 5.** The Sheaf half's evidence is in the Sheaf change's proposal,
+run at `ee679e48`. The frogg3rs half: the promoted requirement says the
+device label names the preset, and its Restore scenario says the row names
+none:
+
+```
+$ git grep -n -o -E "its device label names the preset that created it|names no preset anywhere on it" HEAD -- openspec/specs/froggers-sheaf-runtime-app/spec.md
+HEAD:openspec/specs/froggers-sheaf-runtime-app/spec.md:246:its device label names the preset that created it
+HEAD:openspec/specs/froggers-sheaf-runtime-app/spec.md:256:names no preset anywhere on it
+```
+
+The page's device label returns the preset's display name whenever the
+row's wizard id resolves against the page's layouts, and the page draws it
+on every row:
+
+```
+$ git -C External/Sheaf grep -n -A13 "^inline std::string ControllerDeviceLabel" ee679e48 -- projects/synth/include/synth/ControllersPageUI.hpp
+ee679e48:projects/synth/include/synth/ControllersPageUI.hpp:722:inline std::string ControllerDeviceLabel(const MidiControllerRowVM& rowVm,
+ee679e48:projects/synth/include/synth/ControllersPageUI.hpp-723-                                         const std::vector<ControllerWizardDescriptor>& layouts)
+ee679e48:projects/synth/include/synth/ControllersPageUI.hpp-724-{
+ee679e48:projects/synth/include/synth/ControllersPageUI.hpp-725-    if (rowVm.wizardId.has_value())
+ee679e48:projects/synth/include/synth/ControllersPageUI.hpp-726-    {
+ee679e48:projects/synth/include/synth/ControllersPageUI.hpp-727-        const ControllerWizardDescriptor* descriptor =
+ee679e48:projects/synth/include/synth/ControllersPageUI.hpp-728-            FindControllerWizardDescriptor(layouts, *rowVm.wizardId);
+ee679e48:projects/synth/include/synth/ControllersPageUI.hpp-729-        if (descriptor != nullptr)
+ee679e48:projects/synth/include/synth/ControllersPageUI.hpp-730-        {
+ee679e48:projects/synth/include/synth/ControllersPageUI.hpp-731-            return descriptor->displayName;
+ee679e48:projects/synth/include/synth/ControllersPageUI.hpp-732-        }
+ee679e48:projects/synth/include/synth/ControllersPageUI.hpp-733-    }
+ee679e48:projects/synth/include/synth/ControllersPageUI.hpp-734-    return StoredEndpointLabel(rowVm.storedInput);
+ee679e48:projects/synth/include/synth/ControllersPageUI.hpp-735-}
+
+$ git -C External/Sheaf grep -n -E "ControllerDeviceLabel\(rowVm|hasResolvedWizard && !rowVm.matchesWizardProfile" ee679e48 -- projects/synth/include/synth/ControllersPageUI.hpp
+ee679e48:projects/synth/include/synth/ControllersPageUI.hpp:2476:                                         ControllersLayout::ControllerDeviceLabel(rowVm, vm.Layouts()),
+ee679e48:projects/synth/include/synth/ControllersPageUI.hpp:2522:                                     ControllersLayout::ControllerDeviceLabel(rowVm, vm.Layouts()),
+ee679e48:projects/synth/include/synth/ControllersPageUI.hpp:2618:                            if (rowVm.hasResolvedWizard && !rowVm.matchesWizardProfile)
+```
+
+Restore is drawn only when the wizard id resolves against the same layouts,
+so a row offering Restore always shows its preset's name:
+
+```
+$ git -C External/Sheaf grep -n -B2 -A2 "hasResolvedWizard =" ee679e48 -- projects/synth/src/MidiConfigViewModel.cpp
+ee679e48:projects/synth/src/MidiConfigViewModel.cpp-916-        row.kind = slot.kind;
+ee679e48:projects/synth/src/MidiConfigViewModel.cpp-917-        row.disposition = slot.disposition;
+ee679e48:projects/synth/src/MidiConfigViewModel.cpp:918:        row.hasResolvedWizard = slot.wizardId.has_value() &&
+ee679e48:projects/synth/src/MidiConfigViewModel.cpp-919-            FindControllerWizardDescriptor(Layouts(), *slot.wizardId) != nullptr;
+ee679e48:projects/synth/src/MidiConfigViewModel.cpp-920-        row.matchesWizardProfile = SlotMatchesWizardProfile(slot, Layouts());
+```
+
+This is what the code is; the operator confirms it by screenshot (Delivery
+Gate, a Twister row before and after Restore, both labelled "MIDI Fighter
+Twister"). No existing automated test asserts the device label on a
+diverged row:
+`TestControllerDeviceLabelsIdentifyThePresetOrBoundInputDevice` reads it on
+a row whose config is its preset's.
+
 ## Preflight record
 
 Preflight ran on the previous base, frogg3rs `b0c03a9` with Sheaf `f73d4202`,
@@ -907,3 +1100,35 @@ app, taken on the current base. The screenshots cover:
 - a Custom row's encoder section with a turn row showing its Shift field set
   to none;
 - a Twister row created before this change, before and after Restore.
+
+Story 5 changes the two Controllers-page screenshots above that show a
+block row -- the Twister row's encoder section, and the Twister row created
+before this change, before and after Restore -- and task 11.9 retakes only
+those from the app built in 11.8. The same row's system-message section and
+the Custom row's encoder section hold no block row, so their content does
+not change; 11.9 does not retake them:
+
+- the Twister row's encoder section: the 15-turn block's end column is
+  headed "Last CC" and reads 14, the CC of the last encoder in the block
+  (on the base, "End CC" and 15), and the push block reads 15;
+- the Twister row created before this change: before Restore its one
+  16-turn block reads "Last CC" 15, and the row, which offers Restore,
+  shows "MIDI Fighter Twister" as its device label; after Restore the
+  15-turn block reads 14, and the row still shows "MIDI Fighter Twister"
+  as its device label;
+- the Twister row's system-message section and the Custom row's encoder
+  section hold no block row, so their content does not change.
+
+Added for story 5:
+
+- an Akai APC40 mkII row's encoder section: its two turn blocks' end
+  columns read the last CC of each run of eight;
+- a WRLD.Bldr row's system-message section: the scene-select block reads
+  "Last X" 7 and "Last Y" 6, and the bank-select block, whose rows run
+  downward, reads "Start Y" 3 and "Last Y" 2;
+- a Launchpad row's system-message section with a grid block added by its
+  Block button, headed "Start X", "Last X", "Start Y" and "Last Y";
+- a Custom row's encoder section with a push block whose address type is
+  Note, headed "Start Note" and "Last Note";
+- the status line after typing 128 into a "Last CC" field, and after typing
+  a last below its start.
