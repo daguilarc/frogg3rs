@@ -245,6 +245,11 @@ cannot express.
 ### Requirement: Each controller row control does one job
 The MIDI configuration page SHALL offer exactly one control that lists devices — the add row's selector — and SHALL NOT offer a device or preset list on a configured row. A configured row SHALL NOT offer a preset selector, and its device label names the preset that created it; it SHALL offer a Restore action, and only while it was created from a preset and its stored configuration differs from that preset, so that the action's presence is itself the signal that the row has been edited. Every distinct device or operating mode SHALL be its own preset, chosen once when the row is created; the page SHALL NOT offer a second control asking which model or mode a row is. A released row, which a configuration saved by an earlier version can hold, SHALL show its Released badge and stored ports and SHALL offer Delete.
 
+<!-- RESTATES-EXCEPT
+names no preset anywhere on it
+  keeps: the row offers Restore
+-->
+
 #### Scenario: A row never offers another device's preset
 - **WHEN** a MIDI Fighter Twister row is presented
 - **THEN** no control on that row offers an Akai APC40 preset, or any preset for a kind other than the row's own
@@ -253,12 +258,13 @@ The MIDI configuration page SHALL offer exactly one control that lists devices �
 
 #### Scenario: Restore appears only when there is something to restore
 - **WHEN** a row created from a preset has had a mapping edited
-- **THEN** the row offers Restore, and names no preset anywhere on it
+- **THEN** the row offers Restore, and its device label still names the preset that created it
 - **AND** pressing Restore reinstalls that row's own preset
 - **AND** a row whose configuration still matches its preset offers no Restore
 - **AND** a row that was never created from a preset offers none either
 - **AND** editing a mapping and setting it back by hand withdraws Restore again
 - Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, `TestRestoreReinstallsADivergedPresetAndIsGatedByDivergence`, which pins Restore absent on an untouched preset row, absent on a row never created from a preset, present once diverged, and gone again once the row matches its preset (there, by pressing Restore itself); operator, task 6.2, covers the by-hand-edit-reverts-it variant this test does not drive.
+- Check: operator step: the Delivery Gate screenshots of an old Twister row before and after Restore, both labelled 'MIDI Fighter Twister'
 
 #### Scenario: A device model is chosen once, as a preset
 - **WHEN** the add row is opened
