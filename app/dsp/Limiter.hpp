@@ -2,12 +2,12 @@
 
 // synth_froggers::dsp::OutputLimiter -- extracted out of app/FroggersAppCore.hpp
 // (where it was a PRIVATE nested type) so a SECOND, independently-tuned
-// instance can run on the Filter bank's peak branch (FilterFxChain,
+// instance can run on the Filter bank's output (FilterFxChain,
 // dsp/FilterFx.hpp) without duplicating the struct.
 //
 // WHY THIS FILE, NOT dsp/FilterFx.hpp AND NOT FroggersAppCore.hpp:
 // `FroggersAppCore.hpp` includes `dsp/FilterFx.hpp` (never the reverse), so
-// a peak-branch limiter living in `FilterFxChain` cannot reach UP into
+// a Filter-page limiter living in `FilterFxChain` cannot reach UP into
 // FroggersAppCore.hpp for the type without a circular include. It has to
 // move DOWN into dsp/. A small dedicated header (rather than folding it
 // into FilterFx.hpp beside PadeSaturator) keeps a general-purpose dynamics
@@ -24,10 +24,10 @@
 // `kDefaultAttackSeconds` and `kDefaultReleaseSeconds` (`headroom` has no
 // default constant of its own; it is computed as `kDefaultCeiling -
 // kDefaultThreshold`). They are per-instance because a second,
-// independently-tuned instance (the peak branch's own limiter) needs its
+// independently-tuned instance (the Filter page's own limiter) needs its
 // own tuning distinct from the master's; one shared tuning across every
-// instance would duck the peak branch identically to the master and be
-// useless there.
+// instance would duck the Filter page's output identically to the master
+// and be useless there.
 // The single-argument `Configure(
 // sampleRate)` overload below reproduces the master's ORIGINAL tuning via
 // the exact same formula, same operand order, same float literals, so
@@ -43,19 +43,21 @@
 
 namespace synth_froggers::dsp {
 
-// Shared across EVERY per-stage limiter instance (peak branch, delay wet,
-// reverb wet, and the master). These two values are identical at all four
-// sites by design, not by coincidence, so they live here once rather than
-// being re-declared per stage -- they were duplicated 4x and 3x
-// respectively before this consolidation.
+// kSharedReleaseSeconds is shared across EVERY per-stage limiter instance
+// (the Filter page's output, delay wet, reverb wet, Drive's output limiter,
+// and the master -- five sites, not four). kSharedCeiling backs only the
+// master now -- every other stage's ceiling was retargeted to
+// `kStageCeiling` below. They live here once rather than being re-declared
+// per stage -- they were duplicated 4x and 3x respectively before this
+// consolidation.
 //
 // What is DELIBERATELY NOT shared: each stage's `threshold` and
 // `attackSeconds`. Both are MEASURED per stage and legitimately differ --
-// peak 0.7/5us (single-sample transients from stored biquad energy), delay
-// and reverb 0.9/2us (fast onset at the short-round-trip extreme), master
-// 0.9/1ms (sustained material only). Inferring attack from mechanism shape
-// was wrong twice: it is per-stage evidence, not a shared constant, and
-// must not be folded in here.
+// Filter page 0.7/5us (single-sample transients from stored biquad
+// energy), delay and reverb 0.72/2us (fast onset at the short-round-trip
+// extreme), master 0.9/1ms (sustained material only). Inferring attack
+// from mechanism shape was wrong twice: it is per-stage evidence, not a
+// shared constant, and must not be folded in here.
 //
 // `kSharedCeiling` is full scale everywhere: a limiter's ceiling is what it
 // must never let through, and that is 1.0 for every stage regardless of
@@ -63,8 +65,8 @@ namespace synth_froggers::dsp {
 // (dsp::OutputLimiter::kDefaultCeiling) -- the master is deliberately
 // unchanged by the retarget below.
 inline constexpr float kSharedCeiling = 1.0f;
-// The ceiling every NON-master per-stage limiter (peak, delay wet,
-// reverb wet, Drive's output limiter) budgets to. Before this landed, every
+// The ceiling every NON-master per-stage limiter (the Filter page's output
+// limiter, delay wet, reverb wet, Drive's output limiter) budgets to. Before this landed, every
 // per-stage limiter shipped `ceiling = kSharedCeiling = 1.0` while the
 // master's own threshold sits at 0.9, so a correctly-clamped stage could
 // still legitimately deliver above the level the master starts working at
@@ -75,7 +77,7 @@ inline constexpr float kSharedCeiling = 1.0f;
 // (1/kStageCeiling, applied once in FroggersAppCore.hpp) restores the
 // headroom for.
 inline constexpr float kStageCeiling = 0.80f;
-// `kSharedReleaseSeconds`: 100ms at all four sites, derived from the
+// `kSharedReleaseSeconds`: 100ms at all five sites, derived from the
 // peak's measured residual decay (-60dB in 11.79ms at max Q, so ~8.5x
 // margin) and confirmed correct for delay and reverb too; each
 // stage's own comment already said "matches the master". One value.
@@ -290,7 +292,7 @@ inline FloorBlendGains FlooredEqualPowerBlend(float knob01)
 // gain staging on its own output bus and typically supplies its own limiter
 // there, so in a plugin context the MASTER instance of this stage is
 // redundant -- a candidate to bypass or compile out rather than run twice.
-// (The peak-branch instance this struct also now serves is a different
+// (The Filter-page instance this struct also now serves is a different
 // concern -- in-chain gain staging, not final output gain -- and is not
 // covered by this note.)
 struct OutputLimiter
@@ -298,7 +300,7 @@ struct OutputLimiter
     // Pinned defaults for the single-argument Configure(sampleRate) overload
     // below -- the MASTER output limiter's ORIGINAL tuning, UNCHANGED by
     // this extraction. Do not retune these; an independently-tuned
-    // instance (e.g. the peak-branch limiter) calls the five-argument
+    // instance (e.g. the Filter page's limiter) calls the five-argument
     // Configure() overload instead of touching these.
     static constexpr float kDefaultThreshold = 0.9f;
     static constexpr float kDefaultCeiling = kSharedCeiling;
@@ -344,18 +346,18 @@ struct OutputLimiter
 
     // Full configuration: sample-rate-dependent coefficients PLUS this
     // instance's own threshold/ceiling/attack/release. A second,
-    // independently-tuned instance (the peak-branch limiter, FilterFx.hpp)
+    // independently-tuned instance (the Filter page's limiter, FilterFx.hpp)
     // calls this overload; the master keeps calling the single-argument
     // overload below, unchanged.
     // Every production caller of this overload passes an
     // already-known-positive value. Five are rooted at
     // FroggersAppCore::PrepareToPlay() (the master via the single-argument
-    // Configure() below, the peak branch via FilterFxChain::Configure(),
+    // Configure() below, the Filter page via FilterFxChain::Configure(),
     // delay/reverb wet via StereoDelay::SetSampleRate()/Reverb::Configure(),
     // Drive's via DriveBlendPhase::Configure()), which validates the
     // host's sample rate ONCE before any downstream use. The sixth,
     // FilterFxChain's own constructor
-    // (dsp/FilterFx.hpp, `peakLimiter.Configure(kDefaultAssumedSampleRate,
+    // (dsp/FilterFx.hpp, `outputLimiter.Configure(kDefaultAssumedSampleRate,
     // ...)`), never went through PrepareToPlay at all -- it passes a
     // hardcoded, always-positive local constant, so it was never actually
     // relying on this clamp either. No caller can reach this method with a

@@ -143,7 +143,7 @@ namespace synth_froggers::dsp {
 //     Delay's own wet limiter, the worst-case peak is an attack-side effect; release does not
 //     move it, so it stays at the value this codebase already uses for
 //     "gain reduction that does not pump" (dsp::OutputLimiter::
-//     kDefaultReleaseSeconds, dsp::kPeakLimiterReleaseSeconds,
+//     kDefaultReleaseSeconds, dsp::kFilterOutputLimiterReleaseSeconds,
 //     dsp::kDelayWetLimiterReleaseSeconds) rather than inventing a fourth
 //     number where measurement gave no reason to move it.
 // Retargeted from 0.9 to 0.72, preserving the ORIGINAL

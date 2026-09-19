@@ -403,11 +403,11 @@ TEST_CASE(twister_crunchy_turn_row_shows_its_shifted_scene_blend) {
 // ---------------------------------------------------------------------------
 // twister_row_saved_before_the_shifted_turn_gains_it_on_restore
 // ---------------------------------------------------------------------------
-// A Twister row saved before this change carries the old preset: sixteen
-// turns, none with a shifted job. Pressing Restore on the Controllers page
-// installs the current preset onto that row, including Crunchy's shifted
-// job, and the page's own view model has to show the change in an already
-// open Encoders section instead of replaying the pre-Restore rows.
+// An old Twister row carries the old preset: sixteen turns, none with a
+// shifted job. Pressing Restore on the Controllers page installs the
+// current preset onto that row, including Crunchy's shifted job, and the
+// page's own view model has to show the change in an already open Encoders
+// section instead of replaying the pre-Restore rows.
 TEST_CASE(twister_row_saved_before_the_shifted_turn_gains_it_on_restore) {
     using Field = synth::MidiMappingRowVM::Field;
     using Kind = synth::MidiMappingRowVM::Kind;
@@ -439,8 +439,8 @@ TEST_CASE(twister_row_saved_before_the_shifted_turn_gains_it_on_restore) {
     REQUIRE_TRUE(static_cast<bool>(result));
     synth::MidiControllerSlot slot = std::move(*result.controller);
 
-    // Reproduce a row saved before this change: the preset's own sixteen
-    // turns, none carrying a shifted job.
+    // Reproduce an old Twister row: the preset's own sixteen turns, none
+    // carrying a shifted job.
     REQUIRE_TRUE(slot.config.encoderInput.has_value());
     std::size_t shiftedBefore = 0;
     for (synth::EncoderMidiMapping& turn : slot.config.encoderInput->turns) {

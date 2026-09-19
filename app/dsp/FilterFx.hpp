@@ -140,9 +140,10 @@ struct PadeSaturator
 inline constexpr float kMaxResonantBumpHeight = 3.0f;
 
 // Tuning for
-// `FilterFxChain::peakLimiter` below, a SECOND, independently-configured
-// `dsp::OutputLimiter` instance (dsp/Limiter.hpp) inserted after the peak
-// branch's own `1/height` scalar trim. That trim alone was measured to not
+// `FilterFxChain::outputLimiter` below, a SECOND, independently-configured
+// `dsp::OutputLimiter` instance (dsp/Limiter.hpp) applied to the Filter
+// page's output, after the Comb/Peak blend. The peak branch's own `1/height`
+// scalar trim alone was measured to not
 // close the gap under per-sample-random height modulation --
 // the peak is a stateful 2-pole biquad whose stored energy survives a
 // height DROP, and no per-sample SCALAR can retroactively scale away energy
@@ -158,7 +159,7 @@ inline constexpr float kMaxResonantBumpHeight = 3.0f;
 // limiter's own tuning (the comb-trim smoother's own constant was picked
 // by analogy once and measured 80% wrong later).
 //
-//   - kPeakLimiterThreshold (0.7): BELOW the master output limiter's 0.9
+//   - kFilterOutputLimiterThreshold (0.7): BELOW the master output limiter's 0.9
 //     (this stage must catch the peak's residual
 //     BEFORE the master ever sees it) with comfortable margin, not just
 //     barely under it; the sweep found overshoot fell smoothly as
@@ -167,7 +168,7 @@ inline constexpr float kMaxResonantBumpHeight = 3.0f;
 //     worst-case, all at the attack below) -- low enough to leave real
 //     headroom under the computed bound A, not so low it engages on every
 //     ordinary moderate-height passage for no measured benefit.
-//   - kPeakLimiterAttackSeconds (5 microseconds): the delicate number, and
+//   - kFilterOutputLimiterAttackSeconds (5 microseconds): the delicate number, and
 //     NOT chosen by analogy to the master's 1ms. Per-sample-random height
 //     modulation makes the worst-case transient a SINGLE-SAMPLE event (the
 //     biquad's residual right after a height drop, still carrying energy
@@ -182,7 +183,7 @@ inline constexpr float kMaxResonantBumpHeight = 3.0f;
 //     working margin, and going faster still (2 microseconds: 0.988134)
 //     buys almost nothing further -- the curve is flattening, not still
 //     falling, so 5us is the measured knee, not an arbitrary small number.
-//   - kPeakLimiterReleaseSeconds (100ms, matches the master): release
+//   - kFilterOutputLimiterReleaseSeconds (100ms, matches the master): release
 //     barely moves the worst-case-overshoot measurement at all once attack
 //     is fast enough (0.005ms/thr=0.7: 0.991766 at 10ms release vs 0.989732
 //     at 500ms release -- a 0.002 spread across 50x the release time), so
@@ -200,15 +201,15 @@ inline constexpr float kMaxResonantBumpHeight = 3.0f;
 //     this exact "gain reduction that does not pump" job (the master's own
 //     `kDefaultReleaseSeconds`, dsp/Limiter.hpp) rather than inventing a
 //     second number where the measurement gave no reason to.
-inline constexpr float kPeakLimiterThreshold = 0.7f;  // unchanged -- MEASURED (above), already strictly below kStageCeiling.
-inline constexpr float kPeakLimiterCeiling = kStageCeiling;  // retargeted from kSharedCeiling.
+inline constexpr float kFilterOutputLimiterThreshold = 0.7f;  // unchanged -- MEASURED (above), already strictly below kStageCeiling.
+inline constexpr float kFilterOutputLimiterCeiling = kStageCeiling;  // retargeted from kSharedCeiling.
 // See dsp::OutputLimiter::kDefaultThreshold's own static_assert
 // (dsp/Limiter.hpp) for why a negative headroom is catastrophic AND silent.
-static_assert(kPeakLimiterThreshold < kPeakLimiterCeiling,
+static_assert(kFilterOutputLimiterThreshold < kFilterOutputLimiterCeiling,
               "threshold must stay strictly below ceiling; a negative headroom turns "
               "DesiredMagnitude into an exponential amplifier -- see dsp/Limiter.hpp");
-inline constexpr float kPeakLimiterAttackSeconds = 5.0e-6f;   // 5 microseconds -- see comment above.
-inline constexpr float kPeakLimiterReleaseSeconds = kSharedReleaseSeconds;  // shared; see Limiter.hpp.
+inline constexpr float kFilterOutputLimiterAttackSeconds = 5.0e-6f;   // 5 microseconds -- see comment above.
+inline constexpr float kFilterOutputLimiterReleaseSeconds = kSharedReleaseSeconds;  // shared; see Limiter.hpp.
 
 struct ResonantBump
 {
@@ -425,20 +426,25 @@ struct Comb
     // drive control is for.
     //
     // Dividing the saturator's OUTPUT by the same `combDrive` that scaled
-    // its ARGUMENT does not reopen that same concern from the low-drive
-    // end (combDrive < 1, where an absolute `|feedback|/combDrive` ceiling
-    // alone would exceed the old `|feedback|` bound):
-    // `PadeSaturator::Saturate` is compressive, `Saturate(y) <= y` for
-    // `y >= 0` (Saturate's own comment, above; the same fact GetFeedback's
-    // comment below relies on), so `Saturate(combDrive*x)/combDrive <= x`
-    // for `x >= 0` (divide the compressive inequality through by
-    // combDrive > 0; the odd-symmetric case mirrors it for x < 0) -- the
-    // compensated fed-back term never exceeds `x`
-    // (`filter.Process(tapped)`, the delayed signal it is computed from),
-    // so the loop's per-pass decay stays governed by
-    // `feedback` alone, exactly as before, at EVERY combDrive setting: this
-    // is what keeps GetFeedback's geometric ring-time law (below) true
-    // across this knob's whole travel, not just at the unity default.
+    // its ARGUMENT still leaves an absolute `|feedback|/combDrive` ceiling
+    // at the low-drive end (combDrive < 1), and that ceiling DOES exceed
+    // the old `|feedback|` bound: `PadeSaturator::Saturate` is compressive,
+    // `Saturate(y) <= y` for `y >= 0` (Saturate's own comment, above; the
+    // same fact GetFeedback's comment below relies on), so
+    // `Saturate(combDrive*x)/combDrive <= x` for `x >= 0` -- but `x`
+    // (`filter.Process(tapped)`, the delayed signal it is computed from) is
+    // not itself bounded to +-1, only the pre-divide `Saturate` output is,
+    // so this inequality does not keep the compensated fed-back term under
+    // |feedback|. Measured with `combbound`, a harness driving `dsp::Comb`
+    // directly: at Comb drive 0.25 the fed-back term reaches 2.9222, well
+    // past |feedback|'s own 0.95 -- a statement about the fed-back term's
+    // own absolute LEVEL, not its decay. The loop's per-pass decay still
+    // stays governed by `feedback` alone at every combDrive, and
+    // GetFeedback's geometric ring-time law (below) still holds true
+    // across this knob's whole travel: `Saturate(combDrive*x)/combDrive <=
+    // x` holds for every `x >= 0` regardless of `combDrive`, so the
+    // fed-back term's ratio to the signal it was computed from never
+    // exceeds `feedback`, even where its absolute level does.
     // combDrive is always > 0 (`ExpMapCompute(0.25, 4.0, knob)`,
     // FroggersAppCore.hpp: a positive base raised to any real power stays
     // positive), so the divide is always defined.
@@ -578,9 +584,15 @@ struct Comb
     // makes the comb diverge
     // exponentially -- that is FALSE. `Process()` above is
     // `out = in + fb*Saturate(lp(delayed))`, and `PadeSaturator::Saturate`
-    // sits INSIDE the feedback path, so the fed-back term can never exceed
-    // |fb|*1.0 no matter how large |fb| is -- there is no exponential
-    // divergence possible here. What |fb| > 1 actually does is hold the
+    // sits INSIDE the feedback path, so at Comb drive 1 (no compensation)
+    // the fed-back term can never exceed |fb|*1.0 no matter how large |fb|
+    // is -- there is no exponential divergence possible here. Below Comb
+    // drive 1 the compensated form (combDrive's own comment, above) divides
+    // the saturator's clamped output by combDrive, widening the ceiling to
+    // |fb|/combDrive (measured with `combbound`: drive 0.25 reaches a
+    // fed-back term of 2.9222) -- still finite, so still no exponential
+    // divergence, but no longer bounded to |fb|*1.0.
+    // What |fb| > 1 actually does is hold the
     // loop in permanent, undecaying self-oscillation pinned at the
     // saturator's limit: `Reset()`-free silence never arrives, because each
     // pass regenerates (>=1.0)*saturator-bounded-output faster than it can
@@ -663,24 +675,25 @@ struct FilterFxChain
     // itself (that would change the filter, not just its level).
     OnePoleLowPass peakTrimSmoother;
 
-    // The peak branch's OWN limiter, inserted AFTER peakTrimSmoother's
-    // scalar trim above, not instead of it. The scalar
-    // trim alone was measured to not bound the peak branch under per-sample-random
-    // height modulation (worst-case 1.669 trimmed vs 1.819 untrimmed,
-    // against an ideal of 1.0, 500k trials/10 seeds) because the peak is a
-    // stateful 2-pole biquad -- its stored energy survives a height DROP,
-    // and a same-instant scalar cannot retroactively remove energy already
-    // in the filter's state. A limiter can, because it has its own release
-    // and therefore its own memory. Tuned independently from the master
-    // output limiter via the four `kPeakLimiter*` constants above this
-    // struct (by measurement, not by analogy -- see their own comment).
-    // NOT applied to `filterOut`/the composite: the comb branch is already
-    // provably bounded by its own comb-trim smoothing above
-    // (the saturator sits INSIDE that loop), so limiting the composite
-    // would compress a signal that does not need it and colour the comb's
-    // sound for no measured benefit -- the measurement traced the offender
-    // to the peak specifically, so only the peak gets treated.
-    OutputLimiter peakLimiter;
+    // The Filter page's own limiter, applied to the Comb/Peak blend below
+    // (`Process`'s `return`), not to either branch alone. The peak
+    // branch's `1/height` scalar trim above does not bound it under
+    // per-sample-random height modulation (worst-case 1.669 trimmed vs
+    // 1.819 untrimmed, against an ideal of 1.0, 500k trials/10 seeds),
+    // because the peak is a stateful 2-pole biquad -- its stored energy
+    // survives a height DROP, and a same-instant scalar cannot
+    // retroactively remove energy already in the filter's state. A
+    // limiter can, because it has its own release and therefore its own
+    // memory. The comb branch's own trim is not a bound either: the
+    // comb-trim comment below derives `|comb| <= A + |fb|` and that bound
+    // holds only at Comb drive 1 and above -- below it the fed-back term
+    // exceeds the clamp (measured with `combbound`: Comb drive 0.25
+    // reaches 3.9222 against the bound's 1.9500).
+    // With neither branch bounded on its own, the limiter runs once, on
+    // the blend, so it catches whichever branch is carrying the level.
+    // Tuned via the four `kFilterOutputLimiter*` constants above this struct (by
+    // measurement, not by analogy -- see their own comment).
+    OutputLimiter outputLimiter;
 
     // This struct's own contribution to the "every stateful unit in
     // the audio path" enumeration -- lists ONLY the members declared above
@@ -695,7 +708,7 @@ struct FilterFxChain
         visit(comb, Magnitude{});
         visit(peak, Magnitude{});
         visit(scoopNotch, Magnitude{});
-        visit(peakLimiter, FiniteOnly{});
+        visit(outputLimiter, FiniteOnly{});
     }
 
     FilterFxChain()
@@ -745,7 +758,7 @@ struct FilterFxChain
         peakTrimSmoother.SetAlphaFromNatFreq(kTrimGlideCyclesPerSample);
         peakTrimSmoother.output = 1.0f;  // unity at height=1 (the minimum) -- matches the untrimmed branch.
 
-        // `peakLimiter`'s attack/release coefficients ARE sample-rate-
+        // `outputLimiter`'s attack/release coefficients ARE sample-rate-
         // dependent (unlike the two smoothers above), so unlike them it
         // cannot be fully configured here without a sample rate this
         // constructor never receives. Configure() below (called from
@@ -755,21 +768,22 @@ struct FilterFxChain
         // `FilterFxChain chain;` instantiation (e.g. a test that never
         // calls Configure()) the intended threshold/attack/release rather
         // than dsp::OutputLimiter's own generic master-limiter defaults
-        // (0.9/1ms/100ms), which would silently under-tune this branch.
+        // (0.9/1ms/100ms), which would silently under-tune the page's
+        // output.
         // 48kHz matches FroggersAppCore's own `sampleRate_` field default.
         constexpr float kDefaultAssumedSampleRate = 48000.0f;
-        peakLimiter.Configure(kDefaultAssumedSampleRate, kPeakLimiterThreshold, kPeakLimiterCeiling,
-                               kPeakLimiterAttackSeconds, kPeakLimiterReleaseSeconds);
+        outputLimiter.Configure(kDefaultAssumedSampleRate, kFilterOutputLimiterThreshold, kFilterOutputLimiterCeiling,
+                               kFilterOutputLimiterAttackSeconds, kFilterOutputLimiterReleaseSeconds);
     }
 
-    // Sample-rate-dependent configuration for `peakLimiter`, separate
+    // Sample-rate-dependent configuration for `outputLimiter`, separate
     // from the constructor above because the real sample rate is only known
     // once FroggersAppCore::PrepareToPlay() runs. Mirrors
     // `outputLimiter_.Configure(sampleRate_)`'s own call site there.
     void Configure(float sampleRate)
     {
-        peakLimiter.Configure(sampleRate, kPeakLimiterThreshold, kPeakLimiterCeiling, kPeakLimiterAttackSeconds,
-                               kPeakLimiterReleaseSeconds);
+        outputLimiter.Configure(sampleRate, kFilterOutputLimiterThreshold, kFilterOutputLimiterCeiling, kFilterOutputLimiterAttackSeconds,
+                               kFilterOutputLimiterReleaseSeconds);
     }
 
     // combPeakBlend/scoopMix are precomputed 0..1 control values (the
@@ -798,8 +812,8 @@ struct FilterFxChain
     // surviving path is the former `useParallel == true` branch, continuous
     // morphed by `topology` in [0,1] on ONLY the peak stage's input:
     //   peakIn = scoopedIn * (1 - topology) + combPath * topology
-    // Every other computation (combTrim, peakTrim, peakLimiter, the
-    // Comb/Peak blend) stays exactly as it was and stays
+    // Every other computation (combTrim, peakTrim, the Comb/Peak blend, and
+    // outputLimiter running on that blend) stays exactly as it was and stays
     // in force at every topology value. At `topology == 0`,
     // `peakIn == scoopedIn * 1.0f + combPath * 0.0f == scoopedIn`
     // bit-for-bit (IEEE multiply-by-1 and multiply-by-0/add-0 are exact for
@@ -810,8 +824,9 @@ struct FilterFxChain
     // by the same IEEE argument -- so launch, where both default to 0, is
     // unaffected all the way through). Every stateful unit (comb, peak,
     // pureDelay, scoopNotch, combTrimSmoother, peakTrimSmoother,
-    // peakLimiter) is still processed exactly once per sample, in the same
-    // order as before. The Comb/Peak
+    // outputLimiter) is still processed exactly once per sample; outputLimiter
+    // now runs last, on the Comb/Peak blend below, rather than on the peak
+    // branch alone ahead of it. The Comb/Peak
     // blend below is equal-power across a floored `combPeakBlend` range of
     // 0.05..0.95: at either extreme the held-back branch is still present
     // at `sin(0.025*pi)` gain (~0.0785, about -22 dB), so neither branch is
@@ -827,12 +842,18 @@ struct FilterFxChain
         // Exact output trim `1/(1+|fb|)` on the comb branch
         // ONLY, before the blend with peakPath below. `|comb| <= A +
         // |fb|` (PadeSaturator bounds the fed-back term to +-1,
-        // Comb::Process above), so this normalizes the worst case
-        // (A=0, i.e. the comb's own decaying tail with no input) to
-        // exactly 1.0 at |fb| == kMaxFeedbackMagnitude (0.95), while
-        // leaving +3.5 dB of bloom across the rest of the feedback
-        // travel. A scalar on a branch output moves level, not
-        // frequency response -- the comb's peaks/notches/ring/decay
+        // Comb::Process above) holds at Comb drive 1 and above; below
+        // drive 1 it does not (measured with `combbound`: drive 0.25
+        // reaches 3.9222 against the bound's 1.9500 at A=1.00 --
+        // GetFeedback's own comment, above, has the mechanism).
+        // Where it holds, this normalizes the worst case at full-scale
+        // input (A=1.0, not A=0: A=0 trims to 0.95/1.95 = 0.487) to exactly
+        // 1.0 at |fb| == kMaxFeedbackMagnitude (0.95), while leaving +3.5 dB
+        // of bloom across the rest of the feedback travel. Below Comb
+        // drive 1 this trim does not bound the branch; the Filter page's
+        // own limiter, applied after the Comb/Peak blend below, is what
+        // holds the level then. A scalar on a branch output moves level,
+        // not frequency response -- the comb's peaks/notches/ring/decay
         // are unchanged. `fb` is read as a MAGNITUDE (GetFeedback is
         // asymmetric +-0.95) directly from Comb's own state, not
         // threaded as a new parameter.
@@ -856,24 +877,32 @@ struct FilterFxChain
         const float rawPeakTrim = 1.0f / peak.height;
         const float peakTrim = peakTrimSmoother.Process(rawPeakTrim);
         const float peakTrimmed = peakRaw * peakTrim;
-        // The scalar trim above cannot fully bound the peak branch
-        // on its own (see peakLimiter's declaration
-        // comment above and the kPeakLimiter* tuning comment near this
-        // file's top) because the biquad's stored energy survives a
-        // height DROP and a same-instant scalar cannot retroactively
-        // remove energy already in its state. `peakLimiter` is
-        // inserted HERE -- after the trim, before the blend with
-        // combPath below -- so it catches exactly the residual the
-        // trim leaves behind, not instead of the trim (the trim stays;
-        // this is additive).
-        const float peakPath = peakLimiter.Process(peakTrimmed);
+        // The scalar trim above does not fully bound the peak branch on
+        // its own (see outputLimiter's declaration comment above and the
+        // kFilterOutputLimiter* tuning comment near this file's top): the biquad's
+        // stored energy survives a height DROP, and a same-instant scalar
+        // cannot retroactively remove energy already in its state. The
+        // peak branch reaches the blend below unlimited -- see the comment
+        // above `return` for where the level is bounded.
+        const float peakPath = peakTrimmed;
         // Floored equal-power blend, single-sourced with FrogBlock's own
         // Fold/Fuzz blend (dsp/Drive.hpp) rather than a second copy of the
         // same floor/span/angle law -- see dsp::FlooredEqualPowerBlend's own
         // comment (dsp/Limiter.hpp).
         const FloorBlendGains blendGains = FlooredEqualPowerBlend(combPeakBlend);
         const float mixed = peakPath * blendGains.legA + combPath * blendGains.legB;
-        return mixed;
+        // `outputLimiter` runs here, on the blended output, because neither
+        // branch is bounded on its own: the peak branch's scalar trim
+        // above does not bound a stateful biquad's stored energy through a
+        // height drop (this method's comment above `peakPath`), and the
+        // comb branch's trim assumes `|comb| <= A + |fb|`, a bound that
+        // holds only at Comb drive 1 and above and fails below it
+        // (measured with `combbound`: Comb drive 0.25 reaches 3.9222
+        // against the bound's 1.9500 -- the comb-trim comment above
+        // has the detail). Applying the limiter
+        // once, after the blend, catches whichever branch is carrying the
+        // level, unconditionally.
+        return outputLimiter.Process(mixed);
     }
 };
 

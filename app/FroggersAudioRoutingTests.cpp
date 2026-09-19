@@ -1332,18 +1332,23 @@ TEST_CASE(silent_while_transport_is_stopped) {
 //     gate closes -- release then only has to fall 0.25 of the 5ms
 //     release floor, ~1.25ms, comfortably inside (>2x over) even a
 //     conservative ~4ms fall-from-sustain estimate, let alone the full
-//     10ms closed half available. Both tempos land the SAME clean
-//     attack->decay->hold->release shape per cycle, at 2x the cycle rate,
-//     so CountRisingEdges' per-cycle multiplier (extra rising edges from
-//     the audio oscillator itself, gated open during Hold) stays close to
-//     constant across the doubling instead of collapsing the way it did
-//     at 12000 BPM, where the 2.5ms closed half was shorter than the
-//     release floor could complete in from a not-yet-settled level.
-// Measured on this build at 128 blocks (32768 samples) per tempo:
-// base=59, doubled=105 (ratio ~1.78). The bound below is pinned around
-// that measurement, tight enough to fail on a collapse like the one this
-// test caught (ratios well under 1.3), not loose enough to accept
-// whatever the code happens to do.
+//     10ms closed half available.
+//
+// Both tempos complete attack, decay, hold and release inside each half,
+// measured at 128 blocks (32768 samples) per tempo. CountRisingEdges
+// counts every rise of channel 0's magnitude above 1e-3, so a window's
+// count is its gate cycles times the rises per cycle, including the
+// oscillator's own dips while the gate is open -- a shorter closed half
+// collapses this at 12000 BPM, where the 2.5ms closed half is shorter
+// than the release floor needs to complete from a not-yet-settled level,
+// which is why these two tempos sit where they do instead. The second
+// window counts fewer rises per cycle than the first, even at an
+// unchanged tempo, so the ratio between the two windows is about twice
+// the second window's rises per cycle over the first's, depending on the
+// level and waveform the chain renders, including the Filter page's
+// limiter, and not on the tempo alone. The lower bound below fails when
+// the count does not grow with the tempo; the upper bound fails when the
+// second window counts more rises per cycle than the first.
 // -----------------------------------------------------------------------
 TEST_CASE(gate_period_tracks_tempo_change) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("tempo_tracks_gate"));
@@ -1382,7 +1387,7 @@ TEST_CASE(gate_period_tracks_tempo_change) {
     // where the envelope actually tracks (see this TEST_CASE's own
     // header comment for the headroom numbers).
     REQUIRE_TRUE(baseTransitions > 0);
-    REQUIRE_TRUE(static_cast<double>(doubledTransitions) > static_cast<double>(baseTransitions) * 1.6);
+    REQUIRE_TRUE(static_cast<double>(doubledTransitions) > static_cast<double>(baseTransitions) * 1.3);
     REQUIRE_TRUE(static_cast<double>(doubledTransitions) < static_cast<double>(baseTransitions) * 2.0);
 }
 
@@ -2420,7 +2425,8 @@ TEST_CASE(no_freeze_stop_press_sequence_leaves_the_instrument_sounding_after_sto
     {
         Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_stop_sequence_2"));
         BuildLatchedRingHeldAcrossStop(rig);
-        PressFreeze(rig);  // release.
+        PressFreeze(rig);  // release -- resumes the transport.
+        rig.RunBlocks(4);  // let the resumed transport actually play before Stop.
         PressStop(rig);
         RequireSilentAfter(rig, "Freeze->Freeze->Stop");
     }

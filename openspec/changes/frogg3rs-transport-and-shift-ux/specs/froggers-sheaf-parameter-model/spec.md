@@ -39,4 +39,11 @@ The Filter page SHALL limit its output with one limiter placed after the Comb/Pe
 - **THEN** the blended signal ahead of the limiter exceeds the limiter's threshold, which is the liveness control for the clauses below
 - **AND** the page's output is the limiter applied to the blended signal, sample for sample
 - **AND** the page's output peak is lower than the same chain's with its limiter bypassed, in the same run
-- Check: not yet delivered: app/FroggersDspParityTests.cpp, filter_fx_chain_limits_the_blended_output_so_a_resonant_comb_is_limited
+- Check: `app/FroggersDspParityTests.cpp`, `filter_fx_chain_limits_the_blended_output_so_a_resonant_comb_is_limited`, which drives a `FilterFxChain` with a below-unity-drive resonant comb, loud enough on the unlimited blend to exceed the limiter's threshold, and asserts that the shipped chain's output matches a fresh limiter applied to the unlimited blend sample for sample, and that the shipped peak is lower than the unlimited peak.
+
+#### Scenario: Neither branch is limited ahead of the blend on a pinned comb
+
+- **WHEN** Peak gain and comb feedback are both at their maximum, Topology puts the peak's input on the comb branch alone, and Peak frequency and Comb delay share the same registered-default pitch
+- **THEN** the peak branch's own peak and the comb branch's own peak, each read before either reaches the blend, both exceed the limiter's threshold, which is the liveness control for the clause below
+- **AND** a replica that applies no limiter to either branch, only to the blend, matches the chain's own output sample for sample
+- Check: `app/FroggersDspParityTests.cpp`, `filter_fx_chain_limits_neither_branch_ahead_of_the_blend_on_a_pinned_comb`, which pins Peak gain and comb feedback at maximum, Topology at maximum so the peak's input is the comb branch alone, and Peak frequency and Comb delay at their shared registered-default pitch, then drives a full-scale sine at that pitch through both the shipped `FilterFxChain::Process` and a replica that applies the output limiter only to the blend, never to either branch alone, and asserts that the two match sample for sample, and that the peak branch's own peak and the comb branch's own peak, each read before the blend, both exceed the limiter's threshold.

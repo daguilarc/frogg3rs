@@ -90,12 +90,12 @@ namespace synth_froggers::dsp {
 //     fbk`) within about 100 samples (~2ms) -- far faster than a 1ms
 //     attack's own time constant can track -- and the 1ms-attack limiter's
 //     own transient overshoot measured 1.673412, comfortably past the 1.0
-//     ceiling. This is the delay's own version of the peak branch's own
+//     ceiling. This is the delay's own version of the Filter page's own
 //     finding (FilterFx.hpp):
 //     "sustained material" is true of the STEADY STATE but the ONSET at
 //     minimum delay time is a fast transient, not a slow swell, so a slow
 //     attack under-reacts to it exactly like a slow attack under-reacted
-//     to the peak branch's own per-sample-random height steps.
+//     to the Filter page's own per-sample-random height steps.
 //   - kDelayWetLimiterThreshold (0.9): kept AT the master's own value (not
 //     lowered) -- measurement (below) shows the attack alone, not the
 //     threshold, is what needs to move; this stage still "catches first"
@@ -118,7 +118,7 @@ namespace synth_froggers::dsp {
 //     release governs recovery afterward, not this peak, and 100ms is the
 //     same "gain reduction that does not pump" value this codebase has
 //     already accepted for that job (dsp::OutputLimiter::kDefaultReleaseSeconds,
-//     dsp::kPeakLimiterReleaseSeconds) -- reused rather than a fresh number
+//     dsp::kFilterOutputLimiterReleaseSeconds) -- reused rather than a fresh number
 //     invented where the measurement gave no reason to move it.
 // Retargeted from 0.9 to 0.72, preserving the ORIGINAL
 // threshold/ceiling ratio (0.9/1.0 == 0.72/0.80) rather than picking a
@@ -270,7 +270,7 @@ struct StereoDelay
     // above the struct, for the tuning derivation). Per-channel, not one
     // instance driven by max(|dL|,|dR|): the codebase's own established
     // idiom for a two-instance choice is per-unit/per-channel independence
-    // (mirrors `outputLimiter_`/`filterChain_.peakLimiter` being separate,
+    // (mirrors `outputLimiter_`/`filterChain_.outputLimiter` being separate,
     // independently-configured instances rather than a single shared one,
     // dsp/Limiter.hpp's own header comment on why one shared-tuning instance
     // was wrong for two different jobs). Concretely for THIS stage: the
@@ -284,7 +284,7 @@ struct StereoDelay
     // narrowed from "the whole mix" to "the whole delay stage" -- a smaller
     // version of the same mistake. Per-channel keeps each channel's own
     // reduction tied to its own excess only, matching how every other
-    // per-stage limiter in this codebase (`peakLimiter`, `outputLimiter_`)
+    // per-stage limiter in this codebase (`outputLimiter`, `outputLimiter_`)
     // is scoped to exactly the signal it bounds and nothing wider.
     OutputLimiter wetLimiterL;
     OutputLimiter wetLimiterR;

@@ -366,8 +366,9 @@ releases. No other Twister encoder has a shifted job.
 A Twister row added from the MIDI Fighter Twister preset before this version keeps its old mappings
 and shows Restore. Pressing Restore installs Shift + Crunchy and replaces edits made to that row. A
 patch saved earlier carries the old row, so load it, press Restore and save it again. A Twister row
-that shows no Restore predates the preset, so delete it and add the MIDI Fighter Twister preset
-again.
+from an earlier version — one that either predates the preset or was released, in that version,
+with that version's own Release button — shows no Restore; delete it and add the MIDI Fighter
+Twister preset again.
 
 Utility settings the device needs, set in the Midi Fighter Utility: every encoder's sensitivity/mode to
 "Enc 3FH/41H" (relative), all six side buttons to "CC Hold", and "Bank Side Buttons" unchecked, so the
@@ -505,11 +506,12 @@ the length of Attack, Decay or Release themselves.
 
 ## Filter bank
 
-Signal path (at the default Topology): a resonant notch filter ("Scoop") is blended into the input
-first; that scooped signal feeds both a resonant peaking EQ ("peak") and, through a short pure delay, a
-comb filter. Topology morphs how much the comb path feeds the peak path, from fully parallel to fully
-in series, and Comb/Peak blends the peak and comb outputs together before this bank hands off to
-Drive/Delay/Reverb downstream.
+Signal path (at the default Topology): the Drive page feeds this bank's input. A resonant notch filter
+("Scoop") is blended into that input first; the scooped signal feeds both a resonant peaking EQ ("peak")
+and, through a short pure delay, a comb filter. Topology morphs how much the comb path feeds the peak
+path, from fully parallel to fully in series, and Comb/Peak blends the peak and comb outputs together.
+A limiter after that blend holds the bank's output down before this bank hands off to Delay and then
+Reverb downstream.
 
 **Peak freq** (slot 0) — center frequency of the resonant peaking EQ, 100 Hz–20 kHz.
 
@@ -517,8 +519,8 @@ Drive/Delay/Reverb downstream.
 travel the peak is flat. The peak path divides its own output by the same height it raises the peak
 to, so turning this up holds the level at the peak's own center frequency and pulls the rest of the
 signal down. With the bank at its defaults, which put the peak at 100 Hz, a full-scale tone at that
-center frequency holds within 0.00025 dB across the whole travel, a tone at 1 kHz falls
-6.04 dB, and a tone at 5 kHz falls 6.52 dB; a broadband source loses 7.10 dB of total level end to
+center frequency holds within 0.0000097 dB across the whole travel, a tone at 1 kHz falls
+5.27 dB, and a tone at 5 kHz falls 5.75 dB; a broadband source loses 6.72 dB of total level end to
 end. The peak is shaped by attenuation, so reaching its full height costs that much level.
 
 **Peak Q** (slot 2) — width/resonance of the peak: a wide, gentle bump at the bottom, a narrow,
@@ -539,8 +541,10 @@ darkens/dampens the comb's repeats faster; turning it up brightens and sustains 
 20 kHz.
 
 **Comb drive** (slot 7) — pre-gain (0.25×–4×) into the comb's own saturator; unity gain at the
-center default. Raising it pushes the comb's ringing into harder, more distorted saturation. The
-saturator's own ceiling on the comb's output level holds regardless.
+center default. Raising it pushes the comb's ringing into harder, more distorted saturation. Below
+the center default the saturator's own ceiling on the comb's output level no longer holds — the comb
+can ring louder than the drive at unity or above — and it is the Filter page's own output limiter,
+downstream of the Comb/Peak blend, that holds the level there.
 
 **Scoop mix** (slot 8) — blends a resonant notch filter into the shared input that feeds both the comb
 and peak paths. At the bottom of travel the notch is absent and Comb/Peak sees the unaffected signal;

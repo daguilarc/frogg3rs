@@ -1,14 +1,13 @@
 # Proposal — `frogg3rs-transport-and-shift-ux`
 
-This change is written against frogg3rs `origin/main` at `b06ba16`, which pins
-`External/Sheaf` at `e8894727`, the tip of the open pull request stack: the
-"Record the delivery" commit of `fold-controller-wizard-into-add-row`
-(jvictor0/Sheaf#19). The frogg3rs branch `frogg3rs-transport-and-shift-ux` is
-based on `b06ba16`, and the Sheaf branch `shifted-encoder-turns` on
-`e8894727`. frogg3rs `main` has since moved to `37c1b9c`, which pins
-`External/Sheaf` at `f6266560`; task 7.3, the first open task, rebases both
-branches onto those and updates the base hashes these artifacts name. Code is
-named by symbol, not line.
+This change is written against frogg3rs `origin/main` at `37c1b9c`, which
+pins `External/Sheaf` at `f6266560`, the current tip of
+`fold-controller-wizard-into-add-row` (jvictor0/Sheaf#19) on the fork: one
+commit past that branch's "Record the delivery" commit `e8894727`, still
+unmerged upstream. The frogg3rs branch `frogg3rs-transport-and-shift-ux` is
+based on `37c1b9c`, and the Sheaf branch `shifted-encoder-turns` on
+`f6266560`; task 7.3 carried both branches from the previous base
+(`b06ba16` / `e8894727`) onto these. Code is named by symbol, not line.
 
 ## Why
 
@@ -55,9 +54,11 @@ expects of it.
   (`FroggersAppCore::ProcessBlock` stores it), so the plate follows every
   route that starts or stops the transport: the buttons, their MIDI mappings,
   a MIDI Start or Stop from any controller (`RealtimeMidiInProcessor`,
-  appended to every profile), the DAW transport in the plugin, and the
-  restart `FroggersAppCore::PrepareToPlay` pushes after an audio-device
-  change. Stop has no held state; a stopped transport is Play's idle state.
+  appended to every profile), and the restart `FroggersAppCore::PrepareToPlay`
+  pushes after an audio-device change. The plugin renders no Play plate
+  (`FroggersUiSurface`'s plugin-mode branch skips Play/Stop/Record), so the
+  plugin's own DAW transport has no plate to follow. Stop has no held state;
+  a stopped transport is Play's idle state.
 - **Releasing Freeze returns the transport to where it was.** When Freeze
   engages, `FroggersUiSurface::HandleAction`'s kFreeze branch records
   `TransportRunning()` in NEW `freezeEngagedWhileTransportRunning_`. When a
@@ -241,9 +242,10 @@ pushes `ParamIncDec` for Crunchy.
   keeps smi-16's "Shift and Hold Drill do not interfere" scenario true.
 - **A Twister row saved before this change keeps its old mappings.** A preset
   is copied into a row once, and runtime config and patches carry the row, so
-  an existing row shows Restore and turns Crunchy under Shift only after the
-  player presses it. The manual says so. Restore is one press; a load-time
-  migration would overwrite edits a player made to the row, so there is none.
+  an existing row keeps its old mappings and shows Restore; Shift held on
+  Crunchy moves the scene blend only after the player presses Restore. The
+  manual says so. Restore is one press; a load-time migration would overwrite
+  edits a player made to the row, so there is none.
 - **The Twister's LED ring on encoder 16 is unchanged.** This change does not
   touch the encoder output config, so while Shift is held the ring shows
   Crunchy rather than the blend.
@@ -265,9 +267,9 @@ doing.
 from two branches and returns their blend with no limiter after it:
 
 - the peak branch: `peak.Process`, the `1/height` trim, then `peakLimiter`,
-  an `OutputLimiter` tuned by `kPeakLimiterThreshold`, `kPeakLimiterCeiling`
-  (`kStageCeiling`), `kPeakLimiterAttackSeconds` and
-  `kPeakLimiterReleaseSeconds`;
+  an `OutputLimiter` tuned by kPeakLimiterThreshold, kPeakLimiterCeiling
+  (`kStageCeiling`), kPeakLimiterAttackSeconds and
+  kPeakLimiterReleaseSeconds;
 - the comb branch: `pureDelay`, `Comb::Process` with `PadeSaturator` inside
   its feedback loop, then the `1/(1+|fb|)` trim, and no limiter;
 - `mixed = peakPath * legA + combPath * legB`, returned as is.
@@ -300,14 +302,15 @@ the modulated comb is only the reason for it.
   its four tuning constants and their values.
 - Every comment and doc the move makes false is corrected, including the
   two measured below as false on the base.
-- OPEN, for the next session's preflight: whether the member and its names
-  follow its new job. The proposed names are NEW `outputLimiter` for the
-  member (the name `DriveBlendPhase` already gives the Drive page's output
-  limiter), NEW `kFilterOutputLimiterThreshold`,
-  NEW `kFilterOutputLimiterCeiling`, NEW `kFilterOutputLimiterAttackSeconds`
-  and NEW `kFilterOutputLimiterReleaseSeconds` for the constants, and NEW
-  `TestFilterOutputLimiter` for the test accessor. See "Open decisions"
-  below.
+- The rename is ruled in. The member becomes NEW `outputLimiter`
+  (`DriveBlendPhase::outputLimiter` already gives the Drive page's last
+  stage this name), and the four constants become NEW
+  `kFilterOutputLimiterThreshold`, NEW `kFilterOutputLimiterCeiling`, NEW
+  `kFilterOutputLimiterAttackSeconds` and NEW
+  `kFilterOutputLimiterReleaseSeconds`, keeping their values. The test
+  accessor FroggersAppCore::TestFilterPeakLimiter, unused since commit
+  e96ae19, is deleted with no replacement; so is the unused
+  FroggersAppCore::TestDriveBlendPhase. See "Decisions" below.
 
 ### Data flow
 
@@ -489,8 +492,10 @@ The four failures are in the table below.
 |---|---|---|
 | `filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend` | its replica applies the limiter to the peak branch (0.724068 against 0.727463) | the replica applies it after the blend |
 | `filter_fx_chain_blend_extremes_hold_other_branch_at_floor_gain` | same (0.704129 against 0.704215) | same |
-| `filter_bank_peak_branch_trim_versus_limiter_bound_on_pinned_comb` | replica against `Process`, worst sample delta 0.0730906 | the replica follows the new placement and matches `Process` exactly again |
-| `gate_period_tracks_tempo_change` | its audio proxy's edge ratio is 1.746 with the limiter on the peak branch, 1.507 with no Filter limiter, and 1.486 with it after the blend; the lower bound 1.6 was fitted to the first | OPEN, see "Open decisions" |
+| filter_bank_peak_branch_trim_versus_limiter_bound_on_pinned_comb | replica against `Process`, worst sample delta 0.0730906 | the four-cell comparison is retired; the remainder becomes NEW `filter_fx_chain_limits_neither_branch_ahead_of_the_blend_on_a_pinned_comb`, asserting the replica-against-`Process` delta and that both branch peaks exceed the limiter's threshold |
+| `gate_period_tracks_tempo_change` | its audio proxy's edge ratio is 1.746 with the limiter on the peak branch, 1.507 with no Filter limiter, and 1.486 with it after the blend; the lower bound 1.6 was fitted to the first | the lower bound becomes 1.3, and the header carries no counts |
+| `filter_bank_peak_trim_removal_distortion_intermodulation_and_limiter_pumping` | it shares `ProcessFilterBankPeakVariant` and reads the branch-level limiter's own envelope, both of which the move removes | it follows the new placement; task 8.4 prints its readings before and after the move and stops to report rather than retuning a bound if an assertion then fails |
+| `filter_bank_peak_gain_travel_measurement_at_and_away_from_resonance` | the broadband band's two asserts bound a branch-level comparison the move removes | the broadband band becomes one ordering assert; the flatness and away-row figures still move (1 kHz falls 6.04 dB before the move and 5.27 dB after, 5 kHz falls 6.52 and 5.75, and broadband falls 7.12 and 6.72) |
 
 These tests pass after the move, but their comments, labels or printed
 figures describe a peak-branch limiter, and some figures change:
@@ -499,32 +504,30 @@ figures describe a peak-branch limiter, and some figures change:
 - `peak_ceiling_candidate_limiter_measurement`: post-limiter worst 0.885603 before the move, 0.809305 after, for candidate 3.
 - `peak_ceiling_scoop_modulation_limiter_measurement`: post-limiter worst 3.36585e+29 before the move, 0.877405 after.
 - `topology_morph_peak_branch_headroom_across_full_range`
-- `filter_bank_peak_gain_travel_measurement_at_and_away_from_resonance`: 1 kHz falls 6.04 dB before the move and 5.27 dB after, 5 kHz falls 6.52 and 5.75, and broadband falls 7.12 and 6.72.
 
-### Open decisions
+### Decisions
 
-These are OPEN. The next session's preflight settles each one, and the task
-that depends on it (8.1, 8.2, 8.5) is rewritten with the ruling before it is
-dispatched.
+Preflight settled these on frogg3rs `37c1b9c` with Sheaf `f6266560`, in
+contexts that did not write the plan. The task that depends on each one
+(8.1, 8.2, 8.5) carries the ruling.
 
-- **The rename (task 8.2).** Moving the limiter makes the names
-  `peakLimiter`, `kPeakLimiter*` and `TestFilterPeakLimiter` false. The draft
-  proposes renaming them to the NEW names under "What changes"; the
-  alternative is to keep the names and have the comments say where the
-  limiter sits.
-- **`gate_period_tracks_tempo_change`'s lower bound (task 8.5).** Measured
-  with the test's own patch, the proxy ratio falls below 1.6 as soon as no
-  limiter rides the peak branch alone: 1.507 with no Filter limiter at all,
-  and 1.486 with the limiter after the blend. The test's header says the
-  bound exists to catch a collapse, with ratios "well under 1.3". One
-  candidate is to set the lower bound to 1.3 and restate the measured counts
-  (base=70, doubled=104). The other is to change the test's patch until the
-  ratio clears 1.6 again, which fits the test to the limiter rather than to
-  the gate it is named for. Neither is decided.
-- **The default patch's level (task 8.1).** The default patch loses 0.14 dB
-  of rms at the Filter output and 0.05 dB at the master (see the grid). The
-  ruling moves the limiter at its current settings; whether the change
-  compensates the default patch's level is open.
+- **The rename (task 8.2).** Ruled in. Moving the limiter makes the names
+  `peakLimiter`, `kPeakLimiter*` and `TestFilterPeakLimiter` false, and the
+  alternative -- keeping the names and having the comments say where the
+  limiter sits -- leaves a name that permanently contradicts its own job.
+  The member and constants take the NEW names under "What changes"; the test
+  accessor is deleted rather than renamed, since it has had no caller since
+  commit e96ae19.
+- **`gate_period_tracks_tempo_change`'s lower bound (task 8.5).** Ruled:
+  1.3, with the header carrying no counts.
+  The proxy ratio depends on the level and waveform the chain renders,
+  including the Filter page's limiter, not on the tempo alone, so the bound
+  is fitted to what the moved code produces rather than to a placement the
+  code no longer has.
+- **The default patch's level (task 8.1).** Ruled: no compensation. The
+  move adds no gain stage before or after the limiter and changes none of
+  its four constants' values; the ruling accepts the 0.14 dB rms cost at the
+  limiter's current settings rather than offsetting it.
 
 ## Sheaf addition and delivery
 
@@ -546,7 +549,7 @@ The Sheaf half follows how every Sheaf addition in this project has shipped.
   resolves.
 - **On the fork, as the next PR in the stack.** The work is done in this
   change's worktree's `External/Sheaf` on a branch named after the Sheaf
-  openspec change, `shifted-encoder-turns`, based on the stack tip `e8894727`
+  openspec change, `shifted-encoder-turns`, based on the stack tip `f6266560`
   (`fold-controller-wizard-into-add-row`, jvictor0/Sheaf#19). It carries its
   own openspec change, `External/Sheaf/openspec/changes/shifted-encoder-turns/`,
   which holds the Sheaf half of this proposal and the Sheaf spec deltas. It
@@ -663,7 +666,7 @@ Every test that presses Freeze was read. Three encode the old release rule.
 |---|---|---|
 | FroggersAudioRoutingTests.cpp: releasing_freeze_does_not_restart_the_transport (deleted, no longer in the tree) | engages from running, asserts release leaves it stopped | replaced by `releasing_freeze_resumes_the_transport_it_stopped` |
 | FroggersAudioRoutingTests.cpp: freeze_latch_release_while_stopped_silences_within_the_bound (deleted, no longer in the tree) | builds the drone with Play then Freeze, releases, asserts silence | replaced by `freeze_engaged_while_stopped_releases_to_silence_within_the_bound`, which engages Freeze from a stopped transport, confirms the drone is audible, releases, and asserts silence within the bound and a stopped transport |
-| `FroggersAudioRoutingTests.cpp: no_freeze_stop_press_sequence_leaves_the_instrument_sounding_after_stop` | sequence 2's comment calls the instrument "already-unlatched-and-silent" before the final Stop | comment corrected; the release resumes play, and the final Stop still has to silence it |
+| `FroggersAudioRoutingTests.cpp: no_freeze_stop_press_sequence_leaves_the_instrument_sounding_after_stop` | sequence 2's comment already says the release resumes play, but the sequence pushes Stop right after the release, before any block runs -- the instrument never actually plays between the release and the Stop | sequence 2 runs blocks between the release and the Stop, so the release genuinely resumes play (`TransportRunning()` reads true immediately before Stop) before the final Stop silences it |
 
 Unaffected, read to confirm: `freeze_action_toggles_the_latch_and_a_second_click_releases_it`,
 `freeze_draw_commands_genuinely_invert_plate_and_glyph_colours`,
@@ -675,11 +678,10 @@ them asserts the transport after a release.
 
 ## Failure present on the base
 
-The plugin's `FroggersVstHostTests` binary (a target of
-`app/vst/CMakeLists.txt`, built into `app/vst/build/`) fails one case on this
-branch, and the
-failing path is the base's, not this change's. `$L` is a scratch log file
-outside the tree:
+At frogg3rs `b06ba16` (Sheaf `e8894727`), the plugin's `FroggersVstHostTests`
+binary (a target of `app/vst/CMakeLists.txt`, built into app/vst/build/, an
+ignored build directory) failed one case, and the failing path was the
+base's, not this change's. `$L` is a scratch log file outside the tree:
 
 ```
 $ app/vst/build/FroggersVstHostTests > "$L" 2>&1; echo "EXIT=$?"
@@ -699,7 +701,7 @@ sets `patchCarriesMappings`, the engine's patch drain hands the document's
 `Engine::MessageThreadTick` applies that instrument through `EditInstrument`
 and then calls `Engine::SaveRuntimeConfiguration`, which writes the data
 root's `config.json`. The save after applying a patch's instrument came in
-with the base, and this change touches neither `Engine.hpp`, the patch
+with the base, and this change touched neither `Engine.hpp`, the patch
 persistence code, nor any non-comment line of the plugin processor:
 
 ```
@@ -712,13 +714,30 @@ $
 
 The failing run left a `config.json` in the case's scratch data root
 (`froggers-vst-host-tests/state_no_write_through` under the system temporary
-directory). The cause above is traced by reading. This change does not fix
-it. The `fold-controller-wizard-into-add-row` session reports that Sheaf
-`f6266560`, which frogg3rs `37c1b9c` ("Keep a DAW's plugin state restore from
-writing the shared data folder") pins, fixes it; that report is not verified
-here. Task 7.4
-runs the case after the rebase onto `37c1b9c`; if it still fails, this
-failure stands as a finding of this change.
+directory). The `fold-controller-wizard-into-add-row` session reported that
+Sheaf `f6266560`, which frogg3rs `37c1b9c` ("Keep a DAW's plugin state
+restore from writing the shared data folder") pins, fixes it; that report
+was not verified there.
+
+Task 7.4 built the plugin's test binaries after the rebase onto `37c1b9c` /
+`f6266560` and ran `FroggersVstHostTests` again. The case passes at this
+base:
+
+```
+$ app/vst/build/FroggersVstHostTests > "$L" 2>&1; echo "EXIT=$?"
+EXIT=0
+$ grep -c '^\[PASS\]' "$L"
+46
+$ grep -c '^\[FAIL\]' "$L"
+0
+$ grep -B1 state_information_save_and_restore_never_write_the_shared_data_root "$L"
+  [state] /var/folders/1v/94hwpjp57lg5xz2yxd0vst700000gn/T/froggers-vst-host-tests/state_no_write_through byte-for-byte unchanged across 6 save/restore cycles; the same detector DID flag a deliberate control write into it.
+[PASS] state_information_save_and_restore_never_write_the_shared_data_root
+```
+
+The `fold-controller-wizard-into-add-row` session's report is verified: Sheaf
+`f6266560` fixes the failure recorded above at `b06ba16`, and the fix holds
+once `37c1b9c` pins it into frogg3rs.
 
 ## Evidence
 
@@ -844,9 +863,9 @@ e8894727:projects/synth/tests/engine_tests.cpp:3044:    synth::MidiAppCatalog Mi
 
 Preflight ran on the previous base, frogg3rs `b0c03a9` with Sheaf `f73d4202`,
 before the Filter limiter joined this change. The limiter's measurements
-were taken on frogg3rs `4ab820f` with Sheaf `751e82e0`, and no preflight has
-run over them yet: the next session's preflight covers the limiter and the
-open decisions it names.
+were taken on frogg3rs `4ab820f` with Sheaf `751e82e0`, and preflight ran
+over that item on frogg3rs `37c1b9c` with Sheaf `f6266560`, in contexts that
+did not write the plan.
 
 - Hygiene sweep: three false statements corrected across six comments in
   `app/vst/FroggersPluginProcessor.hpp`/`.cpp` and
@@ -865,6 +884,15 @@ open decisions it names.
 - Four independent attackers, a debate over their merged findings, and an
   adjudicator who took no part: ten findings true, two false. The true ones
   are written into this proposal and the tasks.
+- The Filter limiter's preflight, on frogg3rs `37c1b9c` with Sheaf
+  `f6266560`, in contexts that did not write the plan: ruled the rename in,
+  set `gate_period_tracks_tempo_change`'s lower bound to 1.3, and ruled no
+  compensation for the default patch's level; narrowed the pinned-comb
+  test's four-cell comparison to the two assertions its new placement still
+  supports and renamed it; named task 8.4's previously untracked fourth
+  test; added task 8.8 for two more comments the documentation step left
+  untouched; and added the spec delta's second scenario for the clause that
+  neither branch carries a limiter of its own ahead of the blend.
 
 ## Delivery Gate
 

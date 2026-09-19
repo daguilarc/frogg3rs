@@ -7,14 +7,14 @@ Sheaf `f73d4202`, and carried onto the next base by group 7. A Check that
 reports a run's counts reports that run; group 9 repeats every run on the
 current base.
 
-The next session's open work runs in this order: 7.3 (the rebase onto
-`37c1b9c` / `f6266560`) first, then 7.4 and 7.5, then 1.7a and 3.1a, then
-group 8, then group 9, then group 10.
+The open work runs in this order: the postflight (9.0), which reads the
+documentation, then 9.1, 9.2 and the commit to this worktree (9.3). Group 10
+runs after the operator approves the 9.2 screenshots.
 
 ## 1. Sheaf: shifted encoder turns
 
 Work in this worktree's `External/Sheaf`, on the branch
-`shifted-encoder-turns`, based on `e8894727`, the tip of
+`shifted-encoder-turns`, based on `f6266560`, the tip of
 `fold-controller-wizard-into-add-row` (jvictor0/Sheaf#19).
 
 - [x] 1.1 Initialize the worktree's `External/Sheaf` and cut the branch. The
@@ -90,7 +90,7 @@ Work in this worktree's `External/Sheaf`, on the branch
       offers Shift; the `GroupColumnFieldsMatches…` parity tests pass with and
       without a Shift-offering catalog; `TestControllersRowFitsWithinFroggersNarrowestHost`
       passes with a shifted turn row in its open states.
-- [ ] 1.7a Correct the comment 1.7 added above the shifted turn in
+- [x] 1.7a Correct the comment 1.7 added above the shifted turn in
       `TestControllersRowFitsWithinFroggersNarrowestHost`
       (`External/Sheaf/projects/synth/tests/portable_ui_tests.cpp`), which
       says "the Shift field this change adds": it describes the field by the
@@ -166,7 +166,7 @@ Work in this worktree's `External/Sheaf`, on the branch
       is corrected. The whole `app/FroggersAudioRoutingTests.cpp` binary
       passes.
 
-- [ ] 3.1a Correct two phrases in the kFreeze branch comment 3.1 wrote in
+- [x] 3.1a Correct two phrases in the kFreeze branch comment 3.1 wrote in
       `FroggersUiSurface::HandleAction` (`app/FroggersUiSurface.hpp`) that
       describe the code by its history: "exactly as the operator described
       it" and "same as before this branch existed". The comment says what
@@ -286,7 +286,7 @@ Work in this worktree's `External/Sheaf`, on the branch
       file and `MANUAL.md`'s side-button table, not the PNGs:
       `assets/manual/twister-preset-shift.png`, viewed, shows the bottom
       right encoder reading Scene Blend with Shift held.
-- [ ] 7.3 First open task. Rebase this branch onto frogg3rs `main` at
+- [x] 7.3 Rebase this branch onto frogg3rs `main` at
       `37c1b9c`, and `shifted-encoder-turns` onto `f6266560`, the Sheaf
       commit `37c1b9c` pins. `f6266560` is not in this worktree's
       `External/Sheaf`; fetch it from the main checkout's `External/Sheaf`,
@@ -298,16 +298,19 @@ Work in this worktree's `External/Sheaf`, on the branch
       Check: `git merge-base HEAD 37c1b9c` prints `37c1b9c…`;
       `git -C External/Sheaf merge-base HEAD f6266560` prints `f6266560…`;
       `git ls-tree HEAD External/Sheaf` names the commit
-      `git -C External/Sheaf rev-parse HEAD` prints; the four python gates
+      `git -C External/Sheaf rev-parse HEAD` prints;
+      `check-spec-checks-resolve`, `check-citations-resolve`,
+      `check-modified-requirements-restate-promoted`,
+      `check-no-planning-history`, `check-artifact-symbols-resolve`,
       and both `openspec validate --strict` runs pass.
-- [ ] 7.4 After 7.3, build the plugin's test binaries and run
+- [x] 7.4 After 7.3, build the plugin's test binaries and run
       `FroggersVstHostTests`.
       Check: `state_information_save_and_restore_never_write_the_shared_data_root`
       passes, which is what the proposal's "Failure present on the base"
       section records as reported and not yet verified. If it fails, the
       failure stands as a finding of this change: that section is rewritten
       to say so, with the run's output, and 9.1 names it.
-- [ ] 7.5 A context that wrote none of it reviews what the rebases authored,
+- [x] 7.5 A context that wrote none of it reviews what the rebases authored,
       since nothing authored enters a push until such a context has read it:
       every conflict resolution in both trees
       (`git range-diff b0c03a9..f37d586 b06ba16..4ab820f`,
@@ -320,23 +323,24 @@ Work in this worktree's `External/Sheaf`, on the branch
 ## 8. frogg3rs: the Filter page's limiter moves to the page's output
 
 The proposal's section "The Filter page's limiter moves to the page's output"
-holds the story, the operator's ruling, the measurements and three OPEN
-decisions. The next session's preflight settles each OPEN decision, and the
-task carrying it is rewritten with the ruling before it is dispatched. Every
-new or changed test is shown to fail with its production change reverted,
-and the executor deletes the test binary before each rebuild in a
-revert-and-restore sequence. The measurement harness is in
+holds the story, the operator's ruling, the measurements and the "Decisions"
+preflight ruled on frogg3rs `37c1b9c` with Sheaf `f6266560`. Every new test,
+and every test whose assertions change, is shown to fail against the
+behaviour it guards -- `FilterFxChain::Process` at the old placement, unless
+the task names a different break. A test changed only in comments, labels or
+names needs no such run. The executor deletes the test binary before each
+rebuild in a break-and-restore sequence. The measurement harness is in
 `openspec/changes/frogg3rs-transport-and-shift-ux/evidence/limiter/`: build it
 with that directory's `setup.sh` and `Makefile`, as the proposal's
 Measurements section shows.
 
-- [ ] 8.1 Move the limiter. In `FilterFxChain::Process`, the peak branch's
+- [x] 8.1 Move the limiter. In `FilterFxChain::Process`, the peak branch's
       trimmed output goes to the Comb/Peak blend unlimited, and `Process`
       returns the limiter applied to the blend, at its current four tuning
       constants and values, unconditionally, with no comb-specific limiter.
-      OPEN (the default patch's level): whether the change compensates the
-      default patch's 0.14 dB rms loss at the Filter output; the ruling moves
-      the limiter at its current settings.
+      The default patch's level: no compensation. The move adds no gain
+      stage before or after the limiter, and changes none of the four
+      tuning constants' values.
 
       Correct every comment the move makes false:
       - `app/dsp/FilterFx.hpp`:
@@ -345,19 +349,32 @@ Measurements section shows.
         - the member's comment: its placement, "NOT applied to
           `filterOut`/the composite", and "the comb branch is already
           provably bounded";
+        - the `FilterFxChain` constructor comment's "would silently
+          under-tune this branch";
         - `Process`'s header comment ("Every other computation (combTrim,
           peakTrim, peakLimiter, the Comb/Peak blend) stays exactly as it
           was", and the processing-order sentence);
         - the comment above the limited peak line;
-        - the comb-trim comment's `|comb| <= A + |fb|` and "normalizes the
-          worst case ... to exactly 1.0", which are false below Comb drive 1
-          (measured in the proposal).
+        - the comb-trim comment: `|comb| <= A + |fb|` is false below Comb
+          drive 1 (measured in the proposal); "normalizes the worst case
+          ... to exactly 1.0" is false at every Comb drive -- at A=0 the
+          worst case is 0.95/1.95 = 0.487, and only A=1 gives 1.0;
+        - `Comb::GetFeedback`'s "the fed-back term can never exceed
+          |fb|*1.0 no matter how large |fb| is", and the Comb drive
+          comment's "does not reopen that same concern from the low-drive
+          end", both false below Comb drive 1 (the proposal's `combbound`
+          measurement).
       - `app/dsp/Limiter.hpp`: the header comment naming a second instance
         "on the Filter bank's peak branch", the per-stage lists that name the
-        peak stage, and the VST note's "peak-branch instance".
+        peak stage, the VST note's "peak-branch instance", and the per-stage
+        list that gives Delay and Reverb a 0.9 threshold while
+        `kDelayWetLimiterThreshold` and `kReverbWetLimiterThreshold` are
+        both 0.72 and calls the tuning "identical at all four sites".
       - `app/FroggersAppCore.hpp`:
         - the `filterChain_.Configure` comment in `PrepareToPlay`;
-        - the comments on the limiter accessors;
+        - the comments on the limiter accessors, including the sentence in
+          `TestOutputLimiter`'s own comment that points to the peak branch's
+          own limiter instance;
         - the output-limiter comment naming the peak branch;
         - the recovery comments naming `filterChain_.peakLimiter`;
         - `RouteFilterBank`'s "The comb feeding this stage is bounded near
@@ -366,30 +383,39 @@ Measurements section shows.
       - `app/dsp/Delay.hpp`, `app/dsp/Drive.hpp` and `app/dsp/Reverb.hpp`:
         the comments naming the limiter's place.
 
-      FOUND before the change, per file:
-      `git grep -n -i -E 'peakLimiter|peak[- ]limiter|peak-branch limiter|kPeakLimiter|TestFilterPeakLimiter' -- app openspec/specs`
-      prints `app/FroggersAppCore.hpp` 8, `app/FroggersDspParityTests.cpp` 39,
-      `app/dsp/Delay.hpp` 3, `app/dsp/Drive.hpp` 3, `app/dsp/FilterFx.hpp` 24,
-      `app/dsp/Limiter.hpp` 4, `app/dsp/Reverb.hpp` 1, and
-      `openspec/specs/froggers-sheaf-parameter-model/spec.md` 1. The report
-      gives FOUND against CHANGED for each file.
-      Check: every comment listed above says where the limiter sits after
-      the move; `make check-citations-resolve check-no-planning-history`
-      passes in `app/`.
-- [ ] 8.2 OPEN (the rename): whether the member, constants and test accessor
-      are renamed for the limiter's new job. The candidate: `peakLimiter`
-      becomes NEW `outputLimiter`; the constants become NEW
+      FOUND before the change, per file, from
+      `git grep -n -i -E "peakLimiter|peak[- ]limiter|peak[- ]branch('s)?( own)? limiter|kPeakLimiter|TestFilterPeakLimiter" -- app openspec/specs`:
+      `app/FroggersAppCore.hpp` 9, `app/FroggersDspParityTests.cpp` 39,
+      `app/dsp/Delay.hpp` 3, `app/dsp/Drive.hpp` 3, `app/dsp/FilterFx.hpp` 25,
+      `app/dsp/Limiter.hpp` 5, `app/dsp/Reverb.hpp` 1, and
+      `openspec/specs/froggers-sheaf-parameter-model/spec.md` 1. The widened
+      alternative catches the "OWN limiter" phrasing a line-wrapped instance
+      still slips past -- which is why `TestOutputLimiter`'s comment is
+      named above by hand rather than left to the grep. The report gives
+      FOUND against CHANGED per file from this grep.
+      Check: every comment listed above is true after the move, including
+      the corrected bound statements; the four tuning constants' values are
+      unchanged, read from `app/dsp/FilterFx.hpp`; `make check-citations-resolve
+      check-no-planning-history` passes in `app/`.
+- [x] 8.2 The rename is ruled in. `peakLimiter` becomes NEW `outputLimiter`
+      (`DriveBlendPhase::outputLimiter` already gives the Drive page's last
+      stage this name). The four constants become NEW
       `kFilterOutputLimiterThreshold`, NEW `kFilterOutputLimiterCeiling`, NEW
       `kFilterOutputLimiterAttackSeconds` and NEW
       `kFilterOutputLimiterReleaseSeconds`, keeping their values, with the
-      static assertion that threshold stays below ceiling following them;
-      `FroggersAppCore::TestFilterPeakLimiter` becomes NEW
-      `TestFilterOutputLimiter`; `FilterFxChain::ForEachStatefulUnit` visits
-      the renamed member. If the rename is ruled in, its Check is:
-      `git grep -n -E 'peakLimiter|kPeakLimiter|TestFilterPeakLimiter' -- app`
-      prints nothing. If it is ruled out, 8.1's comments say that the
-      peak-named limiter sits at the page's output, and this task is removed.
-- [ ] 8.3 Add NEW `filter_fx_chain_limits_the_blended_output_so_a_resonant_comb_is_limited`
+      static assertion that threshold stays below ceiling following them.
+      `FilterFxChain::ForEachStatefulUnit` visits `outputLimiter`. The test
+      locals named refPeakLimiter follow the rename.
+
+      Delete the accessor FroggersAppCore::TestFilterPeakLimiter, which has
+      had no caller since commit e96ae19, and its own comment above it;
+      delete the sentence in `TestOutputLimiter`'s comment that points to
+      it. No accessor replaces it. In the same accessor block, delete
+      FroggersAppCore::TestDriveBlendPhase, which has no caller.
+
+      Check: `git grep -n -i -E 'peak_?limiter|TestFilter(Peak|Output)Limiter|TestDriveBlendPhase' -- app`
+      prints nothing.
+- [x] 8.3 Add NEW `filter_fx_chain_limits_the_blended_output_so_a_resonant_comb_is_limited`
       to `app/FroggersDspParityTests.cpp`, using the limiter's names as 8.2
       settles them.
       - **Chains.** Two `FilterFxChain`s configured at 48 kHz: the shipped
@@ -419,57 +445,162 @@ Measurements section shows.
       samples differing and the shipped limiter's envelope staying at
       1.0000. Then the spec delta's "not yet delivered" Check line is
       rewritten to name the test in backticks, file and case.
-- [ ] 8.4 Update the DSP parity tests the move turns red.
+- [x] 8.4 Update the DSP parity tests the move turns red, and every passing
+      test whose comment, label or figure describes a peak-branch limiter.
+      `ProcessFilterBankPeakVariant` follows the new placement: the peak
+      branch is unlimited, and the limiter processes the blended composite.
+
       - `filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend` and
         `filter_fx_chain_blend_extremes_hold_other_branch_at_floor_gain`:
-        their replicas apply the limiter after the blend.
-      - `filter_bank_peak_branch_trim_versus_limiter_bound_on_pinned_comb`:
-        its replica follows the new placement, and its printed replica
-        against `Process` worst sample delta is 0 again. Its name and labels
-        say what its cells measure now. If its cells can no longer express
-        the trim-versus-limiter comparison it was written for, stop and
-        report rather than rewriting its assertions.
+        their replicas apply the limiter after the blend. Correct the first
+        test's comment that the limiter is "expected to act as an exact
+        identity here" and the second test's comment that one replica
+        "serves both knob positions", both of which the move makes false.
+      - filter_bank_peak_branch_trim_versus_limiter_bound_on_pinned_comb:
+        retire the four-cell comparison -- remove the four cells, the
+        margins, the spread check, the pinned-comb liveness block, and the
+        three margin constants (kUnboundedOverBypassedDb,
+        kBypassedOverLimitedDb, kLimitedPairSpreadDb). Rename the remainder
+        NEW `filter_fx_chain_limits_neither_branch_ahead_of_the_blend_on_a_pinned_comb`.
+        At the existing corner, with the rewritten helper, it prints the
+        worst replica-against-`Process` delta and the peak-branch and
+        comb-branch peaks, and asserts:
+        1. worst delta <= 1e-6;
+        2. both branch peaks exceed `kFilterOutputLimiterThreshold`.
+        If assertion 2 fails for either branch, stop and report; do not move
+        the corner or change a bound. Add the comb-branch tap assertion 2
+        reads, alongside the existing `PeakBranchTap::peakBranch`. Remove
+        the helper's applyLimiter parameter and the PeakBranchTap member
+        combFedBack if no reader is left after this rewrite, and report FOUND against
+        CHANGED for each.
+      - `filter_bank_peak_trim_removal_distortion_intermodulation_and_limiter_pumping`
+        shares the helper and is not named by any task before this one.
+        Print its readings before and after the move. Correct its comments
+        that describe the peak branch as the node the trim and the limiter
+        act on, the limiter left to bound the branch on its own, and its
+        figures. If an assertion fails, stop and report; do not change a
+        bound.
+      - `filter_fx_chain_scoop_full_does_not_cancel_a_boosted_peak_at_the_shared_center_frequency`:
+        its header describes "the peak branch -- and its own `peakLimiter`",
+        and its helper `OldTopologyFilterFxProcess` calls the member on the
+        branch. Determine what the helper models: if it replicates
+        `Process`, it follows the new placement; if it models a law that no
+        longer ships -- its own comment already calls it a frozen snapshot
+        of the topology from before the scoop path was added -- its comment
+        says so instead. Either way it follows the rename.
+      - `peak_ceiling_scoop_modulation_limiter_measurement`: correct its
+        header's claims that pre- and post-limiter worst cases land at the
+        same order of magnitude, and that no finite-attack limiter can
+        suppress the spike, to what the test prints after the move.
+      - `peak_branch_output_respects_computed_bound_under_audio_rate_height_modulation_with_limiter`,
+        `peak_ceiling_candidate_limiter_measurement` and
+        `topology_morph_peak_branch_headroom_across_full_range`: correct
+        each comment, label and name that describes a peak-branch limiter.
+      - `filter_bank_peak_gain_travel_measurement_at_and_away_from_resonance`:
+        - keep `kResonanceFlatnessDb` (0.01) and `kAwayFallDb` (4.0);
+        - delete the broadband band, kBroadbandFallLowDb and
+          kBroadbandFallHighDb, and its two asserts; replace them with
+          `REQUIRE_TRUE(broadbandDb[kNumCols-1] < broadbandDb[0])`. Its
+          control: `rawPeakTrim` set to 1 makes it fail;
+        - remove every figure from the comments: 0.00025 dB, 6.04, 6.52,
+          "about 2 dB under", 9.03, 7.12, the four seeds, 7.09, 7.13 and
+          "fifteen times";
+        - each bound's comment states what it separates: flatness -- the
+          trim cancels the centre gain exactly, and 0.01 is 400 times below
+          `kAwayFallDb`; away rows -- their fall is the flat row's liveness
+          control, since a dead rig reads no fall, and 4.0 is the "several
+          dB" the spec Check names; broadband -- the row prints the figure
+          the documents quote (full-scale LCG, seed 20260911u, composite
+          tap); the amplitude is part of the quantity, because the source
+          exceeds the output limiter's threshold;
+        - rename "post peakLimiter" in the header comment and the printed
+          label;
+        - if the flat-row spread reaches 0.01, or either away fall is at or
+          below 4.0, stop and report.
 
-      Read these passing tests and correct each comment, label and name that
-      describes a peak-branch limiter:
-      `peak_branch_output_respects_computed_bound_under_audio_rate_height_modulation_with_limiter`,
-      `peak_ceiling_candidate_limiter_measurement`,
-      `peak_ceiling_scoop_modulation_limiter_measurement`,
-      `topology_morph_peak_branch_headroom_across_full_range` and
-      `filter_bank_peak_gain_travel_measurement_at_and_away_from_resonance`.
-      The report lists each test's printed figures before and after the move.
+      The report gives each touched test's printed figures before and after
+      the move.
+      Check: the DSP parity binary passes in full, and each test whose
+      assertions changed fails against the break its entry names.
+- [x] 8.5 `gate_period_tracks_tempo_change`'s lower bound becomes
+      `baseTransitions * 1.3`. The test's patch and the upper bound
+      `< baseTransitions * 2.0` are unchanged. With the limiter after the
+      blend the test's audio proxy ratio is 1.486 (proposal,
+      "`gate_period_tracks_tempo_change`'s audio proxy"); the harness
+      recorded the moved copy with the 1.3 bound passing 56 of 56
+      (`bin/rrepin`), and with `kDoubledTempoBpm` set equal to
+      `kBaseTempoBpm` and Part 1's period assertion skipped it printed
+      base=70, doubled=53 (`bin/rbreak`).
 
-      Check: the DSP parity binary passes in full. Each of the three updated
-      tests fails with `Process` reverted to the old placement.
-- [ ] 8.5 OPEN (`gate_period_tracks_tempo_change`'s lower bound). With the
-      limiter after the blend the test's audio proxy ratio is 1.486, below
-      its lower bound of 1.6 (proposal, "`gate_period_tracks_tempo_change`'s
-      audio proxy"). Preflight rules between the candidates the proposal's
-      "Open decisions" names, and this task is rewritten with the ruling, its
-      bound and its Check before it is dispatched. For the first candidate,
-      a lower bound of 1.3 with the header's counts restated as base=70,
-      doubled=104 at 128 blocks per tempo, the harness recorded: the moved
-      copy with that bound passed 56 of 56 (`bin/rrepin`), and with
-      `kDoubledTempoBpm` set equal to `kBaseTempoBpm` and Part 1's period
-      assertion skipped it printed base=70, doubled=53 (`bin/rbreak`). The
-      upper bound `< baseTransitions * 2.0` is not in question.
-- [ ] 8.6 Determine whether the comment above `kMaxUnitStateMagnitude` in
-      `app/FroggersAppCore.hpp` is true where it says the filter chain's
-      input "is bounded to +-1.0 by `PadeSaturator::Saturate`" before it
-      reaches a recursive stage the recovery watches. The limiter's
-      measurements read it as claiming the comb saturator bounds the filter
-      chain's input to ±1; `bin/combbound` measured the comb's output at
-      3.9222 at Comb drive 0.25. If the statement is false, correct the
-      comment's derivation to what does bound the watched units' state; if
-      the corrected derivation no longer supports `kMaxUnitStateMagnitude`'s
-      value, stop and report rather than retune it.
-      Check: the report says true or false, naming the code path that bounds
-      or fails to bound the chain's input and a run that exercises it; if
-      false, the corrected comment is true of that run.
-- [ ] 8.7 Documentation, in the change's documentation step.
-      - `MANUAL.md` Filter bank intro: the Drive page feeds Filter, Filter
-        hands off to Delay and then Reverb (measured in the proposal), and a
-        limiter after the Comb/Peak blend is part of the signal path.
+      Keep the two headroom bullets (the `kBaseTempoBpm`/`kDoubledTempoBpm`
+      timing). Replace the header comment's text from "Both tempos land the
+      SAME…" through "…whatever the code happens to do." with text that:
+      1. carries no edge counts and no ratio figures, and states the window
+         (128 blocks per tempo) and the tap (channel 0, threshold 1e-3);
+      2. says both tempos complete attack, decay, hold and release inside
+         each half;
+      3. says `CountRisingEdges` counts every rise of channel 0's magnitude
+         above 1e-3, so a window's count is its gate cycles times the rises
+         per cycle, including the oscillator's dips while the gate is open,
+         and that the ratio is about twice the second window's rises per
+         cycle over the first's, depending on the level and waveform the
+         chain renders, including the Filter page's limiter, and not on the
+         tempo alone;
+      4. says the second window counts fewer rises per cycle than the
+         first, even at an unchanged tempo;
+      5. says what each bound catches: the lower bound fails when the count
+         does not grow with the tempo, and the upper bound fails when the
+         second window counts more rises per cycle than the first.
+      Keep the 12000 BPM reason for the tempo choice, in present tense.
+
+      Check:
+      - the test passes, and the report prints its counts through a
+        temporary print that is removed afterward;
+      - with `kDoubledTempoBpm` set equal to `kBaseTempoBpm` and Part 1's
+        period assertion skipped, the test fails at the 1.3 bound, and the
+        report prints that run's counts;
+      - stop and report if that run's second window does not count fewer
+        rises per cycle than its first, or if the passing run's ratio is at
+        or below 1.3. Do not choose another bound or change the patch.
+- [x] 8.6 The comment above `kMaxUnitStateMagnitude` in
+      `app/FroggersAppCore.hpp` states what bounds the state of the units the
+      recovery watches, and every figure in it comes from a run.
+      - The filter chain's input is the Drive page's output,
+        `DriveBlendPhase::Process`, which ends in
+        `outputLimiter.Process(blended)` at `kStageCeiling`.
+        `PadeSaturator::Saturate` only clamps the comb saturator's output.
+        The comment names the Drive output limiter as the input's bound.
+      - The derivation states:
+        1. the Drive output limiter bounds the chain's input near
+           `kStageCeiling`; a run at 48 kHz on `DriveBlendPhase` with a
+           large blend prints the maximum;
+        2. the comb's fed-back term is at most |fb|/combDrive, which is 3.8
+           at the bottom of Comb drive;
+        3. at Topology 1 the peak's input is the trimmed comb branch, and
+           Peak gain redrawn every sample drives the peak past its
+           steady-state gain.
+      - One printed run measures the watched units' state:
+        - `FilterFxChain` at 48 kHz: Comb feedback knob 1, Comb drive knob
+          0, Topology 1; Peak freq and Comb delay at their defaults;
+        - Peak gain at maximum, then redrawn every sample;
+        - a full-scale sine at the comb's pitch;
+        - it prints the maximum of `StateMagnitude()` for the comb, the peak
+          and the scoop notch.
+        The run is a program outside the tree, or a print removed
+        afterwards; its command and output go in the report.
+      - The comment states that maximum and that 100 sits at least 10 times
+        above it. If the maximum times 10 exceeds 100, stop and report; do
+        not retune.
+      - Drop the dated "Re-derived" line from the comment. Bring
+        `RecoverIfNonFinite`'s "(input bounded to ~10-30 by construction)"
+        into line with the corrected derivation.
+      Check: every figure in the comment matches the runs' printed output;
+      `make check-citations-resolve check-no-planning-history` passes in
+      `app/`.
+- [x] 8.7 Documentation, in the change's documentation step.
+      - `MANUAL.md` Filter bank intro: a limiter after the Comb/Peak blend
+        is part of the signal path. The intro already says the Drive page
+        feeds the bank and the bank hands off to Delay and then Reverb.
       - `MANUAL.md` Comb drive: replace "The saturator's own ceiling on the
         comb's output level holds regardless", which is false below the
         centre (measured in the proposal), with what the control does below
@@ -485,10 +616,47 @@ Measurements section shows.
       Check: each statement about the Filter page's signal path, Comb drive
       and Peak gain is true of the built app, and every figure matches the
       test's printed output. `make check-docs-match-parameter-table` passes.
+- [x] 8.8 `MANUAL.md`, MIDI Fighter Twister subsection: "A Twister row that
+      shows no Restore predates the preset" is false for a row released in
+      an earlier version. At Sheaf `f73d4202`, which frogg3rs `b0c03a9`
+      pinned, that version's Controllers page offered a Release button on an
+      active row; pressing it set the row's disposition to Blacklisted.
+      Neither that button nor the code that set it is in the current tree,
+      but `ControllersPageUI.hpp`'s row rendering still checks the
+      disposition and shows only Delete for a row carrying it -- which is
+      what this build does when it loads a row a player released back then.
+      Make the sentence true for both kinds of row: one that predates the
+      preset, and one an earlier version's player released with that
+      Release button. The advice to delete the row and add the MIDI Fighter
+      Twister preset again stands.
 
-## 9. Suites and screenshots
+      `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`:
+      the `Require` message in `TestRestoreResolvesAnAppPreset` that says
+      "refused entirely with the old CommitLifecycleAction, whose throwaway
+      view model could never resolve …" describes the code by its history.
+      Say what is required: Restore reinstalls the app preset's own config
+      onto a row diverged from it, resolving the row's app-specific wizard
+      id.
 
-- [ ] 9.1 After the last edit to either tree, run both full suites on the
+      Check: the sentence in `MANUAL.md` is true of the built app for both
+      kinds of row; `git grep -n -i "old CommitLifecycleAction" -- External/Sheaf`
+      prints nothing.
+
+## 9. Postflight, suites, screenshots and commit
+
+- [x] 9.0 One postflight over the whole change, Sheaf and frogg3rs
+      together, after 8.1 to 8.6 land, by contexts that wrote none of it. It
+      may be split by story, and every reviewer reads both trees. It is
+      driven by the four stories: it compares the landed diff with this
+      proposal and, per story, builds and runs rather than reads, reverting
+      each production change and watching that story's test go red, and
+      trying plausible wrong implementations against the story tests. A
+      finding blocks only if a story fails for a player, the change fails to
+      build, run or ship, or text is left stating something false. It adds
+      no tests or gates about process, and does not re-audit its own
+      repairs unless a repair touches a story's code path. Nothing is
+      committed until it passes.
+- [x] 9.1 After the last edit to either tree, run both full suites on the
       exact tree to be committed: `make test` in `app/` and then every app
       test binary by path; the plugin target and its test binaries
       (`FroggersVstSmokeTest`, `FroggersVstHostTests`, `FroggersVstEditorTest`);
@@ -504,9 +672,18 @@ Measurements section shows.
       such, and `state_information_save_and_restore_never_write_the_shared_data_root`
       only if 7.4 recorded it as a finding; every other failure is fixed in
       this change.
-- [ ] 9.2 Retake the Delivery Gate screenshots from the app built in 9.1, for
+- [x] 9.2 Retake the Delivery Gate screenshots from the app built in 9.1, for
       the operator.
       Check: one screenshot per state the proposal's Delivery Gate lists.
+- [x] 9.3 Make a new commit in each tree: the Sheaf work on
+      `shifted-encoder-turns`, and the frogg3rs work on
+      `frogg3rs-transport-and-shift-ux` with `External/Sheaf` pinned at the
+      Sheaf commit. Amend neither tree's history -- the frogg3rs commit
+      before the move, and the Sheaf commit it pins, stay reachable. Nothing
+      is pushed.
+      Check: `git status` is clean in both trees, with no scratch edits left
+      from reverted-change controls; `git ls-tree HEAD External/Sheaf` names
+      the commit `git -C External/Sheaf rev-parse HEAD` prints.
 
 ## 10. Delivery
 

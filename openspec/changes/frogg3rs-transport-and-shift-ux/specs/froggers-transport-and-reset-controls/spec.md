@@ -40,7 +40,7 @@ resuming audio requires Play
 - **THEN** encoder edits continue to reach the audio, reshaping the sustained drone
 - **WHEN** the Freeze button is pressed a second time
 - **THEN** the latch is disarmed and the transport runs again, exactly as if Play had been pressed
-- Check: `app/FroggersAudioRoutingTests.cpp: releasing_freeze_resumes_the_transport_it_stopped`
+- Check: `app/FroggersAudioRoutingTests.cpp: releasing_freeze_resumes_the_transport_it_stopped`, `freeze_alone_holds_the_ring_above_an_audible_floor_and_stops_the_transport`, `encoder_edit_while_frozen_changes_the_output_measurably`
 
 #### Scenario: Stop always means stop
 - **WHEN** the Freeze latch is engaged and sustaining the drone, and Stop is pressed

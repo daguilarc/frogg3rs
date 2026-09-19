@@ -923,7 +923,7 @@ struct FrogBlock
 // 2. LIMIT THE STAGE OUTPUT (only because step 1 proved insufficient --
 //    pattern A's ~1.4-1.7x residual, confirmed against 20 seeds x 2M
 //    samples at the chosen glide, does not close on its own; same
-//    structural finding as the peak branch, where a per-sample
+//    structural finding as the Filter page, where a per-sample
 //    scalar trim alone plateaued at 1.669x and needed its own limiter).
 //    `dsp::OutputLimiter` (Limiter.hpp), five-argument `Configure()`.
 //    Threshold/attack/release swept together (thresholds 0.7-0.9,
@@ -934,8 +934,8 @@ struct FrogBlock
 //    measurement is what actually decides it, every stage so far has
 //    needed microseconds. 1000x slower (1ms) leaves pattern A at 1.39x,
 //    barely better than smoothing alone; 2us reaches 0.990x. Threshold
-//    0.7 (below the master's 0.9, same headroom logic as the peak
-//    branch's kPeakLimiterThreshold) with `kSharedCeiling`/
+//    0.7 (below the master's 0.9, same headroom logic as the Filter
+//    page's kFilterOutputLimiterThreshold) with `kStageCeiling`/
 //    `kSharedReleaseSeconds` (Limiter.hpp, reused rather than
 //    re-declared) rounds out the tuning. FINAL, measured:
 //    pattern A worst 0.990x (20 seeds x 2M samples), pattern B worst
@@ -952,7 +952,7 @@ struct DriveBlendPhase
     static constexpr float kPhaseCoeffGlideCyclesPerSample = 0.0035f;
 
     // Measured tuning (class comment): below the master's 0.9 threshold,
-    // same headroom logic as the peak branch's kPeakLimiterThreshold.
+    // same headroom logic as the Filter page's kFilterOutputLimiterThreshold.
     static constexpr float kOutputLimiterThreshold = 0.7f;
     // This limiter is Configure()'d against kStageCeiling (see
     // the outputLimiter.Configure(...) call below, retargeted off
@@ -998,7 +998,7 @@ struct DriveBlendPhase
 
     // Class comment, fix 2: catches the residual smoothing alone cannot
     // close. Attack/release are sample-rate-dependent, so -- same reason
-    // FilterFxChain::peakLimiter/Reverb::wetLimiter/Delay's wetLimiterL/R
+    // FilterFxChain::outputLimiter/Reverb::wetLimiter/Delay's wetLimiterL/R
     // all need their own Configure(sampleRate) -- this type gets one too,
     // called from the constructor (assumed-48kHz default, matching
     // FilterFxChain's/Reverb's own constructor-time Configure()) AND from

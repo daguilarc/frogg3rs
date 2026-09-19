@@ -2258,9 +2258,8 @@ private:
             // RELEASE (latch true -> false): returns the transport to where
             // it was when Freeze engaged. If it was running,
             // StartTransport() runs -- the same call the kPlay branch above
-            // makes, so releasing Freeze is pressing Play, exactly as the
-            // operator described it. If it was already stopped, this only
-            // clears the latch, same as before this branch existed;
+            // makes, so releasing Freeze is pressing Play. If it was
+            // already stopped, this only clears the latch;
             // FroggersAppCore's existing "latch released while already
             // stopped" edge (`latchReleasedWhileStopped`, FroggersAppCore.hpp)
             // is what notices the plain atomic flip and runs the teardown

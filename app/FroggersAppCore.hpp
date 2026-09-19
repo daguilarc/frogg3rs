@@ -391,7 +391,7 @@ public:
         // runs."
         delay_.SetSampleRate(sampleRate_);  // Also (re)configures wetLimiterL/R's coeffs, see dsp/Delay.hpp.
         outputLimiter_.Configure(sampleRate_);  // The limiter's attack/release coefficients are sample-rate-dependent.
-        filterChain_.Configure(sampleRate_);  // Peak-branch limiter's own coeffs, same reason.
+        filterChain_.Configure(sampleRate_);  // The Filter page's own limiter's coeffs, same reason.
         reverb_.Configure(sampleRate_);  // Reverb's own wetLimiter coeffs, same reason.
         driveBlendPhase_.Configure(sampleRate_);  // This stage's own outputLimiter coeffs, same reason.
 
@@ -970,7 +970,20 @@ public:
             // (FroggersUiSurface.hpp's kFreeze release branch pushes the
             // same MessageIn::Start the kPlay branch pushes), so the gate
             // stays open on the transport's own answer and the drone
-            // continues as ordinary playback rather than silencing.
+            // continues as ordinary playback rather than silencing -- but
+            // only once Start drains: `FreezeLatched()` is a direct
+            // UI-thread-write, audio-thread-read flag (this method's
+            // SetFreezeLatched() comment), so it clears the very next
+            // sample, while `Start` sits on the UI message bus until the
+            // next per-block drain. A release landing mid-block reads
+            // `!gateOpen && !FreezeLatched()` for the rest of that block,
+            // which is `latchReleasedWhileStopped` below, and its teardown
+            // force-releases every voice before Start ever drains; measured
+            // in this file's own test rig (FroggersAudioRoutingTests.cpp):
+            // holding a latched drone at peak 0.944715, then clearing the
+            // latch with Start still unpushed, the very next block's peak
+            // fell to 0.799286 before recovering to 0.923068 once Start
+            // drained and the gate reopened.
             audioAdsr_.setGate(gateOpen || FreezeLatched());
 
             // Stop-transport reset (see wasTransportRunning_'s own comment):
@@ -1423,7 +1436,6 @@ public:
             default: return audioVcos_[2];
         }
     }
-    dsp::DriveBlendPhase& TestDriveBlendPhase() { return driveBlendPhase_; }
     // Read-only voice-state
     // probe, same convention as TestDelay()/TestReverb() -- measurement, not control.
     const dsp::VcoAdsrState& TestAudioAdsr() const { return audioAdsr_; }
@@ -1440,11 +1452,6 @@ public:
     dsp::ResonantBump& TestFilterPeak() { return filterChain_.peak; }
     dsp::ResonantBump& TestFilterScoopNotch() { return filterChain_.scoopNotch; }
     dsp::Comb& TestFilterComb() { return filterChain_.comb; }
-    // Test/inspection access to the peak branch's OWN limiter instance
-    // (`FilterFxChain::peakLimiter`, `dsp/FilterFx.hpp`) -- same convention
-    // as `TestOutputLimiter()` above, but for the independently-tuned
-    // second instance rather than the master.
-    dsp::OutputLimiter& TestFilterPeakLimiter() { return filterChain_.peakLimiter; }
     // Test/inspection access to the MASTER output limiter, same
     // convention as the accessors above -- lets tests call Process()/
     // Reset() directly and read `envelope` without going through the full
@@ -1453,9 +1460,7 @@ public:
     // now a public type, so `dsp::OutputLimiter&` would spell fine too, but
     // every other TestXxx() accessor above already returns `dsp::Xxx&` by
     // deduction-free convention -- `auto&` here is simply consistent with
-    // those, not a workaround for privacy anymore). Distinct from the peak
-    // branch's OWN limiter instance, which has its own accessor
-    // (`TestFilterPeakLimiter()`, mirroring `TestFilterPeak()` above).
+    // those, not a workaround for privacy anymore).
     auto& TestOutputLimiter() { return outputLimiter_; }
 
     // Test/inspection access
@@ -1819,10 +1824,14 @@ private:
         // modulation TARGET, so a randomized depth sweeps it to maximum
         // regularly, not only when the operator dials it there. The comb
         // feeding this stage is bounded near |in| + 0.95 (about 2 at full
-        // scale), and whatever the peak multiplies that by, the limiters
-        // downstream take back -- heavy sustained gain reduction is itself
-        // audible as harshness, so the ceiling is what keeps them off the
-        // signal.
+        // scale) at Comb drive 1 and above; below drive 1 that bound fails
+        // (measured with `combbound`: drive 0.25 reaches 3.9222 --
+        // dsp/FilterFx.hpp's comb-trim comment has the detail), and
+        // it is the Filter page's own limiter, downstream of the Comb/Peak
+        // blend, that holds the level then. Whatever the peak multiplies
+        // its input by, that same limiter takes back -- heavy sustained
+        // gain reduction is itself audible as harshness, so the ceiling is
+        // what keeps it off the signal.
         //
         // The height sets how far the peak stands above its surroundings, and
         // raising it lowers those surroundings. `FilterFxChain::Process`
@@ -2108,7 +2117,7 @@ private:
     // The struct itself now lives in `dsp::OutputLimiter`
     // (`dsp/Limiter.hpp`), not here -- it was a PRIVATE nested type until
     // a SECOND, independently-tuned instance was needed on the Filter bank's
-    // peak branch (`FilterFxChain::peakLimiter`, `dsp/FilterFx.hpp`), which
+    // output (`FilterFxChain::outputLimiter`, `dsp/FilterFx.hpp`), which
     // needed the type reachable from a header below this one in the include
     // graph (this class includes `dsp/FilterFx.hpp`, never the reverse --
     // see `dsp/Limiter.hpp`'s own header comment for the full reasoning).
@@ -2201,35 +2210,48 @@ private:
     // from kStageCeiling rather than hardcoded so the two constants
     // cannot drift apart.
 
-    // The ceiling is DERIVED,
-    // not measured, and re-derived here rather than re-tuned by feel.
-    // Re-derived 2026-07-29 after the feedback bounds tightened both inputs below;
-    // the ceiling constant itself is UNCHANGED (100.0 was
-    // already comfortably above the tighter figures too, so there was
-    // nothing to retune):
-    //   - The filter chain's input is bounded to +-1.0 by
-    //     `PadeSaturator::Saturate` (FilterFx.hpp, `std::max(-1.0f,
-    //     std::min(1.0f, output))`) before it ever reaches a recursive
-    //     stage this recovery watches.
-    //   - `ResonantBump`'s peak gain is `A^2 == height`, `height ==
-    //     dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, knob)` (this
-    //     file's own RouteFilterBank, Filter bank wiring -- the filter-bank
-    //     gain bound), so `dsp::kMaxResonantBumpHeight` bounds it for any
-    //     reachable knob value. Named here rather than retyped as a number,
-    //     so retuning the ceiling moves this derivation with it.
-    //   - `scoopNotch`'s height is a DIP, not a gain: `max(0.05, 1 - 0.95 *
-    //     scoop)` in [0.05, 1] -- adds no gain at all, unaffected by the filter-bank gain bound.
-    //   - So the largest legitimate magnitude this chain can produce is the
-    //     peak height ceiling, under ~10 with ringing
-    //     (Comb's sub-unity +-0.95 feedback -- a decaying loop,
-    //     not a compounding one, but still capable of several round trips'
-    //     worth of buildup before it settles). 100.0 remains at least 10x
-    //     above ANY of that -- comfortably above legitimate ringing,
-    //     comfortably below float overflow (3.4e38, so 100.0 is ~3.4e36x
-    //     below it) -- and because divergence under recursive feedback is
-    //     exponential, a REAL fault crosses from "normal" to "past 100" in
-    //     milliseconds, not minutes, so this ceiling is never mistaken for
-    //     a slow legitimate swell.
+    // The ceiling is DERIVED, not measured, and re-derived here rather than
+    // re-tuned by feel:
+    //   - The Filter chain's own input is the Drive page's output,
+    //     `dsp::DriveBlendPhase::Process` (dsp/Drive.hpp), which ends in
+    //     `outputLimiter.Process(blended)`, configured to
+    //     `dsp::kStageCeiling` (0.80, dsp/Limiter.hpp).
+    //     `dsp::PadeSaturator::Saturate` only clamps the comb saturator's
+    //     own output, inside this chain, not the Drive page's -- the Drive
+    //     output limiter is what bounds the input here. Measured
+    //     (`DriveBlendPhase` run standalone at 48 kHz, Wet/Dry at 1.0 -- any
+    //     lower setting only trades power between the dry and wet legs,
+    //     `FlooredEqualPowerBlend`'s own equal-power law, so 1.0 is the
+    //     largest this stage's output can be driven -- Phase at its own
+    //     registered default 0.86, dry and wet both a full-scale 220 Hz
+    //     sine): max|out| 0.796730, against the 0.80 ceiling.
+    //   - The comb's fed-back term is at most `|fb|/combDrive`
+    //     (`Comb::Process`'s own comment, dsp/FilterFx.hpp): 0.95/0.25 ==
+    //     3.8 at the bottom of Comb drive, `Comb::GetFeedback`'s own
+    //     `kMaxFeedbackMagnitude` (0.95) over `RouteFilterBank`'s Comb-drive
+    //     floor (0.25).
+    //   - At Topology 1 (`FilterFxChain::Process`'s own comment,
+    //     dsp/FilterFx.hpp) the peak's input is the trimmed comb branch, not
+    //     the chain's raw input, and Peak gain redrawn every sample --
+    //     `RouteFilterBank`'s own per-sample cadence for every Filter-bank
+    //     knob -- drives the peak past the steady-state gain a held-fixed
+    //     height would settle to.
+    // One run measures what those three combine to, directly, rather than
+    // composed by hand: `FilterFxChain` at 48 kHz, Comb feedback knob 1
+    // (0.95), Comb drive knob 0 (0.25), Topology 1, Peak freq and Comb delay
+    // at their registered defaults (100 Hz each -- Comb delay maps to 480
+    // samples at 48 kHz, the same 100 Hz pitch), Peak gain at
+    // `kMaxResonantBumpHeight` redrawn every sample, a full-scale sine at
+    // the comb's own 100 Hz pitch, 3 s, rerun to 6 s to check for a
+    // still-climbing transient: comb and peak are exactly unchanged; the
+    // scoop notch drifts from 1.000034 to 1.000050, under 0.0001 over the
+    // extra 3 s, negligible against the margin below and not the
+    // still-climbing transient the recheck exists to catch.
+    // `StateMagnitude()` maximum: comb 3.598300, peak 5.707133, scoopNotch
+    // 1.000034 (scoopMix is 0 at this patch, but `scoopNotch.Process` still
+    // runs unconditionally -- `RouteFilterBank`'s own comment on why). The
+    // largest of the three is 5.707133, and 100.0 sits more than 10x above
+    // it (10x is 57.07133).
     // DO NOT retune this constant without re-deriving it from the above.
     static constexpr float kMaxUnitStateMagnitude = 100.0f;
 
@@ -2295,8 +2317,8 @@ private:
     // dsp::Reverb::StateFinite()'s and dsp::StereoDelay::StateFinite()'s
     // own comments) -- BUT they deliberately do NOT get Tier 2's
     // sustained-magnitude watch, because kMaxUnitStateMagnitude's derivation
-    // above is specific to the Filter-chain-bounded units below (input
-    // bounded to ~10-30 by construction); `delay_`'s feedback (up to 0.98)
+    // above is specific to the Filter-chain-bounded units below (measured
+    // under 6 by construction); `delay_`'s feedback (up to 0.98)
     // and `reverb_`'s authored Hold (up to 0.999) are BIBO-stable feedback
     // loops that can LEGITIMATELY settle to a much larger-but-finite steady
     // state under sustained loud input (roughly input/(1-feedback), which
@@ -2337,13 +2359,13 @@ private:
     // only way to guard RecoverUnitIfNeeded() (which requires
     // `unit.StateMagnitude()`) from being instantiated for FiniteOnly-tagged
     // units that never defined that method (`outputLimiter_`,
-    // `filterChain_.peakLimiter`) -- a runtime `if` on an enum value does
+    // `filterChain_.outputLimiter`) -- a runtime `if` on an enum value does
     // NOT prevent instantiation, since the compiler still has to type-check
     // both branches' bodies for every concrete `unit` type the generic
     // lambda below gets called with.
     //
     // Tier 1 ONLY (RecoverIfNonFinite, FiniteOnly-tagged units): `delay_`/
-    // `reverb_`/`outputLimiter_`/`filterChain_.peakLimiter`, reusing their
+    // `reverb_`/`outputLimiter_`/`filterChain_.outputLimiter`, reusing their
     // EXISTING Reset()/ClearBuffers() (StereoDelay::Reset() is a thin alias
     // for ClearBuffers(), added so the same generic call works uniformly --
     // see that method's own comment) rather than adding duplicates. For
@@ -2357,7 +2379,7 @@ private:
     // construction, per the comment above) -- Tier 1 only ever fires here
     // when a genuine upstream fault cascaded a non-finite sample into them,
     // exactly the case with no other recovery path. `outputLimiter_`'s and
-    // `filterChain_.peakLimiter`'s envelopes get the same Tier-1-only
+    // `filterChain_.outputLimiter`'s envelopes get the same Tier-1-only
     // treatment: a finite input always keeps `envelope` in (0, 1] by
     // construction (dsp::OutputLimiter's own comment), so there is no
     // analogous "legitimately very large but finite" case Tier 2 would need

@@ -16,8 +16,8 @@
 // turns and pushes is one this script (by way of the label file's rows)
 // already knows how to draw. A field it does not recognize stops the
 // script with an error naming it, rather than silently drawing a blank
-// control: a per-encoder shifted job a later change adds, say, must be
-// taught here before it reaches either diagram.
+// control: any turn or push field the label file's rows do not already
+// cover must be taught here before it reaches either diagram.
 //
 // Renders in headless Chromium through the Playwright already installed at
 // app/browser/e2e/node_modules -- no separate install, no network fetch.

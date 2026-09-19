@@ -36,7 +36,7 @@ Six banks — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 ## Filter
 
 - **Peak freq** (slot 0) — Resonant peaking-EQ center frequency, 100 Hz–20 kHz.
-- **Peak gain** (slot 1) — Raises the peak above its surroundings by attenuating them; level at the peak's own center frequency holds across the travel. With the bank at its defaults, which put the peak at 100 Hz, 1 kHz falls 6.04 dB, 5 kHz falls 6.52 dB, and broadband level falls 7.10 dB.
+- **Peak gain** (slot 1) — Raises the peak above its surroundings by attenuating them; level at the peak's own center frequency holds across the travel. With the bank at its defaults, which put the peak at 100 Hz, 1 kHz falls 5.27 dB, 5 kHz falls 5.75 dB, and broadband level falls 6.72 dB.
 - **Peak Q** (slot 2) — Peak width/resonance.
 - **Comb offset** (slot 3) — Short pure delay ahead of the comb, 1–100 ms.
 - **Comb delay** (slot 4) — Comb filter pitch, 100 Hz–10 kHz.
