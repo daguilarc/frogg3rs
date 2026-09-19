@@ -124,7 +124,7 @@ beneath the transport buttons until Play is pressed or a recording arms. A captu
 
 ### Modulation assignment
 
-Click any parameter's encoder — a page parameter or a bank's own Crispy (Crunchy is excluded) — to open
+Click any parameter's encoder — a page parameter, a bank's own Crispy, or Crunchy — to open
 a modulation view for that one parameter. It exposes 15 modulation sources, each with its own signed
 depth. A depth of 0 means that source is off for this parameter. Turning a source's depth changes how
 hard that source pushes the target, and depths on the same parameter sum together. Click the
@@ -260,49 +260,60 @@ granted. A stopped recording downloads as `YYYY-MM-DD.wav`.
 ### Overview
 
 The Controllers page exists in the standalone and browser builds (the plugin takes MIDI through host
-automation, as the Plugin subsection says). The add row at the bottom offers a **Preset** selector —
-**MIDI Fighter Twister**, **Akai APC40 mkII (Generic)**, **Akai APC40 mkII (Ableton)**,
-**Launchpad X**, **Launchpad Pro MK3**, **Launchpad Mini MK3**, **WRLD.Bldr**, or **Custom** — and
-an **Add** button. Choosing a named preset and pressing Add installs a new row carrying that
-preset's complete mapping. Choosing Custom and pressing Add installs a row named **Custom** (with a
-number appended when that name is taken); it carries no mappings and no bound MIDI in/out ports, so
-its device reads "(none)" until a MIDI in device is bound. Rename it from the **Name** field in
-the row's expanded editor, the same as any row (see Renaming, below). The selector opens on its
-first entry, one of the named presets above, so pressing Add without choosing anything installs
-that preset rather than Custom. A row keeps the identity of the preset that created it for as long
-as the row exists, even after its mappings are edited by hand; if a row's mappings later diverge
-from what its preset installs, a **Restore** button appears on the row, and pressing it reinstalls
-the preset's mappings without renaming the row, changing its ports, or releasing it. A newly
-connected Twister, APC40, or Launchpad is also offered through the page's configure flow.
+automation, as the Plugin subsection says). "Available controllers" lists each connected device that no row uses and that a preset recognizes
+by its port names, together with every preset that matches it — an Akai APC40 mkII reads as one
+device offering both **Akai APC40 mkII (Generic)** and **Akai APC40 mkII (Ableton)**. Every other
+connected port that no row uses is listed as "Other inputs" or "Other outputs": a port no preset recognizes, a
+recognized device missing its other port, or a WRLD.Bldr, whose preset recognizes no port name at
+all. When nothing is connected the block reads "No connected controller is waiting to be set up".
+
+Below it, the add row offers a **Preset** selector — **MIDI Fighter Twister**, **Akai APC40 mkII
+(Generic)**, **Akai APC40 mkII (Ableton)**, **Launchpad X**, **Launchpad Pro MK3**, **Launchpad
+Mini MK3**, **WRLD.Bldr**, or **Custom** — and an **Add** button. The selector starts on the first
+waiting device's first preset, so pressing Add without touching it sets that device up in one
+press. For a device more than one preset matches, such as the APC40 mkII, the player picks the
+preset first, and Add binds the device to whichever preset is picked. Choosing a named preset and
+pressing Add installs a new row carrying that preset's complete mapping, with its ports bound to
+the matching connected device. The WRLD.Bldr preset recognizes no port name, so a WRLD.Bldr always
+appears under "Other inputs" and "Other outputs" rather than as a waiting device; after adding its
+preset, the player picks its ports on the row. Choosing Custom and pressing Add installs a row
+named **Custom** (with a number appended when that name is taken); it carries no mappings and no
+bound MIDI in/out ports, so its device reads "(none)" until a MIDI in device is bound. Rename it
+from the **Name** field in the row's expanded editor, the same as any row (see Renaming, below). An
+added row, from a preset or as Custom, opens with every section already open; its disclosure arrow
+closes it, the same as any other row. A row keeps the identity of the preset that created it for as
+long as the row exists, even after its mappings are edited by hand; if a row's mappings later
+diverge from what its preset installs, a **Restore** button appears on the row, and pressing it
+reinstalls the preset's mappings without renaming the row or changing its ports.
 
 ### Reading a controller row
 
-Each row is two lines. The first line shows the disclosure arrow, the controller's name, and its
-device. The device is the preset that created the row (for example **MIDI Fighter Twister** or
-**Launchpad X**) for as long as that preset still resolves; otherwise it is the MIDI input the row
-is bound to, or "(none)" until one is bound. A Custom row has no preset, so it always shows this
-way. The second line holds a status dot before each of the
-**MIDI in** and **MIDI out** port selectors, then **Delete**; **Restore**, on a row created from a
-preset whose mappings no longer match it; and **Release**, on a row created from a preset the
-current build still recognises, once both ports are bound. A legend above the first row names the
-dot colours: online, offline, not set.
+Each row is two lines. The first line shows the disclosure arrow, the controller's name, its device
+label and, on a Launchpad row, a **Variant** selector holding the Launchpad model its profile
+records. The device label is the preset that created the row (for example **MIDI Fighter Twister**
+or **Launchpad X**) for as long as that preset still resolves; otherwise it is the MIDI input the
+row is bound to, or "(none)" until one is bound. A Custom row has no preset, so it always shows
+this way. The second line holds a status dot before each of the **MIDI in** and **MIDI out** port
+selectors, then **Delete**, and **Restore** once the row's mappings diverge from its preset. A
+legend above the first row names the dot colours: online, offline, not set.
 
-A released row shows its name, device, and a **Released** badge on the first line, and its stored
-MIDI in/out ports, **Configure** (when its preset still resolves), and **Reclaim** on the second
-line. It has no disclosure arrow and no live editor.
+A released row, which a configuration saved by an earlier version can hold, shows its name, device
+label, and a **Released** badge on the first line, and its stored MIDI in/out ports and **Delete**
+on the second. It has no disclosure arrow and no editor.
 
 ### Renaming
 
 Open a row's editor with the disclosure arrow at its left. The editor's first line is a **Name**
 field and a **Rename** button. Renaming leaves the row open with its sections as they were. A
-released row has no editor: reclaim it before renaming it.
+released row has no editor, so it cannot be renamed.
 
 ### Adding a controller
 
 The add row at the bottom is a **Preset** selector and an **Add** button. Pressing Add without
 touching the selector adds the preset the selector displays. The new row takes its preset's name,
-with a number appended when that name is taken, and its ports bind to a connected device matching
-the preset. With no such device its ports read "(none)".
+with a number appended when that name is taken, and its ports bind to the connected device whose
+port names match the chosen preset, whichever of that device's presets is picked. With no such
+device its ports read "(none)".
 
 ### What can be mapped
 
@@ -330,6 +341,10 @@ buttons stay shifted until Shift is pressed and released again.
 
 The preset maps the 16 encoders (turn and push, with LED ring feedback) and the six side buttons, each
 a press paired with a second job under Shift:
+
+![The MIDI Fighter Twister's 16 encoders and six side buttons, labelled with the job each one does as the preset works](assets/manual/twister-preset.png)
+
+![The same layout with Shift held: each side button's shifted press, and Shift itself marked as held](assets/manual/twister-preset-shift.png)
 
 | Button | Press | Shift + press |
 |---|---|---|
@@ -390,8 +405,11 @@ left alone.
 
 ### Saving
 
-The mappings are saved with each patch and restored when the patch loads, and they are also kept in
-the runtime configuration that loads at launch; whichever loads last is what is active.
+Every change on the Controllers page is saved as it is made, and survives a relaunch without saving
+a patch. A patch keeps the sound and the controller setup, and opening a patch applies both. A
+relaunch reopens the patch version last opened or saved, with the controller setup as the page last
+had it. After New, a relaunch starts from New's defaults. Sound changes that were never saved are
+lost on relaunch.
 
 ---
 

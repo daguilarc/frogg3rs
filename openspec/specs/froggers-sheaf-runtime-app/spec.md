@@ -243,7 +243,7 @@ cannot express.
 - **THEN** a check fails naming the page that emits it
 
 ### Requirement: Each controller row control does one job
-The MIDI configuration page SHALL offer exactly one control that lists devices — the add row's selector — and SHALL NOT offer a device or preset list on a configured row. A configured row SHALL NOT name a preset at all; it SHALL offer a Restore action, and only while it was created from a preset and its stored configuration differs from that preset, so that the action's presence is itself the signal that the row has been edited. Every distinct device or operating mode SHALL be its own preset, chosen once when the row is created; the page SHALL NOT offer a second control asking which model or mode a row is. A row SHALL offer to release a bound controller whenever a device is bound to it, and SHALL NOT offer that control otherwise.
+The MIDI configuration page SHALL offer exactly one control that lists devices — the add row's selector — and SHALL NOT offer a device or preset list on a configured row. A configured row SHALL NOT offer a preset selector, and its device label names the preset that created it; it SHALL offer a Restore action, and only while it was created from a preset and its stored configuration differs from that preset, so that the action's presence is itself the signal that the row has been edited. Every distinct device or operating mode SHALL be its own preset, chosen once when the row is created; the page SHALL NOT offer a second control asking which model or mode a row is. A released row, which a configuration saved by an earlier version can hold, SHALL show its Released badge and stored ports and SHALL offer Delete.
 
 #### Scenario: A row never offers another device's preset
 - **WHEN** a MIDI Fighter Twister row is presented
@@ -267,13 +267,6 @@ The MIDI configuration page SHALL offer exactly one control that lists devices �
 - **AND** a row created from a preset carrying a connect-time message sends exactly that message when its output connects, and one created from a preset without such a message sends none
 - Check: the add row's preset list (each Launchpad model, Twister, and each APC40 mode) is operator-verified only (task 6.1a); frogg3rs's own Launchpad presets live in app/FroggersMidiCatalog.hpp, outside Sheaf's test tree. "No control anywhere on a created row asks which model or mode" no longer holds now that Sheaf commit ba3898e4 (branch launchpad-model-on-the-row) restored a per-row Variant selector for Launchpad rows (TestLaunchpadRowOffersVariantAndRetargetsItsPads), which needs the operator's decision. The connect-time-message half is backed: `External/Sheaf/projects/synth/tests/instrument_tests.cpp`'s `CreateMidiControllerProfileWiresOpenSysExToConnectTimeOutput` proves a preset's openSysEx message sends exactly once on connect and an empty one sends none. Operator, tasks 6.1a and 6.1b, predate that commit.
 
-#### Scenario: Releasing a controller frees it and keeps its mappings
-- **WHEN** a row with both endpoints bound is released
-- **THEN** its open endpoints are closed, its stored references are retained, and another application can take the device
-- **AND** reclaiming it restores its mappings
-- **AND** a row with no bound device offers no release control at all, rather than a disabled one
-- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`'s `TestControllerLifecycleActionsUseTheNormalCommitAndSavePath` proves a release closes both endpoints and retains the profile as dormant data, and `TestReleaseRequiresResolvedWizardAndBoundEndpoints` proves a row with no bound device offers no release control at all. "Reclaiming it restores its mappings" is not backed, and reading the code says why: RemoveFromBlacklist (`External/Sheaf/projects/synth/src/MidiConfigViewModel.cpp`), which the Reclaim action calls, removes the record outright rather than restoring it — matching Sheaf's own `External/Sheaf/openspec/changes/app-midi-catalog/specs/synth-runtime-ui/spec.md` scenario "Reclaim restores availability": Reclaim discards the inert record and frees its device pair for a fresh Add, it does not bring this record's mappings back. This needs the operator's correction to the requirement, not a test. Operator, task 6.5, exercised Restore and Release; its Reclaim observation was not re-verified against this reading.
-
 ### Requirement: A row remembers which preset created it
 A controller row SHALL retain the identity of the preset that created it for as long as the row exists, and editing the row's mappings SHALL NOT discard that identity. Whether the row still matches that preset SHALL be determined by comparing the row's stored configuration against the preset's generated configuration, rather than by treating the recorded identity as a marker of an unedited row. Controls that depend on a row resolving to a known preset SHALL remain available after the row's mappings have been edited.
 
@@ -284,15 +277,13 @@ A controller row SHALL retain the identity of the preset that created it for as 
 - Check: `External/Sheaf/projects/synth/tests/viewmodel_tests.cpp`, `ApplyMappingEditKeepsWizardIdProvenance`, `DeleteRowKeepsWizardIdProvenance`, `AddSingleKeepsWizardIdProvenance`, `AddBlockKeepsWizardIdProvenance` — one case per verb this scenario names (edited, deleted, added). Each pins that the row still resolves to its creating preset; that the edited row is then reported as differing from it is the divergence flag Restore's own gating proves (see the Restore scenario above).
 
 #### Scenario: Editing a row does not withdraw its other controls
-- **WHEN** a row with both endpoints bound has one of its mappings edited
-- **THEN** the row still offers to release the bound controller
-- **AND** a released row that has been edited still offers Configure
-- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, `TestReleaseRequiresResolvedWizardAndBoundEndpoints`, which drives a mapping edit through the real per-field commit path and then finds Release still present; and `TestConfigureStaysAvailableOnAReleasedEditedRow`, which releases an edited row and finds Configure still present. Operator, task 6.5.
+- **WHEN** a row created from a preset has one of its mappings edited
+- **THEN** the row offers Restore, since it now differs from its preset
+- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, `TestRestoreReinstallsADivergedPresetAndIsGatedByDivergence`, which edits a preset row through the per-field commit path and finds Restore offered on it.
 
 ### Requirement: The MIDI configuration page fits this application's window in every state
 
-The MIDI configuration page SHALL lay every control inside this application's content width on every host in every reachable state: controller rows collapsed and expanded, each configuration section open, and a mapping row in each group that accepts an added row (Turn, Push, System, Gesture, App action) beside the rows a preset installs. The controller header SHALL be two lines: identity (name, device label, and Variant for a Launchpad) and ports (MIDI in and MIDI out, each preceded by its own status dot, then Delete and Blacklist). The page SHALL show a controller's device by its display name: the descriptor the row's wizard id resolves against, or the bound MIDI input's stored endpoint label when none resolves, SHALL caption the add row's preset selector "Preset" and a Launchpad row's model selector "Variant", SHALL let a Launchpad row choose which Launchpad model it addresses and no other row choose anything of the sort, SHALL offer on the add row this application's presets followed by exactly one Custom entry, SHALL add the preset its add row displays when the operator has chosen none, SHALL name an added controller after its preset (with a numeric suffix when the name is taken), SHALL bind an added controller's ports to a connected device that matches the preset and otherwise leave them "(none)", SHALL keep the rename field inside the expanded editor under the caption "Name", SHALL keep a renamed controller's row expanded and its open sections open, SHALL caption the ports "MIDI in" and "MIDI out" with a legend for the status dots above the first controller, and SHALL show a controller's full name. A combo box or text field SHALL never draw past its own box.
-
+The MIDI configuration page SHALL lay every control inside this application's content width on every host in every reachable state: controller rows collapsed and expanded, each configuration section open, and a mapping row in each group that accepts an added row (Turn, Push, System, Gesture, App action) beside the rows a preset installs. The controller header SHALL be two lines: identity (name, device label, and Variant for a Launchpad) and ports (MIDI in and MIDI out, each preceded by its own status dot, then Delete, and Restore when the row differs from its preset). The page SHALL show a controller's device by its display name: the descriptor the row's wizard id resolves against, or the bound MIDI input's stored endpoint label when none resolves, SHALL caption the add row's preset selector "Preset" and a Launchpad row's model selector "Variant", SHALL let a Launchpad row choose which Launchpad model it addresses and no other row choose anything of the sort, SHALL offer on the add row this application's presets followed by exactly one Custom entry, SHALL add the preset its add row displays when the operator has chosen none, which is the preset of the first connected device waiting to be set up when one is waiting, SHALL name an added controller after its preset (with a numeric suffix when the name is taken), SHALL bind an added controller's ports to a connected device whose port names match the preset, for every preset that matches the device, and otherwise leave them "(none)", SHALL open an added controller's row with every section open, SHALL keep the rename field inside the expanded editor under the caption "Name", SHALL keep a renamed controller's row expanded and its open sections open, SHALL caption the ports "MIDI in" and "MIDI out" with a legend for the status dots above the first controller, and SHALL show a controller's full name. A combo box or text field SHALL never draw past its own box.
 
 #### Scenario: Every state fits
 
@@ -311,8 +302,8 @@ The MIDI configuration page SHALL lay every control inside this application's co
 - **THEN** it shows "MIDI Fighter Twister" on the first line as both its name
   and its device label, and no preset selector, a preset being chosen once on
   the add row; a status dot before the "MIDI in" selector, a status dot before
-  the "MIDI out" selector, Delete and Blacklist on the second; no rename
-  control in the header
+  the "MIDI out" selector, and Delete on the second; no rename control in the
+  header
 - **AND** a Launchpad row shows a "Variant" selector on that first line,
   holding the model its profile records
 - Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, `TestControllerLifecycleActionsUseTheNormalCommitAndSavePath` (no rename control in a collapsed row's header) and `TestLaunchpadRowOffersVariantAndRetargetsItsPads` (the Variant selector on a Launchpad row's first line); the per-row status-dot-precedes-its-combo and MIDI-in/MIDI-out caption assertions this scenario also names are exercised only inline in this file's own `main()`, which this repository's case index does not resolve by name. Operator, task 7.1.
@@ -323,22 +314,24 @@ The MIDI configuration page SHALL lay every control inside this application's co
   sections, types a new name in the Name field and presses Rename
 - **THEN** the controller is renamed, its row is still expanded, and the
   section it had open is still open
-- **AND** deleting a controller and adding another with the same name
-  still starts that row fully collapsed
-- Check: `External/Sheaf/projects/synth/tests/viewmodel_tests.cpp`, `RenameOfExpandedRowKeepsSectionPresentationOpen` (rename preserves expansion and the open section) and `SameNameReaddAfterDeleteStartsFullyCollapsed` (delete, then re-add under the same name, starts collapsed); operator, task 7.2.
+- **AND** deleting a controller and adding another with the same name opens
+  the added row with every section open, rather than with the deleted row's
+  state
+- Check: `External/Sheaf/projects/synth/tests/viewmodel_tests.cpp`, `RenameOfExpandedRowKeepsSectionPresentationOpen` (rename preserves expansion and the open section) and `SameNameReaddAfterDeleteStartsFullyCollapsed` (a re-added name gets a fresh entry, not the deleted record's); `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, `TestAddedRowOpensWithEverySectionOpen` (the page opens the added row); operator, task 7.2.
 
 #### Scenario: Adding from a preset
 
 - **WHEN** the operator presses Add on the add row with no Twister
   connected, having chosen nothing, and the add row displays
   "MIDI Fighter Twister"
-- **THEN** a row named "MIDI Fighter Twister" appears whose Preset reads
+- **THEN** a row named "MIDI Fighter Twister" appears whose device label reads
   MIDI Fighter Twister and whose ports read "(none)"
 - **AND** with a Twister connected on both its ports, the same action
   binds both ports to it
 - **AND** with only one of its ports present, both ports still read
   "(none)" and the operator picks the present one from its selector
-- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, `TestAddFromPresetWithNoDeviceInstallsTheDefaultPresetWithNoneEndpoints` and `TestAddFromPresetWithMatchingOnlinePairBindsBothEndpoints` (task 2.5); operator, task 7.3.
+- **AND** the added row opens with every section open
+- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, `TestAddFromPresetWithNoDeviceInstallsTheDefaultPresetWithNoneEndpoints` and `TestAddFromPresetWithMatchingOnlinePairBindsBothEndpoints` (task 2.5), and `TestAddedRowOpensWithEverySectionOpen`; operator, task 7.3.
 
 #### Scenario: A page change rebuilds every test that reads the page
 

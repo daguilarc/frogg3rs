@@ -72,6 +72,13 @@ cp "$REPO_ROOT/app/Resources/Icon.icns" "$APP_BUNDLE_DIR/Contents/Resources/Icon
 cp "$REPO_ROOT/MANUAL.md" "$APP_BUNDLE_DIR/Contents/Resources/MANUAL.md"
 cp "$REPO_ROOT/QUICK_DICT.md" "$APP_BUNDLE_DIR/Contents/Resources/QUICK_DICT.md"
 
+# The two MIDI Fighter Twister diagrams MANUAL.md's copy above references, at
+# the same relative path (assets/manual/) so the manual's relative image
+# links resolve inside the bundle exactly as they do in the repository.
+mkdir -p "$APP_BUNDLE_DIR/Contents/Resources/assets/manual"
+cp "$REPO_ROOT/assets/manual/twister-preset.png" "$APP_BUNDLE_DIR/Contents/Resources/assets/manual/twister-preset.png"
+cp "$REPO_ROOT/assets/manual/twister-preset-shift.png" "$APP_BUNDLE_DIR/Contents/Resources/assets/manual/twister-preset-shift.png"
+
 # Signing must be the LAST step, after every file above has landed in the
 # bundle: the linker already ad-hoc-signed the raw binary, but that signature
 # covers only the binary, not the assembled bundle -- juce_build.mk's

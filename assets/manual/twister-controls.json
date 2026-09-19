@@ -1,0 +1,738 @@
+{
+  "displayName": "MIDI Fighter Twister",
+  "encoders": [
+    {
+      "position": 0,
+      "turn": "Slot 0",
+      "push": "Drill"
+    },
+    {
+      "position": 1,
+      "turn": "Slot 1",
+      "push": "Drill"
+    },
+    {
+      "position": 2,
+      "turn": "Slot 2",
+      "push": "Drill"
+    },
+    {
+      "position": 3,
+      "turn": "Slot 3",
+      "push": "Drill"
+    },
+    {
+      "position": 4,
+      "turn": "Slot 4",
+      "push": "Drill"
+    },
+    {
+      "position": 5,
+      "turn": "Slot 5",
+      "push": "Drill"
+    },
+    {
+      "position": 6,
+      "turn": "Slot 6",
+      "push": "Drill"
+    },
+    {
+      "position": 7,
+      "turn": "Slot 7",
+      "push": "Drill"
+    },
+    {
+      "position": 8,
+      "turn": "Slot 8",
+      "push": "Drill"
+    },
+    {
+      "position": 9,
+      "turn": "Slot 9",
+      "push": "Drill"
+    },
+    {
+      "position": 10,
+      "turn": "Slot 10",
+      "push": "Drill"
+    },
+    {
+      "position": 11,
+      "turn": "Slot 11",
+      "push": "Drill"
+    },
+    {
+      "position": 12,
+      "turn": "Slot 12",
+      "push": "Drill"
+    },
+    {
+      "position": 13,
+      "turn": "Slot 13",
+      "push": "Drill"
+    },
+    {
+      "position": 14,
+      "turn": "Crispy",
+      "push": "Drill"
+    },
+    {
+      "position": 15,
+      "turn": "Crunchy",
+      "push": "Drill"
+    }
+  ],
+  "sideButtons": [
+    {
+      "place": "Left top",
+      "isShift": false,
+      "press": "Bank Next",
+      "pressNote": "",
+      "shiftedPress": "Bank Previous",
+      "shiftedPressNote": ""
+    },
+    {
+      "place": "Left middle",
+      "isShift": false,
+      "press": "Play",
+      "pressNote": "",
+      "shiftedPress": "Stop",
+      "shiftedPressNote": ""
+    },
+    {
+      "place": "Left bottom",
+      "isShift": false,
+      "press": "Freeze",
+      "pressNote": "",
+      "shiftedPress": "Reset Page",
+      "shiftedPressNote": ""
+    },
+    {
+      "place": "Right top",
+      "isShift": false,
+      "press": "Scene 1",
+      "pressNote": "",
+      "shiftedPress": "Scene 2",
+      "shiftedPressNote": ""
+    },
+    {
+      "place": "Right middle",
+      "isShift": false,
+      "press": "Randomize Page",
+      "pressNote": " (never Crunchy)",
+      "shiftedPress": "Randomize All",
+      "shiftedPressNote": " (never Crunchy)"
+    },
+    {
+      "place": "Right bottom",
+      "isShift": true,
+      "press": "Shift",
+      "pressNote": "",
+      "shiftedPress": "(none)",
+      "shiftedPressNote": ""
+    }
+  ],
+  "preset": {
+    "schema": "synth.midiControllerProfileConfig",
+    "schemaVersion": 2,
+    "encoderInput": {
+      "mode": "signed7Bit",
+      "turnStep": 0.0078125,
+      "turns": [
+        {
+          "control": {
+            "channel": 0,
+            "cc": 0,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 0
+        },
+        {
+          "control": {
+            "channel": 0,
+            "cc": 1,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 1
+        },
+        {
+          "control": {
+            "channel": 0,
+            "cc": 2,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 2
+        },
+        {
+          "control": {
+            "channel": 0,
+            "cc": 3,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 3
+        },
+        {
+          "control": {
+            "channel": 0,
+            "cc": 4,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 4
+        },
+        {
+          "control": {
+            "channel": 0,
+            "cc": 5,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 5
+        },
+        {
+          "control": {
+            "channel": 0,
+            "cc": 6,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 6
+        },
+        {
+          "control": {
+            "channel": 0,
+            "cc": 7,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 7
+        },
+        {
+          "control": {
+            "channel": 0,
+            "cc": 8,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 8
+        },
+        {
+          "control": {
+            "channel": 0,
+            "cc": 9,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 9
+        },
+        {
+          "control": {
+            "channel": 0,
+            "cc": 10,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 10
+        },
+        {
+          "control": {
+            "channel": 0,
+            "cc": 11,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 11
+        },
+        {
+          "control": {
+            "channel": 0,
+            "cc": 12,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 12
+        },
+        {
+          "control": {
+            "channel": 0,
+            "cc": 13,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 13
+        },
+        {
+          "control": {
+            "channel": 0,
+            "cc": 14,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 14
+        },
+        {
+          "control": {
+            "channel": 0,
+            "cc": 15,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 15
+        }
+      ],
+      "pushes": [
+        {
+          "control": {
+            "channel": 1,
+            "cc": 0,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 0
+        },
+        {
+          "control": {
+            "channel": 1,
+            "cc": 1,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 1
+        },
+        {
+          "control": {
+            "channel": 1,
+            "cc": 2,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 2
+        },
+        {
+          "control": {
+            "channel": 1,
+            "cc": 3,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 3
+        },
+        {
+          "control": {
+            "channel": 1,
+            "cc": 4,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 4
+        },
+        {
+          "control": {
+            "channel": 1,
+            "cc": 5,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 5
+        },
+        {
+          "control": {
+            "channel": 1,
+            "cc": 6,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 6
+        },
+        {
+          "control": {
+            "channel": 1,
+            "cc": 7,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 7
+        },
+        {
+          "control": {
+            "channel": 1,
+            "cc": 8,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 8
+        },
+        {
+          "control": {
+            "channel": 1,
+            "cc": 9,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 9
+        },
+        {
+          "control": {
+            "channel": 1,
+            "cc": 10,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 10
+        },
+        {
+          "control": {
+            "channel": 1,
+            "cc": 11,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 11
+        },
+        {
+          "control": {
+            "channel": 1,
+            "cc": 12,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 12
+        },
+        {
+          "control": {
+            "channel": 1,
+            "cc": 13,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 13
+        },
+        {
+          "control": {
+            "channel": 1,
+            "cc": 14,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 14
+        },
+        {
+          "control": {
+            "channel": 1,
+            "cc": 15,
+            "type": "cc"
+          },
+          "slotIx": 0,
+          "position": 15
+        }
+      ]
+    },
+    "encoderOutput": {
+      "protocol": "twister",
+      "mappings": [
+        {
+          "slotIx": 0,
+          "position": 0,
+          "cc": 0
+        },
+        {
+          "slotIx": 0,
+          "position": 1,
+          "cc": 1
+        },
+        {
+          "slotIx": 0,
+          "position": 2,
+          "cc": 2
+        },
+        {
+          "slotIx": 0,
+          "position": 3,
+          "cc": 3
+        },
+        {
+          "slotIx": 0,
+          "position": 4,
+          "cc": 4
+        },
+        {
+          "slotIx": 0,
+          "position": 5,
+          "cc": 5
+        },
+        {
+          "slotIx": 0,
+          "position": 6,
+          "cc": 6
+        },
+        {
+          "slotIx": 0,
+          "position": 7,
+          "cc": 7
+        },
+        {
+          "slotIx": 0,
+          "position": 8,
+          "cc": 8
+        },
+        {
+          "slotIx": 0,
+          "position": 9,
+          "cc": 9
+        },
+        {
+          "slotIx": 0,
+          "position": 10,
+          "cc": 10
+        },
+        {
+          "slotIx": 0,
+          "position": 11,
+          "cc": 11
+        },
+        {
+          "slotIx": 0,
+          "position": 12,
+          "cc": 12
+        },
+        {
+          "slotIx": 0,
+          "position": 13,
+          "cc": 13
+        },
+        {
+          "slotIx": 0,
+          "position": 14,
+          "cc": 14
+        },
+        {
+          "slotIx": 0,
+          "position": 15,
+          "cc": 15
+        }
+      ],
+      "wrldBldrColorBudgetPerProcess": 4
+    },
+    "analogInput": null,
+    "systemMessages": [
+      {
+        "control": {
+          "channel": 3,
+          "cc": 8,
+          "type": "cc"
+        },
+        "wrldBldrPosition": null,
+        "launchpadPosition": null,
+        "press": {
+          "type": "appAction"
+        },
+        "release": null,
+        "shiftedPress": {
+          "type": "appAction"
+        },
+        "feedback": {
+          "type": "clock",
+          "slotIx": 0,
+          "position": 0,
+          "gestureIx": 0,
+          "bankIx": 0,
+          "sceneIx": 0,
+          "value": 0,
+          "delta": 0,
+          "boolValue": false,
+          "hasBoolValue": false
+        },
+        "outputFeedback": false,
+        "appAction": "froggers.bank.next",
+        "appActionValue": "",
+        "shiftedAppAction": "froggers.bank.previous",
+        "shiftedAppActionValue": ""
+      },
+      {
+        "control": {
+          "channel": 3,
+          "cc": 9,
+          "type": "cc"
+        },
+        "wrldBldrPosition": null,
+        "launchpadPosition": null,
+        "press": {
+          "type": "appAction"
+        },
+        "release": null,
+        "shiftedPress": {
+          "type": "appAction"
+        },
+        "feedback": {
+          "type": "clock",
+          "slotIx": 0,
+          "position": 0,
+          "gestureIx": 0,
+          "bankIx": 0,
+          "sceneIx": 0,
+          "value": 0,
+          "delta": 0,
+          "boolValue": false,
+          "hasBoolValue": false
+        },
+        "outputFeedback": false,
+        "appAction": "froggers.transport.play",
+        "appActionValue": "",
+        "shiftedAppAction": "froggers.transport.stop",
+        "shiftedAppActionValue": ""
+      },
+      {
+        "control": {
+          "channel": 3,
+          "cc": 10,
+          "type": "cc"
+        },
+        "wrldBldrPosition": null,
+        "launchpadPosition": null,
+        "press": {
+          "type": "appAction"
+        },
+        "release": null,
+        "shiftedPress": {
+          "type": "appAction"
+        },
+        "feedback": {
+          "type": "clock",
+          "slotIx": 0,
+          "position": 0,
+          "gestureIx": 0,
+          "bankIx": 0,
+          "sceneIx": 0,
+          "value": 0,
+          "delta": 0,
+          "boolValue": false,
+          "hasBoolValue": false
+        },
+        "outputFeedback": false,
+        "appAction": "froggers.transport.freeze",
+        "appActionValue": "",
+        "shiftedAppAction": "froggers.reset.page",
+        "shiftedAppActionValue": ""
+      },
+      {
+        "control": {
+          "channel": 3,
+          "cc": 11,
+          "type": "cc"
+        },
+        "wrldBldrPosition": null,
+        "launchpadPosition": null,
+        "press": {
+          "type": "appAction"
+        },
+        "release": null,
+        "shiftedPress": {
+          "type": "appAction"
+        },
+        "feedback": {
+          "type": "clock",
+          "slotIx": 0,
+          "position": 0,
+          "gestureIx": 0,
+          "bankIx": 0,
+          "sceneIx": 0,
+          "value": 0,
+          "delta": 0,
+          "boolValue": false,
+          "hasBoolValue": false
+        },
+        "outputFeedback": false,
+        "appAction": "froggers.scene.select",
+        "appActionValue": "0",
+        "shiftedAppAction": "froggers.scene.select",
+        "shiftedAppActionValue": "1"
+      },
+      {
+        "control": {
+          "channel": 3,
+          "cc": 12,
+          "type": "cc"
+        },
+        "wrldBldrPosition": null,
+        "launchpadPosition": null,
+        "press": {
+          "type": "appAction"
+        },
+        "release": null,
+        "shiftedPress": {
+          "type": "appAction"
+        },
+        "feedback": {
+          "type": "clock",
+          "slotIx": 0,
+          "position": 0,
+          "gestureIx": 0,
+          "bankIx": 0,
+          "sceneIx": 0,
+          "value": 0,
+          "delta": 0,
+          "boolValue": false,
+          "hasBoolValue": false
+        },
+        "outputFeedback": false,
+        "appAction": "froggers.randomize.page",
+        "appActionValue": "",
+        "shiftedAppAction": "froggers.randomize.all",
+        "shiftedAppActionValue": ""
+      },
+      {
+        "control": {
+          "channel": 3,
+          "cc": 13,
+          "type": "cc"
+        },
+        "wrldBldrPosition": null,
+        "launchpadPosition": null,
+        "press": {
+          "type": "shift",
+          "slotIx": 0,
+          "position": 0,
+          "gestureIx": 0,
+          "bankIx": 0,
+          "sceneIx": 0,
+          "value": 0,
+          "delta": 0,
+          "boolValue": true,
+          "hasBoolValue": true
+        },
+        "release": {
+          "type": "shift",
+          "slotIx": 0,
+          "position": 0,
+          "gestureIx": 0,
+          "bankIx": 0,
+          "sceneIx": 0,
+          "value": 0,
+          "delta": 0,
+          "boolValue": false,
+          "hasBoolValue": true
+        },
+        "shiftedPress": null,
+        "feedback": {
+          "type": "clock",
+          "slotIx": 0,
+          "position": 0,
+          "gestureIx": 0,
+          "bankIx": 0,
+          "sceneIx": 0,
+          "value": 0,
+          "delta": 0,
+          "boolValue": false,
+          "hasBoolValue": false
+        },
+        "outputFeedback": false
+      }
+    ],
+    "openSysEx": [],
+    "launchpadModel": "launchpadX"
+  }
+}

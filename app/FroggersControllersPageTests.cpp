@@ -64,7 +64,7 @@ struct Register {
     } while (false)
 
 // One real, wizard-generated MidiControllerSlot per registry descriptor --
-// the same ConfigForm(nullopt)/GenerateProfile() path the Controllers
+// the same ConfigForm()/GenerateProfile() path the Controllers
 // page's add row uses for an app default, never a hand-built config.
 std::vector<synth::MidiControllerSlot> GenerateCatalogSlots(
     const std::vector<synth::ControllerWizardDescriptor>& registry) {
@@ -74,7 +74,7 @@ std::vector<synth::MidiControllerSlot> GenerateCatalogSlots(
         std::unique_ptr<synth::ControllerWizard> wizard =
             synth::MakeControllerWizard(registry, descriptor.id);
         REQUIRE_TRUE(wizard != nullptr);
-        std::unique_ptr<synth::ControllerConfigForm> form = wizard->ConfigForm(std::nullopt);
+        std::unique_ptr<synth::ControllerConfigForm> form = wizard->ConfigForm();
         REQUIRE_TRUE(form != nullptr);
 
         const synth::WizardGenerationContext context{

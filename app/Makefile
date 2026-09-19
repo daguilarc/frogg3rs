@@ -131,6 +131,20 @@ MIDI_CATALOG_BIN := $(BUILD_DIR)/froggers_midi_catalog_tests
 CONTROLLERS_PAGE_SOURCES := $(APP_DIR)/FroggersControllersPageTests.cpp
 CONTROLLERS_PAGE_BIN := $(BUILD_DIR)/froggers_controllers_page_tests
 
+# --- MIDI Fighter Twister manual-diagram label program -----------------
+# Writes assets/manual/twister-controls.json from FroggersMidiCatalog()'s
+# real Twister default: the preset itself through the library's own
+# persistence serializer, plus the facts the preset does not carry (each app
+# action's display name, the encoder push's job, the two bank slots whose
+# identity holds regardless of which bank is shown). MANUAL.md's two Twister
+# diagrams are rendered from that file's committed copy; the drift check
+# below rebuilds it from the code on every `make test` and fails when the
+# rebuilt file, or MANUAL.md's own side-button table, no longer matches it.
+TWISTER_LABELS_SOURCES := $(APP_DIR)/GenerateTwisterManualLabels.cpp
+TWISTER_LABELS_BIN := $(BUILD_DIR)/froggers_generate_twister_manual_labels
+ASSETS_MANUAL_DIR := $(APP_DIR)/../assets/manual
+TWISTER_LABELS_JSON := $(ASSETS_MANUAL_DIR)/twister-controls.json
+
 # --- mechanically enforce no-JUCE-in-app-core ----------------------
 # check_no_juce.cpp includes only Froggers.hpp, compiled with JUCE's module
 # directory ON the include path (so "we never pointed at JUCE" can't
@@ -149,7 +163,7 @@ DSP_HEADERS := $(wildcard $(APP_DIR)/dsp/*.hpp)
 DSP_TEST_SOURCES := $(APP_DIR)/FroggersDspParityTests.cpp
 DSP_TEST_BIN := $(BUILD_DIR)/froggers_dsp_parity_tests
 
-.PHONY: all clean check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions check-docs-match-parameter-table check-spec-checks-resolve check-citations-resolve check-modified-requirements-restate-promoted check-no-planning-history check-artifact-symbols-resolve check-delay-capacity-parameters-are-swept check-delay-capacity-break-proofs test force
+.PHONY: all clean check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions check-docs-match-parameter-table check-spec-checks-resolve check-citations-resolve check-modified-requirements-restate-promoted check-no-planning-history check-artifact-symbols-resolve check-delay-capacity-parameters-are-swept check-delay-capacity-break-proofs check-twister-manual-diagrams-drift manual-diagrams test force
 
 all: check-no-firmware-includes $(APP)
 
@@ -261,6 +275,35 @@ check-delay-capacity-parameters-are-swept:
 check-delay-capacity-break-proofs:
 	@python3 $(APP_DIR)/check_delay_capacity_break_proofs.py "$(APP_DIR)" "$(CXX)" "-I$(APP_DIR) $(CPPFLAGS) $(CXXFLAGS)" "$(DSP_TEST_SOURCES)"
 
+# --- MIDI Fighter Twister manual-diagram label program target -------------
+$(TWISTER_LABELS_BIN): $(TWISTER_LABELS_SOURCES) $(APP_DIR)/FroggersMidiCatalog.hpp $(APP_DIR)/FroggersParameters.hpp $(APP_DIR)/FroggersUiSurface.hpp $(SHEAF_LIB) | $(BUILD_DIR)
+	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(TWISTER_LABELS_SOURCES) $(SHEAF_LIB) -o $@
+
+# Regenerates assets/manual/twister-controls.json from the code and the two
+# PNGs MANUAL.md's MIDI Fighter Twister subsection shows from it. Run this
+# after a change to the Twister preset (app/FroggersMidiCatalog.hpp) or to
+# the app actions it labels, then commit the results;
+# check-twister-manual-diagrams-drift fails until the committed files agree
+# with a fresh run of this target. Both steps run into a scratch directory
+# first, so a render failure (Playwright missing, an unrecognized field) never
+# leaves the committed JSON updated with stale PNGs beside it -- the commit is
+# replaced only once both steps have already succeeded.
+manual-diagrams: $(TWISTER_LABELS_BIN)
+	@mkdir -p "$(ASSETS_MANUAL_DIR)"
+	@tmp="$$(mktemp -d)" && \
+	trap 'rm -rf "$$tmp"' EXIT && \
+	"$(TWISTER_LABELS_BIN)" "$$tmp/twister-controls.json" && \
+	node "$(APP_DIR)/render_twister_manual_diagrams.mjs" "$$tmp/twister-controls.json" "$$tmp" && \
+	cp "$$tmp/twister-controls.json" "$(TWISTER_LABELS_JSON)" && \
+	cp "$$tmp/twister-preset.png" "$(ASSETS_MANUAL_DIR)/twister-preset.png" && \
+	cp "$$tmp/twister-preset-shift.png" "$(ASSETS_MANUAL_DIR)/twister-preset-shift.png"
+
+# Rebuilds the label file from the code on every test run and fails when it,
+# or MANUAL.md's own side-button table, no longer matches the committed
+# assets/manual/twister-controls.json -- see the script's own header.
+check-twister-manual-diagrams-drift: $(TWISTER_LABELS_BIN)
+	@python3 $(APP_DIR)/check_twister_manual_diagrams_drift.py "$(APP_DIR)"
+
 # --- no-JUCE-in-app-core target ---------------------------------------------
 $(NO_JUCE_CHECK): $(NO_JUCE_CHECK_SRC) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(DSP_HEADERS) | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) -I$(JUCE_DIR)/modules $(CXXFLAGS) $(NO_JUCE_CHECK_SRC) -o $@
@@ -339,7 +382,7 @@ check-catalog-covers-screen-actions:
 	@bash $(APP_DIR)/check_catalog_covers_screen_actions.sh "$(APP_DIR)" \
 	    kSceneBlend kEncoderPress kEncoderDrag kInputSelect kViewportNarrow
 
-test: check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions check-docs-match-parameter-table check-spec-checks-resolve check-citations-resolve check-modified-requirements-restate-promoted check-no-planning-history check-artifact-symbols-resolve check-delay-capacity-parameters-are-swept check-delay-capacity-break-proofs $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN) $(CONTROLLERS_PAGE_BIN)
+test: check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions check-docs-match-parameter-table check-spec-checks-resolve check-citations-resolve check-modified-requirements-restate-promoted check-no-planning-history check-artifact-symbols-resolve check-delay-capacity-parameters-are-swept check-delay-capacity-break-proofs check-twister-manual-diagrams-drift $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN) $(CONTROLLERS_PAGE_BIN)
 	$(TEST_BIN)
 	$(MONO_VALIDATION_BIN)
 	$(DSP_TEST_BIN)

@@ -182,7 +182,12 @@ add_custom_command(TARGET FroggersStandalone POST_BUILD
         "${APP_DIR}/../MANUAL.md" "${FROGGERS_DOC_DEST}/MANUAL.md"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
         "${APP_DIR}/../QUICK_DICT.md" "${FROGGERS_DOC_DEST}/QUICK_DICT.md"
-    COMMENT "app/standalone: copying MANUAL.md/QUICK_DICT.md next to the app"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${FROGGERS_DOC_DEST}/assets/manual"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${APP_DIR}/../assets/manual/twister-preset.png" "${FROGGERS_DOC_DEST}/assets/manual/twister-preset.png"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${APP_DIR}/../assets/manual/twister-preset-shift.png" "${FROGGERS_DOC_DEST}/assets/manual/twister-preset-shift.png"
+    COMMENT "app/standalone: copying MANUAL.md/QUICK_DICT.md and its MIDI Fighter Twister diagrams next to the app"
     VERBATIM
 )
 

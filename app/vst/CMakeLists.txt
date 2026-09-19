@@ -157,6 +157,12 @@ set(FROGGERS_DOC_SOURCES
     "${FROGGERS_REPO_ROOT}/MANUAL.md"
     "${FROGGERS_REPO_ROOT}/QUICK_DICT.md"
 )
+# The two MIDI Fighter Twister diagrams MANUAL.md references, copied
+# alongside it below at the same relative path (assets/manual/).
+set(FROGGERS_DOC_IMAGE_SOURCES
+    "${FROGGERS_REPO_ROOT}/assets/manual/twister-preset.png"
+    "${FROGGERS_REPO_ROOT}/assets/manual/twister-preset-shift.png"
+)
 # Where "inside the plugin" is differs by platform, but the requirement does
 # not: operator documentation ships with the plugin everywhere. A macOS bundle
 # has Contents/Resources and CMake can name it directly. A Windows VST3 is also
@@ -184,7 +190,11 @@ foreach(FROGGERS_VST_FORMAT ${FROGGERS_VST_FORMATS})
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${FROGGERS_DOC_SOURCES}
                 "${FROGGERS_VST_DOC_DEST}"
-            COMMENT "app/vst: bundling MANUAL.md/QUICK_DICT.md into ${FROGGERS_VST_FORMAT} Resources"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${FROGGERS_VST_DOC_DEST}/assets/manual"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${FROGGERS_DOC_IMAGE_SOURCES}
+                "${FROGGERS_VST_DOC_DEST}/assets/manual"
+            COMMENT "app/vst: bundling MANUAL.md/QUICK_DICT.md and its MIDI Fighter Twister diagrams into ${FROGGERS_VST_FORMAT} Resources"
             VERBATIM
         )
     endif()

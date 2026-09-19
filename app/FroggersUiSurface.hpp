@@ -54,8 +54,9 @@
 // is open, since slot 15 is then Target/Back). Crunchy (slot 15) is GLOBAL
 // -- one shared `Parameter` aliased into all six banks
 // (`FroggersParameters.hpp`'s `FroggersParameterModel::Init`) carrying its own
-// fixed Yellow rather than the bank colour, and excluded from drill-in/
-// randomize dispatch (`FroggersModulation.hpp`'s `RandomizeAll`). That colour already
+// fixed Yellow rather than the bank colour, and excluded from randomize
+// dispatch (`FroggersModulation.hpp`'s `RandomizeAll`); an encoder press on it
+// opens its modulation view like any other slot. That colour already
 // flows through `Parameter::UIState.color` into
 // `EncoderDrawStateFromParameter` with no special-casing needed here -- this
 // file's one encoder-cell code path renders slot 14 (Crispy, per-bank
