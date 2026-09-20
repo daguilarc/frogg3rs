@@ -11,18 +11,18 @@ No task here depends on how far one detent moves the tempo. Every assertion
 below holds at whatever value that constant takes, and any task that cannot
 be written that way is not here.
 
-- [ ] 1. Move the `External/Sheaf` pin to the commit carrying
+- [x] 1. Move the `External/Sheaf` pin to the commit carrying
       `shifted-turn-moves-the-tempo` on the `shifted-encoder-turns` branch.
       Check: `git -C External/Sheaf grep -c "TempoBpm" HEAD -- projects/synth/include/synth/MidiController.hpp`
       prints a non-zero count, and `git -C External/Sheaf status` is clean.
       If the Sheaf change has not landed, report that and stop.
-- [ ] 2. Set `catalog.tempoAction = FroggersActions::kBpm` in
+- [x] 2. Set `catalog.tempoAction = FroggersActions::kBpm` in
       `FroggersMidiCatalog()`, beside `catalog.encoderPressAction`.
       Check: NEW `catalog_names_the_bpm_action_as_its_tempo_action` in
       `app/FroggersMidiCatalogTests.cpp` passes: the catalog's tempo action
       is the BPM action's name, and the catalog entry it resolves to declares
       an analog range equal to `kFroggersBpmMin` and `kFroggersBpmMax`.
-- [ ] 3. In `TwisterDeviceDefault()`, give the turn at `kFroggersCrispySlot`
+- [x] 3. In `TwisterDeviceDefault()`, give the turn at `kFroggersCrispySlot`
       shifted job Tempo, found by slot as Crunchy's is, with no CC number
       written into the preset. The existing loop walks
       `config.encoderInput->turns` in position order — Crispy at position 14
@@ -45,7 +45,7 @@ be written that way is not here.
       non-`None` `shiftedJob` — checked and printed explicitly, not inferred
       from the count above — so a loop that assigns one slot and silently
       drops the other cannot pass unnoticed.
-- [ ] 4. Cover the knob itself. NEW
+- [x] 4. Cover the knob itself. NEW
       `twister_shift_turns_crispys_knob_into_the_tempo` in
       `app/FroggersMidiCatalogTests.cpp`, written the way
       `twister_shift_turns_crunchys_knob_into_the_scene_blend` is: with a
@@ -55,7 +55,7 @@ be written that way is not here.
       and leaves the tempo where it was.
       Check: that test passes, asserting the tempo rose and the parameter did
       not, never a tempo figure.
-- [ ] 5. Cover both ends. NEW
+- [x] 5. Cover both ends. NEW
       `twister_shifted_tempo_turn_stops_at_each_end_of_the_range` in
       `app/FroggersMidiCatalogTests.cpp`: from a tempo of 30, one
       counter-clockwise detent under Shift leaves it at 30, and the next
@@ -63,7 +63,7 @@ be written that way is not here.
       detent under Shift leaves it at 300.
       Check: that test passes. It reaches 30 and 300 by setting the tempo
       directly, so it needs no count of detents and no per-detent figure.
-- [ ] 6. Cover pages. NEW
+- [x] 6. Cover pages. NEW
       `twister_shifted_tempo_turn_moves_the_tempo_the_same_on_every_page` in
       `app/FroggersMidiCatalogTests.cpp`: with a Twister row live, hold Shift
       and turn the encoder at Crispy's slot clockwise one detent on the
@@ -77,7 +77,7 @@ be written that way is not here.
       Crispy value where it was. The assertion is written against the
       equality of the two rises, never a per-detent figure, so it holds
       whatever value `kTempoBpmPerEncoderDetent` receives.
-- [ ] 7. Update `twister_crunchy_turn_row_shows_its_shifted_scene_blend` in
+- [x] 7. Update `twister_crunchy_turn_row_shows_its_shifted_scene_blend` in
       `app/FroggersControllersPageTests.cpp` for the second shifted turn: the
       encoder section reads as one block of fourteen turns plus Crispy's row,
       whose Shift field reads BPM, and Crunchy's row, whose Shift field reads
@@ -90,11 +90,11 @@ be written that way is not here.
       pre-Restore shifted turns moves from 1 to 2, and the post-Restore
       section it already checks reads both `EncoderTurnShiftedJobIndex`
       values back, not only Crunchy's.
-- [ ] 8. Correct the comment in `app/GenerateTwisterManualLabels.cpp` that
+- [x] 8. Correct the comment in `app/GenerateTwisterManualLabels.cpp` that
       names the shifted-job catalog's entries as "(none)" or "Scene Blend".
       Check: the comment names the catalog without listing entries that no
       longer make the whole list, and the program still builds.
-- [ ] 9. MANUAL.md: in "What can be mapped", say BPM is driven by an analog
+- [x] 9. MANUAL.md: in "What can be mapped", say BPM is driven by an analog
       control or by a shifted encoder turn, keeping the 30 to 300 range; in
       the MIDI Fighter Twister subsection, replace the Crunchy-only paragraph
       with one naming both shifted turns and what each does, and say that no
@@ -110,12 +110,12 @@ be written that way is not here.
       `grep -n "installs Shift + Crunchy and replaces" MANUAL.md` prints
       nothing and the rewritten sentence names both shifted turns; the alt
       text names both knobs' shifted readings.
-- [ ] 10. Regenerate the manual's Twister artifacts: `make manual-diagrams`,
+- [x] 10. Regenerate the manual's Twister artifacts: `make manual-diagrams`,
       then commit `assets/manual/twister-controls.json` and both PNGs.
       Check: `make check-twister-manual-diagrams-drift` passes, and
       `twister-controls.json` shows `"shiftedTurn": "BPM"` at position 14 and
       `"shiftedTurn": "Scene Blend"` at position 15.
-- [ ] 11. Run the full app suite and the host suites CI runs, reading the
+- [x] 11. Run the full app suite and the host suites CI runs, reading the
       workflows for which those are, by running every test binary by path
       after `make test` stops at the carried deadline tests.
       Check: pass and fail counts reported per binary as measured; every

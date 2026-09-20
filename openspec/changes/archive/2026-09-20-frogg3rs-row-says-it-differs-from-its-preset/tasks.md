@@ -10,7 +10,7 @@ are relative to it. Task 3 is this repository's.
 
 ## 1. The row says it differs from its preset
 
-- [ ] 1.1 Add the notice line. In `include/synth/ControllersPageUI.hpp`:
+- [x] 1.1 Add the notice line. In `include/synth/ControllersPageUI.hpp`:
       NEW `NodeIds::ControllerPresetNotice(controllerIx)` beside
       `NodeIds::ControllerRestore`; NEW
       `ControllersLayout::kPresetNoticeText`, the single definition of the
@@ -48,7 +48,7 @@ are relative to it. Task 3 is this repository's.
       this task; run the binary and report each affected `requireFits()`
       call's result. A failure is reported as a fit problem to solve, never
       papered over by loosening what the test measures.
-- [ ] 1.2 Pin the three row states in
+- [x] 1.2 Pin the three row states in
       `tests/controllers_page_ui_tests.cpp`'s
       `TestRestoreReinstallsADivergedPresetAndIsGatedByDivergence`, whose
       fixture already holds row 0 installed from the preset and untouched,
@@ -71,7 +71,7 @@ are relative to it. Task 3 is this repository's.
       nullptr` and that row's height is back to `kControllerHeaderHeight`.
       Check: the case passes; with the `.line3` emission removed it fails on
       the row 2 notice assertion, and the report says so.
-- [ ] 1.3 Measure that the sentence fits its box. NEW
+- [x] 1.3 Measure that the sentence fits its box. NEW
       `RunPresetNoticeWidthCheck()` in
       `juce/ControllersPageSimulationTests.cpp`, beside
       `RunDeviceLabelWidthCheck()` and called from `main()` next to it, which
@@ -90,7 +90,7 @@ are relative to it. Task 3 is this repository's.
 
 ## 2. The instrument snapshot's stated reason
 
-- [ ] 2.1 Correct the reason at `include/synth/Engine.hpp:255-265`. It says
+- [x] 2.1 Correct the reason at `include/synth/Engine.hpp:255-265`. It says
       that without the `defaultInstrumentConfig_` snapshot a later
       `RevertAllToDefault` through `NewPatch()` would reset MIDI routing and
       audio device selection to empty. `ApplyPatchMessage` discards
@@ -112,7 +112,7 @@ are relative to it. Task 3 is this repository's.
       count as on the base, which the report gives for both runs.
 ## 3. The manual's account of an older Twister row
 
-- [ ] 3.1 In `MANUAL.md`, the MIDI Fighter Twister section tells a player
+- [x] 3.1 In `MANUAL.md`, the MIDI Fighter Twister section tells a player
       that a Twister row added from the preset before this version "keeps its
       old mappings and shows Restore". After task 1 the row also carries the notice line, so the
       sentence no longer describes what the player sees. Rewrite it to say
