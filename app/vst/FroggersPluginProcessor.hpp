@@ -99,7 +99,7 @@
 // (Parameter::PopulateUIState(), the exact call synth::Engine's own
 // ProcessBlock already makes for its throttled UI publish -- see
 // processBlock()'s own comment for why this class makes its OWN,
-// unthrottled, bank-selection-independent calls instead of reusing that
+// unthrottled, page-selection-independent calls instead of reusing that
 // one); timerCallback() (message thread, via PumpHostParameterBridge()) is
 // the ONLY thing that reads those snapshots to notify the host, and the
 // ONLY thing that pushes a host-driven write into the core (via the SAME
@@ -417,7 +417,7 @@ private:
     // header comment) -- so it records at most one pending edge here, a
     // single-slot atomic exactly like FroggersAppCore's own
     // pendingBankSelect_/pendingEncoderPress_ idiom
-    // (FroggersAppCore.hpp's own comment on `RequestBankSelect`: "a single-slot pending
+    // (FroggersAppCore.hpp's own comment on `RequestPageSelect`: "a single-slot pending
     // request; a later write ... simply coalesces (acceptable: ...
     // control-rate, human-paced actions, never a data stream)" -- a host
     // transport toggle is exactly that kind of action). timerCallback()

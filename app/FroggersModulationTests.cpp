@@ -117,7 +117,7 @@ struct Fixture {
 };
 
 void ForEachTopLevelParameter(FroggersParameterModel& model, const std::function<void(synth::Parameter&)>& fn) {
-    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
         const auto bankId = static_cast<FroggersBankId>(bankIx);
         for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
             fn(model.PageParameter(bankId, paramIx));
@@ -723,18 +723,18 @@ TEST_CASE(randomize_all_moves_at_most_two_of_six_banks_crispy_but_randomize_page
     };
 
     constexpr int kTrials = 600;
-    std::array<int, kFroggersBankCount + 1> countHistogram{};
-    std::array<bool, kFroggersBankCount> bankEverChanged{};
+    std::array<int, kFroggersPageCount + 1> countHistogram{};
+    std::array<bool, kFroggersPageCount> bankEverChanged{};
     for (int trial = 0; trial < kTrials; ++trial) {
-        std::array<float, kFroggersBankCount> before{};
-        for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+        std::array<float, kFroggersPageCount> before{};
+        for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
             before[bankIx] = crispyOf(bankIx).SceneCenter(0);
         }
 
         RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
 
         int changedCount = 0;
-        for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+        for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
             if (crispyOf(bankIx).SceneCenter(0) != before[bankIx]) {
                 ++changedCount;
                 bankEverChanged[bankIx] = true;
@@ -751,7 +751,7 @@ TEST_CASE(randomize_all_moves_at_most_two_of_six_banks_crispy_but_randomize_page
     REQUIRE_TRUE(countHistogram[0] < kTrials * 0.62);
 
     // Every one of the six banks must be reachable across the run.
-    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
         REQUIRE_TRUE(bankEverChanged[bankIx]);
     }
 
@@ -762,8 +762,8 @@ TEST_CASE(randomize_all_moves_at_most_two_of_six_banks_crispy_but_randomize_page
 
     // Randomize Page on a parameter page still moves only that page's own
     // Crispy, and no other bank's.
-    std::array<float, kFroggersBankCount> beforePage{};
-    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+    std::array<float, kFroggersPageCount> beforePage{};
+    for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
         beforePage[bankIx] = crispyOf(bankIx).SceneCenter(0);
     }
     constexpr std::size_t kReverbIx = static_cast<std::size_t>(FroggersBankId::Reverb);
@@ -773,7 +773,7 @@ TEST_CASE(randomize_all_moves_at_most_two_of_six_banks_crispy_but_randomize_page
         changedByPage = crispyOf(kReverbIx).SceneCenter(0) != beforePage[kReverbIx];
     }
     REQUIRE_TRUE(changedByPage);
-    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
         if (bankIx == kReverbIx) {
             continue;
         }
@@ -1444,7 +1444,7 @@ TEST_CASE(default_patch_touches_no_parameter_outside_the_enumerated_set) {
     // Every top-level parameter's OWN scene-center value must match the
     // baseline exactly, except the three enumerated Shape controls and the
     // one enumerated Gain control.
-    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
         const auto bankId = static_cast<FroggersBankId>(bankIx);
         for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
             const bool isEnumeratedShape = bankId == FroggersBankId::Audio && paramIx >= 3 && paramIx <= 5;
@@ -1594,7 +1594,7 @@ void RequireParameterMatchesDefaultPatch(synth::Parameter& parameter, synth::Par
 }
 
 void RequireModelMatchesFreshDefaultPatch(FroggersParameterModel& actualModel, FroggersParameterModel& referenceModel) {
-    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
         const auto bankId = static_cast<FroggersBankId>(bankIx);
         for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
             RequireParameterMatchesDefaultPatch(actualModel.PageParameter(bankId, paramIx),
@@ -1619,7 +1619,7 @@ TEST_CASE(reset_page_clears_only_current_bank_values_and_depths) {
     // something real to clear on Reverb and something real to prove
     // untouched everywhere else.
     RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
-    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
         FroggersModulationDrillIn pageDrill(fx.model.BankAt(static_cast<FroggersBankId>(bankIx)));
         RandomizePage(fx.manager, pageDrill);
     }
@@ -1683,7 +1683,7 @@ TEST_CASE(reset_page_on_audio_restores_shapes_and_pitch_detents_while_other_bank
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Audio));
 
     RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
-    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
         FroggersModulationDrillIn pageDrill(fx.model.BankAt(static_cast<FroggersBankId>(bankIx)));
         RandomizePage(fx.manager, pageDrill);
     }
@@ -1733,7 +1733,7 @@ TEST_CASE(reset_all_matches_a_freshly_constructed_default_patch_instance_field_f
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
 
     RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);  // values+depths on all 6 banks' page params
-    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
         FroggersModulationDrillIn pageDrill(fx.model.BankAt(static_cast<FroggersBankId>(bankIx)));
         RandomizePage(fx.manager, pageDrill);  // Crispy on every bank -- Randomize All itself excludes it
     }
@@ -1755,7 +1755,7 @@ TEST_CASE(reset_all_matches_a_freshly_constructed_default_patch_instance_field_f
     // bank's own RandomizePage a bounded number of times (P(20 straight
     // coincidences) is astronomically small) rather than accepting an
     // occasional spurious failure here.
-    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
         const auto bankId = static_cast<FroggersBankId>(bankIx);
         FroggersModulationDrillIn pageDrill(fx.model.BankAt(bankId));
         bool bankMoved = false;

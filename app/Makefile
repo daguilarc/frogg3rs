@@ -163,7 +163,7 @@ DSP_HEADERS := $(wildcard $(APP_DIR)/dsp/*.hpp)
 DSP_TEST_SOURCES := $(APP_DIR)/FroggersDspParityTests.cpp
 DSP_TEST_BIN := $(BUILD_DIR)/froggers_dsp_parity_tests
 
-.PHONY: all clean check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions check-docs-match-parameter-table check-spec-checks-resolve check-citations-resolve check-modified-requirements-restate-promoted check-no-planning-history check-artifact-symbols-resolve check-delay-capacity-parameters-are-swept check-delay-capacity-break-proofs check-twister-manual-diagrams-drift manual-diagrams test force
+.PHONY: all clean check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions check-docs-match-parameter-table check-spec-checks-resolve check-citations-resolve check-modified-requirements-restate-promoted check-no-planning-history check-no-bank-page-conflation check-artifact-symbols-resolve check-delay-capacity-parameters-are-swept check-delay-capacity-break-proofs check-twister-manual-diagrams-drift manual-diagrams test force
 
 all: check-no-firmware-includes $(APP)
 
@@ -245,6 +245,9 @@ check-modified-requirements-restate-promoted:
 # re-violated twice.
 check-no-planning-history:
 	@python3 $(APP_DIR)/check_no_planning_history.py "$(APP_DIR)"
+
+check-no-bank-page-conflation:
+	@python3 $(APP_DIR)/check_no_bank_page_conflation.py "$(APP_DIR)"
 
 # A change's tasks.md and proposal.md say what the code is and what it will
 # become, and nothing else reads them: the citation gate reads comments and the
@@ -382,7 +385,7 @@ check-catalog-covers-screen-actions:
 	@bash $(APP_DIR)/check_catalog_covers_screen_actions.sh "$(APP_DIR)" \
 	    kSceneBlend kEncoderPress kEncoderDrag kInputSelect kViewportNarrow
 
-test: check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions check-docs-match-parameter-table check-spec-checks-resolve check-citations-resolve check-modified-requirements-restate-promoted check-no-planning-history check-artifact-symbols-resolve check-delay-capacity-parameters-are-swept check-delay-capacity-break-proofs check-twister-manual-diagrams-drift $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN) $(CONTROLLERS_PAGE_BIN)
+test: check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions check-docs-match-parameter-table check-spec-checks-resolve check-citations-resolve check-modified-requirements-restate-promoted check-no-planning-history check-no-bank-page-conflation check-artifact-symbols-resolve check-delay-capacity-parameters-are-swept check-delay-capacity-break-proofs check-twister-manual-diagrams-drift $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN) $(CONTROLLERS_PAGE_BIN)
 	$(TEST_BIN)
 	$(MONO_VALIDATION_BIN)
 	$(DSP_TEST_BIN)

@@ -243,7 +243,7 @@ def main():
     table = build_table(params_path, surface_path)
 
     docs = [
-        ("MANUAL.md", manual_path, " bank"),
+        ("MANUAL.md", manual_path, " page"),
         ("QUICK_DICT.md", quick_dict_path, ""),
     ]
 

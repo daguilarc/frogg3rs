@@ -600,7 +600,7 @@ struct StereoDelay
     // ExpMapCompute(0.25,4,0.5) == 0.25*sqrt(16) == 1.0.
     void SetFeedbackDrive(float knob01) { fbDrive = ExpMapCompute(0.25f, 4.0f, knob01); }
 
-    // The SAME control as the Drive bank's Tone, so the same map: both read
+    // The SAME control as the Drive page's Tone, so the same map: both read
     // DspMath.hpp's ToneAlphaFromKnob, which is where the range and the
     // reason for its floor live. This one sits inside the feedback loop, so
     // its filter is applied on every pass and its darkening compounds across
@@ -645,8 +645,8 @@ struct StereoDelay
     void SetWidthBalance(float knob01) { widthBalance = knob01; }
 
     // SampleRateReducer, reused AS-IS -- same mapping shape already
-    // used for the Drive bank's SRR1/SRR2 knobs (FroggersAppCore.hpp Drive
-    // bank wiring), reused rather than invented fresh for the same
+    // used for the Drive page's SRR1/SRR2 knobs (FroggersAppCore.hpp Drive
+    // page wiring), reused rather than invented fresh for the same
     // concept. Default knob 0.0f gives
     // freq == 1e-2 + ZeroedExpCompute(10,1) == 1.01 >= 1.0f, which is
     // SampleRateReducer::Process's own exact-bypass branch -- "no
@@ -1151,8 +1151,8 @@ private:
 // maps to exactly one DelayParams field, no two are combined, and the
 // freeze/reverse/diffusion arguments carry the retired Detune/Color/Halo
 // rows' new identities (Freeze/Reverse blend/Diffusion,
-// FroggersParameters.hpp). Named by DSP field, not by Delay-bank slot --
-// the bank's own slots move independently of this order as the Delay bank
+// FroggersParameters.hpp). Named by DSP field, not by Delay-page slot --
+// the bank's own slots move independently of this order as the Delay page
 // gets renumbered (its own call site says which slot feeds which argument).
 // Callers supply the nine already-fuegoized/modulated 0..1 values in this
 // fixed field order; this function owns none of the smoothing/mod/fuego
@@ -1172,11 +1172,11 @@ inline DelayParams MapRowsToDelayParams(float timeKnob01,
     params.dsnd = sendKnob01;   // :181
     params.dfbk = feedbackKnob01;  // :182
     params.dwid = widthKnob01;  // :183
-    params.dfrz = freezeKnob01;  // was :184 (Detune/ddet) -- Delay bank slot 5 is now Freeze; see DelayParams::dfrz.
+    params.dfrz = freezeKnob01;  // was :184 (Detune/ddet) -- Delay page slot 5 is now Freeze; see DelayParams::dfrz.
     params.dmod = modKnob01;    // :185
     params.dmix = mixKnob01;    // :186
-    params.drev = reverseKnob01;    // Delay bank slot 7 is Reverse blend (was Color, previously folded into ddet).
-    params.ddif = diffusionKnob01;  // Delay bank slot 8 is Diffusion (was Halo, previously folded into dmod).
+    params.drev = reverseKnob01;    // Delay page slot 7 is Reverse blend (was Color, previously folded into ddet).
+    params.ddif = diffusionKnob01;  // Delay page slot 8 is Diffusion (was Halo, previously folded into dmod).
     return params;
 }
 

@@ -141,8 +141,8 @@ void PushAppAction(Rig& rig, std::size_t catalogIx, float value) {
 
 std::vector<float> SnapshotAllParams(synth_froggers::FroggersApp& app) {
     std::vector<float> values;
-    values.reserve(synth_froggers::kFroggersBankCount * synth_froggers::kFroggersParamsPerBank);
-    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+    values.reserve(synth_froggers::kFroggersPageCount * synth_froggers::kFroggersParamsPerBank);
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
         for (std::size_t slot = 0; slot < synth_froggers::kFroggersParamsPerBank; ++slot) {
             values.push_back(app.Parameters().PageParameter(bankIx, slot).SceneCenter(0));
         }
@@ -166,8 +166,8 @@ std::vector<float> SnapshotAllParams(synth_froggers::FroggersApp& app) {
 //   Reset All/Page     -- every checked value returns to its startup-patch
 //                        default (RandomizeAll/Page, earlier in the same
 //                        catalog order, is what dirtied it)
-//   Bank Previous/Next -- ActiveBankIndex() moves by -1/+1 mod bank count
-//   Bank N              -- ActiveBankIndex() == N
+//   Bank Previous/Next -- ActivePageIndex() moves by -1/+1 mod bank count
+//   Bank N              -- ActivePageIndex() == N
 //   Scene 1/2           -- Manager().Scene().blend reads 0.0/1.0
 //   BPM                 -- DisplayTempoBpm() reads the midpoint of
 //                          [kFroggersBpmMin, kFroggersBpmMax] for value 0.5
@@ -247,7 +247,7 @@ TEST_CASE(midi_app_action_walk_moves_the_state_the_screen_moves) {
             REQUIRE_TRUE(randomizePageIx.has_value());
             PushAppAction(rig, *randomizePageIx, 0.0f);
 
-            const std::size_t bankIx = app.ActiveBankIndex();
+            const std::size_t bankIx = app.ActivePageIndex();
             const std::size_t base = bankIx * synth_froggers::kFroggersParamsPerBank;
             float maxAbsDeltaBefore = 0.0f;
             for (std::size_t slot = 0; slot < synth_froggers::kFroggersParamsPerBank; ++slot) {
@@ -265,21 +265,21 @@ TEST_CASE(midi_app_action_walk_moves_the_state_the_screen_moves) {
                     std::fabs(app.Parameters().PageParameter(bankIx, slot).SceneCenter(0) - defaultValues[base + slot]));
             }
             RequireForAction(entry, maxAbsDeltaAfter < 1.0e-6f, "must return the current bank to its default values");
-        } else if (entry.action == synth_froggers::FroggersActions::kBankPrevious) {
-            const std::size_t before = app.ActiveBankIndex();
+        } else if (entry.action == synth_froggers::FroggersActions::kPagePrevious) {
+            const std::size_t before = app.ActivePageIndex();
             PushAppAction(rig, ix, 0.0f);
             const std::size_t expected =
-                (before + synth_froggers::kFroggersBankCount - 1) % synth_froggers::kFroggersBankCount;
-            RequireForAction(entry, app.ActiveBankIndex() == expected, "must move to the previous bank");
-        } else if (entry.action == synth_froggers::FroggersActions::kBankNext) {
-            const std::size_t before = app.ActiveBankIndex();
+                (before + synth_froggers::kFroggersPageCount - 1) % synth_froggers::kFroggersPageCount;
+            RequireForAction(entry, app.ActivePageIndex() == expected, "must move to the previous bank");
+        } else if (entry.action == synth_froggers::FroggersActions::kPageNext) {
+            const std::size_t before = app.ActivePageIndex();
             PushAppAction(rig, ix, 0.0f);
-            const std::size_t expected = (before + 1) % synth_froggers::kFroggersBankCount;
-            RequireForAction(entry, app.ActiveBankIndex() == expected, "must move to the next bank");
-        } else if (entry.action == synth_froggers::FroggersActions::kBankSelect) {
+            const std::size_t expected = (before + 1) % synth_froggers::kFroggersPageCount;
+            RequireForAction(entry, app.ActivePageIndex() == expected, "must move to the next bank");
+        } else if (entry.action == synth_froggers::FroggersActions::kPageSelect) {
             PushAppAction(rig, ix, 0.0f);
             const std::size_t expected = static_cast<std::size_t>(std::stoul(entry.value));
-            RequireForAction(entry, app.ActiveBankIndex() == expected, "must select the named bank");
+            RequireForAction(entry, app.ActivePageIndex() == expected, "must select the named bank");
         } else if (entry.action == synth_froggers::FroggersActions::kSceneSelect) {
             PushAppAction(rig, ix, 0.0f);
             const float expected = entry.value == "0" ? 0.0f : 1.0f;
@@ -372,8 +372,8 @@ TEST_CASE(catalog_names_every_front_screen_action) {
         synth_froggers::FroggersActions::kFreeze,        synth_froggers::FroggersActions::kRecord,
         synth_froggers::FroggersActions::kRandomizeAll,  synth_froggers::FroggersActions::kRandomizePage,
         synth_froggers::FroggersActions::kResetAll,      synth_froggers::FroggersActions::kResetPage,
-        synth_froggers::FroggersActions::kBankSelect,    synth_froggers::FroggersActions::kBankPrevious,
-        synth_froggers::FroggersActions::kBankNext,      synth_froggers::FroggersActions::kSceneSelect,
+        synth_froggers::FroggersActions::kPageSelect,    synth_froggers::FroggersActions::kPagePrevious,
+        synth_froggers::FroggersActions::kPageNext,      synth_froggers::FroggersActions::kSceneSelect,
         synth_froggers::FroggersActions::kBpm,
     };
     // kSceneBlend      -- offered as the library's own analog Scene Blend kind, not an app action.
@@ -487,13 +487,13 @@ TEST_CASE(device_defaults_are_valid_and_address_exactly_the_documented_controls)
     REQUIRE_TRUE(twister.config.systemMessages.size() == 6);
 
     const std::vector<std::string> twisterOrder = {
-        synth_froggers::FroggersActions::kBankNext, synth_froggers::FroggersActions::kPlay,
+        synth_froggers::FroggersActions::kPageNext, synth_froggers::FroggersActions::kPlay,
         synth_froggers::FroggersActions::kFreeze, synth_froggers::FroggersActions::kSceneSelect,
         synth_froggers::FroggersActions::kRandomizePage,
     };
     const std::vector<std::string> twisterValues = {"", "", "", "0", ""};
     const std::vector<std::string> twisterShiftedAction = {
-        synth_froggers::FroggersActions::kBankPrevious, synth_froggers::FroggersActions::kStop,
+        synth_froggers::FroggersActions::kPagePrevious, synth_froggers::FroggersActions::kStop,
         synth_froggers::FroggersActions::kResetPage, synth_froggers::FroggersActions::kSceneSelect,
         synth_froggers::FroggersActions::kRandomizeAll,
     };
@@ -548,16 +548,16 @@ TEST_CASE(device_defaults_are_valid_and_address_exactly_the_documented_controls)
     expectedSystemMessages.insert({0, 93, kNote, synth_froggers::FroggersActions::kRecord, ""});
     expectedSystemMessages.insert({0, 82, kNote, synth_froggers::FroggersActions::kSceneSelect, "0"});
     expectedSystemMessages.insert({0, 83, kNote, synth_froggers::FroggersActions::kSceneSelect, "1"});
-    expectedSystemMessages.insert({0, 97, kNote, synth_froggers::FroggersActions::kBankPrevious, ""});
-    expectedSystemMessages.insert({0, 96, kNote, synth_froggers::FroggersActions::kBankNext, ""});
+    expectedSystemMessages.insert({0, 97, kNote, synth_froggers::FroggersActions::kPagePrevious, ""});
+    expectedSystemMessages.insert({0, 96, kNote, synth_froggers::FroggersActions::kPageNext, ""});
     expectedSystemMessages.insert({0, 62, kNote, synth_froggers::FroggersActions::kRandomizePage, ""});
     expectedSystemMessages.insert({0, 63, kNote, synth_froggers::FroggersActions::kRandomizeAll, ""});
     expectedSystemMessages.insert({0, 64, kNote, synth_froggers::FroggersActions::kResetPage, ""});
     expectedSystemMessages.insert({0, 65, kNote, synth_froggers::FroggersActions::kResetAll, ""});
     expectedSystemMessages.insert({0, 81, kNote, synth_froggers::FroggersActions::kFreeze, ""});
-    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
         expectedSystemMessages.insert(
-            {static_cast<int>(bankIx), 52, kNote, synth_froggers::FroggersActions::kBankSelect, std::to_string(bankIx)});
+            {static_cast<int>(bankIx), 52, kNote, synth_froggers::FroggersActions::kPageSelect, std::to_string(bankIx)});
     }
 
     for (const synth::MidiAppDeviceDefault* device : {&generic, &ableton}) {
@@ -857,7 +857,7 @@ TEST_CASE(launchpad_defaults_bank_column_covers_every_bank) {
         const synth::MidiAppDeviceDefault& device = RequireDeviceDefault(catalog, preset.id);
         std::size_t bankPadCount = 0;
         for (const synth::MidiControllerSystemMessageAssociation& assoc : device.config.systemMessages) {
-            if (assoc.appAction != synth_froggers::FroggersActions::kBankSelect) {
+            if (assoc.appAction != synth_froggers::FroggersActions::kPageSelect) {
                 continue;
             }
             REQUIRE_TRUE(assoc.launchpadPosition.has_value());
@@ -866,7 +866,7 @@ TEST_CASE(launchpad_defaults_bank_column_covers_every_bank) {
             REQUIRE_TRUE(assoc.appActionValue == std::to_string(bankPadCount));
             ++bankPadCount;
         }
-        REQUIRE_TRUE(bankPadCount == synth_froggers::kFroggersBankCount);
+        REQUIRE_TRUE(bankPadCount == synth_froggers::kFroggersPageCount);
     }
 }
 

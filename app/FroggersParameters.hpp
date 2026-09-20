@@ -72,7 +72,7 @@ constexpr std::size_t AudioSlot(std::size_t vco, VcoSlotRole role) {
     return vco + static_cast<std::size_t>(role);
 }
 
-inline constexpr std::size_t kFroggersBankCount = 6;
+inline constexpr std::size_t kFroggersPageCount = 6;
 inline constexpr std::size_t kFroggersParamsPerBank = 14;  // bank slots 0-13
 inline constexpr std::size_t kFroggersSlotsPerBank = 16;  // bank slots 0-15
 inline constexpr std::size_t kFroggersCrispySlot = 14;
@@ -141,8 +141,8 @@ struct FroggersBankLayout {
 //               Mod depth, Reverse blend, Diffusion
 //   Reverb   -- Wet/dry, Send, Room size, Decay, Pre-delay, Damping,
 //               Stereo width, Density, Mod, Hold
-inline const std::array<FroggersBankLayout, kFroggersBankCount>& FroggersBankLayouts() {
-    static const std::array<FroggersBankLayout, kFroggersBankCount> layouts{{
+inline const std::array<FroggersBankLayout, kFroggersPageCount>& FroggersBankLayouts() {
+    static const std::array<FroggersBankLayout, kFroggersPageCount> layouts{{
         {FroggersBankId::Audio, "Audio", synth::Color::Red, {{
             // The ordinary 0.0f default maps (via
             // Vco::PitchToPhaseIncrement, app/dsp/Vco.hpp,
@@ -396,7 +396,7 @@ public:
         }
 
         const auto& layouts = FroggersBankLayouts();
-        for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+        for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
             const FroggersBankLayout& layout = layouts[bankIx];
 
             synth::Bank& bank = manager.CreateBank();
@@ -579,7 +579,7 @@ private:
         // ProcessLitePhase1 already wrote (the raw, unwarped value).
         const float globalCrunchy = crunchy_->CachedKnobValue(kVoiceIx);
 
-        for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+        for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
             synth::Parameter& crispy = *crispy_[bankIx];
             const float crispyPreFuego = crispy.CachedKnobValue(kVoiceIx);
 
@@ -615,9 +615,9 @@ private:
     synth::ParameterGroup* group_ = nullptr;
     synth::BankSlot* slot_ = nullptr;
     synth::Parameter* crunchy_ = nullptr;
-    std::array<synth::Bank*, kFroggersBankCount> banks_{};
-    std::array<synth::Parameter*, kFroggersBankCount> crispy_{};
-    std::array<std::array<synth::Parameter*, kFroggersParamsPerBank>, kFroggersBankCount> pageParameters_{};
+    std::array<synth::Bank*, kFroggersPageCount> banks_{};
+    std::array<synth::Parameter*, kFroggersPageCount> crispy_{};
+    std::array<std::array<synth::Parameter*, kFroggersParamsPerBank>, kFroggersPageCount> pageParameters_{};
 };
 
 }  // namespace synth_froggers

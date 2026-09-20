@@ -1,7 +1,7 @@
 #pragma once
 
 // synth_froggers::FroggersMidiCatalog -- the app's MIDI catalog: the
-// actions a controller can dispatch (transport, randomize/reset, bank and
+// actions a controller can dispatch (transport, randomize/reset, page and
 // scene selection, BPM), the library kinds the Controllers page keeps
 // around for this app (parameter inc/dec, absolute set, push, scene blend,
 // hold drill, shift), and the six device defaults offered from the
@@ -17,7 +17,7 @@
 // Bank Side Buttons unchecked so the side buttons keep this default's CC
 // addresses whatever Twister bank is lit. The six side buttons are five
 // paired jobs -- a press and a shifted press held under Shift -- plus
-// Shift itself: left column top to bottom Bank Next/Bank Previous,
+// Shift itself: left column top to bottom Page Next/Page Previous,
 // Play/Stop, Freeze/Reset Page; right column Scene 1/Scene 2, Randomize
 // Page/Randomize All; Shift sits at the bottom right. CC Hold is required
 // on every side button because the release is what ends Shift. The
@@ -122,8 +122,8 @@ inline synth::MidiAppDeviceDefault TwisterDeviceDefault() {
     }
     config.encoderOutput = synth::EncoderMidiOutConfig::TwisterDefault(0);
     config.systemMessages = {
-        AppActionButton(synth::MidiControlAddress{.channel = 3, .cc = 8}, FroggersActions::kBankNext, "",
-                         FroggersActions::kBankPrevious, ""),
+        AppActionButton(synth::MidiControlAddress{.channel = 3, .cc = 8}, FroggersActions::kPageNext, "",
+                         FroggersActions::kPagePrevious, ""),
         AppActionButton(synth::MidiControlAddress{.channel = 3, .cc = 9}, FroggersActions::kPlay, "",
                          FroggersActions::kStop, ""),
         AppActionButton(synth::MidiControlAddress{.channel = 3, .cc = 10}, FroggersActions::kFreeze, "",
@@ -164,19 +164,19 @@ inline synth::MidiControllerProfileConfig Apc40BaseConfig() {
     messages.push_back(AppActionButton(note(93), FroggersActions::kRecord, ""));
     messages.push_back(AppActionButton(note(82), FroggersActions::kSceneSelect, "0"));
     messages.push_back(AppActionButton(note(83), FroggersActions::kSceneSelect, "1"));
-    messages.push_back(AppActionButton(note(97), FroggersActions::kBankPrevious, ""));
-    messages.push_back(AppActionButton(note(96), FroggersActions::kBankNext, ""));
+    messages.push_back(AppActionButton(note(97), FroggersActions::kPagePrevious, ""));
+    messages.push_back(AppActionButton(note(96), FroggersActions::kPageNext, ""));
     messages.push_back(AppActionButton(note(62), FroggersActions::kRandomizePage, ""));
     messages.push_back(AppActionButton(note(63), FroggersActions::kRandomizeAll, ""));
     messages.push_back(AppActionButton(note(64), FroggersActions::kResetPage, ""));
     messages.push_back(AppActionButton(note(65), FroggersActions::kResetAll, ""));
     messages.push_back(AppActionButton(note(81), FroggersActions::kFreeze, ""));
-    for (std::size_t ix = 0; ix < kFroggersBankCount; ++ix) {
+    for (std::size_t ix = 0; ix < kFroggersPageCount; ++ix) {
         messages.push_back(AppActionButton(
             synth::MidiControlAddress{.channel = static_cast<std::uint8_t>(ix),
                                       .cc = 52,
                                       .type = synth::MidiControlType::Note},
-            FroggersActions::kBankSelect, std::to_string(ix)));
+            FroggersActions::kPageSelect, std::to_string(ix)));
     }
 
     synth::MidiControllerProfileConfig config;
@@ -224,7 +224,7 @@ inline synth::MidiControllerSystemMessageAssociation LaunchpadPadButton(synth::L
     return association;
 }
 
-// The transport/randomize/reset/scene row above the pad grid, plus the bank
+// The transport/randomize/reset/scene row above the pad grid, plus the page
 // column beside it -- identical across all three Launchpad models, so this
 // one table is shared by every LaunchpadDeviceDefault() call below. The 8x8
 // pad grid itself (x 0..7, y 0..7) is left unmapped.
@@ -240,8 +240,8 @@ inline std::vector<synth::MidiControllerSystemMessageAssociation> LaunchpadPadMa
         LaunchpadPadButton(controller, 6, -1, FroggersActions::kRandomizePage, ""),
         LaunchpadPadButton(controller, 7, -1, FroggersActions::kResetPage, ""),
     };
-    for (std::size_t ix = 0; ix < kFroggersBankCount; ++ix) {
-        associations.push_back(LaunchpadPadButton(controller, 8, static_cast<int>(ix), FroggersActions::kBankSelect,
+    for (std::size_t ix = 0; ix < kFroggersPageCount; ++ix) {
+        associations.push_back(LaunchpadPadButton(controller, 8, static_cast<int>(ix), FroggersActions::kPageSelect,
                                                     std::to_string(ix)));
     }
     return associations;
@@ -325,12 +325,12 @@ inline synth::MidiAppCatalog FroggersMidiCatalog() {
         {FroggersActions::kRandomizePage, "", "Randomize Page", std::nullopt},
         {FroggersActions::kResetAll, "", "Reset All", std::nullopt},
         {FroggersActions::kResetPage, "", "Reset Page", std::nullopt},
-        {FroggersActions::kBankPrevious, "", "Bank Previous", std::nullopt},
-        {FroggersActions::kBankNext, "", "Bank Next", std::nullopt},
+        {FroggersActions::kPagePrevious, "", "Page Previous", std::nullopt},
+        {FroggersActions::kPageNext, "", "Page Next", std::nullopt},
     };
-    for (std::size_t ix = 0; ix < kFroggersBankCount; ++ix) {
+    for (std::size_t ix = 0; ix < kFroggersPageCount; ++ix) {
         catalog.actions.push_back(
-            {FroggersActions::kBankSelect, std::to_string(ix), "Bank " + std::to_string(ix + 1), std::nullopt});
+            {FroggersActions::kPageSelect, std::to_string(ix), "Page " + std::to_string(ix + 1), std::nullopt});
     }
     catalog.actions.push_back({FroggersActions::kSceneSelect, "0", "Scene 1", std::nullopt});
     catalog.actions.push_back({FroggersActions::kSceneSelect, "1", "Scene 2", std::nullopt});

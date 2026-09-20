@@ -156,14 +156,16 @@ inline constexpr const char* kRandomizePage = "froggers.randomize.page";
 inline constexpr const char* kResetAll = "froggers.reset.all";
 inline constexpr const char* kResetPage = "froggers.reset.page";
 // Row 6 of the right block: Randomize Page | Randomize All (moved out of the
-// bank-header group by the CELL MAP -- see AppendRandomizeRow()'s comment).
+// page-header group by the CELL MAP -- see AppendRandomizeRow()'s comment).
 inline constexpr const char* kRandomizeRow = "froggers.layout.right.randomize";
 // Row 7, directly below Randomize, same two-halves weighting.
 inline constexpr const char* kResetRow = "froggers.layout.right.reset";
-// Row 1 of the right block: the six bank-select tabs.
-inline constexpr const char* kBankTabsRow = "froggers.layout.right.banks";
+// Row 1 of the right block: the six page-select tabs.
+// The string value is a stored wire identifier (a node id a saved layout
+// or test can reference) and does not follow the symbol's "Page" name.
+inline constexpr const char* kPageTabsRow = "froggers.layout.right.banks";
 // A dedicated header ROW (operator, 2026-08-09, fourth session on the same
-// complaint), inserted between the bank tabs row and the first
+// complaint), inserted between the page tabs row and the first
 // encoder row -- see AppendModulationHeaderRow()'s own comment for the full
 // placement investigation and FroggersCellMap::RightKind::Header for its
 // place in the topology table.
@@ -172,8 +174,10 @@ inline constexpr const char* kModulationHeader = "froggers.layout.right.header";
 // (the title, now a distinct child rather than the row's own leaf content --
 // see AppendModulationHeaderRow()'s own comment for the full child-structure
 // switch).
-inline constexpr const char* kBankPrevArrow = "froggers.bank.prev";
-inline constexpr const char* kBankNextArrow = "froggers.bank.next";
+// Both string values are stored wire identifiers -- a saved controller
+// row's action string -- and do not follow the symbols' "Page" name.
+inline constexpr const char* kPagePrevArrow = "froggers.bank.prev";
+inline constexpr const char* kPageNextArrow = "froggers.bank.next";
 inline constexpr const char* kModulationHeaderTitle = "froggers.layout.right.header.title";
 
 inline constexpr const char* kSceneBlend = "froggers.scene.blend";
@@ -233,12 +237,15 @@ inline constexpr const char* kRandomizeAll = "froggers.randomize.all";
 inline constexpr const char* kRandomizePage = "froggers.randomize.page";
 inline constexpr const char* kResetAll = "froggers.reset.all";
 inline constexpr const char* kResetPage = "froggers.reset.page";
-inline constexpr const char* kBankSelect = "froggers.bank.select";
-// The secondary arrow-pair navigation beside direct bank selection above --
+// The string value is a stored wire identifier -- a saved controller row's
+// action string -- and does not follow the symbol's "Page" name.
+inline constexpr const char* kPageSelect = "froggers.bank.select";
+// The secondary arrow-pair navigation beside direct page selection above --
 // routed through the same single selection authority (HandleAction, not this
-// file's own concern here).
-inline constexpr const char* kBankPrevious = "froggers.bank.previous";
-inline constexpr const char* kBankNext = "froggers.bank.next";
+// file's own concern here). Both string values below are stored wire
+// identifiers and do not follow the symbols' "Page" name.
+inline constexpr const char* kPagePrevious = "froggers.bank.previous";
+inline constexpr const char* kPageNext = "froggers.bank.next";
 inline constexpr const char* kSceneSelect = "froggers.scene.select";
 inline constexpr const char* kSceneBlend = "froggers.scene.blend";
 inline constexpr const char* kBpm = "froggers.bpm";
@@ -283,7 +290,7 @@ struct FroggersPageLayout {
     // below each encoder rather than taken from it: 632.0f -> 712.0f, +80px,
     // exactly `FroggersEncoderGridLayout::kLabelBandHeight` (20px) times the
     // 4 encoder rows -- see that struct's own comment for the
-    // exact-by-construction row-height arithmetic this pays for (bank
+    // exact-by-construction row-height arithmetic this pays for (page
     // tabs/randomize/reset stay pixel-identical; each encoder row alone
     // grows by kLabelBandHeight). `FroggersAppCore::Config()`'s own
     // `config.uiHeight` is the SAME number, hand-synced (see that file's
@@ -433,7 +440,7 @@ static_assert(FroggersEncoderGridLayout::kEncoderCount == kFroggersSlotsPerBank,
 //
 //   RIGHT (E1-E4, 7 rows -- the header row added row 2, all others renumbered
 //   down by one from the table before it existed):
-//   1 | Bank tabs x6 (span E1-E4)
+//   1 | Page tabs x6 (span E1-E4)
 //   2 | Modulation header (span E1-E4, fixed height, empty at drill level 0)
 //   3 | slot 0 | slot 1 | slot 2 | slot 3
 //   4 | slot 4 | slot 5 | slot 6 | slot 7
@@ -561,7 +568,7 @@ inline constexpr synth::Color kRecordColor = synth::Color::Rgb(139, 0, 0);
 inline constexpr float kTransportIconFraction = 0.575f;  // ~55-60% of the plate
 inline constexpr float kTransportPlateSize = 28.0f;      // matches the old Button height
 
-// Six builders below (Play/Stop/Freeze/Record/BankPrevArrow/BankNextArrow)
+// Six builders below (Play/Stop/Freeze/Record/PagePrevArrow/PageNextArrow)
 // each opened with the identical rounded-rect plate plus inset-box
 // arithmetic. Factored to one shared helper -- the plate `DrawCommand` and
 // the inset `Bounds` every caller derives its own glyph geometry from.
@@ -688,7 +695,7 @@ inline std::vector<synth::ui::DrawCommand> BuildRecordDrawCommands(synth::ui::Bo
     return commands;
 }
 
-// The bank-carousel back/forward arrow pair, AppendModulationHeaderRow's
+// The page-carousel back/forward arrow pair, AppendModulationHeaderRow's
 // level-0 children. Same
 // plate-plus-glyph idiom as the four builders above (rounded-rect plate,
 // glyph inset at `kTransportIconFraction`) -- but plain triangles with no
@@ -702,11 +709,11 @@ inline std::vector<synth::ui::DrawCommand> BuildRecordDrawCommands(synth::ui::Bo
 // (Green/Red/Cyan/dark-red) each encode that control's own state semantics,
 // which this plain nav pair does not carry.
 //
-// The forward glyph (BuildBankNextArrowDrawCommands) is the exact same
+// The forward glyph (BuildPageNextArrowDrawCommands) is the exact same
 // apex-right triangle shape as BuildPlayDrawCommands' own glyph above,
-// reused verbatim; the back glyph (BuildBankPrevArrowDrawCommands) mirrors
+// reused verbatim; the back glyph (BuildPagePrevArrowDrawCommands) mirrors
 // it (apex left, base right).
-inline std::vector<synth::ui::DrawCommand> BuildBankPrevArrowDrawCommands(synth::ui::Bounds bounds) {
+inline std::vector<synth::ui::DrawCommand> BuildPagePrevArrowDrawCommands(synth::ui::Bounds bounds) {
     std::vector<synth::ui::DrawCommand> commands;
     const PlateAndInsetBox plate = BuildPlateAndInsetBox(bounds, kTransportPlateColor);
     commands.push_back(plate.plate);
@@ -724,7 +731,7 @@ inline std::vector<synth::ui::DrawCommand> BuildBankPrevArrowDrawCommands(synth:
     return commands;
 }
 
-inline std::vector<synth::ui::DrawCommand> BuildBankNextArrowDrawCommands(synth::ui::Bounds bounds) {
+inline std::vector<synth::ui::DrawCommand> BuildPageNextArrowDrawCommands(synth::ui::Bounds bounds) {
     std::vector<synth::ui::DrawCommand> commands;
     const PlateAndInsetBox plate = BuildPlateAndInsetBox(bounds, kTransportPlateColor);
     commands.push_back(plate.plate);
@@ -819,9 +826,9 @@ inline std::string FormatFroggersBpm(double bpm) {
 // per-bank `FroggersParamSpec` entries (Crispy is six separate per-bank
 // Parameter objects that all render the same word; Crunchy is one shared
 // Parameter across all six banks).
-inline const std::array<std::array<const char*, kFroggersParamsPerBank>, kFroggersBankCount>&
+inline const std::array<std::array<const char*, kFroggersParamsPerBank>, kFroggersPageCount>&
 FroggersApprovedLabels() {
-    static const std::array<std::array<const char*, kFroggersParamsPerBank>, kFroggersBankCount> labels{{
+    static const std::array<std::array<const char*, kFroggersParamsPerBank>, kFroggersPageCount> labels{{
         {{"VCO1", "VCO2", "VCO3", "Shape 1", "Shape 2", "Shape 3", "Ph.mod 1", "Ph.mod 2", "Ph.mod 3",
           "Ringmod 1", "Ringmod 2", "Ringmod 3", "PM rate", "VCO balance"}},
         // Envelope -- canonical short forms, not a truncation: the short
@@ -972,7 +979,7 @@ public:
 
         // ONE outer split Row -- left block (Weight(2): scope,
         // transport, scenes, scene-blend, BPM) beside right block
-        // (Weight(4): bank tabs, the 16-slot encoder grid, randomize) --
+        // (Weight(4): page tabs, the 16-slot encoder grid, randomize) --
         // matching the CELL MAP's 2-of-6 vs 4-of-6 column split. Outer
         // padding/gap are this file's own design tokens
         // (FroggersPageLayout::kMargin/kGap), not upstream defaults.
@@ -1141,7 +1148,7 @@ private:
     // drilled in.
     //
     // Computed (FroggersSurfaceTests.cpp's
-    // modulation_header_sits_below_bank_row_and_above_parameter_cells,
+    // modulation_header_sits_below_page_row_and_above_parameter_cells,
     // and the pre-existing scope_and_grid_regions_do_not_overlap_at_target_
     // window_size / scope_sits_in_a_left_column_with_the_grid_to_its_right),
     // not eyeballed: at the real 900x632 config this cell resolves to
@@ -1170,7 +1177,7 @@ private:
     //
     // The indicator (2026-08-09) is now a dedicated header ROW
     // (FroggersNodeIds::kModulationHeader, AppendModulationHeaderRow()
-    // below) spanning the right block's full width, between the bank tabs
+    // below) spanning the right block's full width, between the page tabs
     // row and the first row of parameter cells -- not attached to any
     // button or cell, exactly the operator's own description. This node
     // (kVcoScope) and the Target/Back encoder cell both keep NO copy of
@@ -1571,7 +1578,7 @@ private:
     void AppendRightRow(synth::ui::Builder& builder, const FroggersCellMap::RightRow& row) const {
         switch (row.kind) {
             case FroggersCellMap::RightKind::BankTabs:
-                AppendBankTabsRow(builder);
+                AppendPageTabsRow(builder);
                 return;
             case FroggersCellMap::RightKind::Header:
                 AppendModulationHeaderRow(builder);
@@ -1599,15 +1606,15 @@ private:
         }
     }
 
-    // Row 1: the six bank-select tabs, LOOPED from `FroggersBankLayouts()`
+    // Row 1: the six page-select tabs, LOOPED from `FroggersBankLayouts()`
     // (single source of truth for bank identity/order,
     // app/FroggersParameters.hpp), not a second hand-written list.
     //
     // Plain `Button` nodes with the action supplied directly -- an earlier
     // Draw/DrawInteractive approach dispatched only on double-click, later
-    // reverted for single-click bank switching. `node.selected` for the
-    // active bank comes from `ControlStyle::selected`.
-    void AppendBankTabsRow(synth::ui::Builder& builder) const {
+    // reverted for single-click page switching. `node.selected` for the
+    // active page comes from `ControlStyle::selected`.
+    void AppendPageTabsRow(synth::ui::Builder& builder) const {
         synth::ui::LayoutOptions rowLayout;
         // `kUnchangedRowHeight` (68, not the encoder rows' 88) --
         // paired with AppendEncoderRow's own change above so this row
@@ -1620,14 +1627,14 @@ private:
         rowLayout.padding = 0.0f;
         rowLayout.gap = FroggersPageLayout::kGap;
         const auto& layouts = FroggersBankLayouts();
-        builder.Row(FroggersNodeIds::kBankTabsRow, rowLayout, [this, &layouts](synth::ui::Builder& b) {
-            for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+        builder.Row(FroggersNodeIds::kPageTabsRow, rowLayout, [this, &layouts](synth::ui::Builder& b) {
+            for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
                 synth::ui::ControlStyle style{};
                 style.selected = BankSelected(bankIx);
                 style.layout.main = synth::ui::Extent::Weight(1.0f);
                 style.layout.cross = synth::ui::Extent::Intrinsic();
                 b.Button(FroggersNodeIds::BankButton(bankIx), layouts[bankIx].name,
-                         synth::ui::Action::WithValue(FroggersActions::kBankSelect, std::to_string(bankIx)), style);
+                         synth::ui::Action::WithValue(FroggersActions::kPageSelect, std::to_string(bankIx)), style);
             }
         });
     }
@@ -1639,7 +1646,7 @@ private:
     // instead of a HEADER above all the modulation parameters, below the
     // bank button row?? ... nothing needs to be labeled 'back' there, that
     // implementation sucks." Unambiguous ask: a header BAR spanning the
-    // grid's width, between the bank tabs row and the first row of
+    // grid's width, between the page tabs row and the first row of
     // parameter cells -- not attached to any button or cell.
     //
     // APPROACH: a dedicated row in the right block's CELL MAP
@@ -1670,7 +1677,7 @@ private:
     // no row is reordered, and the encoder grid's own 4-column-per-row
     // internal structure (ids, order, weights) is completely untouched.
     // Verified in FroggersSurfaceTests.cpp's
-    // modulation_header_sits_below_bank_row_and_above_parameter_cells,
+    // modulation_header_sits_below_page_row_and_above_parameter_cells,
     // which computes the resolved bounds rather than asserting this
     // comment's arithmetic.
     //
@@ -1684,7 +1691,7 @@ private:
     // commands, so sibling geometry never jumps" idiom AppendEncoderCell
     // already uses for a hidden slot in the modulation view (see that
     // method's own comment) -- entering/exiting a drilldown never reflows
-    // the bank tabs or the parameter grid by even one pixel; only this
+    // the page tabs or the parameter grid by even one pixel; only this
     // row's own content changes.
     static constexpr float kModulationHeaderRowHeight = 26.0f;
     static constexpr synth::Color kModulationHeaderBandColor = synth::Color::Rgb(32, 38, 44);
@@ -1723,7 +1730,7 @@ private:
                 // uniform `gap` (set above) applies symmetrically on every
                 // side of the pair, so the pair's midpoint lands on the
                 // band's midpoint by construction (verified by
-                // bank_carousel_arrows_are_centered_in_the_modulation_header_band_at_top_level,
+                // page_carousel_arrows_are_centered_in_the_modulation_header_band_at_top_level,
                 // FroggersSurfaceTests.cpp). Spacers are empty Draw nodes --
                 // the same "always emit the node, sometimes with empty
                 // commands" idiom AppendEncoderCell already uses for a
@@ -1738,16 +1745,16 @@ private:
                 b.Draw(std::string(FroggersNodeIds::kModulationHeader) + ".spacer.left", spacerLayout, emptyDraw);
 
                 synth::ui::ControlStyle prevStyle{};
-                prevStyle.action = synth::ui::Action::Named(FroggersActions::kBankPrevious);
+                prevStyle.action = synth::ui::Action::Named(FroggersActions::kPagePrevious);
                 prevStyle.layout.main = synth::ui::Extent::Px(kModulationHeaderRowHeight);
                 prevStyle.layout.cross = synth::ui::Extent::Px(kModulationHeaderRowHeight);
-                b.Draw(FroggersNodeIds::kBankPrevArrow, BuildBankPrevArrowDrawCommands, prevStyle);
+                b.Draw(FroggersNodeIds::kPagePrevArrow, BuildPagePrevArrowDrawCommands, prevStyle);
 
                 synth::ui::ControlStyle nextStyle{};
-                nextStyle.action = synth::ui::Action::Named(FroggersActions::kBankNext);
+                nextStyle.action = synth::ui::Action::Named(FroggersActions::kPageNext);
                 nextStyle.layout.main = synth::ui::Extent::Px(kModulationHeaderRowHeight);
                 nextStyle.layout.cross = synth::ui::Extent::Px(kModulationHeaderRowHeight);
-                b.Draw(FroggersNodeIds::kBankNextArrow, BuildBankNextArrowDrawCommands, nextStyle);
+                b.Draw(FroggersNodeIds::kPageNextArrow, BuildPageNextArrowDrawCommands, nextStyle);
 
                 b.Draw(std::string(FroggersNodeIds::kModulationHeader) + ".spacer.right", spacerLayout, emptyDraw);
                 return;
@@ -1780,10 +1787,10 @@ private:
         synth::ui::LayoutOptions rowLayout;
         // `kGrownRowHeight` (88, not the sibling rows' 68) -- see
         // that constant's own comment for why a weight VALUE equal to the
-        // target px height, alongside `AppendBankTabsRow`/
+        // target px height, alongside `AppendPageTabsRow`/
         // `AppendTwoButtonRow`'s matching change below, resolves this
         // row's height EXACTLY at the default window, growing only the
-        // encoder rows and leaving bank tabs/Randomize/Reset pixel-
+        // encoder rows and leaving page tabs/Randomize/Reset pixel-
         // identical to today.
         rowLayout.main = synth::ui::Extent::Weight(FroggersEncoderGridLayout::kGrownRowHeight);
         rowLayout.cross = synth::ui::Extent::Weight(1.0f);
@@ -1833,11 +1840,11 @@ private:
     // don't know why you thought i wanted the header to be 'Back' and by
     // the back button... nothing needs to be labeled 'back' there, that
     // implementation sucks." It is now a real header ROW spanning the
-    // grid's width, between the bank tabs row and the first parameter row
+    // grid's width, between the page tabs row and the first parameter row
     // -- see AppendModulationHeaderRow() and FroggersNodeIds::
     // kModulationHeader. This cell carries no drill-level text of any kind
     // any more (verified: FroggersSurfaceTests.cpp's
-    // modulation_header_sits_below_bank_row_and_above_parameter_cells
+    // modulation_header_sits_below_page_row_and_above_parameter_cells
     // asserts nothing reading "BACK" is drawn anywhere in the tree).
 
     void AppendEncoderCell(synth::ui::Builder& builder, std::size_t ix) const {
@@ -1958,7 +1965,7 @@ private:
         // exact, deterministic size and appends its own single-row strip
         // instead, same mechanism as before the label band was added, just
         // one row not two.
-        const std::size_t bankIx = CurrentBankIndex();
+        const std::size_t bankIx = CurrentPageIndex();
         builder.Draw(
             encoderId,
             [state, disabledCell, bankIx, ix, showingModulationView](synth::ui::Bounds extent) {
@@ -2123,7 +2130,7 @@ private:
                 // (EncoderDrawStateFromParameter's own source), unaffected
                 // by this change.
                 std::string approvedLabel;
-                if (!showingModulationView && bankIx < kFroggersBankCount) {
+                if (!showingModulationView && bankIx < kFroggersPageCount) {
                     approvedLabel = (ix < kFroggersParamsPerBank) ? FroggersApprovedLabels()[bankIx][ix]
                                                                    : FroggersApprovedGlobalLabel(ix);
                 } else {
@@ -2144,8 +2151,8 @@ private:
     // encoder columns (`Extent::Weight(2)`, matching the encoder rows'
     // per-column `Weight(1)` unit so the two rows visually align).
     //
-    // Moved here from the old bank-header group by FroggersCellMap -- row 1
-    // is bank tabs only now (AppendBankTabsRow() above); Randomize Page and
+    // Moved here from the old page-header group by FroggersCellMap -- row 1
+    // is page tabs only now (AppendPageTabsRow() above); Randomize Page and
     // Randomize All sit together in the last row.
     // Exactly one Randomize All control exists anywhere in this surface.
     // The ONE two-half-width-buttons row builder. AppendResetRow began as a
@@ -2158,7 +2165,7 @@ private:
                             const FroggersCellMap::ButtonCell& left,
                             const FroggersCellMap::ButtonCell& right) const {
         synth::ui::LayoutOptions rowLayout;
-        // `kUnchangedRowHeight`, same reasoning as AppendBankTabsRow
+        // `kUnchangedRowHeight`, same reasoning as AppendPageTabsRow
         // above -- Randomize and Reset (this method's two callers) both
         // stay pixel-identical to today at the default window.
         rowLayout.main = synth::ui::Extent::Weight(FroggersEncoderGridLayout::kUnchangedRowHeight);
@@ -2203,15 +2210,15 @@ private:
         return context_->uiState->banks[bankIx].selected.load(std::memory_order_relaxed);
     }
 
-    // Which bank (index into FroggersBankLayouts(), same order banks are
+    // Which page (index into FroggersBankLayouts(), same order banks are
     // created in -- FroggersParameters.hpp's Init() loop -- and the same
     // order `uiState->banks[]` is populated in, ParameterModulation.cpp:
     // 3403-3406/3716-3727 push_back/populate in lockstep) is currently
     // selected, for AppendEncoderCell's label-source lookup below. Same
     // default (0) BankSelected() above already uses when uiState isn't
     // ready yet.
-    std::size_t CurrentBankIndex() const {
-        return context_ == nullptr ? 0 : FroggersVisibleBankIndex(*context_);
+    std::size_t CurrentPageIndex() const {
+        return context_ == nullptr ? 0 : FroggersVisiblePageIndex(*context_);
     }
 
     void HandleAction(const synth::ui::Action& action) {
@@ -2377,37 +2384,37 @@ private:
             app_->RequestEncoderPress(FroggersParseSize(action.value, 0));
             return;
         }
-        if (action.name == FroggersActions::kBankSelect) {
-            app_->RequestBankSelect(FroggersParseSize(action.value, 0));
+        if (action.name == FroggersActions::kPageSelect) {
+            app_->RequestPageSelect(FroggersParseSize(action.value, 0));
             return;
         }
         // The carousel arrows route through the SAME single selection
-        // authority as the bank buttons above (RequestBankSelect -- no
+        // authority as the page buttons above (RequestPageSelect -- no
         // second selection state).
         // GATED on DrillLevel() == 0, the same source
         // AppendModulationHeaderRow reads to decide whether to emit the
         // arrow nodes at all: HandleAction matches on action NAME with no
         // node-presence check, so without this gate a synthetic dispatch
-        // while drilled would still switch banks and, via the ProcessFrame
-        // drain reconstructing drillIn_ on any bank change
+        // while drilled would still switch pages and, via the ProcessFrame
+        // drain reconstructing drillIn_ on any page change
         // (FroggersAppCore.hpp's `ProcessFrame`), silently exit the drill -- even
         // though no arrow node exists in the tree to click.
-        if (action.name == FroggersActions::kBankPrevious) {
+        if (action.name == FroggersActions::kPagePrevious) {
             if (app_->DrillLevel() == 0) {
                 const std::size_t bankIx =
-                    (CurrentBankIndex() + kFroggersBankCount - 1) % kFroggersBankCount;
-                app_->RequestBankSelect(bankIx);
+                    (CurrentPageIndex() + kFroggersPageCount - 1) % kFroggersPageCount;
+                app_->RequestPageSelect(bankIx);
             }
             return;
         }
-        if (action.name == FroggersActions::kBankNext) {
+        if (action.name == FroggersActions::kPageNext) {
             if (app_->DrillLevel() == 0) {
-                // No `+ kFroggersBankCount` term here, unlike kBankPrevious
+                // No `+ kFroggersPageCount` term here, unlike kPagePrevious
                 // above: this is a plain addition of two non-negative
                 // std::size_t values, which cannot underflow, so there is no
                 // borrow to guard against the way the subtraction above has.
-                const std::size_t bankIx = (CurrentBankIndex() + 1) % kFroggersBankCount;
-                app_->RequestBankSelect(bankIx);
+                const std::size_t bankIx = (CurrentPageIndex() + 1) % kFroggersPageCount;
+                app_->RequestPageSelect(bankIx);
             }
             return;
         }

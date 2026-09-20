@@ -102,9 +102,9 @@
     {
       "place": "Left top",
       "isShift": false,
-      "press": "Bank Next",
+      "press": "Page Next",
       "pressNote": "",
-      "shiftedPress": "Bank Previous",
+      "shiftedPress": "Page Previous",
       "shiftedPressNote": ""
     },
     {

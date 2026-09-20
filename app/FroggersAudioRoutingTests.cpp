@@ -3634,7 +3634,7 @@ void SnapshotParameterTree(const synth::Parameter& param, const std::string& pat
 
 std::vector<ParamSnapshot> SnapshotWholeModel(synth_froggers::FroggersParameterModel& model) {
     std::vector<ParamSnapshot> out;
-    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
         const auto bank = static_cast<synth_froggers::FroggersBankId>(bankIx);
         for (std::size_t slotIx = 0; slotIx < synth_froggers::kFroggersParamsPerBank; ++slotIx) {
             SnapshotParameterTree(model.PageParameter(bank, slotIx),
@@ -3847,7 +3847,7 @@ TEST_CASE(a_fast_parameter_sweep_with_no_reset_does_not_latch_the_instrument) {
             auto& model = rig.Application().Parameters();
             // Every page parameter to its ceiling: a deliberately maximal
             // excursion, so a negative result is not "the sweep was too gentle".
-            for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+            for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
                 const auto bank = static_cast<synth_froggers::FroggersBankId>(bankIx);
                 for (std::size_t slotIx = 0; slotIx < synth_froggers::kFroggersParamsPerBank; ++slotIx) {
                     for (std::size_t sceneIx = 0;

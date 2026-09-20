@@ -235,7 +235,7 @@ TEST_CASE(visualizer_state_matches_the_bag_after_publishing) {
 // behaviour parameter in any bank, no seventh bank.
 // -----------------------------------------------------------------------
 TEST_CASE(no_random_sh_behaviour_parameter_exists_in_any_bank_and_no_seventh_bank) {
-    REQUIRE_TRUE(kFroggersBankCount == 6);
+    REQUIRE_TRUE(kFroggersPageCount == 6);
     const auto& layouts = FroggersBankLayouts();
     REQUIRE_TRUE(layouts.size() == 6);
 

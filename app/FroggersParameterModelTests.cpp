@@ -110,7 +110,7 @@ TEST_CASE(bank_layouts_have_nine_named_parameters_plus_fixed_crispy_and_crunchy)
     model.Init(manager);
 
     const auto& layouts = synth_froggers::FroggersBankLayouts();
-    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
         synth::Bank& bank = model.BankAt(bankIx);
         const synth_froggers::FroggersBankLayout& layout = layouts[bankIx];
 
@@ -157,8 +157,8 @@ TEST_CASE(crispy_and_crunchy_identity_stable_when_active_bank_changes) {
     synth_froggers::FroggersParameterModel model;
     model.Init(manager);
 
-    std::array<synth::Parameter*, synth_froggers::kFroggersBankCount> crispyPointers{};
-    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+    std::array<synth::Parameter*, synth_froggers::kFroggersPageCount> crispyPointers{};
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
         // Simulate switching the active bank on the shared slot; identity of
         // slot 14/15 is a property of each Bank object, not of which bank is
         // currently selected, but exercise the switch anyway, as production
@@ -188,7 +188,7 @@ TEST_CASE(per_bank_colour_reaches_encoder_draw_state_base_color) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(64, UseScratchRuntimeDataPaths("bank_colour"));
     const auto& layouts = synth_froggers::FroggersBankLayouts();
 
-    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
         rig.SelectBank(/*slotIx=*/0, bankIx);
         rig.RunBlocks(16);  // let SelectParamBank drain and a UI publish land.
 
@@ -275,7 +275,7 @@ TEST_CASE(shared_crunchy_resolves_and_moves_identically_from_any_bank) {
 
     // Check (a): "both/all banks resolve it" -- all six banks' slot-15 cell
     // is the identical Crunchy Parameter*.
-    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
         REQUIRE_TRUE(model.BankAt(bankIx).VisibleParameter(kCrunchyPosition) == &model.Crunchy());
     }
 
@@ -486,8 +486,8 @@ TEST_CASE(global_crunchy_affects_all_banks) {
 
     // Identical raw input, zero Crispy, on every bank's row 0 -- so any
     // change is attributable to the ONE shared Crunchy control alone.
-    std::array<synth::Parameter*, synth_froggers::kFroggersBankCount> row0{};
-    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+    std::array<synth::Parameter*, synth_froggers::kFroggersPageCount> row0{};
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
         synth::Parameter& param = model.PageParameter(bankIx, 0);
         param.SceneCenter(0) = 0.42f;
         model.Crispy(bankIx).SceneCenter(0) = 0.0f;
@@ -505,7 +505,7 @@ TEST_CASE(global_crunchy_affects_all_banks) {
     // value and the one shared, settled Crunchy raw value -- self-consistent
     // regardless of smoother settling precision (same technique as
     // fuego_seam_transform_reaches_cached_knob_value_matching_dsp_stack).
-    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
         synth::Parameter& param = *row0[bankIx];
         const float rawParam = param.GetRaw(0);
         const float expected = synth_froggers::dsp::FuegoStack::ApplyMusicalRow(

@@ -530,7 +530,7 @@ struct Comb
     // (Per-unit recovery, app/FroggersAppCore.hpp): zeros only the
     // comb's own recursive state -- the delay line, its write index, and
     // the one-pole lowpass's output -- NOT feedback/delaySamples (config,
-    // reassigned every block from the Filter bank's knobs by
+    // reassigned every block from the Filter page's knobs by
     // RouteAudioSample) and NOT filter.alpha (same: reassigned by
     // SetCutoffAlpha every block). Mirrors dsp::Reverb::Reset()'s own
     // "clears state, does not reconfigure" convention (Reverb.hpp).

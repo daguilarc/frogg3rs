@@ -300,7 +300,7 @@ TEST_CASE(randomize_all_request_through_process_frame_updates_the_display) {
     constexpr float kNeutral = 0.5f;
     constexpr float kTolerance = 1e-4f;
     bool foundMovedDisplay = false;
-    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount && !foundMovedDisplay; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount && !foundMovedDisplay; ++bankIx) {
         const auto bankId = static_cast<synth_froggers::FroggersBankId>(bankIx);
         for (std::size_t paramIx = 0; paramIx < synth_froggers::kFroggersParamsPerBank; ++paramIx) {
             synth::Parameter& parameter = rig.Application().Parameters().PageParameter(bankId, paramIx);

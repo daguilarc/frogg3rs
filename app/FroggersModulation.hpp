@@ -1596,11 +1596,11 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
         // NextRandomCoin()/NextRandomIndex() sequence inside that loop is
         // unaffected by how many banks this press's Crispy draw touches.
         const std::size_t crispyCount = detail::DrawGeometricCount(manager, 0, detail::kMaxRandomizedCrispy);
-        std::array<std::size_t, kFroggersBankCount> crispyPool{};
-        for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+        std::array<std::size_t, kFroggersPageCount> crispyPool{};
+        for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
             crispyPool[bankIx] = bankIx;
         }
-        std::array<bool, kFroggersBankCount> crispyDrawn{};
+        std::array<bool, kFroggersPageCount> crispyDrawn{};
         for (std::size_t i = 0; i < crispyCount; ++i) {
             crispyDrawn[detail::SwapInRandomPick(manager, crispyPool, i)] = true;
         }
@@ -1610,7 +1610,7 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
         // guards against) -- this loop is
         // ACROSS ALL SIX BANKS, so a short-circuited `||` here would skip
         // randomizing every remaining bank once one had already gone partial.
-        for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+        for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
             const auto bankId = static_cast<FroggersBankId>(bankIx);
             synth::Bank& bank = model.BankAt(bankId);
             // Randomize All: this bank's Crispy VALUE is randomized only if
@@ -1736,7 +1736,7 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
 inline void ResetPage(synth::ParameterManager& /*manager*/, FroggersModulationDrillIn& drillIn,
                        FroggersParameterModel& model) {
     if (drillIn.Level() == 0) {
-        for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+        for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
             if (&model.BankAt(bankIx) == &drillIn.BankRef()) {
                 detail::ResetBankToDefaultPatch(model, static_cast<FroggersBankId>(bankIx));
                 break;
@@ -1773,7 +1773,7 @@ inline void ResetPage(synth::ParameterManager& /*manager*/, FroggersModulationDr
 inline void ResetAll(synth::ParameterManager& /*manager*/, FroggersModulationDrillIn& drillIn,
                       FroggersParameterModel& model) {
     if (drillIn.Level() == 0) {
-        for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+        for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
             detail::ResetBankToDefaultPatch(model, static_cast<FroggersBankId>(bankIx));
         }
         detail::ResetGlobalCrunchyToDefaultPatch(model);
@@ -1803,7 +1803,7 @@ inline void ResetAll(synth::ParameterManager& /*manager*/, FroggersModulationDri
 // bank's own slice (detail::ApplyBankDefaultPatch, defined above alongside
 // Reset -- the same function both consume) plus the one global, Crunchy.
 inline void ApplyFroggersDefaultPatch(FroggersParameterModel& model) {
-    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
         detail::ApplyBankDefaultPatch(model, static_cast<FroggersBankId>(bankIx));
     }
     detail::ApplyCrunchyDefaultPatch(model);

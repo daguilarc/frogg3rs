@@ -107,7 +107,7 @@ struct OnePoleLowPass
 
 // The knob-to-coefficient map every TONE control shares: a post-stage
 // low-pass whose knob top is exact bypass. Two controls use it -- the Drive
-// bank's Tone (FrogBlock::SetTone) and the Delay bank's Feedback tone
+// page's Tone (FrogBlock::SetTone) and the Delay page's Feedback tone
 // (StereoDelay::SetFeedbackTone) -- and they are the same control in two
 // places, not two ranges that happen to agree, so this is the one definition
 // site rather than the same expression written twice.

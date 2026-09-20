@@ -6,7 +6,7 @@
 // the firmware source before porting, not from memory.
 //
 // Ported (7 of the Drive page's 9 params -- Drive, Shape [a wavefolder,
-// different from the Audio bank's VCO-morph Shape], SRR 1,
+// different from the Audio page's VCO-morph Shape], SRR 1,
 // SRR 2, XOR, Bit depth, Fuzz) from:
 //   - src/core/PolynomialDrive.hpp
 //       PolynomialDrive::SetGain/:34   Drive knob -> ExpMap(1,5,knob)
@@ -64,7 +64,7 @@
 // `GetParam(8)` are never read anywhere in FroggersEngine.hpp -- confirmed
 // by grep -- so there is no formula to pin. They are newly authored below
 // (DriveBlendPhase), clearly marked, with behavioral (not parity) tests.
-// Live at this app's Drive-bank slots 0 and 8 (FroggersParameters.hpp) --
+// Live at this app's Drive-page slots 0 and 8 (FroggersParameters.hpp) --
 // Wet/Dry moved off the firmware's own slot 7 when the Drive page's
 // controls were renumbered; Phase did not move.
 
@@ -697,7 +697,7 @@ struct FrogBlock
     // Alpha fed directly (Reverb.hpp's own damping-filter idiom -- "the
     // ExpMap output IS the alpha", not run through SetAlphaFromNatFreq).
     // The range, and why its floor is where it is, live with the map itself
-    // (DspMath.hpp's ToneAlphaFromKnob) rather than here: the Delay bank's
+    // (DspMath.hpp's ToneAlphaFromKnob) rather than here: the Delay page's
     // Feedback tone is the same control and reads the same function.
     void SetTone(float toneKnob01) { tone.alpha = ToneAlphaFromKnob(toneKnob01); }
 

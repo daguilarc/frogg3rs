@@ -572,8 +572,8 @@ TEST_CASE(bank_buttons_are_button_kind_with_selected_flag_and_no_marker_characte
 
     auto checkAllBanksAndReturnSelectedIx = [&](const synth::ui::NodeTree& checkedTree) -> std::size_t {
         std::size_t selectedCount = 0;
-        std::size_t selectedIx = synth_froggers::kFroggersBankCount;
-        for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+        std::size_t selectedIx = synth_froggers::kFroggersPageCount;
+        for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
             const synth::ui::Node* node =
                 FindNodeById(checkedTree, synth_froggers::FroggersNodeIds::BankButton(bankIx));
             REQUIRE_TRUE(node != nullptr);
@@ -584,7 +584,7 @@ TEST_CASE(bank_buttons_are_button_kind_with_selected_flag_and_no_marker_characte
             // (Builder::Button, External/Sheaf/projects/synth/include/synth/PortableUIBuilders.hpp:300-308) -- not
             // `doubleClickAction`, which only Draw/DrawInteractive nodes use.
             REQUIRE_TRUE(node->action.has_value());
-            REQUIRE_TRUE(node->action->name == synth_froggers::FroggersActions::kBankSelect);
+            REQUIRE_TRUE(node->action->name == synth_froggers::FroggersActions::kPageSelect);
             REQUIRE_TRUE(node->action->value == std::to_string(bankIx));
             REQUIRE_TRUE(!node->doubleClickAction.has_value());
             if (node->selected) {
@@ -602,7 +602,7 @@ TEST_CASE(bank_buttons_are_button_kind_with_selected_flag_and_no_marker_characte
 
     // Selecting a different bank moves `node.selected` -- still exactly one
     // bank selected, and it is now bank 1.
-    surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBankSelect, "1"));
+    surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kPageSelect, "1"));
     rig.RunBlocks(4);
     rig.UIState();  // forces a synchronous publish
     const synth::ui::NodeTree afterTree = surface.BuildTree();
@@ -671,8 +671,8 @@ TEST_CASE(drill_in_swaps_grid_in_place_scope_and_chrome_stay_put) {
 // Operator override 2026-07-29: "clicking on the page bank
 // for the page we are on is the way the user should always be able to get to
 // that page, even when they are in a modulation drilldown for a parameter on
-// that page." `FroggersAppCore::ProcessFrame`'s RequestBankSelect handling
-// used to guard the whole branch on `bankRequest != activeBankIx_`, making a
+// that page." `FroggersAppCore::ProcessFrame`'s RequestPageSelect handling
+// used to guard the whole branch on `bankRequest != activePageIx_`, making a
 // same-bank click while drilled in a complete no-op. Fixed by resetting the
 // drill-in (Back()-until-zero) when the requested bank equals the active
 // bank AND the drill-in level is above 0, while still doing nothing at all
@@ -684,7 +684,7 @@ TEST_CASE(clicking_the_active_bank_while_drilled_in_exits_to_the_top_level_grid)
     rig.RunBlocks(4);
 
     synth::ui::Surface& surface = rig.Application().PortableSurface();
-    const std::size_t activeBank = rig.Application().ActiveBankIndex();
+    const std::size_t activeBank = rig.Application().ActivePageIndex();
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
 
     // Drill to level 2 on the active bank via the surface's own action
@@ -703,23 +703,23 @@ TEST_CASE(clicking_the_active_bank_while_drilled_in_exits_to_the_top_level_grid)
 
     // Click the SAME (already-active) bank button -- must exit the
     // drilldown back to the top-level parameter grid, not no-op.
-    surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBankSelect,
+    surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kPageSelect,
                                                           std::to_string(activeBank)));
     rig.RunBlocks(4);
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
-    REQUIRE_TRUE(rig.Application().ActiveBankIndex() == activeBank);  // still the same bank, just exited
+    REQUIRE_TRUE(rig.Application().ActivePageIndex() == activeBank);  // still the same bank, just exited
 
     // Existing no-op MUST be preserved: clicking the same bank while ALREADY
     // at level 0 must not disturb anything. There is no direct "was
     // drillIn_ reconstructed" observable, so this checks every state this
-    // request path can touch: activeBankIx_, the drill-in's level, and its
+    // request path can touch: activePageIx_, the drill-in's level, and its
     // selected parameter (null at level 0 either way) all stay exactly as
     // they were.
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().BankRef().SelectedParameter() == nullptr);
-    surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBankSelect,
+    surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kPageSelect,
                                                           std::to_string(activeBank)));
     rig.RunBlocks(4);
-    REQUIRE_TRUE(rig.Application().ActiveBankIndex() == activeBank);
+    REQUIRE_TRUE(rig.Application().ActivePageIndex() == activeBank);
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().BankRef().SelectedParameter() == nullptr);
 }
@@ -799,8 +799,8 @@ TEST_CASE(modulation_header_shown_only_while_drilled_in_and_matches_the_level) {
         // exactly [left spacer, prev arrow, next arrow, right spacer], no title.
         REQUIRE_TRUE(headerAtLevel0->children.size() == 4);
         REQUIRE_TRUE(headerAtLevel0->children[0].value == "froggers.layout.right.header.spacer.left");
-        REQUIRE_TRUE(headerAtLevel0->children[1].value == synth_froggers::FroggersNodeIds::kBankPrevArrow);
-        REQUIRE_TRUE(headerAtLevel0->children[2].value == synth_froggers::FroggersNodeIds::kBankNextArrow);
+        REQUIRE_TRUE(headerAtLevel0->children[1].value == synth_froggers::FroggersNodeIds::kPagePrevArrow);
+        REQUIRE_TRUE(headerAtLevel0->children[2].value == synth_froggers::FroggersNodeIds::kPageNextArrow);
         REQUIRE_TRUE(headerAtLevel0->children[3].value == "froggers.layout.right.header.spacer.right");
         // kModulationHeaderTitle must not be a level-0 child (it exists only while drilled).
         for (const synth::ui::NodeId& child : headerAtLevel0->children) {
@@ -908,7 +908,7 @@ TEST_CASE(modulation_header_sits_below_bank_row_and_above_parameter_cells) {
     REQUIRE_TRUE(gridRegion.width > 0.0f && gridRegion.height > 0.0f);
 
     // Positive control 1: the bank tabs row is real, in-region geometry.
-    const synth::ui::Bounds bankRow = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kBankTabsRow);
+    const synth::ui::Bounds bankRow = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kPageTabsRow);
     REQUIRE_TRUE(bankRow.width > 0.0f && bankRow.height > 0.0f);
     REQUIRE_TRUE(FullyInside(bankRow, gridRegion));
 
@@ -999,8 +999,8 @@ TEST_CASE(bank_carousel_arrows_are_centered_in_the_modulation_header_band_at_top
     const synth::ui::Bounds band = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kModulationHeader);
     REQUIRE_TRUE(band.width > 0.0f && band.height > 0.0f);
 
-    const synth::ui::Node* prevNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kBankPrevArrow);
-    const synth::ui::Node* nextNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kBankNextArrow);
+    const synth::ui::Node* prevNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kPagePrevArrow);
+    const synth::ui::Node* nextNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kPageNextArrow);
     REQUIRE_TRUE(prevNode != nullptr);
     REQUIRE_TRUE(nextNode != nullptr);
     // Positive control: the arrows actually draw something (plate + glyph),
@@ -1008,12 +1008,12 @@ TEST_CASE(bank_carousel_arrows_are_centered_in_the_modulation_header_band_at_top
     REQUIRE_TRUE(prevNode->drawCommands.size() > 0);
     REQUIRE_TRUE(nextNode->drawCommands.size() > 0);
     REQUIRE_TRUE(prevNode->action.has_value());
-    REQUIRE_TRUE(prevNode->action->name == synth_froggers::FroggersActions::kBankPrevious);
+    REQUIRE_TRUE(prevNode->action->name == synth_froggers::FroggersActions::kPagePrevious);
     REQUIRE_TRUE(nextNode->action.has_value());
-    REQUIRE_TRUE(nextNode->action->name == synth_froggers::FroggersActions::kBankNext);
+    REQUIRE_TRUE(nextNode->action->name == synth_froggers::FroggersActions::kPageNext);
 
-    const synth::ui::Bounds prevBounds = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kBankPrevArrow);
-    const synth::ui::Bounds nextBounds = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kBankNextArrow);
+    const synth::ui::Bounds prevBounds = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kPagePrevArrow);
+    const synth::ui::Bounds nextBounds = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kPageNextArrow);
     REQUIRE_TRUE(FullyInside(prevBounds, band));
     REQUIRE_TRUE(FullyInside(nextBounds, band));
     REQUIRE_TRUE(prevBounds.x < nextBounds.x);  // prev sits left of next
@@ -1077,8 +1077,8 @@ TEST_CASE(modulation_header_band_bounds_are_identical_across_drill_states_and_ar
     // draw commands, nothing for a synthetic dispatch to even find
     // (HandleAction's own gate is a second, independent layer this test
     // does not exercise).
-    REQUIRE_TRUE(FindNodeById(drilledTree, synth_froggers::FroggersNodeIds::kBankPrevArrow) == nullptr);
-    REQUIRE_TRUE(FindNodeById(drilledTree, synth_froggers::FroggersNodeIds::kBankNextArrow) == nullptr);
+    REQUIRE_TRUE(FindNodeById(drilledTree, synth_froggers::FroggersNodeIds::kPagePrevArrow) == nullptr);
+    REQUIRE_TRUE(FindNodeById(drilledTree, synth_froggers::FroggersNodeIds::kPageNextArrow) == nullptr);
 
     // The title child renders today's exact fill+text commands, now under
     // its own id.
@@ -1093,12 +1093,12 @@ TEST_CASE(modulation_header_band_bounds_are_identical_across_drill_states_and_ar
 }
 
 // Wires the arrow actions through the same single selection authority
-// (RequestBankSelect) the bank buttons use, so the highlight must follow
+// (RequestPageSelect) the bank buttons use, so the highlight must follow
 // an arrow-driven step identically to a button-driven one -- same
 // checkAllBanksAndReturnSelectedIx idiom as
 // bank_buttons_are_button_kind_with_selected_flag_and_no_marker_character
 // above (:565-612), reused here as a local lambda since that one is scoped
-// to its own TEST_CASE. Steps forward through every bank via kBankNext,
+// to its own TEST_CASE. Steps forward through every bank via kPageNext,
 // asserting exactly one bank is ever selected and the index advances by
 // exactly one per click, then continues one more click past the last bank to
 // pin the 5->0 wrap this same design section requires.
@@ -1114,8 +1114,8 @@ TEST_CASE(bank_carousel_next_arrow_action_steps_the_active_bank_with_wrap_and_hi
     auto checkAllBanksAndReturnSelectedIx = [&]() -> std::size_t {
         const synth::ui::NodeTree tree = surface.BuildTree();
         std::size_t selectedCount = 0;
-        std::size_t selectedIx = synth_froggers::kFroggersBankCount;
-        for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+        std::size_t selectedIx = synth_froggers::kFroggersPageCount;
+        for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
             const synth::ui::Node* node =
                 FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(bankIx));
             REQUIRE_TRUE(node != nullptr);
@@ -1131,17 +1131,17 @@ TEST_CASE(bank_carousel_next_arrow_action_steps_the_active_bank_with_wrap_and_hi
     // Bank 0 is the default active bank.
     REQUIRE_TRUE(checkAllBanksAndReturnSelectedIx() == 0);
 
-    // Step forward through banks 1..5, one kBankNext click each -- highlight
+    // Step forward through banks 1..5, one kPageNext click each -- highlight
     // follows every single step, not just the final one.
-    for (std::size_t expectedIx = 1; expectedIx < synth_froggers::kFroggersBankCount; ++expectedIx) {
-        surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kBankNext));
+    for (std::size_t expectedIx = 1; expectedIx < synth_froggers::kFroggersPageCount; ++expectedIx) {
+        surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPageNext));
         rig.RunBlocks(4);
         rig.UIState();
         REQUIRE_TRUE(checkAllBanksAndReturnSelectedIx() == expectedIx);
     }
 
     // One more click from the LAST bank (5) wraps to the first (0).
-    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kBankNext));
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPageNext));
     rig.RunBlocks(4);
     rig.UIState();
     REQUIRE_TRUE(checkAllBanksAndReturnSelectedIx() == 0);
@@ -1149,7 +1149,7 @@ TEST_CASE(bank_carousel_next_arrow_action_steps_the_active_bank_with_wrap_and_hi
 
 // The back arrow's own wrap direction -- "previous from 0 -> 5" -- gets a
 // separate TEST_CASE from the forward-stepping one above since it exercises
-// the OTHER action name and the OTHER wrap edge -- one kBankPrevious click
+// the OTHER action name and the OTHER wrap edge -- one kPagePrevious click
 // from the default bank (0) must land on the LAST bank (5), with exactly
 // one bank highlighted.
 TEST_CASE(bank_carousel_previous_arrow_action_wraps_from_first_bank_to_last) {
@@ -1160,16 +1160,16 @@ TEST_CASE(bank_carousel_previous_arrow_action_wraps_from_first_bank_to_last) {
 
     synth::ui::Surface& surface = rig.Application().PortableSurface();
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
-    REQUIRE_TRUE(rig.Application().ActiveBankIndex() == 0);
+    REQUIRE_TRUE(rig.Application().ActivePageIndex() == 0);
 
-    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kBankPrevious));
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPagePrevious));
     rig.RunBlocks(4);
     rig.UIState();
 
     const synth::ui::NodeTree tree = surface.BuildTree();
     std::size_t selectedCount = 0;
-    std::size_t selectedIx = synth_froggers::kFroggersBankCount;
-    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+    std::size_t selectedIx = synth_froggers::kFroggersPageCount;
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
         const synth::ui::Node* node = FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(bankIx));
         REQUIRE_TRUE(node != nullptr);
         if (node->selected) {
@@ -1178,8 +1178,8 @@ TEST_CASE(bank_carousel_previous_arrow_action_wraps_from_first_bank_to_last) {
         }
     }
     REQUIRE_TRUE(selectedCount == 1);
-    REQUIRE_TRUE(selectedIx == synth_froggers::kFroggersBankCount - 1);
-    REQUIRE_TRUE(rig.Application().ActiveBankIndex() == synth_froggers::kFroggersBankCount - 1);
+    REQUIRE_TRUE(selectedIx == synth_froggers::kFroggersPageCount - 1);
+    REQUIRE_TRUE(rig.Application().ActivePageIndex() == synth_froggers::kFroggersPageCount - 1);
 }
 
 // MANDATORY preflight finding: pins the 2.1 drill-level-0 gate itself, not
@@ -1187,10 +1187,10 @@ TEST_CASE(bank_carousel_previous_arrow_action_wraps_from_first_bank_to_last) {
 // matches on action NAME with no node-presence check, so hiding the
 // arrow nodes while drilled (already covered by
 // modulation_header_band_bounds_are_identical_across_drill_states_and_arrows_vanish_while_drilled
-// above) is not sufficient on its own -- a synthetic dispatch of kBankNext
+// above) is not sufficient on its own -- a synthetic dispatch of kPageNext
 // while drilled must still be rejected by HandleAction itself. Drills in via
 // the real kEncoderPress gesture (same proven-valid path as the other
-// drill-in tests in this file), then dispatches kBankNext directly through
+// drill-in tests in this file), then dispatches kPageNext directly through
 // the surface (bypassing the tree/node layer entirely, exactly like a
 // synthetic/malicious dispatch would), and asserts NEITHER the active bank
 // NOR the drill level moved.
@@ -1202,35 +1202,35 @@ TEST_CASE(bank_carousel_arrow_actions_are_rejected_while_drilled_in) {
 
     synth::ui::Surface& surface = rig.Application().PortableSurface();
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
-    const std::size_t activeBankBeforeDrill = rig.Application().ActiveBankIndex();
+    const std::size_t activeBankBeforeDrill = rig.Application().ActivePageIndex();
 
     surface.DispatchAction(
         synth::ui::Action::WithValue(synth_froggers::FroggersActions::kEncoderPress, "0"));
     rig.RunBlocks(4);
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 1);  // genuinely drilled, not assumed
-    REQUIRE_TRUE(rig.Application().ActiveBankIndex() == activeBankBeforeDrill);
+    REQUIRE_TRUE(rig.Application().ActivePageIndex() == activeBankBeforeDrill);
 
     // Positive control: no arrow node exists in the drilled tree at all --
     // a real click has nothing to hit.
     const synth::ui::NodeTree drilledTree = surface.BuildTree();
-    REQUIRE_TRUE(FindNodeById(drilledTree, synth_froggers::FroggersNodeIds::kBankPrevArrow) == nullptr);
-    REQUIRE_TRUE(FindNodeById(drilledTree, synth_froggers::FroggersNodeIds::kBankNextArrow) == nullptr);
+    REQUIRE_TRUE(FindNodeById(drilledTree, synth_froggers::FroggersNodeIds::kPagePrevArrow) == nullptr);
+    REQUIRE_TRUE(FindNodeById(drilledTree, synth_froggers::FroggersNodeIds::kPageNextArrow) == nullptr);
 
     // The gate itself: a SYNTHETIC dispatch (surface.DispatchAction called
-    // directly, not routed through any node/hit-test) of kBankNext must
+    // directly, not routed through any node/hit-test) of kPageNext must
     // change neither the active bank nor the drill level --
     // an ungated branch would accept this and, via the ProcessFrame drain's
     // reconstruct-drillIn_-on-bank-change behaviour
     // (FroggersAppCore.hpp's `ProcessFrame`), silently exit the drill.
-    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kBankNext));
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPageNext));
     rig.RunBlocks(4);
-    REQUIRE_TRUE(rig.Application().ActiveBankIndex() == activeBankBeforeDrill);
+    REQUIRE_TRUE(rig.Application().ActivePageIndex() == activeBankBeforeDrill);
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 1);
 
-    // Same pin for kBankPrevious, the other action this gate must cover.
-    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kBankPrevious));
+    // Same pin for kPagePrevious, the other action this gate must cover.
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPagePrevious));
     rig.RunBlocks(4);
-    REQUIRE_TRUE(rig.Application().ActiveBankIndex() == activeBankBeforeDrill);
+    REQUIRE_TRUE(rig.Application().ActivePageIndex() == activeBankBeforeDrill);
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 1);
 }
 
@@ -1747,7 +1747,7 @@ TEST_CASE(envelope_short_forms_and_filter_slot3_long_label_render_single_row_ver
 
     const auto checkCell = [&](std::size_t bankIx, std::size_t slot, const char* approvedLabel) {
         surface.DispatchAction(
-            synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBankSelect, std::to_string(bankIx)));
+            synth::ui::Action::WithValue(synth_froggers::FroggersActions::kPageSelect, std::to_string(bankIx)));
         rig.RunBlocks(4);
         rig.UIState();
 
@@ -1875,9 +1875,9 @@ TEST_CASE(no_label_command_intersects_the_ring_in_any_cell_of_any_bank) {
     std::size_t ringCommandsSeen = 0;
     std::size_t labelCommandsSeen = 0;
 
-    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
         surface.DispatchAction(
-            synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBankSelect, std::to_string(bankIx)));
+            synth::ui::Action::WithValue(synth_froggers::FroggersActions::kPageSelect, std::to_string(bankIx)));
         rig.RunBlocks(4);
         rig.UIState();
 
@@ -1913,7 +1913,7 @@ TEST_CASE(no_label_command_intersects_the_ring_in_any_cell_of_any_bank) {
     std::cout << "[OBSERVED] label-vs-ring sweep: " << cellsChecked << " cells, " << ringCommandsSeen
               << " ring commands, " << labelCommandsSeen << " label commands, all clear\n";
     REQUIRE_TRUE(cellsChecked ==
-                 synth_froggers::kFroggersBankCount * synth_froggers::FroggersEncoderGridLayout::kEncoderCount);
+                 synth_froggers::kFroggersPageCount * synth_froggers::FroggersEncoderGridLayout::kEncoderCount);
 }
 
 // Every rendered label matches the approved label table VERBATIM, so a later
@@ -1927,7 +1927,7 @@ TEST_CASE(no_label_command_intersects_the_ring_in_any_cell_of_any_bank) {
 // is.
 TEST_CASE(every_rendered_label_matches_the_approved_list_verbatim) {
     static const std::array<std::array<const char*, synth_froggers::kFroggersParamsPerBank>,
-                            synth_froggers::kFroggersBankCount>
+                            synth_froggers::kFroggersPageCount>
         kExpectedApprovedLabels{{
             {{"VCO1", "VCO2", "VCO3", "Shape 1", "Shape 2", "Shape 3", "Ph.mod 1", "Ph.mod 2", "Ph.mod 3",
               "Ringmod 1", "Ringmod 2", "Ringmod 3", "PM rate", "VCO balance"}},
@@ -1952,9 +1952,9 @@ TEST_CASE(every_rendered_label_matches_the_approved_list_verbatim) {
     synth::ui::Surface& surface = rig.Application().PortableSurface();
 
     std::size_t entriesChecked = 0;
-    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
         surface.DispatchAction(
-            synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBankSelect, std::to_string(bankIx)));
+            synth::ui::Action::WithValue(synth_froggers::FroggersActions::kPageSelect, std::to_string(bankIx)));
         rig.RunBlocks(4);
         rig.UIState();
 
@@ -1987,7 +1987,7 @@ TEST_CASE(every_rendered_label_matches_the_approved_list_verbatim) {
     std::cout << "[OBSERVED] verbatim sweep: " << entriesChecked << " (bank,slot) entries matched (6 banks x 16 slots, "
               << "covering all 86 distinct approved labels)\n";
     REQUIRE_TRUE(entriesChecked ==
-                 synth_froggers::kFroggersBankCount * synth_froggers::kFroggersSlotsPerBank);
+                 synth_froggers::kFroggersPageCount * synth_froggers::kFroggersSlotsPerBank);
 }
 
 // Structural guard against a future label-table edit silently overflowing the
@@ -2549,8 +2549,8 @@ TEST_CASE(reset_all_clears_values_and_neutralises_depths_end_to_end) {
     // comparisons below check against what a fresh launch actually shows,
     // not a hand-written expectation.
     std::vector<float> defaultValues;
-    defaultValues.reserve(synth_froggers::kFroggersBankCount * synth_froggers::kFroggersParamsPerBank);
-    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+    defaultValues.reserve(synth_froggers::kFroggersPageCount * synth_froggers::kFroggersParamsPerBank);
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
         for (std::size_t slot = 0; slot < synth_froggers::kFroggersParamsPerBank; ++slot) {
             defaultValues.push_back(model.PageParameter(bankIx, slot).SceneCenter(0));
         }
@@ -2565,7 +2565,7 @@ TEST_CASE(reset_all_clears_values_and_neutralises_depths_end_to_end) {
     float maxAbsDeltaBefore = 0.0f;
     {
         std::size_t ix = 0;
-        for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+        for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
             for (std::size_t slot = 0; slot < synth_froggers::kFroggersParamsPerBank; ++slot) {
                 maxAbsDeltaBefore = std::max(
                     maxAbsDeltaBefore, std::fabs(model.PageParameter(bankIx, slot).SceneCenter(0) - defaultValues[ix]));
@@ -2580,7 +2580,7 @@ TEST_CASE(reset_all_clears_values_and_neutralises_depths_end_to_end) {
     float maxAbsDeltaAfter = 0.0f;
     {
         std::size_t ix = 0;
-        for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+        for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
             for (std::size_t slot = 0; slot < synth_froggers::kFroggersParamsPerBank; ++slot) {
                 maxAbsDeltaAfter = std::max(
                     maxAbsDeltaAfter, std::fabs(model.PageParameter(bankIx, slot).SceneCenter(0) - defaultValues[ix]));

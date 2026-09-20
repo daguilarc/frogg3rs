@@ -117,7 +117,7 @@ namespace synth_froggers {
 // by ParameterManager::PopulateUIState). Read from that snapshot and never
 // from BankSlot::SelectedBank(), a plain non-atomic pointer the audio thread
 // writes with no synchronization, unsafe for message-thread callers.
-inline std::size_t FroggersVisibleBankIndex(const synth::AppContext& context) {
+inline std::size_t FroggersVisiblePageIndex(const synth::AppContext& context) {
     if (context.uiState == nullptr) {
         return 0;
     }
@@ -203,10 +203,10 @@ public:
         synth::RuntimeConfig config;
         config.appName = "Frogg3rs Synth";
         // The runtime's own first sidebar page is called "Audio", and so is
-        // this instrument's first parameter bank, so the two buttons read as
+        // this instrument's first parameter page, so the two buttons read as
         // the same thing on screen and are not. The page selects the output
         // device AND the input device, so it is named for both rather than
-        // for the input alone. Set for every host: the bank is called Audio
+        // for the input alone. Set for every host: the page is called Audio
         // in the standalone as much as in the browser.
         config.audioPageTitle = "Audio I/O";
         // One input channel is requested. That alone never means an input is
@@ -298,7 +298,7 @@ public:
         // tracker, constructed against bank 0 -- the same default active
         // selection FroggersParameterModel::Init() already made via
         // `slot_->SelectBank(banks_[0])`.
-        drillIn_.emplace(parameters_.BankAt(activeBankIx_));
+        drillIn_.emplace(parameters_.BankAt(activePageIx_));
     }
 
     // Sample-rate-dependent modulation-slate setup: detected and called
@@ -592,7 +592,7 @@ public:
     // all control-rate, human-paced actions, never a data stream). See this
     // file's header comment for why each one needs to be a request rather
     // than a direct call.
-    void RequestBankSelect(std::size_t bankIx) {
+    void RequestPageSelect(std::size_t bankIx) {
         pendingBankSelect_.store(static_cast<int>(bankIx), std::memory_order_release);
     }
     void RequestEncoderPress(std::size_t encoderId) {
@@ -696,35 +696,35 @@ public:
         }
 
         const int bankRequest = pendingBankSelect_.exchange(-1, std::memory_order_acq_rel);
-        if (bankRequest >= 0 && static_cast<std::size_t>(bankRequest) < kFroggersBankCount) {
-            if (static_cast<std::size_t>(bankRequest) != activeBankIx_) {
-                activeBankIx_ = static_cast<std::size_t>(bankRequest);
-                parameters_.Slot().SelectBank(&parameters_.BankAt(activeBankIx_));
-                // `BankSlot::SelectBank` Deselect()s the OUTGOING bank
+        if (bankRequest >= 0 && static_cast<std::size_t>(bankRequest) < kFroggersPageCount) {
+            if (static_cast<std::size_t>(bankRequest) != activePageIx_) {
+                activePageIx_ = static_cast<std::size_t>(bankRequest);
+                parameters_.Slot().SelectBank(&parameters_.BankAt(activePageIx_));
+                // `BankSlot::SelectBank` Deselect()s the OUTGOING page
                 // (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2944-2951 in External/Sheaf), so
                 // a freshly-constructed drillIn_ (level_ starts at 0) for the
-                // INCOMING bank is always consistent with that bank's real
+                // INCOMING page is always consistent with that page's real
                 // state: either it was never drilled into, or it was
                 // Deselect()ed the last time it was left active -- both are
                 // real level 0. This is why exactly one drillIn_ instance,
                 // reconstructed on every switch, never desyncs from six
-                // persistent per-bank instances would risk.
-                drillIn_.emplace(parameters_.BankAt(activeBankIx_));
+                // persistent per-page instances would risk.
+                drillIn_.emplace(parameters_.BankAt(activePageIx_));
             } else if (drillIn_->Level() > 0) {
-                // Clicking the bank you are ALREADY viewing must still be
+                // Clicking the page you are ALREADY viewing must still be
                 // able to back a modulation drilldown all the way out to
-                // that bank's top-level parameter grid -- "clicking on the
+                // that page's top-level parameter grid -- "clicking on the
                 // page bank for the page we are on is the way the user
                 // should always be able to get to that page, even when they
                 // are in a modulation drilldown for a parameter on that
                 // page." Back()-until-zero reaches the same "full
-                // Deselect(), level 0" state a genuine bank switch produces
+                // Deselect(), level 0" state a genuine page switch produces
                 // above, without reconstructing drillIn_ (same Bank&, no
                 // need) -- bounded to at most 3 iterations (the level cap,
                 // FroggersModulationDrillIn::kMaxDrillLevel).
                 // The `Level() > 0` guard is what keeps the pre-existing
-                // no-op preserved for a same-bank click that is ALREADY at
-                // level 0: nothing in this branch runs, so activeBankIx_/
+                // no-op preserved for a same-page click that is ALREADY at
+                // level 0: nothing in this branch runs, so activePageIx_/
                 // drillIn_ are left completely undisturbed, same as before
                 // this fix (rebuilding identical state would be wasted work
                 // for no behavior change).
@@ -1418,8 +1418,8 @@ public:
     // Test/inspection access to the modulation slate.
     FroggersModulationSlate& Modulation() { return modulation_; }
 
-    // Test/inspection access to this class's own bank/drill-in bookkeeping.
-    std::size_t ActiveBankIndex() const { return activeBankIx_; }
+    // Test/inspection access to this class's own page/drill-in bookkeeping.
+    std::size_t ActivePageIndex() const { return activePageIx_; }
     FroggersModulationDrillIn& ActiveDrillIn() { return *drillIn_; }
 
     // Test/inspection access to the per-unit recovery targets --
@@ -2650,7 +2650,7 @@ private:
     int stopDiagBlocks_ = 0;
     float stopDiagPeak_ = 0.0f;
 
-    std::size_t activeBankIx_ = 0;
+    std::size_t activePageIx_ = 0;
     std::optional<FroggersModulationDrillIn> drillIn_;
 };
 

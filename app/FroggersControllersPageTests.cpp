@@ -323,16 +323,16 @@ TEST_CASE(twister_system_rows_carry_shift_editable_field_and_derived_choice_inde
     REQUIRE_TRUE(!shiftRowHasShiftField);
 
     const std::vector<synth::UISystemMessageChoice>& shiftCatalog = vm.ShiftCatalog();
-    int bankPreviousIx = -1;
+    int pagePreviousIx = -1;
     for (std::size_t ix = 0; ix < shiftCatalog.size(); ++ix) {
-        if (shiftCatalog[ix].label == "Bank Previous") {
-            bankPreviousIx = static_cast<int>(ix);
+        if (shiftCatalog[ix].label == "Page Previous") {
+            pagePreviousIx = static_cast<int>(ix);
             break;
         }
     }
-    REQUIRE_TRUE(bankPreviousIx >= 0);
+    REQUIRE_TRUE(pagePreviousIx >= 0);
 
-    REQUIRE_TRUE(vm.ShiftChoiceIndex(twisterIx, synth::MidiConfigSection::SystemMessages, 0) == bankPreviousIx);
+    REQUIRE_TRUE(vm.ShiftChoiceIndex(twisterIx, synth::MidiConfigSection::SystemMessages, 0) == pagePreviousIx);
     REQUIRE_TRUE(vm.ShiftChoiceIndex(twisterIx, synth::MidiConfigSection::SystemMessages, 5) == 0);
 }
 

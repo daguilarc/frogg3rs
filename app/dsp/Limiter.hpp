@@ -2,7 +2,7 @@
 
 // synth_froggers::dsp::OutputLimiter -- extracted out of app/FroggersAppCore.hpp
 // (where it was a PRIVATE nested type) so a SECOND, independently-tuned
-// instance can run on the Filter bank's output (FilterFxChain,
+// instance can run on the Filter page's output (FilterFxChain,
 // dsp/FilterFx.hpp) without duplicating the struct.
 //
 // WHY THIS FILE, NOT dsp/FilterFx.hpp AND NOT FroggersAppCore.hpp:

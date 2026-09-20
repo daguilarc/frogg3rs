@@ -94,13 +94,14 @@ constexpr const char* kSessionStatePatchName = "daw-session";
 // at every read/write site so the two never drift apart.
 constexpr const char* kSessionExtrasKey = "sessionExtras";
 constexpr const char* kFreezeLatchedKey = "freezeLatched";
-// Second sessionExtras sibling key: the operator's visible bank (the page
-// FroggersUiSurface::CurrentBankIndex() reports as selected), so reopening
+// Second sessionExtras sibling key: the operator's visible page (the page
+// FroggersUiSurface::CurrentPageIndex() reports as selected), so reopening
 // a saved DAW project restores the page the operator was last on. Same
 // object, same round trip, no new mechanism -- see this key's own read/
 // write sites (PumpStatePersistence()) for the accessor/authority each
-// direction uses.
-constexpr const char* kVisibleBankIndexKey = "visibleBankIndex";
+// direction uses. The string value is a stored wire identifier -- a saved
+// DAW project's JSON key -- and does not follow the symbol's "Page" name.
+constexpr const char* kVisiblePageIndexKey = "visibleBankIndex";
 // Third sessionExtras sibling key: the operator's input-channel
 // selection -- an index into FroggersPluginProcessor::
 // ComputeInputOptionLabels()'s own return value (0 == "None"). Same object,
@@ -267,13 +268,13 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
             synth::JSON sessionExtras = arena.Object();
             sessionExtras.SetNew(kFreezeLatchedKey, arena.Boolean(engine_.Application().FreezeLatched()));
             // Same sibling-key treatment as kFreezeLatchedKey above, seeded
-            // with the visible bank's own actual current value (0, the
+            // with the visible page's own actual current value (0, the
             // default FroggersParameterModel::Init() selects, this early)
             // rather than an assumed constant -- see PumpStatePersistence()'s
             // steady-state write of this same key for the accessor this
             // mirrors.
-            sessionExtras.SetNew(kVisibleBankIndexKey,
-                                  arena.Integer(static_cast<std::int64_t>(synth_froggers::FroggersVisibleBankIndex(engine_.Context()))));
+            sessionExtras.SetNew(kVisiblePageIndexKey,
+                                  arena.Integer(static_cast<std::int64_t>(synth_froggers::FroggersVisiblePageIndex(engine_.Context()))));
             // Same sibling-key treatment, seeded with inputSelection_'s own
             // actual current value (0, "None" -- ApplyInputSelection() has
             // already run once by this point in the constructor, above)
@@ -595,8 +596,8 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
             } else if (isPlayingNow != lastHostIsPlaying_) {
                 // Single-slot, coalescing store -- same "control-rate,
                 // human-paced action" idiom FroggersAppCore::
-                // RequestBankSelect/RequestEncoderPress already use
-                // (FroggersAppCore.hpp's own comment on `RequestBankSelect`), applied here
+                // RequestPageSelect/RequestEncoderPress already use
+                // (FroggersAppCore.hpp's own comment on `RequestPageSelect`), applied here
                 // because pushing directly from this thread is not an
                 // option (see this file's header comment).
                 pendingTransportEdge_.store(
@@ -710,19 +711,19 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
     // call, Engine.hpp's own "7. throttled PopulateUIState every
     // uiPublishInterval_ blocks" step). This class calls
     // Parameter::PopulateUIState() directly, per parameter, UNTHROTTLED and
-    // bank-selection-independent, rather than reusing that one: Engine's
+    // page-selection-independent, rather than reusing that one: Engine's
     // own publish only reaches ParameterManager::UIState's
     // slots[0].cells[position], which reflects Bank::VisibleParameter(ix)
-    // of whichever bank the shared BankSlot currently has SELECTED (traced
+    // of whichever page the shared BankSlot currently has SELECTED (traced
     // via BankSlot::HandleSetAbsolute/Bank::FindVisibleCell,
     // ParameterModulation.cpp) -- with one physical BankSlot shared by all
     // six banks, that path can only ever see ONE bank's 16 parameters at a
     // time, never all 91 simultaneously. Calling PopulateUIState()
     // per-Parameter instead sidesteps BankSlot/Bank entirely (every
     // Parameter in this group gets its ProcessSamplePhase1/2 slewing every
-    // sample regardless of bank selection -- FroggersParameterModel::
+    // sample regardless of page selection -- FroggersParameterModel::
     // ProcessSample() drives group_->ProcessSamplePhase1/2 for the WHOLE
-    // group, not just the visible bank), so host readback for a bank that
+    // group, not just the visible page), so host readback for a page that
     // is not currently "selected" stays live and correct. Cost is
     // negligible: a handful of relaxed atomic stores per parameter, once
     // per audio callback, no allocation -- see HostParamEntry::uiState's
@@ -980,8 +981,8 @@ void FroggersPluginProcessor::BuildHostParameterInventory() {
     // literal (the governing spec's own "Count" requirement) -- 6
     // banks * 14 page parameters + 6 per-bank Crispy + 1 shared Crunchy + 1
     // Freeze.
-    hostParams_.reserve(synth_froggers::kFroggersBankCount * synth_froggers::kFroggersParamsPerBank
-                         + synth_froggers::kFroggersBankCount + 1 + 1);
+    hostParams_.reserve(synth_froggers::kFroggersPageCount * synth_froggers::kFroggersParamsPerBank
+                         + synth_froggers::kFroggersPageCount + 1 + 1);
 
     // JUCE's own versionHint doc comment (juce_ParameterID.h): "Influences
     // parameter ordering in Audio Unit plugins" -- a monotonically
@@ -991,7 +992,7 @@ void FroggersPluginProcessor::BuildHostParameterInventory() {
     // of the stability contract HostParamStableId()'s own comment makes.
     int versionHint = 1;
 
-    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
         const synth_froggers::FroggersBankLayout& layout = layouts[bankIx];
 
         for (std::size_t paramIx = 0; paramIx < synth_froggers::kFroggersParamsPerBank; ++paramIx) {
@@ -1139,7 +1140,7 @@ void FroggersPluginProcessor::BuildHostParameterInventory() {
 //
 //   This is pushed onto engine_.UiBus() (the message bus) rather than
 //   applied through the audio-thread Request*/pending*_ bridge
-//   (FroggersAppCore::RequestBankSelect() and friends, applied inside
+//   (FroggersAppCore::RequestPageSelect() and friends, applied inside
 //   ProcessFrame()) because engine_.ProcessBlock() drains the message bus
 //   BEFORE running ProcessFrame() (Engine.hpp's own binding step order): a
 //   Request* write queued this pump would not apply until the block AFTER
@@ -1385,32 +1386,32 @@ void FroggersPluginProcessor::PumpStatePersistence() {
                 }
                 // Same missing-or-wrong-typed-is-a-no-op treatment as the
                 // Freeze latch above -- a blob saved before this key existed
-                // (or with sessionExtras but no bank key) leaves the visible
-                // bank exactly where FroggersParameterModel::Init() already
-                // put it (bank 0). Unlike the Freeze latch, this does NOT
+                // (or with sessionExtras but no page key) leaves the visible
+                // page exactly where FroggersParameterModel::Init() already
+                // put it (page 0). Unlike the Freeze latch, this does NOT
                 // write a host parameter's JUCE value directly: the visible
                 // page is not a host-automatable parameter, and
-                // FroggersAppCore::RequestBankSelect() (the same public seam
-                // FroggersUiSurface.hpp's own bank buttons call) is the only
+                // FroggersAppCore::RequestPageSelect() (the same public seam
+                // FroggersUiSurface.hpp's own page buttons call) is the only
                 // authority that also reconstructs drillIn_ for the restored
-                // bank -- pushing MessageIn::SelectParamBank or writing
-                // activeBankIx_/drillIn_ directly would bypass that
+                // page -- pushing MessageIn::SelectParamBank or writing
+                // activePageIx_/drillIn_ directly would bypass that
                 // reconstruction. A saved index a host project can name that
-                // this build no longer has (kFroggersBankCount shrank, or
+                // this build no longer has (kFroggersPageCount shrank, or
                 // the blob is corrupt/hostile) is bounds-checked HERE,
-                // before ever reaching RequestBankSelect(), rather than
+                // before ever reaching RequestPageSelect(), rather than
                 // trusted blind: ProcessFrame()'s own internal bankRequest
                 // check (FroggersAppCore.hpp) only guards against a
                 // negative/too-large `int` after a std::size_t round trip,
                 // which a negative int64_t here could already have
                 // aliased into a large positive std::size_t before ever
                 // reaching that check.
-                const synth::JSON visibleBankIndexJson = root.Get(kSessionExtrasKey).Get(kVisibleBankIndexKey);
+                const synth::JSON visibleBankIndexJson = root.Get(kSessionExtrasKey).Get(kVisiblePageIndexKey);
                 if (IsJsonInteger(visibleBankIndexJson)) {
                     const std::int64_t requestedBankIx = visibleBankIndexJson.IntegerValue();
                     if (requestedBankIx >= 0 &&
-                        static_cast<std::uint64_t>(requestedBankIx) < synth_froggers::kFroggersBankCount) {
-                        engine_.Application().RequestBankSelect(static_cast<std::size_t>(requestedBankIx));
+                        static_cast<std::uint64_t>(requestedBankIx) < synth_froggers::kFroggersPageCount) {
+                        engine_.Application().RequestPageSelect(static_cast<std::size_t>(requestedBankIx));
                     }
                 }
                 // Same missing-or-wrong-typed-is-a-no-op treatment as the two
@@ -1423,7 +1424,7 @@ void FroggersPluginProcessor::PumpStatePersistence() {
                 // ComputeInputOptionLabels() (the CURRENT bus, which a
                 // project reopened on a different host/layout may not
                 // match), before ever reaching ApplyInputSelection() --
-                // same discipline as the visible-bank-index check just
+                // same discipline as the visible-page-index check just
                 // above, and the same reason: a value this document names
                 // is a claim from a document, never a fact about the
                 // currently running host, and a claim that does not fit is
@@ -1463,15 +1464,15 @@ void FroggersPluginProcessor::PumpStatePersistence() {
         sessionExtras.SetNew(kFreezeLatchedKey, responseArena.Boolean(engine_.Application().FreezeLatched()));
         // Same sibling-key treatment, read fresh at attach time from the
         // SAME live selection state the editor itself renders from --
-        // FroggersVisibleBankIndex(), which the editor's own
-        // CurrentBankIndex() also delegates to -- never FroggersAppCore::
-        // ActiveBankIndex(), which can differ from the visible page while a
+        // FroggersVisiblePageIndex(), which the editor's own
+        // CurrentPageIndex() also delegates to -- never FroggersAppCore::
+        // ActivePageIndex(), which can differ from the visible page while a
         // host automation write is in flight (see that accessor's own
         // comment). Safe to read here, off the audio thread, for the same
         // reason the editor's own BuildTree() reads the same uiState from
         // the message thread every refresh.
-        sessionExtras.SetNew(kVisibleBankIndexKey,
-                              responseArena.Integer(static_cast<std::int64_t>(synth_froggers::FroggersVisibleBankIndex(engine_.Context()))));
+        sessionExtras.SetNew(kVisiblePageIndexKey,
+                              responseArena.Integer(static_cast<std::int64_t>(synth_froggers::FroggersVisiblePageIndex(engine_.Context()))));
         // Same sibling-key treatment, read fresh from inputSelection_ --
         // this class's own single write path is ApplyInputSelection(), so
         // there is nothing to go stale between transitions the way a

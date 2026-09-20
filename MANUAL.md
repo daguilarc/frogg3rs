@@ -10,7 +10,7 @@ The same instrument core runs in four hosts:
 - **VST3** and **AU plugin** — the same core loaded inside a DAW, where the host owns audio
   devices, transport and tempo.
 
-Every parameter and every bank below is identical across all four; what differs between them is covered
+Every parameter and every page below is identical across all four; what differs between them is covered
 in Audio configuration and MIDI controllers.
 
 A different instrument, the frozen **Daisy Field hardware firmware**, shares this repository and is
@@ -65,10 +65,10 @@ release.
 
 ---
 
-Six parameter banks — **Audio**, **Envelope**, **Filter**, **Drive**, **Delay**, **Reverb** — each with
-16 encoder slots: 14 page parameters (slots 0–13), a bank-local **Crispy** (slot 14), and one shared
-global **Crunchy** (slot 15, the same control in every bank). All six banks process audio every sample
-regardless of which one is on screen — switching banks only changes what you're looking at.
+Six parameter pages — **Audio**, **Envelope**, **Filter**, **Drive**, **Delay**, **Reverb** — each with
+16 encoder slots: 14 page parameters (slots 0–13), a page-local **Crispy** (slot 14), and one shared
+global **Crunchy** (slot 15, the same control in every page). All six pages process audio every sample
+regardless of which one is on screen — switching pages only changes what you're looking at.
 
 ## Global controls
 
@@ -81,29 +81,29 @@ other knobs are sitting.
 A parameter's value is treated internally as an 8-bit number. The higher the fuego amount, the more of
 that number's low bits get folded into an XOR/shift scramble keyed to the slot the parameter sits in.
 At the knob's minimum, values pass through untouched. As the amount rises, small knob and modulation
-moves stop being smooth: values snap between islands. Different slots on the same bank scramble
+moves stop being smooth: values snap between islands. Different slots on the same page scramble
 differently from each other, because the scramble pattern follows the slot index.
 
-- **Crispy** (slot 14, one instance per bank, colored like that bank) scrambles only that bank's own 14
-  page parameters (slots 0–13). It does not touch Crunchy, and it does not touch any other bank.
+- **Crispy** (slot 14, one instance per page, colored like that page) scrambles only that page's own 14
+  page parameters (slots 0–13). It does not touch Crunchy, and it does not touch any other page.
 - **Crunchy** (slot 15) is a single shared parameter — the literal same value — wired into all six
-  banks at once. It scrambles every page parameter in every bank, *and* it scrambles every bank's own
-  Crispy value before that Crispy value is used to scramble its bank (Crunchy stacks underneath Crispy,
+  pages at once. It scrambles every page parameter in every page, *and* it scrambles every page's own
+  Crispy value before that Crispy value is used to scramble its page (Crunchy stacks underneath Crispy,
   never the other way around). Crunchy itself receives no scramble.
 - Both default to 0 (no-op). Turning up Crunchy alone is a fast way to add grit everywhere at once
   without touching six separate Crispy knobs.
 
-### Bank selection
+### Page selection
 
-Six named buttons — Audio, Envelope, Filter, Drive, Delay, Reverb — pick which bank's 16 slots populate
-the encoder grid on screen. Every bank keeps processing audio whichever one is selected; the buttons
+Six named buttons — Audio, Envelope, Filter, Drive, Delay, Reverb — pick which page's 16 slots populate
+the encoder grid on screen. Every page keeps processing audio whichever one is selected; the buttons
 change what you can see and edit.
 
 ### Transport and the envelope gate
 
 **Play** / **Stop** control the master clock's transport. Starting the transport is what plays notes:
 while it runs, the shared envelope gate driving all three VCOs' Attack/Decay/Sustain/Release stages
-(Envelope bank) pulses automatically — **open for the first half of every quarter note, closed for the
+(Envelope page) pulses automatically — **open for the first half of every quarter note, closed for the
 second half** — at whatever tempo the BPM control (30–300 BPM) is set to. That re-triggers the
 envelopes on every beat. This app takes no MIDI note input. The Play plate swaps to its held colours
 while the transport runs and back to idle once it stops, the same swap Freeze and Record show while
@@ -127,7 +127,7 @@ beneath the transport buttons until Play is pressed or a recording arms. A captu
 
 ### Modulation assignment
 
-Click any parameter's encoder — a page parameter, a bank's own Crispy, or Crunchy — to open
+Click any parameter's encoder — a page parameter, a page's own Crispy, or Crunchy — to open
 a modulation view for that one parameter. It exposes 15 modulation sources, each with its own signed
 depth. A depth of 0 means that source is off for this parameter. Turning a source's depth changes how
 hard that source pushes the target, and depths on the same parameter sum together. Click the
@@ -173,14 +173,14 @@ its envelope follower at 0.0, so neither one modulates anything.
 
 Two randomize controls, both scoped to what is on screen.
 
-**Randomize All** randomizes every page parameter in every bank, plus their first-level modulation
-depths, and randomizes the Crispy value of zero, one or two of the six banks per press — never all six
+**Randomize All** randomizes every page parameter in every page, plus their first-level modulation
+depths, and randomizes the Crispy value of zero, one or two of the six pages per press — never all six
 at once, because scrambling all six together lands where randomizing Crunchy would. It never touches
 Crunchy, and it does not descend into a depth's own sub-depths. Pressed while a modulation view is
 open, it instead randomizes that parameter's depths and materializes and randomizes their second
 level; every such press attaches at least one source, so every press moves something.
 
-**Randomize Page** randomizes exactly what is on screen: on a parameter page, that bank's values
+**Randomize Page** randomizes exactly what is on screen: on a parameter page, that page's values
 including its own Crispy and no depths; in a modulation view, that view's depths only.
 
 Each press replaces the previous draw rather than adding to it — existing depths are cleared first, so
@@ -222,7 +222,7 @@ an occasional densely modulated parameter still happens.
 
 An **Audio I/O** page (reached from the app's sidebar) offers **Output device** and **Input device**
 selectors listing the machine's own audio devices, plus a **Retry Input** button if capture fails. It is
-named Audio I/O rather than Audio so it is not read as the Audio parameter bank. A
+named Audio I/O rather than Audio so it is not read as the Audio parameter page. A
 **Controllers** page maps an external MIDI controller to this app's own controls; see MIDI controllers, below. A **Sync** page lets the transport slave to incoming MIDI clock (**Receive
 clock**, **Receive transport** toggles, a **PPQN** field 1–960); while slaved, the BPM control (Global
 controls, above) becomes a read-only status display instead of an editable slider.
@@ -237,7 +237,7 @@ control becomes a read-only display, "BPM `<value>` (external clock)", the same 
 shows while slaved to incoming MIDI clock.
 
 **MIDI** reaches this instrument entirely through host-parameter automation. Every parameter — each
-bank's 14 page parameters, its own Crispy, the one shared Crunchy, and Freeze — is exposed to the host as
+page's 14 page parameters, its own Crispy, the one shared Crunchy, and Freeze — is exposed to the host as
 a standard automatable plugin parameter, so a DAW's own MIDI-learn/CC-mapping targets one of these the
 same way it would target any other plugin parameter. The plugin accepts the host's MIDI buffer but does
 not read it itself.
@@ -324,7 +324,7 @@ device its ports read "(none)".
 
 Every front-screen control. Encoder turns (relative or absolute), encoder pushes (which drill into a
 knob's modulation exactly like an on-screen press), Play, Stop, Freeze, Record, Randomize All,
-Randomize Page, Reset All, Reset Page, Bank 1 to 6, Bank Previous, Bank Next, Scene 1, Scene 2, the
+Randomize Page, Reset All, Reset Page, Page 1 to 6, Page Previous, Page Next, Scene 1, Scene 2, the
 scene blend (an analog control), BPM (an analog control, or a shifted encoder turn, 30 to 300),
 **Hold Drill**, and **Shift**.
 Buttons can be addressed by CC or by note number; analog controls by CC.
@@ -374,7 +374,7 @@ a press paired with a second job under Shift:
 
 | Button | Press | Shift + press |
 |---|---|---|
-| Left top | Bank Next | Bank Previous |
+| Left top | Page Next | Page Previous |
 | Left middle | Play | Stop |
 | Left bottom | Freeze | Reset Page |
 | Right top | Scene 1 | Scene 2 |
@@ -404,10 +404,10 @@ shows. CC Hold is also what lets the app see the Shift button's own release.
 
 The unit powers up in this mode; nothing is sent to it. Top-row track knobs 1 to 8 are encoders 1 to
 8, device knobs 1 to 8 are encoders 9 to 16, SHIFT is Hold Drill, PLAY/STOP/RECORD are
-Play/Stop/Record, SCENE LAUNCH 1 and 2 are Scene 1 and 2, the LEFT and RIGHT arrows are Bank
-Previous and Bank Next, DEVICE ON/OFF is Randomize Page, DEVICE LOCK is Randomize All, CLIP/DEVICE
+Play/Stop/Record, SCENE LAUNCH 1 and 2 are Scene 1 and 2, the LEFT and RIGHT arrows are Page
+Previous and Page Next, DEVICE ON/OFF is Randomize Page, DEVICE LOCK is Randomize All, CLIP/DEVICE
 VIEW is Reset Page, DETAIL VIEW is Reset All, STOP ALL CLIPS is Freeze, the CLIP STOP buttons under
-tracks 1 to 6 are Bank 1 to 6, the crossfader is the scene blend and the master fader is BPM. Keep
+tracks 1 to 6 are Page 1 to 6, the crossfader is the scene blend and the master fader is BPM. Keep
 Track 1 selected: the device knobs follow the selected track, and after pressing another Track
 Select button they stop reaching encoders 9 to 16 until Track 1 is pressed again. The unit lights
 its own buttons in this mode.
@@ -422,7 +422,7 @@ controlled by the host and this app sends none, so the buttons stay dark.
 
 The preset maps the row of round buttons above the 8x8 pad grid and the column of round buttons to
 its right; the 8x8 grid itself is left unmapped. Top row, left to right: Play, Stop, Freeze, Record,
-Scene 1, Scene 2, Randomize Page, Reset Page. Right column, top six buttons: Bank 1 through Bank 6.
+Scene 1, Scene 2, Randomize Page, Reset Page. Right column, top six buttons: Page 1 through Page 6.
 The app switches the unit into programmer mode when its output connects; in that mode every pad's
 light is controlled by the host and this app sends none, so the pads stay dark.
 
@@ -453,10 +453,10 @@ lost on relaunch.
 
 ---
 
-## Audio bank
+## Audio page
 
 Three independent oscillators. Each one's phase modulation and ring modulation run off its own
-internal carrier, so nothing in this bank reads another VCO's phase or output directly. Mixing is a
+internal carrier, so nothing in this page reads another VCO's phase or output directly. Mixing is a
 three-way balance. Cross-oscillator routing lives in the modulation view, where each VCO's audio-rate
 output is a source (Modulation assignment, above).
 
@@ -491,7 +491,7 @@ never silence a VCO outright.
 
 ---
 
-## Envelope bank
+## Envelope page
 
 Per-voice Attack/Decay/Sustain/Release for each of the three VCOs, interleaved: slot = 4×VCO index +
 {Attack, Decay, Sustain, Release}. So the slot order reads A1 D1 S1 R1, A2 D2 S2 R2, A3 D3 S3 R3, then
@@ -529,13 +529,13 @@ the length of Attack, Decay or Release themselves.
 
 ---
 
-## Filter bank
+## Filter page
 
-Signal path (at the default Topology): the Drive page feeds this bank's input. A resonant notch filter
+Signal path (at the default Topology): the Drive page feeds this page's input. A resonant notch filter
 ("Scoop") is blended into that input first; the scooped signal feeds both a resonant peaking EQ ("peak")
 and, through a short pure delay, a comb filter. Topology morphs how much the comb path feeds the peak
 path, from fully parallel to fully in series, and Comb/Peak blends the peak and comb outputs together.
-A limiter after that blend holds the bank's output down before this bank hands off to Delay and then
+A limiter after that blend holds the page's output down before this page hands off to Delay and then
 Reverb downstream.
 
 **Peak freq** (slot 0) — center frequency of the resonant peaking EQ, 100 Hz–20 kHz.
@@ -543,7 +543,7 @@ Reverb downstream.
 **Peak gain** (slot 1) — how far the peak stands above the rest of the signal. At the bottom of
 travel the peak is flat. The peak path divides its own output by the same height it raises the peak
 to, so turning this up holds the level at the peak's own center frequency and pulls the rest of the
-signal down. With the bank at its defaults, which put the peak at 100 Hz, a full-scale tone at that
+signal down. With the page at its defaults, which put the peak at 100 Hz, a full-scale tone at that
 center frequency holds within 0.0000097 dB across the whole travel, a tone at 1 kHz falls
 5.27 dB, and a tone at 5 kHz falls 5.75 dB; a broadband source loses 6.72 dB of total level end to
 end. The peak is shaped by attenuation, so reaching its full height costs that much level.
@@ -597,7 +597,7 @@ shapes an already comb-colored signal). Every value in between blends smoothly.
 
 ---
 
-## Drive bank
+## Drive page
 
 Signal path: an oversampled polynomial waveshaper (with a sine-fold/tanh-fuzz blend) → digital
 reorganizer (bit XOR + bit-scramble) → two sample-rate reducers in series → a tone low-pass → dry/wet
@@ -622,7 +622,7 @@ just over 4 dB.
 shaper into denser, more extreme harmonic territory.
 
 **Shape** (slot 2) — recomputes the waveshaper's five polynomial coefficients along a
-space-filling curve, continuously changing its harmonic character. (Distinct from the Audio bank's
+space-filling curve, continuously changing its harmonic character. (Distinct from the Audio page's
 per-VCO waveform Shape knobs — same name, different control.)
 
 **SRR 1** (slot 3) — first sample-rate-reducer stage. Raising the knob increases the reduction —
@@ -731,18 +731,18 @@ away from those defaults it grows much larger, up to around three-quarters of fu
 
 ### "Feedback" across the instrument
 
-Five controls carry the name Feedback, across three banks. Three of them set how much of a stage's
+Five controls carry the name Feedback, across three pages. Three of them set how much of a stage's
 own output returns to that same stage's input; the other two shape what travels around Delay's
 loop on each pass:
 
-- **Filter bank, Comb feedback** — sets how much of the comb delay line's output returns to the
+- **Filter page, Comb feedback** — sets how much of the comb delay line's output returns to the
   comb delay line's own input.
-- **Drive bank, Feedback** — sets how much of the wavefolder's output returns to the wavefolder's
+- **Drive page, Feedback** — sets how much of the wavefolder's output returns to the wavefolder's
   own input, one sample later.
-- **Delay bank, Feedback** — sets how much of each repeat returns to the delay line's own input.
-- **Delay bank, Feedback drive** — sets the pre-gain into the saturator that sits in Delay's
+- **Delay page, Feedback** — sets how much of each repeat returns to the delay line's own input.
+- **Delay page, Feedback drive** — sets the pre-gain into the saturator that sits in Delay's
   feedback loop, and with it how hard each pass is driven.
-- **Delay bank, Feedback tone** — sets the cutoff of the low-pass inside Delay's feedback loop, and
+- **Delay page, Feedback tone** — sets the cutoff of the low-pass inside Delay's feedback loop, and
   with it how much treble each pass keeps.
 
 Reverb's tank runs on one feedback coefficient, and two controls set it: Decay places it between
@@ -750,7 +750,7 @@ Reverb's tank runs on one feedback coefficient, and two controls set it: Decay p
 
 ---
 
-## Delay bank
+## Delay page
 
 A stereo delay effect, positioned after Filter and before Reverb in the actual audio chain.
 
@@ -799,7 +799,7 @@ own ceiling holds regardless.
 
 **Feedback tone** (`FB tone`, slot 10) — a low-pass filter inside the feedback loop, so successive
 repeats get progressively darker as this is turned down. Fully open at the top of travel (the default),
-to roughly an 800 Hz cutoff at the bottom — the same range as the Drive bank's Tone. Because it sits in
+to roughly an 800 Hz cutoff at the bottom — the same range as the Drive page's Tone. Because it sits in
 the loop, the darkening compounds: each repeat passes the filter again.
 
 **Mod rate** (slot 11) — rate of the delay-time LFO whose depth Mod depth (slot 6) sets
@@ -815,9 +815,9 @@ crushed.
 
 ---
 
-## Reverb bank
+## Reverb page
 
-The signal actually reaches this bank last, after Audio/Envelope, Drive, Filter, and Delay have all
+The signal actually reaches this page last, after Audio/Envelope, Drive, Filter, and Delay have all
 already processed it.
 
 **Wet/dry** (slot 0) — reverb mix. The dry signal never drops below 30% of its own level, even at
@@ -878,7 +878,7 @@ it adds nothing beyond ordinary Decay.
 feedback saturator, for more obvious saturation on the tail as it is raised.
 
 **Grit** (slot 11) — routes the tank's feedback taps through the same bit-scramble/XOR digital
-reorganizer the Drive bank uses, adding digital grit to the tail. Off at 0.
+reorganizer the Drive page uses, adding digital grit to the tail. Off at 0.
 
 **Tilt** (slot 12) — a bipolar tone control on the final reverb output, crossfading between a
 darker (lowpass-emphasized) tail and a brighter (highpass-emphasized) tail around a fixed ~1 kHz

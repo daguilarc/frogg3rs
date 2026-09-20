@@ -587,7 +587,7 @@ TEST_CASE(plugin_mode_transport_row_thins_to_freeze_and_label_only) {
 // -- 5. Stable-ID host parameter surface --------------------------------------
 // Every helper below reconstructs the SAME structural facts
 // FroggersPluginProcessor::BuildHostParameterInventory() itself uses
-// (kFroggersBankCount/kFroggersParamsPerBank/kFroggersCrispySlot/
+// (kFroggersPageCount/kFroggersParamsPerBank/kFroggersCrispySlot/
 // kFroggersCrunchySlot, FroggersParameters.hpp) -- not a copy of that
 // method's own string-building, but the same INPUTS, so a test failure here
 // means the plugin's actual construction order/IDs disagree with the
@@ -603,7 +603,7 @@ TEST_CASE(plugin_mode_transport_row_thins_to_freeze_and_label_only) {
 // model ever grows).
 std::vector<std::string> ExpectedHostParamIdsInOrder() {
     std::vector<std::string> ids;
-    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
         for (std::size_t paramIx = 0; paramIx < synth_froggers::kFroggersParamsPerBank; ++paramIx) {
             ids.push_back("bank" + std::to_string(bankIx) + ".slot" + std::to_string(paramIx));
         }
@@ -628,14 +628,14 @@ juce::AudioProcessorParameter* FindHostParamById(frogg3rs_vst::FroggersPluginPro
 
 // -- Count: exposed parameter count equals the model's own enumeration ------
 TEST_CASE(host_parameter_count_matches_the_models_own_enumeration) {
-    // Computed from FroggersParameterModel's own constants (kFroggersBankCount
-    // * kFroggersParamsPerBank page parameters + kFroggersBankCount Crispy +
+    // Computed from FroggersParameterModel's own constants (kFroggersPageCount
+    // * kFroggersParamsPerBank page parameters + kFroggersPageCount Crispy +
     // 1 shared Crunchy), never a hardcoded literal, plus 1 for Freeze (not a
     // ParameterManager parameter at all -- see BuildHostParameterInventory()'s
     // own comment).
     const std::size_t expectedModelParamCount =
-        synth_froggers::kFroggersBankCount * synth_froggers::kFroggersParamsPerBank
-        + synth_froggers::kFroggersBankCount + 1;
+        synth_froggers::kFroggersPageCount * synth_froggers::kFroggersParamsPerBank
+        + synth_froggers::kFroggersPageCount + 1;
     const std::size_t expectedHostParamCount = expectedModelParamCount + 1;
 
     frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("param_count"));
@@ -798,7 +798,7 @@ TEST_CASE(core_side_randomize_is_reflected_to_every_host_parameter) {
     synth_froggers::FroggersParameterModel& model = processor.ApplicationForTest().Parameters();
     int hostIx = 0;
     constexpr float kTolerance = 0.01f;
-    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
         for (std::size_t paramIx = 0; paramIx < synth_froggers::kFroggersParamsPerBank; ++paramIx) {
             const float hostValue = processor.getParameters()[hostIx++]->getValue();
             REQUIRE_TRUE(std::fabs(hostValue - model.PageParameter(bankIx, paramIx).UIDisplayCenter(0)) < kTolerance);
@@ -896,9 +896,9 @@ TEST_CASE(host_write_produces_a_bounded_number_of_notifications_not_an_endless_l
 // write directly against its own entry's bank (MessageIn::
 // ParamSetAbsoluteOnBank -> synth::Bank::HandleSetAbsoluteOnTopLevel, see
 // that method's own header comment). It never selects a bank on the shared
-// BankSlot and never touches FroggersAppCore::activeBankIx_/drillIn_ at
+// BankSlot and never touches FroggersAppCore::activePageIx_/drillIn_ at
 // all. This proves the write reaches its target bank's real parameter
-// while the operator's own view -- ActiveBankIndex(), the rendered/
+// while the operator's own view -- ActivePageIndex(), the rendered/
 // selected bank tab, and a page-scoped action (Reset Page) -- all stay on
 // the bank the OPERATOR is looking at, never the one automation last wrote.
 TEST_CASE(host_automation_in_a_non_visible_bank_lands_there_and_leaves_the_operators_page_untouched) {
@@ -923,7 +923,7 @@ TEST_CASE(host_automation_in_a_non_visible_bank_lands_there_and_leaves_the_opera
 
     // FroggersParameterModel::Init() selects bank 0 by default
     // (`slot_->SelectBank(banks_[0])`).
-    REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == 0);
+    REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == 0);
 
     // Bank 3, slot 2 -- an arbitrary non-visible target. Bank 0 (the
     // operator's own, active-by-default bank), slot 6 ("Ph.mod 1") is also
@@ -956,13 +956,13 @@ TEST_CASE(host_automation_in_a_non_visible_bank_lands_there_and_leaves_the_opera
     REQUIRE_TRUE(std::fabs(operatorBankParam.UIDisplayCenter(0) - kOperatorBankHostTarget) < kTolerance);
 
     // -- The operator's own bank never moved --------------------------------
-    REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == 0);
+    REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == 0);
 
     // -- The REAL selection authority (BankSlot::SelectedBank(), published
     // via ParameterManager::PopulateUIState to uiState->banks[].selected)
     // agrees too, and this is SPECIFICALLY what the editor renders:
-    // FroggersUiSurface::CurrentBankIndex() (app/FroggersUiSurface.hpp)
-    // reads this live state directly, never ActiveBankIndex().
+    // FroggersUiSurface::CurrentPageIndex() (app/FroggersUiSurface.hpp)
+    // reads this live state directly, never ActivePageIndex().
     // Read via the SAME BuildTree() call the editor's PortableComponent
     // makes every refresh.
     const synth::ui::NodeTree tree = processor.ApplicationForTest().PortableSurface().BuildTree();
@@ -976,7 +976,7 @@ TEST_CASE(host_automation_in_a_non_visible_bank_lands_there_and_leaves_the_opera
 
     // -- Page-scoped action (Reset Page) targets the OPERATOR's bank -------
     // RandomizePage/ResetPage both act on *drillIn_ (FroggersAppCore.hpp:
-    // 692-694/708-709), which only ever moves via RequestBankSelect() -- no
+    // 692-694/708-709), which only ever moves via RequestPageSelect() -- no
     // longer called anywhere on the host-automation path -- so it stays
     // bound to the real active bank (0) regardless of where automation last
     // wrote. At drill level 0, ResetPage reverts the whole bank via
@@ -993,7 +993,7 @@ TEST_CASE(host_automation_in_a_non_visible_bank_lands_there_and_leaves_the_opera
     REQUIRE_TRUE(std::fabs(target->getValue() - kHostTarget) < kTolerance);  // host readback still agrees.
 
     std::cout << "  [host automation] wrote bank " << kTargetBank << " slot " << kTargetSlot
-              << " -> ActiveBankIndex() stayed " << processor.ApplicationForTest().ActiveBankIndex()
+              << " -> ActivePageIndex() stayed " << processor.ApplicationForTest().ActivePageIndex()
               << ", and RequestResetPage() reset THAT bank's own parameter (-> "
               << operatorBankParam.UIDisplayCenter(0) << ") while leaving bank " << kTargetBank << " at "
               << targetCoreParam.UIDisplayCenter(0) << ".\n";
@@ -1025,7 +1025,7 @@ TEST_CASE(host_automation_of_two_banks_in_one_pump_does_not_move_the_visible_pag
         }
     };
 
-    REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == 0);
+    REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == 0);
 
     juce::AudioProcessorParameter* targetA = FindHostParamById(processor, "bank2.slot1");
     juce::AudioProcessorParameter* targetB = FindHostParamById(processor, "bank4.slot6");
@@ -1048,15 +1048,15 @@ TEST_CASE(host_automation_of_two_banks_in_one_pump_does_not_move_the_visible_pag
     REQUIRE_TRUE(std::fabs(coreB.UIDisplayCenter(0) - kTargetBValue) < kTolerance);
 
     // -- Neither write, nor their combination, moved the visible page ------
-    REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == 0);
+    REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == 0);
     const synth::ui::NodeTree tree = processor.ApplicationForTest().PortableSurface().BuildTree();
     REQUIRE_TRUE(FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(0))->selected);
     REQUIRE_TRUE(!FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(2))->selected);
     REQUIRE_TRUE(!FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(4))->selected);
 
     std::cout << "  [no oscillation] bank2.slot1=" << coreA.UIDisplayCenter(0) << ", bank4.slot6="
-              << coreB.UIDisplayCenter(0) << ", ActiveBankIndex() stayed "
-              << processor.ApplicationForTest().ActiveBankIndex() << " throughout.\n";
+              << coreB.UIDisplayCenter(0) << ", ActivePageIndex() stayed "
+              << processor.ApplicationForTest().ActivePageIndex() << " throughout.\n";
 
     processor.releaseResources();
 }
@@ -1086,7 +1086,7 @@ TEST_CASE(open_modulation_drilldown_survives_a_cross_bank_host_write) {
         }
     };
 
-    REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == 0);
+    REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == 0);
 
     // Drill into bank 0's own slot 5 -- the real operator press seam
     // (FroggersAppCore::RequestEncoderPress(), drained by ProcessFrame() on
@@ -1114,7 +1114,7 @@ TEST_CASE(open_modulation_drilldown_survives_a_cross_bank_host_write) {
     REQUIRE_TRUE(std::fabs(targetCoreParam.UIDisplayCenter(0) - kHostTarget) < kTolerance);  // the write landed.
 
     // -- The drilldown is untouched -----------------------------------------
-    REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == 0);
+    REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == 0);
     REQUIRE_TRUE(bank0.ShowingModulation());
     REQUIRE_TRUE(bank0.SelectedParameter() == &drilledParam);
     REQUIRE_TRUE(processor.ApplicationForTest().ActiveDrillIn().Level() == 1);
@@ -1158,7 +1158,7 @@ TEST_CASE(host_automation_of_the_viewed_banks_own_parameter_lands_on_top_level_n
         }
     };
 
-    REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == 0);
+    REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == 0);
 
     // Drill into slot 5 -- distinct from slot 0, the position this test
     // writes below, so top-level and depth-cell targets are unambiguously
@@ -1227,14 +1227,14 @@ TEST_CASE(operator_selecting_a_bank_does_move_the_visible_page) {
         processor.processBlock(buffer, midi);
     };
 
-    REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == 0);
+    REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == 0);
 
     constexpr std::size_t kOperatorTargetBank = 4;
     // The exact same public seam FroggersUiSurface.hpp's own bank buttons
     // call (app/FroggersUiSurface.hpp's `HandleAction`).
-    processor.ApplicationForTest().RequestBankSelect(kOperatorTargetBank);
-    runBlock();  // ProcessFrame() drains the pending request -- ActiveBankIndex() itself moves this block.
-    REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == kOperatorTargetBank);
+    processor.ApplicationForTest().RequestPageSelect(kOperatorTargetBank);
+    runBlock();  // ProcessFrame() drains the pending request -- ActivePageIndex() itself moves this block.
+    REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == kOperatorTargetBank);
 
     // BuildTree() below reads synth::ParameterManager::UIState, which
     // Engine::ProcessBlock() only re-publishes every uiPublishInterval_
@@ -1248,8 +1248,8 @@ TEST_CASE(operator_selecting_a_bank_does_move_the_visible_page) {
     REQUIRE_TRUE(FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(kOperatorTargetBank))->selected);
     REQUIRE_TRUE(!FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(0))->selected);
 
-    std::cout << "  [positive control] RequestBankSelect(" << kOperatorTargetBank << ") -> ActiveBankIndex()="
-              << processor.ApplicationForTest().ActiveBankIndex() << ".\n";
+    std::cout << "  [positive control] RequestPageSelect(" << kOperatorTargetBank << ") -> ActivePageIndex()="
+              << processor.ApplicationForTest().ActivePageIndex() << ".\n";
 
     processor.releaseResources();
 }
@@ -2073,13 +2073,13 @@ TEST_CASE(state_information_round_trips_the_visible_bank_when_non_default) {
     juce::MidiBuffer midi;
 
     constexpr std::size_t kOperatorBank = 4;
-    REQUIRE_TRUE(source.ApplicationForTest().ActiveBankIndex() == 0);
+    REQUIRE_TRUE(source.ApplicationForTest().ActivePageIndex() == 0);
     // The exact same public seam FroggersUiSurface.hpp's own bank buttons
     // call (app/FroggersUiSurface.hpp's `HandleAction`) -- the OPERATOR
     // selecting a page, not a direct MessageIn::SelectParamBank push.
-    source.ApplicationForTest().RequestBankSelect(kOperatorBank);
+    source.ApplicationForTest().RequestPageSelect(kOperatorBank);
     PumpAndSettle(source, sourceBuffer, midi);
-    REQUIRE_TRUE(source.ApplicationForTest().ActiveBankIndex() == kOperatorBank);
+    REQUIRE_TRUE(source.ApplicationForTest().ActivePageIndex() == kOperatorBank);
 
     juce::MemoryBlock state;
     source.getStateInformation(state);
@@ -2096,12 +2096,12 @@ TEST_CASE(state_information_round_trips_the_visible_bank_when_non_default) {
     // Confirmed at the default FIRST -- a fresh processor's own real
     // default -- so the restore assertion below cannot pass merely because
     // the target bank happens to already be where it started.
-    REQUIRE_TRUE(fresh.ApplicationForTest().ActiveBankIndex() == 0);
+    REQUIRE_TRUE(fresh.ApplicationForTest().ActivePageIndex() == 0);
 
     fresh.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
     PumpAndSettle(fresh, freshBuffer, midi);
 
-    const std::size_t restoredBankIx = fresh.ApplicationForTest().ActiveBankIndex();
+    const std::size_t restoredBankIx = fresh.ApplicationForTest().ActivePageIndex();
     REQUIRE_TRUE(restoredBankIx != 0);  // positive control -- see this test's own header comment.
     REQUIRE_TRUE(restoredBankIx == kOperatorBank);
 
@@ -2109,7 +2109,7 @@ TEST_CASE(state_information_round_trips_the_visible_bank_when_non_default) {
 
     std::cout << "  [state] visible bank round trip: operator selected bank " << kOperatorBank
               << " -> survived getStateInformation() -> setStateInformation() on a fresh processor, "
-                 "ActiveBankIndex()="
+                 "ActivePageIndex()="
               << restoredBankIx << ".\n";
 }
 
@@ -2127,7 +2127,7 @@ TEST_CASE(state_information_restore_clamps_an_out_of_range_saved_bank_to_the_def
     source.releaseResources();
     const std::string fullText(static_cast<const char*>(fullState.getData()), fullState.getSize());
 
-    // Far past kFroggersBankCount (6) -- a host project file naming a bank
+    // Far past kFroggersPageCount (6) -- a host project file naming a bank
     // this build (or any plausible future one) does not have.
     constexpr std::int64_t kOutOfRangeBank = 999;
     const std::string tamperedText = BuildPatchTextWithVisibleBankIndexOverridden(fullText, kOutOfRangeBank);
@@ -2140,12 +2140,12 @@ TEST_CASE(state_information_restore_clamps_an_out_of_range_saved_bank_to_the_def
     target.setStateInformation(tamperedText.data(), static_cast<int>(tamperedText.size()));
     PumpAndSettle(target, targetBuffer, midi);  // must not crash.
 
-    REQUIRE_TRUE(target.ApplicationForTest().ActiveBankIndex() == 0);  // falls back to the default page.
+    REQUIRE_TRUE(target.ApplicationForTest().ActivePageIndex() == 0);  // falls back to the default page.
 
     target.releaseResources();
 
     std::cout << "  [state] out-of-range saved bank index " << kOutOfRangeBank
-              << " did not crash and landed on the default page (ActiveBankIndex()=0).\n";
+              << " did not crash and landed on the default page (ActivePageIndex()=0).\n";
 }
 
 TEST_CASE(state_information_session_extras_without_bank_key_restores_freeze_latch_and_leaves_the_page_at_default) {
@@ -2163,10 +2163,10 @@ TEST_CASE(state_information_session_extras_without_bank_key_restores_freeze_latc
     REQUIRE_TRUE(sourceFreeze != nullptr);
     sourceFreeze->setValue(1.0f);
     constexpr std::size_t kSourceBank = 3;
-    source.ApplicationForTest().RequestBankSelect(kSourceBank);
+    source.ApplicationForTest().RequestPageSelect(kSourceBank);
     PumpAndSettle(source, sourceBuffer, midi);
     REQUIRE_TRUE(source.ApplicationForTest().FreezeLatched());
-    REQUIRE_TRUE(source.ApplicationForTest().ActiveBankIndex() == kSourceBank);
+    REQUIRE_TRUE(source.ApplicationForTest().ActivePageIndex() == kSourceBank);
 
     juce::MemoryBlock fullState;
     source.getStateInformation(fullState);
@@ -2183,7 +2183,7 @@ TEST_CASE(state_information_session_extras_without_bank_key_restores_freeze_latc
     juce::AudioBuffer<float> targetBuffer(2, 256);
 
     REQUIRE_TRUE(!target.ApplicationForTest().FreezeLatched());
-    REQUIRE_TRUE(target.ApplicationForTest().ActiveBankIndex() == 0);
+    REQUIRE_TRUE(target.ApplicationForTest().ActivePageIndex() == 0);
 
     target.setStateInformation(trimmedText.data(), static_cast<int>(trimmedText.size()));
     PumpAndSettle(target, targetBuffer, midi);
@@ -2192,12 +2192,12 @@ TEST_CASE(state_information_session_extras_without_bank_key_restores_freeze_latc
     REQUIRE_TRUE(target.ApplicationForTest().FreezeLatched());
     // A blob with sessionExtras but no bank key is a no-op for the page --
     // left at its default, never forced there by some OTHER path either.
-    REQUIRE_TRUE(target.ApplicationForTest().ActiveBankIndex() == 0);
+    REQUIRE_TRUE(target.ApplicationForTest().ActivePageIndex() == 0);
 
     target.releaseResources();
 
     std::cout << "  [state] sessionExtras present, bank key absent: freeze latch restored to engaged, page left at "
-                 "its default (ActiveBankIndex()=0).\n";
+                 "its default (ActivePageIndex()=0).\n";
 }
 
 // -- 7. Optional audio input bus and its input-channel selection ------------
