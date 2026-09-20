@@ -1,27 +1,57 @@
 #!/usr/bin/env python3
 """check_no_bank_page_conflation.py -- fails on the renamed-away "bank"
-identifiers reappearing in app/ (including app/dsp/), and on a bare "bank"
-reappearing in MANUAL.md outside its two genuine references to the MIDI
-Fighter Twister's own onboard hardware bank.
+identifiers reappearing in app/ (including app/dsp/), on the page-switcher's
+retired button LABELS reappearing in a string literal there, and on a bare
+"bank" reappearing in MANUAL.md outside its two genuine references to the
+MIDI Fighter Twister's own onboard hardware bank.
 
 Froggers' outward-facing "which of the six pages is showing" concept is named
 "page" throughout the app surface, the MIDI catalog, and MANUAL.md. "Bank"
 stays legitimate in three other, unrelated senses this script does not
-touch: Sheaf's own `synth::Bank`/`BankSlot` type and `MessageIn` vocabulary,
-Froggers' `FroggersBankId` parameter-model address (bank+slot addressing,
-`bankIx`, `RoutedKnob(FroggersBankId, ...)`, and friends), and
+touch: Sheaf's own `synth::Bank`/`BankSlot`/`ParamBank` type and `MessageIn`
+vocabulary, Froggers' `FroggersBankId` parameter-model address (bank+slot
+addressing, `bankIx`, `RoutedKnob(FroggersBankId, ...)`, and friends), and
 `app/dsp/EnvelopeFollowers.hpp`'s citations of the retired simulator's
-`V2EnvelopeFollowerBank.hpp`. None of those are patterns here -- a pattern
-broad enough to reach them would need an allowlist as large as their own
-legitimate usage, which is the failure mode `check_no_planning_history.py`'s
-own header comment warns against.
+`V2EnvelopeFollowerBank.hpp`. None of those are patterns here.
 
-The four identifier patterns below deliberately do NOT anchor a `\\b` before
-"Bank": every renamed-away identifier this script exists to catch is prefixed
-by a word character (`kBankNext`, `ActiveBankIndex`), and `\\b` never matches
-between two word characters regardless of a case change, so a leading `\\b`
-would silently never match the very names it names. Verified empirically
-against `kBankNext`/`ActiveBankIndex` before this script shipped.
+IDENTIFIER_PATTERNS catches the compound-identifier SHAPE the retired names
+share -- "Bank" immediately followed by the UI/dispatch word that named what
+it was showing or doing -- not an enumeration of the six retired names
+themselves. Matching is substring, both ends: no leading `\\b`, because every
+renamed-away identifier this script exists to catch is prefixed by a word
+character (`kBankNext`, `ActiveBankIndex`) and `\\b` never matches between two
+word characters, so a leading `\\b` would silently never match the very names
+it names (verified empirically against `kBankNext`/`ActiveBankIndex` before
+this script first shipped); and no trailing `\\b` on the main pattern either,
+so a name that carries the shape further -- `BankSelected`, a hypothetical
+`BankSwitcherButton` -- still matches on its `Bank`+word prefix rather than
+needing its own alternative spelled out. `BankIndex` keeps ITS trailing `\\b`
+deliberately: `app/vst/FroggersVstHostTests.cpp`'s
+`BuildPatchTextWithVisibleBankIndexOverridden` is a live, legitimate helper
+whose name continues past `Index` with more identifier -- exactly the shape
+the trailing boundary exists to let through -- while `ActiveBankIndex` and
+`CurrentBankIndex` still end right there and still match.
+
+This shape test does not need to reach `Bank` used as a SUFFIX (`RouteFilterBank`,
+`ProcessDriveBank`, `kFroggersSlotsPerBank`, Sheaf's own `SelectParamBank`) or
+combined with an addressing word (`BankSlot`, `BankColor`, `BankRef`,
+`FroggersBankLayouts`) -- none of those is a word this check's alternation
+matches after `Bank`, and no such word is added to it without checking it
+first against every one of those live names.
+
+LABEL_PATTERN covers the same retired concept in a different shape: a string
+literal a player reads, not a compiled symbol. It fires on a double-quoted
+string opening with the word "Bank" as a whole word -- `"Bank Next"`,
+`"Bank Previous"`, the `"Bank "` half of `"Bank " + std::to_string(ix + 1)`
+-- the shape `app/FroggersMidiCatalog.hpp`'s catalog labels held before this
+change renamed them to "Page". It does not fire on a wire value: those are
+either lowercase and dotted (`"froggers.bank.next"`) or lowercase and
+unspaced (`"visibleBankIndex"`, `"bank0.slot0"`-style test parameter ids), and
+it does not fire on an unrelated fixture name that merely starts with the same
+four letters (`"Bank9000 Future Slot 99"` in
+`app/vst/FroggersVstHostTests.cpp`, a made-up parameter id with a digit
+directly after "Bank" and no following space) because the pattern requires a
+space or the closing quote right after the word.
 
 Usage: check_no_bank_page_conflation.py <app-dir>
 """
@@ -35,12 +65,25 @@ from check_common import walk_sources  # noqa: E402
 
 NAME = "check-no-bank-page-conflation"
 
+# Bank immediately followed by the word that named what the retired button,
+# tab, arrow or dispatch action DID -- catches the shape, not a fixed list of
+# the six original names: `BankButton`, `BankSelected`, `RightKind::BankTabs`,
+# and any future name built the same way, alongside the six this rename
+# actually produced (`BankNext`, `BankPrevious`/`BankPrev`, `BankSelect`,
+# `BankTabsRow`, `BankPrevArrow`, `BankNextArrow`).
 IDENTIFIER_PATTERNS = [
-    re.compile(r"Bank(?:Next|Previous|Select|TabsRow|PrevArrow|NextArrow)\b"),
+    re.compile(r"Bank(?:Next|Prev|Select|Tab|Button|Row|Switcher)"),
     re.compile(r"BankIndex\b"),
     re.compile(r"\bkFroggersBankCount\b"),
     re.compile(r"\bkVisibleBankIndexKey\b"),
 ]
+
+# A string literal whose text is the retired page-switcher's own button
+# label: the word "Bank" standing alone, or opening a longer label
+# ("Bank Next", "Bank " + a number). A wire value never matches: it is either
+# dotted-lowercase ("froggers.bank.next") or has no space after "Bank"
+# ("visibleBankIndex", "Bank9000 Future Slot 99").
+LABEL_PATTERN = re.compile(r'"Bank(?=[ "])')
 
 SCAN_DIRS = ("", "vst", "dsp")
 SCAN_EXT = (".hpp", ".cpp")
@@ -98,13 +141,24 @@ def identifier_violations(app_dir):
             scanned += 1
             with open(full, "r", encoding="utf-8", errors="replace") as fh:
                 for n, line in enumerate(fh, 1):
+                    rel = os.path.relpath(full, os.path.dirname(app_dir))
                     code = blank_string_literals(line)
+                    matched = False
                     for pat in IDENTIFIER_PATTERNS:
                         m = pat.search(code)
                         if m:
-                            rel = os.path.relpath(full, os.path.dirname(app_dir))
                             errors.append(f"{rel}:{n} reintroduces {m.group(0)!r}: {line.strip()[:100]}")
+                            matched = True
                             break
+                    if matched:
+                        continue
+                    # The label check reads the RAW line -- the string literal's
+                    # own text is exactly what it is looking for, so it must not
+                    # run against the blanked copy the identifier scan uses.
+                    lm = LABEL_PATTERN.search(line)
+                    if lm:
+                        errors.append(f"{rel}:{n} reintroduces the retired \"Bank\" label: "
+                                      f"{line.strip()[:100]}")
     return errors, scanned
 
 

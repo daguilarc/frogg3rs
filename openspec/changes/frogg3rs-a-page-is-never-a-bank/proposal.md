@@ -3,6 +3,15 @@
 Based on frogg3rs `main` at `34b8f27`, which pins Sheaf `f6f49067`. This
 proposal makes no Sheaf change and moves no submodule pin.
 
+**Retired symbols.** This document's own subject is a rename, so it quotes the
+pre-rename names throughout as the thing being replaced. None of them survive
+it. `FroggersActions::kBankNext` does not exist. `kBankNext` does not exist.
+`kBankPrevious` does not exist. `FroggersNodeIds::kBankTabsRow` does not
+exist. `kBankTabsRow` does not exist. `kBankNextArrow` does not exist.
+`kBankPrevArrow` does not exist. `kVisibleBankIndexKey` does not exist.
+`kFroggersBankCount` does not exist. `FroggersUiSurface::CurrentBankIndex`
+does not exist. `FroggersAppCore::ActiveBankIndex` does not exist.
+
 ## Why
 
 A player reads "Page" on screen — Reset Page, Randomize Page, the per-page
@@ -65,7 +74,7 @@ Froggers-authored identifiers name the *same* "which of the six pages is
 showing" concept:
 
 - Says "page": `FroggersActions::kResetPage`, `kRandomizePage`,
-  `app::RequestResetPage`, `RequestRandomizePage`, `FroggersModulation.hpp`'s
+  `FroggersAppCore::RequestResetPage`, `RequestRandomizePage`, `FroggersModulation.hpp`'s
   `ResetPage`/`RandomizePage` functions, MANUAL.md's "Reset Page"/"Randomize
   Page" button names, the per-page-control language throughout the manual.
 - Says "bank": `FroggersActions::kBankNext`/`kBankPrevious`/`kBankSelect`,

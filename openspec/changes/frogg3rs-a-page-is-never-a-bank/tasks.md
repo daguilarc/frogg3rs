@@ -82,7 +82,8 @@ DSP units) and is also left alone.
       asset move with the source, not with the label rename).
 - [x] 4. Update `app/check_docs_match_parameter_table.py`'s MANUAL.md
       heading suffix from `" bank"` to `" page"` (the tuple at the bottom of
-      the file pairing `("MANUAL.md", manual_path, " bank")`).
+      `app/check_docs_match_parameter_table.py` pairing `"MANUAL.md"`, the
+      manual path variable, and `" bank"`).
       `QUICK_DICT.md`'s own headings are already bare (`## Audio`, never
       `## Audio bank`) and are unchanged.
       Check: `make check-docs-match-parameter-table` still fails at this
@@ -112,16 +113,21 @@ DSP units) and is also left alone.
       `V2EnvelopeFollowerBank.hpp`, pasted into the report, and the count
       matches Task 1's "keep" count for `app/dsp/`.
 - [x] 7. Add `app/check_no_bank_page_conflation.py`, following
-      `app/check_no_planning_history.py`'s shape (import `walk_sources` from
-      `check_common`, a compiled pattern list, an `ALLOWED` list, one exit
-      code). Patterns: `\bBank(Next|Previous|Select|TabsRow|PrevArrow|
-      NextArrow)\b`, `\bBankIndex\b` (case-sensitive — these are C++
-      identifiers, not prose), `\bkFroggersBankCount\b`,
-      `\bkVisibleBankIndexKey\b`, scanned over `app/*.hpp`, `app/*.cpp`,
-      `app/vst/*.hpp`, `app/vst/*.cpp`, `app/dsp/*.hpp`. A second scan of
-      `MANUAL.md` fails on any case-insensitive `\bbank\b` outside two
-      allowed lines, matched by the literal substrings "Bank Side Buttons"
-      and "whatever bank the Twister shows." Wire the script into
+      `app/check_no_planning_history.py`'s shape (import the shared tree walk
+      from `app/check_common.py`, a compiled pattern list, an `ALLOWED` list,
+      one exit
+      code). Patterns: `Bank(Next|Prev|Select|Tab|Button|Row|Switcher)`
+      (no anchors — matches the shape a reintroduced identifier takes, not
+      a fixed list of the six original names), `BankIndex\b`,
+      `\bkFroggersBankCount\b`, `\bkVisibleBankIndexKey\b` (case-sensitive —
+      these are C++ identifiers, not prose), plus a string-literal check for
+      the retired button labels (`"Bank Next"`, `"Bank Previous"`, the
+      `"Bank "` half of `"Bank " + std::to_string(ix + 1)`), scanned over
+      `app/*.hpp`, `app/*.cpp`, `app/vst/*.hpp`, `app/vst/*.cpp`,
+      `app/dsp/*.hpp`. A second scan of `MANUAL.md` fails on any
+      case-insensitive `\bbank\b` outside two allowed lines, matched by the
+      literal substrings "Bank Side Buttons" and "whatever bank the Twister
+      shows." Wire the script into
       `app/Makefile` as `check-no-bank-page-conflation`, added to
       `.PHONY` and to whichever aggregate target runs the other
       `check-*` scripts today (read the Makefile for that target's name
