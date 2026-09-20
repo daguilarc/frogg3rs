@@ -3,17 +3,17 @@
 Terse parameter glossary for the current **Frogg3rs — Sheaf app** (`app/`). Full guide → [`MANUAL.md`](MANUAL.md).
 Daisy Field hardware firmware (frozen, different parameter model entirely) → [`DAISY_MANUAL.md`](DAISY_MANUAL.md).
 
-Six banks — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 14 page parameters (slots
-0–13) in the order below, a bank-local Crispy (slot 14), and one shared global Crunchy (slot 15).
+Six pages — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 14 page parameters (slots
+0–13) in the order below, a page-local Crispy (slot 14), and one shared global Crunchy (slot 15).
 
 ## Global
 
-- **Crispy** (slot 14, per bank) — Fuego (bit-scramble) applied to that bank's own 14 parameters only; no-op at 0.
-- **Crunchy** (slot 15, shared across all six banks) — Same fuego scramble applied to every parameter in every bank, and to every bank's own Crispy; no-op at 0.
-- **Bank select** — Six buttons (Audio/Envelope/Filter/Drive/Delay/Reverb) choose which bank's slots are on screen; all six keep processing regardless.
+- **Crispy** (slot 14, per page) — Fuego (bit-scramble) applied to that page's own 14 parameters only; no-op at 0.
+- **Crunchy** (slot 15, shared across all six pages) — Same fuego scramble applied to every parameter in every page, and to every page's own Crispy; no-op at 0.
+- **Page select** — Six buttons (Audio/Envelope/Filter/Drive/Delay/Reverb) choose which page's slots are on screen; all six keep processing regardless.
 - **Play / Stop** — Transport. No manual note-on: while running, the shared envelope gate auto-pulses open for the first half of every quarter note (at the BPM control's tempo) and closed for the second half. Stop forces a fast ~50 ms fade on all three voices and clears Delay/Reverb tails. Play's plate shows held colours while the transport runs.
 - **Freeze / Record** — Freeze is a latch: engaging it stops the transport but holds the envelope gate open and keeps the delay recirculating, so the instrument drones while frozen. Releasing Freeze resumes the transport if it was running when Freeze engaged, the same as pressing Play; if the transport was already stopped, releasing just silences the drone. Record arms on one press and stops on the next (refusing to arm while the transport is stopped), offering the capture as `YYYY-MM-DD.wav`, up to 30 minutes.
-- **Modulation assign** — Click a parameter's encoder (or a bank's own Crispy) to open its 15-source depth view; each source has an independent signed depth (0 = off) and multiple non-zero sources sum. Sources: Random S&H 1–6, VCO1–3 Audio, VCO1–3 EF, Noise, External Audio, External Audio EF (the last two carry real signal only once an external input is connected — see MANUAL.md's Audio configuration section; until then they hold silent defaults, 0.5 and 0.0).
+- **Modulation assign** — Click a parameter's encoder (or a page's own Crispy) to open its 15-source depth view; each source has an independent signed depth (0 = off) and multiple non-zero sources sum. Sources: Random S&H 1–6, VCO1–3 Audio, VCO1–3 EF, Noise, External Audio, External Audio EF (the last two carry real signal only once an external input is connected — see MANUAL.md's Audio configuration section; until then they hold silent defaults, 0.5 and 0.0).
 
 ## Audio
 
@@ -36,7 +36,7 @@ Six banks — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 ## Filter
 
 - **Peak freq** (slot 0) — Resonant peaking-EQ center frequency, 100 Hz–20 kHz.
-- **Peak gain** (slot 1) — Raises the peak above its surroundings by attenuating them; level at the peak's own center frequency holds across the travel. With the bank at its defaults, which put the peak at 100 Hz, 1 kHz falls 5.27 dB, 5 kHz falls 5.75 dB, and broadband level falls 6.72 dB.
+- **Peak gain** (slot 1) — Raises the peak above its surroundings by attenuating them; level at the peak's own center frequency holds across the travel. With the page at its defaults, which put the peak at 100 Hz, 1 kHz falls 5.27 dB, 5 kHz falls 5.75 dB, and broadband level falls 6.72 dB.
 - **Peak Q** (slot 2) — Peak width/resonance.
 - **Comb offset** (slot 3) — Short pure delay ahead of the comb, 1–100 ms.
 - **Comb delay** (slot 4) — Comb filter pitch, 100 Hz–10 kHz.

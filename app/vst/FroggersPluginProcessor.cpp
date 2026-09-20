@@ -1400,18 +1400,18 @@ void FroggersPluginProcessor::PumpStatePersistence() {
                 // this build no longer has (kFroggersPageCount shrank, or
                 // the blob is corrupt/hostile) is bounds-checked HERE,
                 // before ever reaching RequestPageSelect(), rather than
-                // trusted blind: ProcessFrame()'s own internal bankRequest
+                // trusted blind: ProcessFrame()'s own internal pageRequest
                 // check (FroggersAppCore.hpp) only guards against a
                 // negative/too-large `int` after a std::size_t round trip,
                 // which a negative int64_t here could already have
                 // aliased into a large positive std::size_t before ever
                 // reaching that check.
-                const synth::JSON visibleBankIndexJson = root.Get(kSessionExtrasKey).Get(kVisiblePageIndexKey);
-                if (IsJsonInteger(visibleBankIndexJson)) {
-                    const std::int64_t requestedBankIx = visibleBankIndexJson.IntegerValue();
-                    if (requestedBankIx >= 0 &&
-                        static_cast<std::uint64_t>(requestedBankIx) < synth_froggers::kFroggersPageCount) {
-                        engine_.Application().RequestPageSelect(static_cast<std::size_t>(requestedBankIx));
+                const synth::JSON visiblePageIndexJson = root.Get(kSessionExtrasKey).Get(kVisiblePageIndexKey);
+                if (IsJsonInteger(visiblePageIndexJson)) {
+                    const std::int64_t requestedPageIx = visiblePageIndexJson.IntegerValue();
+                    if (requestedPageIx >= 0 &&
+                        static_cast<std::uint64_t>(requestedPageIx) < synth_froggers::kFroggersPageCount) {
+                        engine_.Application().RequestPageSelect(static_cast<std::size_t>(requestedPageIx));
                     }
                 }
                 // Same missing-or-wrong-typed-is-a-no-op treatment as the two

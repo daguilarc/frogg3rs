@@ -760,7 +760,7 @@ inline void ComputeVcoBalanceWeights(float knob01, float& w1, float& w2, float& 
 // `decay1/2/3` (Envelope slot 1/5/9): per-voice Decay knobs, added alongside
 // attack/sustain/release. `curveKnob`/`graceKnob` (Envelope slot 12/13) are
 // SHARED across all three voices (matching the spec delta's "applying to all
-// three voices'" / single-knob-per-bank framing for these two, unlike the
+// three voices'" / single-knob-per-page framing for these two, unlike the
 // per-VCO attack/decay/sustain/release quads) and default to 0.0f -- their
 // exact neutral values -- so callers that only care about decay keep
 // compiling and keep today's shape/no-deferral behaviour.

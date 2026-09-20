@@ -593,7 +593,7 @@ public:
     // file's header comment for why each one needs to be a request rather
     // than a direct call.
     void RequestPageSelect(std::size_t bankIx) {
-        pendingBankSelect_.store(static_cast<int>(bankIx), std::memory_order_release);
+        pendingPageSelect_.store(static_cast<int>(bankIx), std::memory_order_release);
     }
     void RequestEncoderPress(std::size_t encoderId) {
         pendingEncoderPress_.store(static_cast<int>(encoderId), std::memory_order_release);
@@ -695,10 +695,10 @@ public:
             modulation_.SetExternalAudioConnected(routedRequest != 0);
         }
 
-        const int bankRequest = pendingBankSelect_.exchange(-1, std::memory_order_acq_rel);
-        if (bankRequest >= 0 && static_cast<std::size_t>(bankRequest) < kFroggersPageCount) {
-            if (static_cast<std::size_t>(bankRequest) != activePageIx_) {
-                activePageIx_ = static_cast<std::size_t>(bankRequest);
+        const int pageRequest = pendingPageSelect_.exchange(-1, std::memory_order_acq_rel);
+        if (pageRequest >= 0 && static_cast<std::size_t>(pageRequest) < kFroggersPageCount) {
+            if (static_cast<std::size_t>(pageRequest) != activePageIx_) {
+                activePageIx_ = static_cast<std::size_t>(pageRequest);
                 parameters_.Slot().SelectBank(&parameters_.BankAt(activePageIx_));
                 // `BankSlot::SelectBank` Deselect()s the OUTGOING page
                 // (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2944-2951 in External/Sheaf), so
@@ -2561,7 +2561,7 @@ private:
     // The UI-thread -> audio-thread request
     // bridge (see this file's header comment) plus the audio-thread-only
     // active-bank/drill-in bookkeeping it drives.
-    std::atomic<int> pendingBankSelect_{-1};
+    std::atomic<int> pendingPageSelect_{-1};
     std::atomic<int> pendingEncoderPress_{-1};
     std::atomic<bool> pendingRandomizeAll_{false};
     std::atomic<bool> pendingRandomizePage_{false};
@@ -2571,7 +2571,7 @@ private:
     std::atomic<double> pendingTempoBpmRequest_{-1.0};
     // Queued by Init()'s routed-input-changed callback (message thread);
     // drained by ProcessFrame() (audio thread), same -1-sentinel/exchange
-    // idiom as pendingBankSelect_/pendingEncoderPress_ above. -1 = no
+    // idiom as pendingPageSelect_/pendingEncoderPress_ above. -1 = no
     // pending transition, 0 = not routed, 1 = routed.
     std::atomic<int> pendingExternalAudioRouted_{-1};
 

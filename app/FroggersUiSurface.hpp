@@ -206,7 +206,9 @@ inline constexpr const char* kBpmLabel = "froggers.bpm.label";
 
 inline constexpr const char* kVcoScope = "froggers.scope.vco";
 
-inline std::string BankButton(std::size_t bankIx) {
+// The string value is a stored wire identifier (a node id a saved layout
+// or test can reference) and does not follow the function's "Page" name.
+inline std::string PageButton(std::size_t bankIx) {
     return "froggers.bank." + std::to_string(bankIx);
 }
 
@@ -374,7 +376,7 @@ struct FroggersEncoderGridLayout {
     // Encoder(0) bounds, cross-checked against `AllocateExtents`' documented
     // formula -- kRightBlock content height 600px at the pre-existing
     // 900x632 window, minus the modulation header's fixed 26px and 7
-    // inter-row gaps of 14 (98), leaves 476, split 7 ways across BankTabs +
+    // inter-row gaps of 14 (98), leaves 476, split 7 ways across PageTabs +
     // the 4 EncoderRows + Randomize + Reset, all Weight(1.0) at the time of
     // measurement: 476/7 = 68.0 exactly).
     //
@@ -395,7 +397,7 @@ struct FroggersEncoderGridLayout {
     // (External/Sheaf/projects/synth/include/synth/PortableUILayout.hpp:165-241)'s `remaining * weight / totalWeight`
     // resolves EXACTLY (bit-for-bit, no float rounding) at the default
     // window: `kDefaultHeight` above is chosen so that `remaining` there
-    // exactly equals the total weight (BankTabs/Randomize/Reset at
+    // exactly equals the total weight (PageTabs/Randomize/Reset at
     // kUnchangedRowHeight=68 each + 4 EncoderRows at kGrownRowHeight=88
     // each = 556), which makes every `remaining * weight / totalWeight`
     // division reduce to the exact input weight (a property of IEEE754
@@ -461,7 +463,7 @@ static_assert(FroggersEncoderGridLayout::kEncoderCount == kFroggersSlotsPerBank,
 //     | BPM          |
 struct FroggersCellMap {
     enum class LeftKind { Scope, Transport, Scenes, SceneBlend, Bpm };
-    enum class RightKind { BankTabs, Header, EncoderRow, Randomize, Reset };
+    enum class RightKind { PageTabs, Header, EncoderRow, Randomize, Reset };
 
     struct LeftRow {
         LeftKind kind;
@@ -494,7 +496,7 @@ struct FroggersCellMap {
     // std::array, so appending a row means changing the count too, not just
     // adding an initializer.
     static constexpr std::array<RightRow, 8> kRightRows = {{
-        {RightKind::BankTabs, 0},
+        {RightKind::PageTabs, 0},
         {RightKind::Header, 0},
         {RightKind::EncoderRow, 0},
         {RightKind::EncoderRow, 4},
@@ -1167,7 +1169,7 @@ private:
     // by construction -- but the operator rejected THAT placement too
     // (2026-08-09, fourth session): "i don't know why you thought i wanted
     // the header to be 'Back' and by the back button, instead of a HEADER
-    // above all the modulation parameters, below the bank button row??
+    // above all the modulation parameters, below the page button row??
     // ... nothing needs to be labeled 'back' there." A badge reading "BACK
     // L<N>" on the one cell whose JOB is to go back a level conflated two
     // separate facts (the current drill depth, and "this cell exits one
@@ -1577,7 +1579,7 @@ private:
 
     void AppendRightRow(synth::ui::Builder& builder, const FroggersCellMap::RightRow& row) const {
         switch (row.kind) {
-            case FroggersCellMap::RightKind::BankTabs:
+            case FroggersCellMap::RightKind::PageTabs:
                 AppendPageTabsRow(builder);
                 return;
             case FroggersCellMap::RightKind::Header:
@@ -1630,10 +1632,10 @@ private:
         builder.Row(FroggersNodeIds::kPageTabsRow, rowLayout, [this, &layouts](synth::ui::Builder& b) {
             for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
                 synth::ui::ControlStyle style{};
-                style.selected = BankSelected(bankIx);
+                style.selected = PageSelected(bankIx);
                 style.layout.main = synth::ui::Extent::Weight(1.0f);
                 style.layout.cross = synth::ui::Extent::Intrinsic();
-                b.Button(FroggersNodeIds::BankButton(bankIx), layouts[bankIx].name,
+                b.Button(FroggersNodeIds::PageButton(bankIx), layouts[bankIx].name,
                          synth::ui::Action::WithValue(FroggersActions::kPageSelect, std::to_string(bankIx)), style);
             }
         });
@@ -1644,7 +1646,7 @@ private:
     // attempts, including the Target-Back badge). Operator, verbatim: "i don't know why you
     // thought i wanted the header to be 'Back' and by the back button,
     // instead of a HEADER above all the modulation parameters, below the
-    // bank button row?? ... nothing needs to be labeled 'back' there, that
+    // page button row?? ... nothing needs to be labeled 'back' there, that
     // implementation sucks." Unambiguous ask: a header BAR spanning the
     // grid's width, between the page tabs row and the first row of
     // parameter cells -- not attached to any button or cell.
@@ -2203,7 +2205,7 @@ private:
                            FroggersCellMap::kRandomizeResetButtons[3]);
     }
 
-    bool BankSelected(std::size_t bankIx) const {
+    bool PageSelected(std::size_t bankIx) const {
         if (context_ == nullptr || context_->uiState == nullptr || bankIx >= context_->uiState->bankCapacity) {
             return bankIx == 0;
         }
@@ -2215,7 +2217,7 @@ private:
     // order `uiState->banks[]` is populated in, ParameterModulation.cpp:
     // 3403-3406/3716-3727 push_back/populate in lockstep) is currently
     // selected, for AppendEncoderCell's label-source lookup below. Same
-    // default (0) BankSelected() above already uses when uiState isn't
+    // default (0) PageSelected() above already uses when uiState isn't
     // ready yet.
     std::size_t CurrentPageIndex() const {
         return context_ == nullptr ? 0 : FroggersVisiblePageIndex(*context_);

@@ -416,7 +416,7 @@ private:
     // may not PUSH the resulting Start/Stop message itself (see this file's
     // header comment) -- so it records at most one pending edge here, a
     // single-slot atomic exactly like FroggersAppCore's own
-    // pendingBankSelect_/pendingEncoderPress_ idiom
+    // pendingPageSelect_/pendingEncoderPress_ idiom
     // (FroggersAppCore.hpp's own comment on `RequestPageSelect`: "a single-slot pending
     // request; a later write ... simply coalesces (acceptable: ...
     // control-rate, human-paced actions, never a data stream)" -- a host

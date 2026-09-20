@@ -13,7 +13,7 @@ present; Guitar mixes the dry input with it), while the app never puts the input
 offers it only as two modulation sources, the raw signal and its envelope follower.
 
 Anyway, every parameter is an encoder knob on one of six
-banks of sixteen. Most parameter ranges are exponential, and you can attenuate the modulation depth by turning the knob, so even heavily modulated parameters are still audibly playable.
+pages of sixteen. Most parameter ranges are exponential, and you can attenuate the modulation depth by turning the knob, so even heavily modulated parameters are still audibly playable.
 
 These are some of the unique features in this digital synthesizer:
 
@@ -32,7 +32,7 @@ so is the depth of that one. The amount by which one source modulates another ca
 This compounds exponentially. One parameter has fifteen depth knobs. Each of those
 fifteen has fifteen of its own, which is 225. Each of those 225 has fifteen
 more, which is 3,375. There is no fourth level, so a single parameter sits on
-top of 3,615 knobs. Across the instrument's 91 top-level parameters (six banks of
+top of 3,615 knobs. Across the instrument's 91 top-level parameters (six pages of
 fourteen, six Crispy knobs and Crunchy) that is 1,365 possible first-level depths and
 328,965 depths if every level were filled.
 
@@ -40,8 +40,8 @@ fourteen, six Crispy knobs and Crunchy) that is 1,365 possible first-level depth
 
 **Randomization is weighted to stay playable.** Randomize All draws new values
 across the whole instrument, along with one level of modulation depths, and
-randomizes the Crispy of up to two banks. Randomize Page draws exactly what is
-on screen: a bank's values on a parameter page, or that view's depths inside a
+randomizes the Crispy of up to two pages. Randomize Page draws exactly what is
+on screen: a page's values on a parameter page, or that view's depths inside a
 modulation view. The number of sources a parameter picks up is a weighted
 draw, each count half as likely as the one before it: half of all parameters
 come out with no modulation at all, a quarter get one source, and four or
@@ -61,12 +61,12 @@ weighted this after testing and adjusting to taste; your taste may differ.
 
 **Crispy and Crunchy** knobs control a bit-scrambling function, which corrupts
 parameter values on their way to the DSP. This is basically like applying distortion to all the knobs, not just sounds.
-**Crunchy** is a single global knob shared by the whole instrument; each bank has its own local **Crispy**, which scrambles only that bank's parameters. They cascade: Crunchy warps every value, Crunchy also warps
-the bank's Crispy knob itself, and that warped Crispy is then applied on top of
+**Crunchy** is a single global knob shared by the whole instrument; each page has its own local **Crispy**, which scrambles only that page's parameters. They cascade: Crunchy warps every value, Crunchy also warps
+the page's Crispy knob itself, and that warped Crispy is then applied on top of
 the already-warped value. At zero (fully counter-clockwise, 7 o'clock) both do nothing. Turned up, knob moves stop
 being smooth and values snap between newly crispy-crunchy islands. This works on human knob-turning as well as parameters patched through modulation sources.
 
-**Crunchy** is never randomized: only you can turn it and set its modulation depths. **Randomize All** randomizes the Crispy of at most two of the six banks per press, never all six at once, because scrambling all six together lands where randomizing Crunchy would. **Randomize Page** randomizes the Crispy of the bank on screen.
+**Crunchy** is never randomized: only you can turn it and set its modulation depths. **Randomize All** randomizes the Crispy of at most two of the six pages per press, never all six at once, because scrambling all six together lands where randomizing Crunchy would. **Randomize Page** randomizes the Crispy of the page on screen.
 
 Full parameter reference: [`MANUAL.md`](MANUAL.md).
 
@@ -78,7 +78,7 @@ hardware firmware; it builds as two variants, `FroggersSolo` and `FroggersGuitar
 [`DAISY_MANUAL.md`](DAISY_MANUAL.md)), and its tests run with `make firmware-test`.
 
 - **Sheaf app docs:** [`app/README.md`](app/README.md) — build instructions, Sheaf submodule pin, status
-- **Manual:** [`MANUAL.md`](MANUAL.md) — global controls and all six parameter banks for the current
+- **Manual:** [`MANUAL.md`](MANUAL.md) — global controls and all six parameter pages for the current
   Sheaf app
 - **Daisy Field manual:** [`DAISY_MANUAL.md`](DAISY_MANUAL.md) — the Eurorack firmware (pages,
   buttons, modulation workflow, safe flash sequence)
@@ -103,9 +103,9 @@ It writes `app/build-launcher/Frogg3rs.app` and signs it. The script caps itself
 
 Change proposals and specs live under [`openspec/`](openspec/).
 
-Parameter reference for this app: [`MANUAL.md`](MANUAL.md) (global controls, then all six banks —
+Parameter reference for this app: [`MANUAL.md`](MANUAL.md) (global controls, then all six pages —
 Audio, Envelope, Filter, Drive, Delay, Reverb — parameter by parameter) and [`QUICK_DICT.md`](QUICK_DICT.md)
-(the same six banks, one line per parameter).
+(the same six pages, one line per parameter).
 
 MIDI controllers: the standalone and browser builds have a Controllers page where every front-screen
 control can be mapped, with ready-made presets for the MIDI Fighter Twister, the Akai APC40 mkII, and

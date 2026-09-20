@@ -64,7 +64,7 @@
 //      modulation drilldown surviving a cross-bank write, a same-bank write
 //      during a drilldown landing on the top-level parameter rather than
 //      whatever depth cell the drilldown maps that same encoder to, and a
-//      positive control proving the operator's OWN bank-select action does
+//      positive control proving the operator's OWN page-select action does
 //      move the page.
 //   6. Plugin-mode surface tree end-to-end: the REAL processor's
 //      surface (not a bare hand-built one) renders Play/Stop/Record absent,
@@ -966,13 +966,13 @@ TEST_CASE(host_automation_in_a_non_visible_bank_lands_there_and_leaves_the_opera
     // Read via the SAME BuildTree() call the editor's PortableComponent
     // makes every refresh.
     const synth::ui::NodeTree tree = processor.ApplicationForTest().PortableSurface().BuildTree();
-    const synth::ui::Node* targetBankTab =
-        FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(kTargetBank));
-    REQUIRE_TRUE(targetBankTab != nullptr);
-    REQUIRE_TRUE(!targetBankTab->selected);  // never flipped to the automated bank.
-    const synth::ui::Node* startingBankTab = FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(0));
-    REQUIRE_TRUE(startingBankTab != nullptr);
-    REQUIRE_TRUE(startingBankTab->selected);  // still the operator's own bank.
+    const synth::ui::Node* targetPageTab =
+        FindNodeById(tree, synth_froggers::FroggersNodeIds::PageButton(kTargetBank));
+    REQUIRE_TRUE(targetPageTab != nullptr);
+    REQUIRE_TRUE(!targetPageTab->selected);  // never flipped to the automated bank.
+    const synth::ui::Node* startingPageTab = FindNodeById(tree, synth_froggers::FroggersNodeIds::PageButton(0));
+    REQUIRE_TRUE(startingPageTab != nullptr);
+    REQUIRE_TRUE(startingPageTab->selected);  // still the operator's own bank.
 
     // -- Page-scoped action (Reset Page) targets the OPERATOR's bank -------
     // RandomizePage/ResetPage both act on *drillIn_ (FroggersAppCore.hpp:
@@ -1050,9 +1050,9 @@ TEST_CASE(host_automation_of_two_banks_in_one_pump_does_not_move_the_visible_pag
     // -- Neither write, nor their combination, moved the visible page ------
     REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == 0);
     const synth::ui::NodeTree tree = processor.ApplicationForTest().PortableSurface().BuildTree();
-    REQUIRE_TRUE(FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(0))->selected);
-    REQUIRE_TRUE(!FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(2))->selected);
-    REQUIRE_TRUE(!FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(4))->selected);
+    REQUIRE_TRUE(FindNodeById(tree, synth_froggers::FroggersNodeIds::PageButton(0))->selected);
+    REQUIRE_TRUE(!FindNodeById(tree, synth_froggers::FroggersNodeIds::PageButton(2))->selected);
+    REQUIRE_TRUE(!FindNodeById(tree, synth_froggers::FroggersNodeIds::PageButton(4))->selected);
 
     std::cout << "  [no oscillation] bank2.slot1=" << coreA.UIDisplayCenter(0) << ", bank4.slot6="
               << coreB.UIDisplayCenter(0) << ", ActivePageIndex() stayed "
@@ -1213,10 +1213,10 @@ TEST_CASE(host_automation_of_the_viewed_banks_own_parameter_lands_on_top_level_n
     processor.releaseResources();
 }
 
-// -- POSITIVE CONTROL: the operator's OWN bank-select action does move the
+// -- POSITIVE CONTROL: the operator's OWN page-select action does move the
 // visible page -- without this, every "the page did not move" assertion
 // above would prove only that nothing moves anything.
-TEST_CASE(operator_selecting_a_bank_does_move_the_visible_page) {
+TEST_CASE(operator_selecting_a_page_does_move_the_visible_page) {
     frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("operator_bank_select_moves_page"));
     processor.setRateAndBufferSizeDetails(48000.0, 256);
     processor.prepareToPlay(48000.0, 256);
@@ -1229,12 +1229,12 @@ TEST_CASE(operator_selecting_a_bank_does_move_the_visible_page) {
 
     REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == 0);
 
-    constexpr std::size_t kOperatorTargetBank = 4;
-    // The exact same public seam FroggersUiSurface.hpp's own bank buttons
+    constexpr std::size_t kOperatorTargetPage = 4;
+    // The exact same public seam FroggersUiSurface.hpp's own page buttons
     // call (app/FroggersUiSurface.hpp's `HandleAction`).
-    processor.ApplicationForTest().RequestPageSelect(kOperatorTargetBank);
+    processor.ApplicationForTest().RequestPageSelect(kOperatorTargetPage);
     runBlock();  // ProcessFrame() drains the pending request -- ActivePageIndex() itself moves this block.
-    REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == kOperatorTargetBank);
+    REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == kOperatorTargetPage);
 
     // BuildTree() below reads synth::ParameterManager::UIState, which
     // Engine::ProcessBlock() only re-publishes every uiPublishInterval_
@@ -1245,10 +1245,10 @@ TEST_CASE(operator_selecting_a_bank_does_move_the_visible_page) {
         runBlock();
     }
     const synth::ui::NodeTree tree = processor.ApplicationForTest().PortableSurface().BuildTree();
-    REQUIRE_TRUE(FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(kOperatorTargetBank))->selected);
-    REQUIRE_TRUE(!FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(0))->selected);
+    REQUIRE_TRUE(FindNodeById(tree, synth_froggers::FroggersNodeIds::PageButton(kOperatorTargetPage))->selected);
+    REQUIRE_TRUE(!FindNodeById(tree, synth_froggers::FroggersNodeIds::PageButton(0))->selected);
 
-    std::cout << "  [positive control] RequestPageSelect(" << kOperatorTargetBank << ") -> ActivePageIndex()="
+    std::cout << "  [positive control] RequestPageSelect(" << kOperatorTargetPage << ") -> ActivePageIndex()="
               << processor.ApplicationForTest().ActivePageIndex() << ".\n";
 
     processor.releaseResources();
@@ -2060,7 +2060,7 @@ std::string BuildPatchTextWithSessionExtrasKeepingOnlyFreezeLatched(const std::s
 
 // POSITIVE CONTROL folded into this test itself (not a separate case, same
 // as the Freeze latch round trip above already assumes its OWN positive
-// control from operator_selecting_a_bank_does_move_the_visible_page):
+// control from operator_selecting_a_page_does_move_the_visible_page):
 // the restored bank is asserted to DIFFER from the default (0) before it is
 // asserted to equal the operator's actual target, so a restore that quietly
 // no-ops (leaving the fresh processor at its own default) cannot pass this
@@ -2072,14 +2072,14 @@ TEST_CASE(state_information_round_trips_the_visible_bank_when_non_default) {
     juce::AudioBuffer<float> sourceBuffer(2, 256);
     juce::MidiBuffer midi;
 
-    constexpr std::size_t kOperatorBank = 4;
+    constexpr std::size_t kOperatorPage = 4;
     REQUIRE_TRUE(source.ApplicationForTest().ActivePageIndex() == 0);
-    // The exact same public seam FroggersUiSurface.hpp's own bank buttons
+    // The exact same public seam FroggersUiSurface.hpp's own page buttons
     // call (app/FroggersUiSurface.hpp's `HandleAction`) -- the OPERATOR
     // selecting a page, not a direct MessageIn::SelectParamBank push.
-    source.ApplicationForTest().RequestPageSelect(kOperatorBank);
+    source.ApplicationForTest().RequestPageSelect(kOperatorPage);
     PumpAndSettle(source, sourceBuffer, midi);
-    REQUIRE_TRUE(source.ApplicationForTest().ActivePageIndex() == kOperatorBank);
+    REQUIRE_TRUE(source.ApplicationForTest().ActivePageIndex() == kOperatorPage);
 
     juce::MemoryBlock state;
     source.getStateInformation(state);
@@ -2101,16 +2101,16 @@ TEST_CASE(state_information_round_trips_the_visible_bank_when_non_default) {
     fresh.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
     PumpAndSettle(fresh, freshBuffer, midi);
 
-    const std::size_t restoredBankIx = fresh.ApplicationForTest().ActivePageIndex();
-    REQUIRE_TRUE(restoredBankIx != 0);  // positive control -- see this test's own header comment.
-    REQUIRE_TRUE(restoredBankIx == kOperatorBank);
+    const std::size_t restoredPageIx = fresh.ApplicationForTest().ActivePageIndex();
+    REQUIRE_TRUE(restoredPageIx != 0);  // positive control -- see this test's own header comment.
+    REQUIRE_TRUE(restoredPageIx == kOperatorPage);
 
     fresh.releaseResources();
 
-    std::cout << "  [state] visible bank round trip: operator selected bank " << kOperatorBank
+    std::cout << "  [state] visible page round trip: operator selected page " << kOperatorPage
               << " -> survived getStateInformation() -> setStateInformation() on a fresh processor, "
                  "ActivePageIndex()="
-              << restoredBankIx << ".\n";
+              << restoredPageIx << ".\n";
 }
 
 TEST_CASE(state_information_restore_clamps_an_out_of_range_saved_bank_to_the_default_page) {

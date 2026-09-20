@@ -166,8 +166,8 @@ std::vector<float> SnapshotAllParams(synth_froggers::FroggersApp& app) {
 //   Reset All/Page     -- every checked value returns to its startup-patch
 //                        default (RandomizeAll/Page, earlier in the same
 //                        catalog order, is what dirtied it)
-//   Bank Previous/Next -- ActivePageIndex() moves by -1/+1 mod bank count
-//   Bank N              -- ActivePageIndex() == N
+//   Page Previous/Next -- ActivePageIndex() moves by -1/+1 mod page count
+//   Page N              -- ActivePageIndex() == N
 //   Scene 1/2           -- Manager().Scene().blend reads 0.0/1.0
 //   BPM                 -- DisplayTempoBpm() reads the midpoint of
 //                          [kFroggersBpmMin, kFroggersBpmMax] for value 0.5
@@ -238,9 +238,9 @@ TEST_CASE(midi_app_action_walk_moves_the_state_the_screen_moves) {
                     maxAbsDeltaAfter = std::max(maxAbsDeltaAfter, std::fabs(current[i] - defaultValues[i]));
                 }
             }
-            RequireForAction(entry, maxAbsDeltaAfter < 1.0e-6f, "must return every bank to its default values");
+            RequireForAction(entry, maxAbsDeltaAfter < 1.0e-6f, "must return every page to its default values");
         } else if (entry.action == synth_froggers::FroggersActions::kResetPage) {
-            // Dirty the current bank again first -- a reset measured against
+            // Dirty the current page again first -- a reset measured against
             // a page that never moved would prove nothing.
             const std::optional<std::size_t> randomizePageIx =
                 synth::FindMidiAppAction(catalog, synth_froggers::FroggersActions::kRandomizePage, "");
@@ -264,22 +264,22 @@ TEST_CASE(midi_app_action_walk_moves_the_state_the_screen_moves) {
                     maxAbsDeltaAfter,
                     std::fabs(app.Parameters().PageParameter(bankIx, slot).SceneCenter(0) - defaultValues[base + slot]));
             }
-            RequireForAction(entry, maxAbsDeltaAfter < 1.0e-6f, "must return the current bank to its default values");
+            RequireForAction(entry, maxAbsDeltaAfter < 1.0e-6f, "must return the current page to its default values");
         } else if (entry.action == synth_froggers::FroggersActions::kPagePrevious) {
             const std::size_t before = app.ActivePageIndex();
             PushAppAction(rig, ix, 0.0f);
             const std::size_t expected =
                 (before + synth_froggers::kFroggersPageCount - 1) % synth_froggers::kFroggersPageCount;
-            RequireForAction(entry, app.ActivePageIndex() == expected, "must move to the previous bank");
+            RequireForAction(entry, app.ActivePageIndex() == expected, "must move to the previous page");
         } else if (entry.action == synth_froggers::FroggersActions::kPageNext) {
             const std::size_t before = app.ActivePageIndex();
             PushAppAction(rig, ix, 0.0f);
             const std::size_t expected = (before + 1) % synth_froggers::kFroggersPageCount;
-            RequireForAction(entry, app.ActivePageIndex() == expected, "must move to the next bank");
+            RequireForAction(entry, app.ActivePageIndex() == expected, "must move to the next page");
         } else if (entry.action == synth_froggers::FroggersActions::kPageSelect) {
             PushAppAction(rig, ix, 0.0f);
             const std::size_t expected = static_cast<std::size_t>(std::stoul(entry.value));
-            RequireForAction(entry, app.ActivePageIndex() == expected, "must select the named bank");
+            RequireForAction(entry, app.ActivePageIndex() == expected, "must select the named page");
         } else if (entry.action == synth_froggers::FroggersActions::kSceneSelect) {
             PushAppAction(rig, ix, 0.0f);
             const float expected = entry.value == "0" ? 0.0f : 1.0f;
@@ -774,7 +774,7 @@ TEST_CASE(twister_shifted_tempo_turn_moves_the_tempo_the_same_on_every_page) {
     rig.RunBlocks(kSettleBlocks);
 
     const double tempoBeforeSecondTurn = rig.Engine().Clock().TempoBpm();
-    rig.SendMidi(0, synth::BasicMidi::CC(0, 3, 8, 127));  // Bank Next, unshifted
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 3, 8, 127));  // Page Next, unshifted
     rig.RunBlocks(kSettleBlocks);
 
     rig.SendMidi(0, synth::BasicMidi::CC(0, 3, 13, 127));  // Shift down
@@ -848,25 +848,25 @@ TEST_CASE(launchpad_defaults_pad_actions_resolve_against_the_catalog) {
 }
 
 // ---------------------------------------------------------------------------
-// launchpad_defaults_bank_column_covers_every_bank
+// launchpad_defaults_page_column_covers_every_page
 // ---------------------------------------------------------------------------
-TEST_CASE(launchpad_defaults_bank_column_covers_every_bank) {
+TEST_CASE(launchpad_defaults_page_column_covers_every_page) {
     const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
 
     for (const LaunchpadPresetId& preset : kLaunchpadPresetIds) {
         const synth::MidiAppDeviceDefault& device = RequireDeviceDefault(catalog, preset.id);
-        std::size_t bankPadCount = 0;
+        std::size_t pagePadCount = 0;
         for (const synth::MidiControllerSystemMessageAssociation& assoc : device.config.systemMessages) {
             if (assoc.appAction != synth_froggers::FroggersActions::kPageSelect) {
                 continue;
             }
             REQUIRE_TRUE(assoc.launchpadPosition.has_value());
             REQUIRE_TRUE(assoc.launchpadPosition->x == 8);
-            REQUIRE_TRUE(assoc.launchpadPosition->y == static_cast<int>(bankPadCount));
-            REQUIRE_TRUE(assoc.appActionValue == std::to_string(bankPadCount));
-            ++bankPadCount;
+            REQUIRE_TRUE(assoc.launchpadPosition->y == static_cast<int>(pagePadCount));
+            REQUIRE_TRUE(assoc.appActionValue == std::to_string(pagePadCount));
+            ++pagePadCount;
         }
-        REQUIRE_TRUE(bankPadCount == synth_froggers::kFroggersPageCount);
+        REQUIRE_TRUE(pagePadCount == synth_froggers::kFroggersPageCount);
     }
 }
 

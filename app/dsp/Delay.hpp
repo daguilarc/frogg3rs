@@ -876,7 +876,7 @@ struct StereoDelay
         // while Diffusion sat at its default). Frozen history is stale
         // history: each section holds up to kSection3BaseSeconds (21.1 ms)
         // of it, so re-engaging Diffusion replayed audio captured at
-        // whenever the knob was last nonzero. `ddif` is an ordinary bank
+        // whenever the knob was last nonzero. `ddif` is an ordinary page
         // parameter and therefore a modulation TARGET like the other 83, so
         // a source sweeping it across zero would have frozen and thawed that
         // stale content at audio rate -- not merely a knob-turn click.
@@ -1152,7 +1152,7 @@ private:
 // freeze/reverse/diffusion arguments carry the retired Detune/Color/Halo
 // rows' new identities (Freeze/Reverse blend/Diffusion,
 // FroggersParameters.hpp). Named by DSP field, not by Delay-page slot --
-// the bank's own slots move independently of this order as the Delay page
+// the page's own slots move independently of this order as the Delay page
 // gets renumbered (its own call site says which slot feeds which argument).
 // Callers supply the nine already-fuegoized/modulated 0..1 values in this
 // fixed field order; this function owns none of the smoothing/mod/fuego
