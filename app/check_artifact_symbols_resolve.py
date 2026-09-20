@@ -92,11 +92,32 @@ read, so a claim in a change's other documents is not checked; and a qualified
 CALL in the trees grants membership, which is sound in C++ except through a
 base class.
 
+A C++ KEYWORD is not a claim either, for the same reason a bare CamelCase word
+is not: `static_assert`, `const_cast` and the rest of KEYWORDS below are
+language, not a name someone declared, even though several of them are shaped
+like a snake_case symbol. The same set already exists to keep a keyword out of
+`declared`; a token this gate would otherwise ask `declared` about is checked
+against that set first.
+
+EXTERNAL_SCOPES names a scope this gate does not index under PATH_ROOTS. JUCE
+is fetched by the build rather than vendored under app/, External/Sheaf/ or
+src/ (`app/check_no_juce.cpp` documents it as the one dependency the app core
+is built to keep out, and the wider tree still calls into it), so `scopes`
+never contains `juce` from this repository's own trees. A qualified name
+whose outermost segment names one of these is resolved instead against the
+JUCE checkout this machine's build already depends on (`JUCE_DIR`, default
+`~/JUCE`), read the same way this repository's own declarations are. When no
+such checkout is present, the citation is reported unresolved rather than
+waved through: this gate already treats a scope it fails to parse as an empty
+member set instead of silently accepting into it, and an unindexable JUCE is
+the same case.
+
 Usage: check_artifact_symbols_resolve.py <app-dir>
 The repository root is that argument's parent, matching the one-argument,
 cwd-independent convention every other check script in this directory uses.
 """
 
+import functools
 import os
 import re
 import subprocess
@@ -140,6 +161,11 @@ CALL_FORM = re.compile(r"^(" + ID + r")\(\)$")
 CONSTANT = re.compile(r"^k[A-Z][A-Za-z0-9]*$")
 SNAKE_CASE = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$")
 
+# A scope never vendored under app/, External/Sheaf/, or src/, so `scopes`
+# never contains it from this repository's own trees; resolved instead
+# against a JUCE checkout, see `juce_declarations` below.
+EXTERNAL_SCOPES = {"juce"}
+
 # A forward reference is declared by the change's own words, and the markers are
 # deliberately emphatic. Lowercase `new` was tried and dropped: it reads as
 # ordinary English -- "a new multiply in the path" -- so a sentence nobody meant
@@ -155,6 +181,7 @@ DECLARED_ABSENT = re.compile(r"`([^`]+)`\s+does not exist")
 # the gap rather than line by line.
 SCOPE_OPEN = re.compile(
     r"\b(?P<kind>namespace|class|struct|union|enum\s+class|enum\s+struct|enum)\s+"
+    r"(?:[A-Z][A-Z0-9_]*\s+)?"  # an export/visibility macro, e.g. JUCE's `class JUCE_API Foo`
     r"(?P<name>" + ID + r"(?:\s*::\s*" + ID + r")*)"
     r"\s*(?:final\b\s*)?(?::[^;{}]*)?\{", re.S)
 # An enumerator is a bare name in the body, with or without an initialiser, so
@@ -189,90 +216,125 @@ def scope_keys(qualified):
     return ["::".join(parts[i:]) for i in range(len(parts))]
 
 
-def declarations(repo):
-    """Which names each scope declares, and the set of every declared name.
+def scan_root(root_dir, members, scopes, loose):
+    """Reads one source tree's declarations into `members`/`scopes`/`loose`.
 
     The tree is read with comments blanked, so a name that appears only in a
     comment declares nothing. Scopes are tracked by brace depth: a member is a
     name declared on a line sitting directly inside a class, struct, enum or
-    namespace body, plus any `Scope::name(` definition written out of line."""
-    members = {}
-    scopes = set()
-    loose = set()
+    namespace body, plus any `Scope::name(` definition written out of line.
+    Shared by the repository's own trees and, lazily, by a JUCE checkout: the
+    declaration shapes a class or namespace uses are the same C++ in both."""
 
     def add(keys, name):
         for key in keys:
             members.setdefault(key, set()).add(name)
 
+    for full in walk_sources(root_dir, SOURCE_EXT):
+        try:
+            text = blank_comment_regions(read(full), False)
+        except OSError:
+            continue
+        loose |= {m.group("name") for m in LOCAL_CONST.finditer(text)}
+        opens = {m.end() - 1: (re.sub(r"\s+", "", m.group("name")),
+                               m.group("kind").startswith("enum"))
+                 for m in SCOPE_OPEN.finditer(text)}
+        lines = text.split("\n")
+        starts, pos = [], 0
+        for line in lines:
+            starts.append(pos)
+            pos += len(line) + 1
+
+        # One pass over the braces records, for each line, the scope whose
+        # body that line sits directly in. Reading the depth at the line's
+        # START is what lets a declaration that itself opens a brace --
+        # `float RouteFilterBank(float x) {` -- still count as a member.
+        enclosing = []
+        depth, stack, index = 0, [], 0
+        for offset, char in enumerate(text):
+            while index < len(starts) and starts[index] == offset:
+                inside = stack[-1][2:] if stack and depth == stack[-1][1] + 1 else ((), False)
+                enclosing.append(inside)
+                index += 1
+            if char == "{":
+                if offset in opens:
+                    name, is_enum = opens[offset]
+                    qualified = "::".join([s[0] for s in stack] + [name])
+                    keys = scope_keys(qualified)
+                    for key in keys:
+                        members.setdefault(key, set())
+                        scopes.add(key)
+                    if stack:
+                        add(stack[-1][2], name.split("::")[0])
+                    stack.append((name, depth, keys, is_enum))
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if stack and stack[-1][1] == depth:
+                    stack.pop()
+        while len(enclosing) < len(lines):
+            enclosing.append(((), False))
+
+        for n, line in enumerate(lines):
+            keys, is_enum = enclosing[n]
+            if keys and is_enum:
+                m = ENUMERATOR.match(line)
+                if m and m.group("name") not in KEYWORDS:
+                    add(keys, m.group("name"))
+            elif keys and not SCOPE_LINE.match(line):
+                for m in DECL_FN.finditer(line):
+                    if m.group("name") not in KEYWORDS:
+                        add(keys, m.group("name"))
+                for m in DECL_VAR.finditer(line):
+                    if m.group("name") not in KEYWORDS:
+                        add(keys, m.group("name"))
+            for m in OUT_OF_LINE.finditer(line):
+                add(scope_keys(m.group("scope")), m.group("name"))
+
+
+def declarations(repo):
+    """Which names each scope declares, and the set of every declared name,
+    read from this repository's own indexed trees."""
+    members = {}
+    scopes = set()
+    loose = set()
+
     for base in ("app", "External/Sheaf", "src"):
         root_dir = os.path.join(repo, base)
-        if not os.path.isdir(root_dir):
-            continue
-        for full in walk_sources(root_dir, SOURCE_EXT):
-            try:
-                text = blank_comment_regions(read(full), False)
-            except OSError:
-                continue
-            loose |= {m.group("name") for m in LOCAL_CONST.finditer(text)}
-            opens = {m.end() - 1: (re.sub(r"\s+", "", m.group("name")),
-                                   m.group("kind").startswith("enum"))
-                     for m in SCOPE_OPEN.finditer(text)}
-            lines = text.split("\n")
-            starts, pos = [], 0
-            for line in lines:
-                starts.append(pos)
-                pos += len(line) + 1
-
-            # One pass over the braces records, for each line, the scope whose
-            # body that line sits directly in. Reading the depth at the line's
-            # START is what lets a declaration that itself opens a brace --
-            # `float RouteFilterBank(float x) {` -- still count as a member.
-            enclosing = []
-            depth, stack, index = 0, [], 0
-            for offset, char in enumerate(text):
-                while index < len(starts) and starts[index] == offset:
-                    inside = stack[-1][2:] if stack and depth == stack[-1][1] + 1 else ((), False)
-                    enclosing.append(inside)
-                    index += 1
-                if char == "{":
-                    if offset in opens:
-                        name, is_enum = opens[offset]
-                        qualified = "::".join([s[0] for s in stack] + [name])
-                        keys = scope_keys(qualified)
-                        for key in keys:
-                            members.setdefault(key, set())
-                            scopes.add(key)
-                        if stack:
-                            add(stack[-1][2], name.split("::")[0])
-                        stack.append((name, depth, keys, is_enum))
-                    depth += 1
-                elif char == "}":
-                    depth -= 1
-                    if stack and stack[-1][1] == depth:
-                        stack.pop()
-            while len(enclosing) < len(lines):
-                enclosing.append(((), False))
-
-            for n, line in enumerate(lines):
-                keys, is_enum = enclosing[n]
-                if keys and is_enum:
-                    m = ENUMERATOR.match(line)
-                    if m and m.group("name") not in KEYWORDS:
-                        add(keys, m.group("name"))
-                elif keys and not SCOPE_LINE.match(line):
-                    for m in DECL_FN.finditer(line):
-                        if m.group("name") not in KEYWORDS:
-                            add(keys, m.group("name"))
-                    for m in DECL_VAR.finditer(line):
-                        if m.group("name") not in KEYWORDS:
-                            add(keys, m.group("name"))
-                for m in OUT_OF_LINE.finditer(line):
-                    add(scope_keys(m.group("scope")), m.group("name"))
+        if os.path.isdir(root_dir):
+            scan_root(root_dir, members, scopes, loose)
 
     declared = set(scopes) | loose
     for names in members.values():
         declared |= names
     return members, scopes, declared
+
+
+def juce_checkout():
+    """Where this machine's build finds JUCE, matching the Makefile's own
+    `JUCE_DIR ?= $(HOME)/JUCE`: the environment variable if the build was
+    told to use a different one, else `~/JUCE`. Returns the `modules`
+    directory the sources live under, or None when it is not there -- an
+    absent checkout is not this gate's problem to fix, only to not pretend
+    past."""
+    juce_dir = os.environ.get("JUCE_DIR", os.path.expanduser("~/JUCE"))
+    modules = os.path.join(juce_dir, "modules")
+    return modules if os.path.isdir(modules) else None
+
+
+@functools.lru_cache(maxsize=1)
+def juce_declarations():
+    """JUCE's own members and scopes, read the same way this repository's are.
+    Computed once, lazily, only when a change actually cites a `juce::`
+    qualified name -- most runs of this gate cite none -- and cached for the
+    rest of the run."""
+    members = {}
+    scopes = set()
+    loose = set()
+    modules = juce_checkout()
+    if modules is not None:
+        scan_root(modules, members, scopes, loose)
+    return members, scopes
 
 
 def change_artifacts(repo):
@@ -373,6 +435,9 @@ def in_a_change_this_checkout_does_not_have(token, repo):
 
 def resolve(token, repo, paths, members, scopes, declared, tests):
     """Why this token does not resolve, or None when it does or is prose."""
+    if token in KEYWORDS:
+        return None
+
     if PATH_TOKEN.match(token) or DIR_TOKEN.match(token):
         if not under_indexed_root(token):
             return None
@@ -387,6 +452,16 @@ def resolve(token, repo, paths, members, scopes, declared, tests):
         scope, _, leaf = token.rpartition("::")
         if leaf in members.get(scope, ()):
             return None
+        if scope.split("::", 1)[0] in EXTERNAL_SCOPES:
+            if juce_checkout() is None:
+                return (f"`{token}` cites `juce`, and no JUCE checkout is indexable on "
+                        f"this machine ($JUCE_DIR or ~/JUCE) to resolve it against")
+            juce_members, juce_scopes = juce_declarations()
+            if leaf in juce_members.get(scope, ()):
+                return None
+            if scope not in juce_scopes:
+                return f"`{token}` names no scope `{scope}` declared in the JUCE checkout"
+            return f"`{token}` names `{leaf}`, which `{scope}` does not declare in JUCE"
         if scope not in scopes:
             return f"`{token}` names no scope `{scope}` declared in this tree"
         return f"`{token}` names `{leaf}`, which `{scope}` does not declare"

@@ -24,7 +24,11 @@
 // encoder that moves Crunchy (position kFroggersCrunchySlot) carries a
 // shifted job too: while Shift is held, turning it moves the scene blend
 // instead and Crunchy does not move; released, the same turn moves
-// Crunchy again. No other Twister encoder has a shifted job.
+// Crunchy again. The encoder that moves Crispy (position
+// kFroggersCrispySlot) carries a shifted job as well: while Shift is
+// held, turning it moves the tempo instead and Crispy does not move,
+// whichever parameter page is on screen; released, the same turn moves
+// Crispy again. No other Twister encoder has a shifted job.
 //
 // APC40 mkII (Generic): the unit's eight device knobs follow whichever
 // Track Select button is lit (track 1 = channel 0), so Track 1 must stay
@@ -103,11 +107,17 @@ inline synth::MidiAppDeviceDefault TwisterDeviceDefault() {
     synth::MidiControllerProfileConfig config;
     config.encoderInput = synth::EncoderMidiInConfig::TwisterDefault(0);
     // Crunchy's own turn gets a second job under Shift: the scene blend.
-    // Found by slot, not by writing its CC number into this preset again.
+    // Crispy's own turn gets a second job under Shift too: the tempo. Both
+    // are found by slot, not by writing a CC number into this preset again.
+    // The loop does not break on the first match: Crispy (position 14)
+    // comes before Crunchy (position 15) in turn order, so breaking early
+    // would stop at Crispy and silently leave Crunchy's shifted job unset.
     for (synth::EncoderMidiMapping& turn : config.encoderInput->turns) {
         if (turn.position == kFroggersCrunchySlot) {
             turn.shiftedJob = synth::EncoderShiftedJob::SceneBlend;
-            break;
+        }
+        if (turn.position == kFroggersCrispySlot) {
+            turn.shiftedJob = synth::EncoderShiftedJob::TempoBpm;
         }
     }
     config.encoderOutput = synth::EncoderMidiOutConfig::TwisterDefault(0);
@@ -336,6 +346,7 @@ inline synth::MidiAppCatalog FroggersMidiCatalog() {
         synth::UISystemMessage::Shift,
     };
     catalog.encoderPressAction = FroggersActions::kEncoderPress;
+    catalog.tempoAction = FroggersActions::kBpm;
     catalog.patchCarriesMappings = true;
     catalog.deviceDefaults = {
         TwisterDeviceDefault(),

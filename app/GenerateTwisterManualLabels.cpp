@@ -232,7 +232,7 @@ int main(int argc, char** argv) {
     std::array<bool, kEncoderCount> turnSeen{};
     std::array<std::string, kEncoderCount> turnLabels;
     // The turn's shifted job, in the same label vocabulary the Controllers
-    // page shows (EncoderShiftedJobCatalog(): "(none)" or "Scene Blend").
+    // page shows (EncoderShiftedJobCatalog()).
     std::array<std::string, kEncoderCount> turnShiftedJobLabels;
     for (const synth::EncoderMidiMapping& turn : turns) {
         if (turn.position >= kEncoderCount || turnSeen[turn.position]) {

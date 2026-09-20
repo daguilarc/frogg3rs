@@ -88,7 +88,7 @@
     {
       "position": 14,
       "turn": "Crispy",
-      "shiftedTurn": "(none)",
+      "shiftedTurn": "BPM",
       "push": "Drill"
     },
     {
@@ -288,7 +288,8 @@
             "type": "cc"
           },
           "slotIx": 0,
-          "position": 14
+          "position": 14,
+          "shiftedJob": "tempoBpm"
         },
         {
           "control": {

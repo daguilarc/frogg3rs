@@ -392,6 +392,22 @@ TEST_CASE(catalog_names_every_front_screen_action) {
 }
 
 // ---------------------------------------------------------------------------
+// catalog_names_the_bpm_action_as_its_tempo_action
+// ---------------------------------------------------------------------------
+TEST_CASE(catalog_names_the_bpm_action_as_its_tempo_action) {
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+    REQUIRE_TRUE(catalog.tempoAction == synth_froggers::FroggersActions::kBpm);
+
+    const std::optional<std::size_t> tempoActionIx =
+        synth::FindMidiAppAction(catalog, catalog.tempoAction, "");
+    REQUIRE_TRUE(tempoActionIx.has_value());
+    const synth::MidiAppAction& tempoAction = catalog.actions[*tempoActionIx];
+    REQUIRE_TRUE(tempoAction.analogRange.has_value());
+    REQUIRE_TRUE(tempoAction.analogRange->first == synth_froggers::kFroggersBpmMin);
+    REQUIRE_TRUE(tempoAction.analogRange->second == synth_froggers::kFroggersBpmMax);
+}
+
+// ---------------------------------------------------------------------------
 // device_defaults_are_valid_and_address_exactly_the_documented_controls
 // ---------------------------------------------------------------------------
 TEST_CASE(device_defaults_are_valid_and_address_exactly_the_documented_controls) {
@@ -430,17 +446,38 @@ TEST_CASE(device_defaults_are_valid_and_address_exactly_the_documented_controls)
     REQUIRE_TRUE(twister.config.encoderInput->turns.size() == 16);
     REQUIRE_TRUE(twister.config.encoderInput->pushes.size() == 16);
 
-    // Exactly one Twister turn carries a shifted job: the one at Crunchy's
-    // slot, and its job is Scene blend. No push carries one.
+    // Exactly two Twister turns carry a shifted job: Crunchy's, Scene
+    // blend, and Crispy's, Tempo. Every other turn and every push carries
+    // none.
     std::size_t twisterShiftedTurnCount = 0;
+    std::optional<synth::EncoderShiftedJob> crunchyShiftedJob;
+    std::optional<synth::EncoderShiftedJob> crispyShiftedJob;
     for (const synth::EncoderMidiMapping& turn : twister.config.encoderInput->turns) {
+        if (turn.position == synth_froggers::kFroggersCrunchySlot) {
+            crunchyShiftedJob = turn.shiftedJob;
+        } else if (turn.position == synth_froggers::kFroggersCrispySlot) {
+            crispyShiftedJob = turn.shiftedJob;
+        } else {
+            REQUIRE_TRUE(turn.shiftedJob == synth::EncoderShiftedJob::None);
+        }
         if (turn.shiftedJob != synth::EncoderShiftedJob::None) {
             ++twisterShiftedTurnCount;
-            REQUIRE_TRUE(turn.position == synth_froggers::kFroggersCrunchySlot);
-            REQUIRE_TRUE(turn.shiftedJob == synth::EncoderShiftedJob::SceneBlend);
         }
     }
-    REQUIRE_TRUE(twisterShiftedTurnCount == 1);
+    REQUIRE_TRUE(twisterShiftedTurnCount == 2);
+    REQUIRE_TRUE(crunchyShiftedJob.has_value() && *crunchyShiftedJob == synth::EncoderShiftedJob::SceneBlend);
+    REQUIRE_TRUE(crispyShiftedJob.has_value() && *crispyShiftedJob == synth::EncoderShiftedJob::TempoBpm);
+    // Printed explicitly, not inferred from the count above: a loop that
+    // assigns one slot and silently drops the other must not pass unnoticed.
+    // What is printed is what the REQUIRE_TRUE calls above actually proved
+    // for each slot -- its exact shifted job, not merely that it is set --
+    // since a bare non-None check would be strictly weaker than that.
+    std::cout << "Twister Crunchy slot (" << synth_froggers::kFroggersCrunchySlot
+              << ") shiftedJob == SceneBlend: "
+              << (*crunchyShiftedJob == synth::EncoderShiftedJob::SceneBlend) << "\n";
+    std::cout << "Twister Crispy slot (" << synth_froggers::kFroggersCrispySlot
+              << ") shiftedJob == TempoBpm: "
+              << (*crispyShiftedJob == synth::EncoderShiftedJob::TempoBpm) << "\n";
     for (const synth::EncoderMidiMapping& push : twister.config.encoderInput->pushes) {
         REQUIRE_TRUE(push.shiftedJob == synth::EncoderShiftedJob::None);
     }
@@ -625,6 +662,132 @@ TEST_CASE(twister_shift_turns_crunchys_knob_into_the_scene_blend) {
 
     REQUIRE_TRUE(rig.Engine().Manager().Scene().blend == blendAfterShiftedTurn);
     REQUIRE_TRUE(app.Parameters().Crunchy().GetRaw(0) > crunchyBefore);
+}
+
+// ---------------------------------------------------------------------------
+// twister_shift_turns_crispys_knob_into_the_tempo
+// ---------------------------------------------------------------------------
+//
+// Same convention as twister_shift_turns_crunchys_knob_into_the_scene_blend,
+// on the encoder that moves Crispy (position kFroggersCrispySlot, channel 0
+// CC 14).
+TEST_CASE(twister_shift_turns_crispys_knob_into_the_tempo) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("twister_shift_crispy"));
+    rig.RunBlocks(4);
+    synth_froggers::FroggersApp& app = rig.Application();
+
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+    const synth::MidiAppDeviceDefault& twister = RequireDeviceDefault(catalog, "froggers.twister");
+
+    synth::MidiControllerSlot slot;
+    slot.name = twister.id;
+    slot.kind = twister.kind;
+    slot.config = twister.config;
+    synth::MidiInstrumentConfig instrument;
+    REQUIRE_TRUE(instrument.AddController(std::move(slot)));
+    rig.InstallInstrumentForTest(std::move(instrument));
+
+    const double tempoBefore = rig.Engine().Clock().TempoBpm();
+    const float crispyBefore =
+        app.Parameters().Crispy(synth_froggers::FroggersBankId::Audio).GetRaw(0);
+
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 3, 13, 127));  // Shift down
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 0, 14, 65));   // encoder 15 clockwise, shifted
+    rig.RunBlocks(kSettleBlocks);
+
+    const double tempoAfterShiftedTurn = rig.Engine().Clock().TempoBpm();
+    REQUIRE_TRUE(tempoAfterShiftedTurn > tempoBefore);
+    REQUIRE_TRUE(app.Parameters().Crispy(synth_froggers::FroggersBankId::Audio).GetRaw(0) == crispyBefore);
+
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 3, 13, 0));   // Shift up
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 0, 14, 65));  // encoder 15 clockwise, unshifted
+    rig.RunBlocks(kSettleBlocks);
+
+    REQUIRE_TRUE(rig.Engine().Clock().TempoBpm() == tempoAfterShiftedTurn);
+    REQUIRE_TRUE(app.Parameters().Crispy(synth_froggers::FroggersBankId::Audio).GetRaw(0) > crispyBefore);
+}
+
+// ---------------------------------------------------------------------------
+// twister_shifted_tempo_turn_stops_at_each_end_of_the_range
+// ---------------------------------------------------------------------------
+TEST_CASE(twister_shifted_tempo_turn_stops_at_each_end_of_the_range) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("twister_shift_tempo_range"));
+    rig.RunBlocks(4);
+
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+    const synth::MidiAppDeviceDefault& twister = RequireDeviceDefault(catalog, "froggers.twister");
+
+    synth::MidiControllerSlot slot;
+    slot.name = twister.id;
+    slot.kind = twister.kind;
+    slot.config = twister.config;
+    synth::MidiInstrumentConfig instrument;
+    REQUIRE_TRUE(instrument.AddController(std::move(slot)));
+    rig.InstallInstrumentForTest(std::move(instrument));
+
+    REQUIRE_TRUE(rig.Engine().Clock().SetTempoBpm(synth_froggers::kFroggersBpmMin));
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 3, 13, 127));  // Shift down
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 0, 14, 63));   // encoder 15 counter-clockwise, shifted
+    rig.RunBlocks(kSettleBlocks);
+    REQUIRE_TRUE(rig.Engine().Clock().TempoBpm() == synth_froggers::kFroggersBpmMin);
+
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 0, 14, 65));  // encoder 15 clockwise, shifted
+    rig.RunBlocks(kSettleBlocks);
+    REQUIRE_TRUE(rig.Engine().Clock().TempoBpm() > synth_froggers::kFroggersBpmMin);
+
+    REQUIRE_TRUE(rig.Engine().Clock().SetTempoBpm(synth_froggers::kFroggersBpmMax));
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 0, 14, 65));  // encoder 15 clockwise, shifted
+    rig.RunBlocks(kSettleBlocks);
+    REQUIRE_TRUE(rig.Engine().Clock().TempoBpm() == synth_froggers::kFroggersBpmMax);
+}
+
+// ---------------------------------------------------------------------------
+// twister_shifted_tempo_turn_moves_the_tempo_the_same_on_every_page
+// ---------------------------------------------------------------------------
+TEST_CASE(twister_shifted_tempo_turn_moves_the_tempo_the_same_on_every_page) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("twister_shift_tempo_pages"));
+    rig.RunBlocks(4);
+    synth_froggers::FroggersApp& app = rig.Application();
+
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+    const synth::MidiAppDeviceDefault& twister = RequireDeviceDefault(catalog, "froggers.twister");
+
+    synth::MidiControllerSlot slot;
+    slot.name = twister.id;
+    slot.kind = twister.kind;
+    slot.config = twister.config;
+    synth::MidiInstrumentConfig instrument;
+    REQUIRE_TRUE(instrument.AddController(std::move(slot)));
+    rig.InstallInstrumentForTest(std::move(instrument));
+
+    const double tempoBefore = rig.Engine().Clock().TempoBpm();
+    const float audioCrispyBefore =
+        app.Parameters().Crispy(synth_froggers::FroggersBankId::Audio).GetRaw(0);
+
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 3, 13, 127));  // Shift down
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 0, 14, 65));   // encoder 15 clockwise, shifted
+    rig.RunBlocks(kSettleBlocks);
+    const double firstRise = rig.Engine().Clock().TempoBpm() - tempoBefore;
+    REQUIRE_TRUE(firstRise > 0.0);
+
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 3, 13, 0));  // Shift up before switching pages
+    rig.RunBlocks(kSettleBlocks);
+
+    const double tempoBeforeSecondTurn = rig.Engine().Clock().TempoBpm();
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 3, 8, 127));  // Bank Next, unshifted
+    rig.RunBlocks(kSettleBlocks);
+
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 3, 13, 127));  // Shift down
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 0, 14, 65));   // encoder 15 clockwise, shifted
+    rig.RunBlocks(kSettleBlocks);
+    const double secondRise = rig.Engine().Clock().TempoBpm() - tempoBeforeSecondTurn;
+    REQUIRE_TRUE(std::fabs(secondRise - firstRise) < 1e-6);
+
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 3, 13, 0));  // Shift up
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 0, 14, 65));  // encoder 15 clockwise, unshifted, new page
+    rig.RunBlocks(kSettleBlocks);
+
+    REQUIRE_TRUE(app.Parameters().Crispy(synth_froggers::FroggersBankId::Audio).GetRaw(0) == audioCrispyBefore);
 }
 
 // ---------------------------------------------------------------------------

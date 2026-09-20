@@ -291,14 +291,16 @@ reinstalls the preset's mappings without renaming the row or changing its ports.
 
 ### Reading a controller row
 
-Each row is two lines. The first line shows the disclosure arrow, the controller's name, its device
-label and, on a Launchpad row, a **Variant** selector holding the Launchpad model its profile
-records. The device label is the preset that created the row (for example **MIDI Fighter Twister**
-or **Launchpad X**) for as long as that preset still resolves; otherwise it is the MIDI input the
-row is bound to, or "(none)" until one is bound. A Custom row has no preset, so it always shows
-this way. The second line holds a status dot before each of the **MIDI in** and **MIDI out** port
-selectors, then **Delete**, and **Restore** once the row's mappings diverge from its preset. A
-legend above the first row names the dot colours: online, offline, not set.
+Each row is two lines, or three while its stored mappings differ from the preset that created it.
+The first line shows the disclosure arrow, the controller's name, its device label and, on a
+Launchpad row, a **Variant** selector holding the Launchpad model its profile records. The device
+label is the preset that created the row (for example **MIDI Fighter Twister** or **Launchpad X**)
+for as long as that preset still resolves; otherwise it is the MIDI input the row is bound to, or
+"(none)" until one is bound. A Custom row has no preset, so it always shows this way. The second
+line holds a status dot before each of the **MIDI in** and **MIDI out** port selectors, then
+**Delete**. Once the row's mappings diverge from its preset, a third line appears with a sentence
+saying so and **Restore**, which reinstalls the preset and discards the row's edits. A legend above
+the first row names the dot colours: online, offline, not set.
 
 A released row, which a configuration saved by an earlier version can hold, shows its name, device
 label, and a **Released** badge on the first line, and its stored MIDI in/out ports and **Delete**
@@ -323,7 +325,8 @@ device its ports read "(none)".
 Every front-screen control. Encoder turns (relative or absolute), encoder pushes (which drill into a
 knob's modulation exactly like an on-screen press), Play, Stop, Freeze, Record, Randomize All,
 Randomize Page, Reset All, Reset Page, Bank 1 to 6, Bank Previous, Bank Next, Scene 1, Scene 2, the
-scene blend (an analog control), BPM (an analog control, 30 to 300), **Hold Drill**, and **Shift**.
+scene blend (an analog control), BPM (an analog control, or a shifted encoder turn, 30 to 300),
+**Hold Drill**, and **Shift**.
 Buttons can be addressed by CC or by note number; analog controls by CC.
 
 ### Editing a field
@@ -367,7 +370,7 @@ a press paired with a second job under Shift:
 
 ![The MIDI Fighter Twister's 16 encoders and six side buttons, labelled with the job each one does as the preset works](assets/manual/twister-preset.png)
 
-![The same layout with Shift held: each side button's shifted press, Shift itself marked as held, and Crunchy's knob reading Scene Blend](assets/manual/twister-preset-shift.png)
+![The same layout with Shift held: each side button's shifted press, Shift itself marked as held, Crunchy's knob reading Scene Blend, and Crispy's knob reading BPM](assets/manual/twister-preset-shift.png)
 
 | Button | Press | Shift + press |
 |---|---|---|
@@ -378,12 +381,15 @@ a press paired with a second job under Shift:
 | Right middle | Randomize Page | Randomize All |
 | Right bottom | Shift | (none) |
 
-Crunchy's own knob carries a shifted job too: turning it moves Crunchy while Shift is released and
-moves the scene blend while Shift is held; the same turn moves Crunchy again the moment Shift
-releases. No other Twister encoder has a shifted job.
+Two of the sixteen encoders carry a shifted job too. Crunchy's own knob: turning it moves Crunchy
+while Shift is released and moves the scene blend while Shift is held; the same turn moves Crunchy
+again the moment Shift releases. Crispy's own knob: turning it moves Crispy while Shift is released
+and moves the tempo while Shift is held, by the same amount whichever parameter page is on screen;
+the same turn moves Crispy again the moment Shift releases. No other Twister encoder has a shifted
+job.
 
-A Twister row added from the MIDI Fighter Twister preset before this version keeps its old mappings
-and shows Restore. Pressing Restore installs Shift + Crunchy and replaces edits made to that row. A
+A Twister row added from the MIDI Fighter Twister preset before this version keeps its old mappings,
+says it differs from its preset, and offers Restore. Pressing Restore installs both shifted turns and replaces edits made to that row. A
 patch saved earlier carries the old row, so load it, press Restore and save it again. A Twister row
 from an earlier version — one that either predates the preset or was released, in that version,
 with that version's own Release button — shows no Restore; delete it and add the MIDI Fighter

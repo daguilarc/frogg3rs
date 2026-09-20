@@ -372,11 +372,13 @@ TEST_CASE(twister_crunchy_turn_row_shows_its_shifted_scene_blend) {
     const std::vector<synth::MidiMappingRowVM> rows = vm.SectionRows(twisterIx, synth::MidiConfigSection::Encoders);
 
     // ReconstructEncoderBlocks keeps a turn with a shifted job out of any
-    // block, so Crunchy's turn (the only one with one) is its own row and
-    // the other fifteen still read as one block.
+    // block, so Crunchy's turn and Crispy's turn (the only two with one)
+    // are each their own row and the other fourteen still read as one
+    // block.
     std::size_t blockCount = 0;
     std::size_t individualCount = 0;
     std::size_t crunchyRowIx = rows.size();
+    std::size_t crispyRowIx = rows.size();
     for (std::size_t ix = 0; ix < rows.size(); ++ix) {
         if (rows[ix].group != RowGroup::EncoderTurn) {
             continue;
@@ -385,19 +387,40 @@ TEST_CASE(twister_crunchy_turn_row_shows_its_shifted_scene_blend) {
             ++blockCount;
         } else {
             ++individualCount;
-            crunchyRowIx = ix;
+            if (rows[ix].label.find("pos 15") != std::string::npos) {
+                crunchyRowIx = ix;
+            } else if (rows[ix].label.find("pos 14") != std::string::npos) {
+                crispyRowIx = ix;
+            }
         }
     }
     REQUIRE_TRUE(blockCount == 1);
-    REQUIRE_TRUE(individualCount == 1);
+    REQUIRE_TRUE(individualCount == 2);
     REQUIRE_TRUE(crunchyRowIx < rows.size());
-    REQUIRE_TRUE(rows[crunchyRowIx].label.find("pos 15") != std::string::npos);
+    REQUIRE_TRUE(crispyRowIx < rows.size());
 
-    const bool hasShiftField = std::find(rows[crunchyRowIx].editableFields.begin(),
-                                         rows[crunchyRowIx].editableFields.end(),
-                                         Field::ShiftAction) != rows[crunchyRowIx].editableFields.end();
-    REQUIRE_TRUE(hasShiftField);
+    const bool crunchyHasShiftField = std::find(rows[crunchyRowIx].editableFields.begin(),
+                                                rows[crunchyRowIx].editableFields.end(),
+                                                Field::ShiftAction) != rows[crunchyRowIx].editableFields.end();
+    REQUIRE_TRUE(crunchyHasShiftField);
     REQUIRE_TRUE(vm.EncoderTurnShiftedJobIndex(twisterIx, synth::MidiConfigSection::Encoders, crunchyRowIx) == 1);
+
+    const bool crispyHasShiftField = std::find(rows[crispyRowIx].editableFields.begin(),
+                                               rows[crispyRowIx].editableFields.end(),
+                                               Field::ShiftAction) != rows[crispyRowIx].editableFields.end();
+    REQUIRE_TRUE(crispyHasShiftField);
+    REQUIRE_TRUE(vm.EncoderTurnShiftedJobIndex(twisterIx, synth::MidiConfigSection::Encoders, crispyRowIx) == 2);
+
+    // The existing field edit on Crunchy's row still commits and leaves
+    // Crispy's shifted job alone.
+    synth::MidiInstrumentConfig committed;
+    std::string reason;
+    REQUIRE_TRUE(vm.ApplyMappingEdit(twisterIx, synth::MidiConfigSection::Encoders, crunchyRowIx,
+                                     Field::ShiftAction, 0.0, committed, &reason));
+    REQUIRE_TRUE(committed.controllers[twisterIx].config.encoderInput->turns[15].shiftedJob ==
+                synth::EncoderShiftedJob::None);
+    REQUIRE_TRUE(committed.controllers[twisterIx].config.encoderInput->turns[14].shiftedJob ==
+                synth::EncoderShiftedJob::TempoBpm);
 }
 
 // ---------------------------------------------------------------------------
@@ -405,9 +428,9 @@ TEST_CASE(twister_crunchy_turn_row_shows_its_shifted_scene_blend) {
 // ---------------------------------------------------------------------------
 // An old Twister row carries the old preset: sixteen turns, none with a
 // shifted job. Pressing Restore on the Controllers page installs the
-// current preset onto that row, including Crunchy's shifted job, and the
-// page's own view model has to show the change in an already open Encoders
-// section instead of replaying the pre-Restore rows.
+// current preset onto that row, including Crunchy's and Crispy's shifted
+// turns, and the page's own view model has to show the change in an
+// already open Encoders section instead of replaying the pre-Restore rows.
 TEST_CASE(twister_row_saved_before_the_shifted_turn_gains_it_on_restore) {
     using Field = synth::MidiMappingRowVM::Field;
     using Kind = synth::MidiMappingRowVM::Kind;
@@ -449,7 +472,7 @@ TEST_CASE(twister_row_saved_before_the_shifted_turn_gains_it_on_restore) {
         }
         turn.shiftedJob = synth::EncoderShiftedJob::None;
     }
-    REQUIRE_TRUE(shiftedBefore == 1);
+    REQUIRE_TRUE(shiftedBefore == 2);
 
     synth::MidiInstrumentConfig backing;
     REQUIRE_TRUE(backing.AddController(std::move(slot)));
@@ -505,7 +528,9 @@ TEST_CASE(twister_row_saved_before_the_shifted_turn_gains_it_on_restore) {
         const std::vector<synth::MidiMappingRowVM> rows =
             surface.ViewModel().SectionRows(0, synth::MidiConfigSection::Encoders);
         std::size_t blockCount = 0;
+        std::size_t individualCount = 0;
         crunchyRowIx = rows.size();
+        std::size_t crispyRowIx = rows.size();
         for (std::size_t ix = 0; ix < rows.size(); ++ix) {
             if (rows[ix].group != RowGroup::EncoderTurn) {
                 continue;
@@ -513,13 +538,22 @@ TEST_CASE(twister_row_saved_before_the_shifted_turn_gains_it_on_restore) {
             if (rows[ix].kind == Kind::Block) {
                 ++blockCount;
             } else {
-                crunchyRowIx = ix;
+                ++individualCount;
+                if (rows[ix].label.find("pos 15") != std::string::npos) {
+                    crunchyRowIx = ix;
+                } else if (rows[ix].label.find("pos 14") != std::string::npos) {
+                    crispyRowIx = ix;
+                }
             }
         }
         REQUIRE_TRUE(blockCount == 1);
+        REQUIRE_TRUE(individualCount == 2);
         REQUIRE_TRUE(crunchyRowIx < rows.size());
+        REQUIRE_TRUE(crispyRowIx < rows.size());
         REQUIRE_TRUE(surface.ViewModel().EncoderTurnShiftedJobIndex(
                          0, synth::MidiConfigSection::Encoders, crunchyRowIx) == 1);
+        REQUIRE_TRUE(surface.ViewModel().EncoderTurnShiftedJobIndex(
+                         0, synth::MidiConfigSection::Encoders, crispyRowIx) == 2);
     }
 
     synth::MidiInstrumentConfig afterEdit;
