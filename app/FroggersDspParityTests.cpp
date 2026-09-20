@@ -4626,9 +4626,13 @@ PeakBranchTap ProcessFilterBankPeakVariant(dsp::FilterFxChain& chain, const Filt
 }
 
 // A resonant comb at a below-unity drive is the branch neither the comb
-// trim nor the peak trim bounds on its own (the change's own `combbound`
-// measurement, evidence/limiter/combbound.cpp, and FilterFx.hpp's own
-// comb-trim comment), so it drives the blend loud enough to exercise
+// trim nor the peak trim bounds on its own: below Comb drive 1 the
+// fed-back term exceeds the comb trim's assumed bound (measured directly
+// on `dsp::Comb`, 100-sample delay, feedback 0.95, full-scale sine at the
+// comb's own pitch: Comb drive 0.25 reaches 3.9222 against the bound's
+// 1.9500), and the peak branch's own scalar trim does not bound a
+// stateful biquad's stored energy through a height drop either, so it
+// drives the blend loud enough to exercise
 // the Filter page's own limiter at its real placement: after the Comb/Peak
 // blend, not on the peak branch alone. `shipped` runs the real
 // `FilterFxChain::Process`. `neutralized` is the identical chain with its

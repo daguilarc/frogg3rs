@@ -435,9 +435,10 @@ struct Comb
     // (`filter.Process(tapped)`, the delayed signal it is computed from) is
     // not itself bounded to +-1, only the pre-divide `Saturate` output is,
     // so this inequality does not keep the compensated fed-back term under
-    // |feedback|. Measured with `combbound`, a harness driving `dsp::Comb`
-    // directly: at Comb drive 0.25 the fed-back term reaches 2.9222, well
-    // past |feedback|'s own 0.95 -- a statement about the fed-back term's
+    // |feedback|. Measured directly on `dsp::Comb`, with a 100-sample delay,
+    // the low-pass fully open, feedback 0.95, and a full-scale sine at the
+    // comb's own pitch: at Comb drive 0.25 the fed-back term reaches 2.9222,
+    // well past |feedback|'s own 0.95 -- a statement about the fed-back term's
     // own absolute LEVEL, not its decay. The loop's per-pass decay still
     // stays governed by `feedback` alone at every combDrive, and
     // GetFeedback's geometric ring-time law (below) still holds true
@@ -589,8 +590,10 @@ struct Comb
     // is -- there is no exponential divergence possible here. Below Comb
     // drive 1 the compensated form (combDrive's own comment, above) divides
     // the saturator's clamped output by combDrive, widening the ceiling to
-    // |fb|/combDrive (measured with `combbound`: drive 0.25 reaches a
-    // fed-back term of 2.9222) -- still finite, so still no exponential
+    // |fb|/combDrive (measured directly on `dsp::Comb`, feedback 0.95, a
+    // 100-sample delay and a full-scale sine at the comb's own pitch: Comb
+    // drive 0.25 reaches a fed-back term of 2.9222) -- still finite, so
+    // still no exponential
     // divergence, but no longer bounded to |fb|*1.0.
     // What |fb| > 1 actually does is hold the
     // loop in permanent, undecaying self-oscillation pinned at the
@@ -687,8 +690,9 @@ struct FilterFxChain
     // memory. The comb branch's own trim is not a bound either: the
     // comb-trim comment below derives `|comb| <= A + |fb|` and that bound
     // holds only at Comb drive 1 and above -- below it the fed-back term
-    // exceeds the clamp (measured with `combbound`: Comb drive 0.25
-    // reaches 3.9222 against the bound's 1.9500).
+    // exceeds the clamp (measured directly on `dsp::Comb`, 100-sample
+    // delay, feedback 0.95, full-scale sine at the comb's own pitch: Comb
+    // drive 0.25 reaches 3.9222 against the bound's 1.9500).
     // With neither branch bounded on its own, the limiter runs once, on
     // the blend, so it catches whichever branch is carrying the level.
     // Tuned via the four `kFilterOutputLimiter*` constants above this struct (by
@@ -843,9 +847,10 @@ struct FilterFxChain
         // ONLY, before the blend with peakPath below. `|comb| <= A +
         // |fb|` (PadeSaturator bounds the fed-back term to +-1,
         // Comb::Process above) holds at Comb drive 1 and above; below
-        // drive 1 it does not (measured with `combbound`: drive 0.25
-        // reaches 3.9222 against the bound's 1.9500 at A=1.00 --
-        // GetFeedback's own comment, above, has the mechanism).
+        // drive 1 it does not (measured directly on `dsp::Comb`, 100-sample
+        // delay, feedback 0.95: drive 0.25 reaches 3.9222 against the
+        // bound's 1.9500 at A=1.00 -- GetFeedback's own comment, above, has
+        // the mechanism).
         // Where it holds, this normalizes the worst case at full-scale
         // input (A=1.0, not A=0: A=0 trims to 0.95/1.95 = 0.487) to exactly
         // 1.0 at |fb| == kMaxFeedbackMagnitude (0.95), while leaving +3.5 dB
@@ -897,9 +902,9 @@ struct FilterFxChain
         // height drop (this method's comment above `peakPath`), and the
         // comb branch's trim assumes `|comb| <= A + |fb|`, a bound that
         // holds only at Comb drive 1 and above and fails below it
-        // (measured with `combbound`: Comb drive 0.25 reaches 3.9222
-        // against the bound's 1.9500 -- the comb-trim comment above
-        // has the detail). Applying the limiter
+        // (measured directly on `dsp::Comb`, 100-sample delay, feedback
+        // 0.95, full-scale sine at the comb's own pitch: Comb drive 0.25
+        // reaches 3.9222 against the bound's 1.9500). Applying the limiter
         // once, after the blend, catches whichever branch is carrying the
         // level, unconditionally.
         return outputLimiter.Process(mixed);

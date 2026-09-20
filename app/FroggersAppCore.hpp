@@ -1825,8 +1825,9 @@ private:
         // regularly, not only when the operator dials it there. The comb
         // feeding this stage is bounded near |in| + 0.95 (about 2 at full
         // scale) at Comb drive 1 and above; below drive 1 that bound fails
-        // (measured with `combbound`: drive 0.25 reaches 3.9222 --
-        // dsp/FilterFx.hpp's comb-trim comment has the detail), and
+        // (measured directly on `dsp::Comb`, 100-sample delay, feedback
+        // 0.95, full-scale sine at the comb's own pitch: drive 0.25 reaches
+        // 3.9222), and
         // it is the Filter page's own limiter, downstream of the Comb/Peak
         // blend, that holds the level then. Whatever the peak multiplies
         // its input by, that same limiter takes back -- heavy sustained
