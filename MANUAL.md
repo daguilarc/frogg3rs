@@ -326,6 +326,25 @@ Randomize Page, Reset All, Reset Page, Bank 1 to 6, Bank Previous, Bank Next, Sc
 scene blend (an analog control), BPM (an analog control, 30 to 300), **Hold Drill**, and **Shift**.
 Buttons can be addressed by CC or by note number; analog controls by CC.
 
+### Editing a field
+
+Every mapping field — a channel, a CC or note number, a slot, a grid position, and so on — is
+edited by typing into it, and the result is reported on the one status line at the bottom of the
+page.
+
+An edit that fails on its own terms is refused: the status line reads "Refused: " followed by the
+reason, in the field's own wording (for example "last cc must be an integer 0-127"), and the field
+goes back to the value it held.
+
+A few edits are kept instead of refused outright: the typed value stays in the field and the status
+line reads "Warning: " followed by the reason, but the mapping is not saved until the value is
+fixed. This happens when a block's last value is set below its start, and when a grid mapping's X
+or Y position is set to a cell the controller does not have.
+
+Either way, the reason names the field, not the row it came from. With more than one row's editor
+open, the status line does not say which open row the message belongs to — check each open field to
+find the one holding the reported value.
+
 ### Hold Drill
 
 While a button mapped to Hold Drill is held, turning a knob drills into that knob's modulation
