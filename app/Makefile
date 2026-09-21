@@ -135,8 +135,8 @@ CONTROLLERS_PAGE_BIN := $(BUILD_DIR)/froggers_controllers_page_tests
 # Writes assets/manual/twister-controls.json from FroggersMidiCatalog()'s
 # real Twister default: the preset itself through the library's own
 # persistence serializer, plus the facts the preset does not carry (each app
-# action's display name, the encoder push's job, the two bank slots whose
-# identity holds regardless of which bank is shown). MANUAL.md's two Twister
+# action's display name, the encoder push's job, the two page slots whose
+# identity holds regardless of which page is shown). MANUAL.md's two Twister
 # diagrams are rendered from that file's committed copy; the drift check
 # below rebuilds it from the code on every `make test` and fails when the
 # rebuilt file, or MANUAL.md's own side-button table, no longer matches it.

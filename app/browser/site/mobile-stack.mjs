@@ -52,7 +52,7 @@ const MOUNT_SELECTOR = "#synth-root"; // index.html:60, this shell's own id
 // FroggersNodeIds::kLeftBlock / kRightBlock -- the outer split Row's two
 // Weight(2)/Weight(4) siblings (FroggersUiSurface.hpp:113-114,464-467): the
 // chrome block (scope/transport/scenes/blend/bpm) and the block holding the
-// bank chrome + 16-slot encoder grid.
+// page chrome + 16-slot encoder grid.
 const CHROME_BLOCK_SELECTOR = '[data-synth-node-id="froggers.layout.left"]';
 const GRID_BLOCK_SELECTOR = '[data-synth-node-id="froggers.layout.right"]';
 // RuntimePages.hpp:34 `NodeIds::kSidebarRoot = "runtime.sidebar.root"` --

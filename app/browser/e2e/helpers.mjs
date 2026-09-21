@@ -7,7 +7,7 @@ import { expect } from "@playwright/test";
 
 // FroggersNodeIds::kLeftBlock -- scope, transport, scenes, scene-blend, bpm.
 export const LEFT_BLOCK_SELECTOR = '[data-synth-node-id="froggers.layout.left"]';
-// FroggersNodeIds::kRightBlock -- the bank chrome + 16-slot encoder grid
+// FroggersNodeIds::kRightBlock -- the page chrome + 16-slot encoder grid
 // (FroggersUiSurface.hpp).
 export const RIGHT_BLOCK_SELECTOR = '[data-synth-node-id="froggers.layout.right"]';
 // FroggersNodeIds::EncoderRow(0..3) -- the four 4-wide slices that make up

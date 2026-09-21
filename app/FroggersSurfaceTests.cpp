@@ -562,7 +562,7 @@ TEST_CASE(scene_blend_and_bpm_sliders_resolve_to_the_same_width) {
 // active page only, exactly one page selected, no marker character.
 TEST_CASE(page_buttons_are_button_kind_with_selected_flag_and_no_marker_character) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
-        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("bank_selection_button_kind"));
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("page_selection_button_kind"));
     rig.RunBlocks(4);
     rig.UIState();  // forces a synchronous publish (page selection is throttled per Engine.hpp)
 
@@ -680,7 +680,7 @@ TEST_CASE(drill_in_swaps_grid_in_place_scope_and_chrome_stay_put) {
 // pre-existing, still-desired no-op).
 TEST_CASE(clicking_the_active_page_while_drilled_in_exits_to_the_top_level_grid) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
-        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("bank_select_exits_drilldown"));
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("page_select_exits_drilldown"));
     rig.RunBlocks(4);
 
     synth::ui::Surface& surface = rig.Application().PortableSurface();
@@ -987,7 +987,7 @@ TEST_CASE(modulation_header_sits_below_page_row_and_above_parameter_cells) {
 // HandleAction eventually does with those actions.
 TEST_CASE(page_carousel_arrows_are_centered_in_the_modulation_header_band_at_top_level) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
-        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("bank_carousel_arrows_centered"));
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("page_carousel_arrows_centered"));
     rig.RunBlocks(4);
 
     synth::ui::Surface& surface = rig.Application().PortableSurface();
@@ -1043,7 +1043,7 @@ TEST_CASE(page_carousel_arrows_are_centered_in_the_modulation_header_band_at_top
 // carries the title's draw commands.
 TEST_CASE(modulation_header_band_bounds_are_identical_across_drill_states_and_arrows_vanish_while_drilled) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
-        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("bank_carousel_arrows_drilled"));
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("page_carousel_arrows_drilled"));
     rig.RunBlocks(4);
 
     synth::ui::Surface& surface = rig.Application().PortableSurface();
@@ -1104,7 +1104,7 @@ TEST_CASE(modulation_header_band_bounds_are_identical_across_drill_states_and_ar
 // pin the 5->0 wrap this same design section requires.
 TEST_CASE(page_carousel_next_arrow_action_steps_the_active_page_with_wrap_and_highlight_following) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
-        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("bank_carousel_next_steps_and_wraps"));
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("page_carousel_next_steps_and_wraps"));
     rig.RunBlocks(4);
     rig.UIState();  // forces a synchronous publish (page selection is throttled per Engine.hpp)
 
@@ -1154,7 +1154,7 @@ TEST_CASE(page_carousel_next_arrow_action_steps_the_active_page_with_wrap_and_hi
 // one page highlighted.
 TEST_CASE(page_carousel_previous_arrow_action_wraps_from_first_page_to_last) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
-        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("bank_carousel_previous_wraps"));
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("page_carousel_previous_wraps"));
     rig.RunBlocks(4);
     rig.UIState();
 
@@ -1196,7 +1196,7 @@ TEST_CASE(page_carousel_previous_arrow_action_wraps_from_first_page_to_last) {
 // NOR the drill level moved.
 TEST_CASE(page_carousel_arrow_actions_are_rejected_while_drilled_in) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
-        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("bank_carousel_arrows_no_op_while_drilled"));
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("page_carousel_arrows_no_op_while_drilled"));
     rig.RunBlocks(4);
     rig.UIState();
 

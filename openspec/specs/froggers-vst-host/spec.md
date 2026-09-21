@@ -167,11 +167,11 @@ SHALL still restore, without corruption, after it is.
 
 ### Requirement: Automation does not steal the operator's view
 THE plugin SHALL deliver an automated parameter's value to that
-parameter's own bank and slot regardless of which bank the editor is
-currently showing, and regardless of what page that bank is displaying.
-The editor's visible page SHALL follow operator selection only:
-automation SHALL NOT move it, for a single lane or for simultaneous
-lanes, and SHALL NOT close a modulation view the operator has open.
+parameter's own bank and slot regardless of which page the editor is
+currently showing. The editor's visible page SHALL follow operator
+selection only: automation SHALL NOT move it, for a single lane or for
+simultaneous lanes, and SHALL NOT close a modulation view the operator has
+open.
 
 #### Scenario: Simultaneous cross-bank lanes
 - **WHEN** two automation lanes drive parameters in two different banks
@@ -180,12 +180,12 @@ lanes, and SHALL NOT close a modulation view the operator has open.
 - **AND** the editor's visible page does not move
 
 #### Scenario: The operator is drilled into an automated bank
-- **WHEN** the operator has a modulation view open on a bank and a lane
-  automates a parameter in that same bank
+- **WHEN** the operator has a modulation view open on a page and a lane
+  automates a parameter on that same page
 - **THEN** the value lands on that parameter
 - **AND** the open modulation view is neither closed nor written to
 
 #### Scenario: Operator selection still moves the page
-- **WHEN** the operator selects a different bank
+- **WHEN** the operator selects a different page
 - **THEN** the editor's visible page follows that selection
 

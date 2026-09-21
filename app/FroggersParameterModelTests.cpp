@@ -185,7 +185,7 @@ TEST_CASE(crispy_and_crunchy_identity_stable_when_active_bank_changes) {
 // --- 4.5 check 3: per-bank colour reaches EncoderDrawState.baseColor -------
 
 TEST_CASE(per_bank_colour_reaches_encoder_draw_state_base_color) {
-    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(64, UseScratchRuntimeDataPaths("bank_colour"));
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(64, UseScratchRuntimeDataPaths("page_colour"));
     const auto& layouts = synth_froggers::FroggersBankLayouts();
 
     for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {

@@ -92,7 +92,7 @@ height, so a runtime block placed past the block's bottom edge is cut off rather
 than shown.
 
 The runtime page whose name collides with this instrument's own Audio parameter
-bank SHALL be renamed, and the rename SHALL come from a host-supplied
+page SHALL be renamed, and the rename SHALL come from a host-supplied
 configuration value rather than from the shell rewriting a rendered label, so
 the rendered page and the tree that produced it agree.
 

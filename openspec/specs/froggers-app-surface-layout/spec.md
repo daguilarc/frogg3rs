@@ -13,7 +13,7 @@ The Froggers surface SHALL be constructed entirely with Sheaf's portable UI buil
 - **THEN** no legacy JUCE panel class participates
 
 ### Requirement: Scope band with global chrome
-The surface SHALL present a band containing the VCO scope panels alongside transport and global controls: the **Randomize All** control, scene controls, and a tempo (BPM) slider positioned immediately beside the scene slider, so the two sliders sit together. The **Randomize Page** control SHALL NOT appear in this band; it SHALL instead appear in the per-page/bank header. Global Crunchy SHALL NOT appear in this band either (corrected 2026-07-27 — operator: "why is there a fucking slider for crunchy between the randomize buttons, i never asked for that. It duplicates bank slot 15"); Crunchy's only control surface is bank slot 15 in the encoder grid (see the "Sixteen-slot encoder grid" requirement below), reachable like any other bank parameter and, as a deliberately accepted trade-off, unreachable while a modulation view is open (slot 15 is then Target/Back).
+The surface SHALL present a band containing the VCO scope panels alongside transport and global controls: the **Randomize All** control, scene controls, and a tempo (BPM) slider positioned immediately beside the scene slider, so the two sliders sit together. The **Randomize Page** control SHALL NOT appear in this band; it SHALL instead appear in the per-page header. Global Crunchy SHALL NOT appear in this band either (corrected 2026-07-27 — operator: "why is there a fucking slider for crunchy between the randomize buttons, i never asked for that. It duplicates bank slot 15"); Crunchy's only control surface is bank slot 15 in the encoder grid (see the "Sixteen-slot encoder grid" requirement below), reachable like any other page parameter and, as a deliberately accepted trade-off, unreachable while a modulation view is open (slot 15 is then Target/Back).
 
 #### Scenario: Scopes and chrome share the band
 - **WHEN** the surface is displayed
@@ -33,11 +33,11 @@ The surface SHALL present a band containing the VCO scope panels alongside trans
 
 #### Scenario: Exactly two randomize controls exist in the whole surface
 - **WHEN** the entire surface is enumerated for randomize controls
-- **THEN** exactly two exist: Randomize All in the global chrome band and Randomize Page in the per-page/bank header
+- **THEN** exactly two exist: Randomize All in the global chrome band and Randomize Page in the per-page header
 - **THEN** no other randomize control appears anywhere
 
 ### Requirement: No dedicated waveform-randomize or manual random-source controls
-The surface SHALL provide no dedicated waveform-randomize control and no manual random-source step/resample control. The former is retired because the waveform Shape controls are now ordinary bank parameters covered by Randomize Page. The latter is retired because the random sources are driven by the master clock rather than by manual stepping.
+The surface SHALL provide no dedicated waveform-randomize control and no manual random-source step/resample control. The former is retired because the waveform Shape controls are now ordinary page parameters covered by Randomize Page. The latter is retired because the random sources are driven by the master clock rather than by manual stepping.
 
 #### Scenario: Neither control appears anywhere
 - **WHEN** the entire surface is enumerated for controls
@@ -45,23 +45,23 @@ The surface SHALL provide no dedicated waveform-randomize control and no manual 
 - **THEN** no manual random-source step/resample control exists
 
 ### Requirement: Bank selector with direct selection
-The surface SHALL provide direct selection among banks. Arrow-based paging SHALL NOT be the primary navigation. Exactly one bank SHALL be active at a time, with a single authority for that selection.
+The surface SHALL provide direct selection among pages. Arrow-based paging SHALL NOT be the primary navigation. Exactly one page SHALL be active at a time, with a single authority for that selection.
 
-The surface SHALL additionally provide a back/forward arrow pair as secondary navigation, horizontally centered within the band between the bank row and the encoder grid (the modulation-header row's reserved space, whose outer geometry SHALL NOT change in any state). The back arrow SHALL step the active bank to the previous index and the forward arrow to the next, wrapping at both ends, routed through the same single selection authority as direct selection; the bank-button highlight SHALL reflect an arrow-driven change identically to a button-driven one. WHILE a modulation drill-in is active, the arrows SHALL NOT render and SHALL NOT accept input, and the band SHALL render its drill-level title exactly as before this change.
+The surface SHALL additionally provide a back/forward arrow pair as secondary navigation, horizontally centered within the band between the page row and the encoder grid (the modulation-header row's reserved space, whose outer geometry SHALL NOT change in any state). The back arrow SHALL step the active page to the previous index and the forward arrow to the next, wrapping at both ends, routed through the same single selection authority as direct selection; the page-button highlight SHALL reflect an arrow-driven change identically to a button-driven one. WHILE a modulation drill-in is active, the arrows SHALL NOT render and SHALL NOT accept input, and the band SHALL render its drill-level title exactly as before this change.
 
-#### Scenario: Direct bank selection
-- **WHEN** the operator selects a bank
-- **THEN** that bank's parameters populate the encoder grid
-- **THEN** no second, divergent bank-selection state exists
+#### Scenario: Direct page selection
+- **WHEN** the operator selects a page
+- **THEN** that page's parameters populate the encoder grid
+- **THEN** no second, divergent page-selection state exists
 
 #### Scenario: Forward arrow steps and wraps
-- **WHEN** the operator clicks the forward arrow repeatedly from the first bank
-- **THEN** the active bank advances one index per click, the highlight following each step
-- **THEN** a click on the last bank wraps the selection to the first
+- **WHEN** the operator clicks the forward arrow repeatedly from the first page
+- **THEN** the active page advances one index per click, the highlight following each step
+- **THEN** a click on the last page wraps the selection to the first
 
 #### Scenario: Back arrow steps and wraps
-- **WHEN** the operator clicks the back arrow on the first bank
-- **THEN** the selection wraps to the last bank, with exactly one bank highlighted
+- **WHEN** the operator clicks the back arrow on the first page
+- **THEN** the selection wraps to the last page, with exactly one page highlighted
 
 #### Scenario: Arrows yield to the drill-in title
 - **WHEN** a modulation drill-in is active
@@ -69,10 +69,10 @@ The surface SHALL additionally provide a back/forward arrow pair as secondary na
 - **THEN** the band's bounds are identical to its bounds at the top level
 
 ### Requirement: Sixteen-slot encoder grid with in-place modulation swap
-The surface SHALL render the active bank as a sixteen-slot encoder grid indexed `0..15`, with the local Crispy control at slot index 14 and global Crunchy at slot index 15 in every bank, and empty cells wherever the bank has no parameter. Entering a modulation view SHALL replace the grid contents in place with the modulation detail cells, occupying the same region; it SHALL NOT open a separate window or push a new page.
+The surface SHALL render the active page as a sixteen-slot encoder grid indexed `0..15`, with the local Crispy control at slot index 14 and global Crunchy at slot index 15 in every page, and empty cells wherever the page has no parameter. Entering a modulation view SHALL replace the grid contents in place with the modulation detail cells, occupying the same region; it SHALL NOT open a separate window or push a new page.
 
 #### Scenario: Empty cells render as empty
-- **WHEN** the active bank uses fewer than fourteen parameter slots
+- **WHEN** the active page uses fewer than fourteen parameter slots
 - **THEN** the unused cells render as empty
 - **THEN** Crispy and Crunchy still occupy slot indices 14 and 15
 
@@ -83,18 +83,18 @@ The surface SHALL render the active bank as a sixteen-slot encoder grid indexed 
 
 #### Scenario: Return restores the parameter grid
 - **WHEN** the operator activates Target/Back from any modulation level
-- **THEN** the bank's parameter grid is restored in the same region
+- **THEN** the page's parameter grid is restored in the same region
 
 ### Requirement: Layout integrity at the target window size
 The surface SHALL lay out without overlap or clipping at the target window size, and its regions SHALL be verified by automated bounds tests.
 
 #### Scenario: No overlapping regions
 - **WHEN** the surface is laid out at the target size
-- **THEN** the scope band, chrome, bank selector, and encoder grid regions do not overlap
+- **THEN** the scope band, chrome, page selector, and encoder grid regions do not overlap
 - **THEN** every encoder cell lies fully within the grid region
 
 ### Requirement: Encoder labels are legible, natural, and never obscure the encoder
-Each encoder cell SHALL render its parameter's NATURAL display label — the short form where that form is the parameter's canonical name (`A1`, `D1`, `S1`, `R1` and their siblings), the readable full name where the short form is merely a truncation (`Comb offset`, never only `CmbOff`) — per an operator-approved label list covering every parameter of every bank; neither blanket expansion nor blanket abbreviation satisfies this requirement (corrected 2026-08-17 after the first draft of this requirement mandated short names universally and the operator rejected it). No label rendering SHALL overlap the encoder's ring: label draw commands occupy vertical space disjoint from the ring's drawn arc in every cell of every bank. The operator's on-screen confirmation is the acceptance criterion, exercised on a proposed mock — including the full label list — BEFORE the change is built and again on the built result.
+Each encoder cell SHALL render its parameter's NATURAL display label — the short form where that form is the parameter's canonical name (`A1`, `D1`, `S1`, `R1` and their siblings), the readable full name where the short form is merely a truncation (`Comb offset`, never only `CmbOff`) — per an operator-approved label list covering every parameter of every page; neither blanket expansion nor blanket abbreviation satisfies this requirement (corrected 2026-08-17 after the first draft of this requirement mandated short names universally and the operator rejected it). No label rendering SHALL overlap the encoder's ring: label draw commands occupy vertical space disjoint from the ring's drawn arc in every cell of every page. The operator's on-screen confirmation is the acceptance criterion, exercised on a proposed mock — including the full label list — BEFORE the change is built and again on the built result.
 
 The label band's plate SHALL match the surface background. The plate stays
 opaque — it is what keeps the glyphs legible when a visualizer underlay runs
@@ -117,7 +117,7 @@ the knob, not on the surface, and is deliberately visible.
 - **THEN** that label is fully legible without cut-off characters, in space that does not overlap the ring's drawn arc
 
 #### Scenario: The ring is never covered
-- **WHEN** any cell of any bank is rendered, with or without an expanded label
+- **WHEN** any cell of any page is rendered, with or without an expanded label
 - **THEN** no label draw command's bounds intersect the ring's circle
 
 #### Scenario: The operator gate runs before the build
@@ -151,7 +151,7 @@ belong to, whatever slot indices carry them: the Peak stage's frequency,
 gain, and Q together; the Comb stage's offset, delay, feedback, lowpass,
 and drive together; the Scoop stage's blend, frequency, width, and depth
 together; and the two routing controls — Comb/Peak and Topology — at the
-end of the page's own controls, before the bank's Crispy and the global
+end of the page's own controls, before the page's own Crispy and the global
 Crunchy, which keep their fixed positions. Whether grouping is achieved by
 re-slotting or by a display-order mapping is the implementation's decision,
 made only after the patch persistence format's addressing is read; saved

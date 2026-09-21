@@ -62,7 +62,7 @@ The app SHALL permit drilling from a top-level parameter into its modulation dep
 
 #### Scenario: Target/Back exits to the parameter grid
 - **WHEN** the operator activates Target/Back from any modulation level
-- **THEN** the bank's parameter grid is restored
+- **THEN** the page's parameter grid is restored
 - **THEN** no intermediate modulation level is re-entered
 
 Note: a one-level pop is deliberately **not** provided. The framework's deselect returns to the parameter grid, and the call that would re-open an intermediate level is not part of its public surface, so synthesizing a pop would mean working around a private API. Full exit from any level is the accepted behavior (design D5).

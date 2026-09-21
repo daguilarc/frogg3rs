@@ -252,7 +252,7 @@ test.describe("mobile stacking (phone-width layout)", () => {
     // The only assertion that the app's RuntimeConfig::audioPageTitle is
     // wired all the way through Sheaf to a rendered button, so it is the one
     // that fails if the submodule pin is left behind. "Audio" alone would be
-    // this instrument's first parameter bank; the page selects the output
+    // this instrument's first parameter page; the page selects the output
     // device as well as the input, so it is named for both.
     await expect(page.locator(SIDEBAR_BUTTON_SELECTORS[0])).toHaveText(/Audio I\/O/);
   });

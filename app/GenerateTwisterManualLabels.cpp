@@ -25,10 +25,10 @@
 // either path stops the program with an error naming it, rather than
 // guessing.
 //
-// The two page slots whose identity is the same regardless of which bank is
+// The two page slots whose identity is the same regardless of which page is
 // open -- Crispy and Crunchy -- are named directly; the other fourteen are
 // named by slot number alone ("Slot N"), since what a numbered slot does
-// depends on which bank the player has open, and the manual's own bank
+// depends on which page the player has open, and the manual's own page
 // sections (not this diagram) say what a slot does in each one.
 //
 // Usage: GenerateTwisterManualLabels <output-path>

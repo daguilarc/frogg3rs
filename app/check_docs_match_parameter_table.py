@@ -11,7 +11,7 @@ It parses the six 14-entry bank tables out of FroggersBankLayouts()
 (FroggersParameters.hpp) and the matching six rows of FroggersApprovedLabels()
 (FroggersUiSurface.hpp) by symbol, not by line number, so it keeps working
 as the source file is edited around those functions. It then parses every
-bold parameter entry out of the six bank sections of MANUAL.md and
+bold parameter entry out of the six page sections of MANUAL.md and
 QUICK_DICT.md -- singles ("**Name** (slot N)" or "**Name** (`Label`, slot N)")
 and groups ("**Name1 / Name2 / Name3** (slots a-c)" or
 "**Name1 / Name2 / Name3** (`L1`/`L2`/`L3`, slots a/b/c)") -- and compares

@@ -200,7 +200,7 @@ function pageHtml(shiftHeld) {
 <body>
 <div id="diagram">
   <div class="title">${escapeHtml(title)}</div>
-  <div class="subtitle">The numbered knobs move those slots of whichever bank is shown; the bank sections list them.</div>
+  <div class="subtitle">The numbered knobs move those slots of whichever page is shown; the page sections list them.</div>
   <div class="row">
     <div class="side-col">${left.map((b) => sideButtonHtml(b, shiftHeld)).join("")}</div>
     <div class="grid">${encoders.map((encoder) => encoderHtml(encoder, shiftHeld)).join("")}</div>

@@ -899,8 +899,8 @@ TEST_CASE(host_write_produces_a_bounded_number_of_notifications_not_an_endless_l
 // BankSlot and never touches FroggersAppCore::activePageIx_/drillIn_ at
 // all. This proves the write reaches its target bank's real parameter
 // while the operator's own view -- ActivePageIndex(), the rendered/
-// selected bank tab, and a page-scoped action (Reset Page) -- all stay on
-// the bank the OPERATOR is looking at, never the one automation last wrote.
+// selected page tab, and a page-scoped action (Reset Page) -- all stay on
+// the page the OPERATOR is looking at, never the one automation last wrote.
 TEST_CASE(host_automation_in_a_non_visible_bank_lands_there_and_leaves_the_operators_page_untouched) {
     frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("bank_agreement"));
     processor.setRateAndBufferSizeDetails(48000.0, 256);
