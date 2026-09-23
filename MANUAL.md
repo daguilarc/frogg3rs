@@ -1,12 +1,12 @@
 # Frogg3rs Manual
 
-Operator manual for **Frogg3rs**, the Sheaf app — the current version of this instrument.
+Operator manual for **Frogg3rs**, a modular synthesizer program running on the Sheaf design platform.
 
 The same instrument core runs in four hosts:
 
 - **Standalone** — a self-contained desktop app, with its own audio-device and
   MIDI-controller configuration (see MIDI controllers, below).
-- **Browser build** — the same core running in a browser page.
+- **Browser build** — the same core running in web browser.
 - **VST3** and **AU plugin** — the same core loaded inside a DAW, where the host owns audio
   devices, transport and tempo.
 
