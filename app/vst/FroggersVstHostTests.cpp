@@ -3172,6 +3172,7 @@ TEST_CASE(plugin_midi_out_setting_survives_the_project) {
         for (const juce::MidiMessageMetadata metadata : midi) {
             if (metadata.numBytes == 3 && (metadata.data[0] & 0xF0) == 0x90) {
                 REQUIRE_TRUE((metadata.data[0] & 0x0F) == 3);  // the set channel.
+                REQUIRE_TRUE(metadata.data[1] == 45);          // the default patch's first note.
                 REQUIRE_TRUE(metadata.data[2] == 100);         // the fixed velocity.
                 sawPitchNoteOn = true;
                 break;

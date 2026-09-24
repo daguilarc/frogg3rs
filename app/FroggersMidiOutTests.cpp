@@ -108,6 +108,13 @@ float PitchKnobRaiseDelta(float factor) {
                                         synth_froggers::dsp::Vco::kPitchMinHz);
 }
 
+// The knob value that tunes a VCO to an absolute frequency, the same
+// exponential mapping's direct inverse (knob = log(f/min)/log(max/min)).
+float PitchKnobForFrequency(float frequencyHz) {
+    return std::log(frequencyHz / synth_froggers::dsp::Vco::kPitchMinHz) /
+           std::log(synth_froggers::dsp::Vco::kPitchMaxHz / synth_froggers::dsp::Vco::kPitchMinHz);
+}
+
 
 // A note-on or note-off read from AppMidiOutEvents(), decoded once so every
 // test below reads the same shape rather than re-decoding status bytes.
@@ -539,6 +546,51 @@ TEST_CASE(pitch_first_note_is_45_at_44100_and_96000hz) {
     AssertPitchFirstNoteIs45(96000.0, "pitch_note45_96000");
 }
 
+// ---------------------------------------------------------------------------
+// pitch_tracks_the_ruled_range_edges
+// ---------------------------------------------------------------------------
+// A13: the ruled 50-5,000 Hz range is exercised past the default patch's own
+// 110 Hz -- a low edge inside 50-100 Hz and a note above 1 kHz -- so a
+// narrower detector range (e.g. a 100 Hz floor or a 1,000 Hz ceiling) is
+// caught even though the default patch's own note still detects fine.
+void AssertPitchTracksFrequency(float targetHz, int expectedNote, const char* scratchName) {
+    Rig::AudioSettings settings48k128;
+    settings48k128.sampleRate = 48000.0;
+    settings48k128.blockSize = 128;
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths(scratchName), settings48k128);
+
+    rig.Application().SetMidiOutSetting(PitchSetting(/*channel=*/0));
+
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    const float knob = PitchKnobForFrequency(targetHz);
+    for (std::size_t vco = 0; vco < 3; ++vco) {
+        model.PageParameter(synth_froggers::FroggersBankId::Audio,
+                            synth_froggers::AudioSlot(vco, synth_froggers::VcoSlotRole::Pitch))
+            .SceneCenter(0) = knob;
+    }
+    rig.StartAt(0);
+
+    std::optional<std::uint8_t> firstNoteOn;
+    constexpr std::size_t kBlocksPerSecond = 48000 / 128;
+    for (std::size_t i = 0; i < kBlocksPerSecond * 2 && !firstNoteOn.has_value(); ++i) {
+        rig.RunBlocks(1);
+        const synth::AppMidiOutEventList& events = rig.Engine().AppMidiOutEvents();
+        for (const synth::AppMidiOutEvent& event : events) {
+            const std::optional<DecodedNoteEvent> decoded = DecodeNoteEvent(event);
+            if (decoded.has_value() && decoded->isNoteOn) {
+                firstNoteOn = decoded->note;
+            }
+        }
+    }
+    REQUIRE_TRUE(firstNoteOn.has_value());
+    REQUIRE_TRUE(*firstNoteOn == expectedNote);
+}
+
+TEST_CASE(pitch_tracks_the_ruled_range_edges) {
+    AssertPitchTracksFrequency(65.406f, 36, "pitch_range_low_edge");    // C2, inside 50-100 Hz.
+    AssertPitchTracksFrequency(1567.98f, 91, "pitch_range_above_1khz");  // G6, above 1 kHz.
+}
+
 // The Pitch note the 20-step schedule below raises the default patch's
 // three VCOs to, measure-q/QShippedRule.cpp Item 2's own target.
 constexpr int kPitchStepTargetNote = 52;
@@ -737,11 +789,14 @@ TEST_CASE(pitch_velocity_follows_the_level_unless_fixed) {
         REQUIRE_TRUE(sawNoteOn);
     }
 
-    // Level (the default): a note-on's velocity is the SAME formula applied
-    // to the follower level the production code itself captured at that
-    // note-on (TestLastPitchNoteOnSourceLevel(), read right after the block
-    // that produced it -- nothing else writes a note-on in that block, so
-    // the value belongs to it) -- round(127*level), held within 1 to 127.
+    // Level (the default): a note-on's velocity is round(127*level), held
+    // within 1 to 127, where `level` is checked against an INDEPENDENT
+    // dsp::SingleEnvelopeFollower replica fed the captured output audio
+    // (the same technique level_cc_value_matches_an_independently_computed_
+    // follower_level uses) rather than reading back production's own
+    // captured value -- a formula that writes the wrong source into that
+    // captured value would go unnoticed by a check that reads the same
+    // corrupted value back.
     {
         Rig::AudioSettings settings48k128;
         settings48k128.sampleRate = 48000.0;
@@ -751,21 +806,33 @@ TEST_CASE(pitch_velocity_follows_the_level_unless_fixed) {
         rig.Application().SetMidiOutSetting(PitchSetting(/*channel=*/0));
         rig.StartAt(0);
 
+        synth_froggers::dsp::SingleEnvelopeFollower independentFollower;
+        independentFollower.SetSampleRate(48000.0f);
+        std::vector<float> independentLevelAtSample;
+
         bool sawNoteOn = false;
         constexpr std::size_t kBlocksPerSecond = 48000 / 128;
+        std::uint64_t blockStartSample = 0;
         for (std::size_t i = 0; i < kBlocksPerSecond * 2; ++i) {
             rig.RunBlocks(1);
+            for (const auto& frame : rig.Output()) {
+                const float fold = 0.5f * (frame.channels[0] + frame.channels[1]);
+                independentLevelAtSample.push_back(independentFollower.Process(fold));
+            }
+            rig.ClearOutput();
             const synth::AppMidiOutEventList& events = rig.Engine().AppMidiOutEvents();
             for (const synth::AppMidiOutEvent& event : events) {
                 const std::optional<DecodedNoteEvent> decoded = DecodeNoteEvent(event);
                 if (decoded.has_value() && decoded->isNoteOn) {
                     sawNoteOn = true;
-                    const float sourceLevel = rig.Application().TestLastPitchNoteOnSourceLevel();
+                    const std::uint64_t sample = blockStartSample + event.frame;
+                    REQUIRE_TRUE(sample < independentLevelAtSample.size());
                     const int expected = std::clamp(
-                        static_cast<int>(std::lround(127.0f * sourceLevel)), 1, 127);
+                        static_cast<int>(std::lround(127.0f * independentLevelAtSample[sample])), 1, 127);
                     REQUIRE_TRUE(decoded->velocity == expected);
                 }
             }
+            blockStartSample += 128;
         }
         REQUIRE_TRUE(sawNoteOn);
     }
@@ -804,6 +871,13 @@ TEST_CASE(pitch_several_reports_in_one_block_send_one_change) {
 
     const std::size_t blocksPerSecond = 48000 / 2048;
     std::size_t severalReportBlocksSeen = 0;
+    std::size_t twoEventBlocksSeen = 0;
+    // Tracked from the events themselves (not read back from production's
+    // own soundingPitchNote_): whatever the LAST note-on named, across every
+    // block so far -- so a note-on for a different note, with no preceding
+    // note-off for this one, is caught on ANY block, not only the ones this
+    // patch happens to also report 2+ times in.
+    std::optional<std::uint8_t> lastKnownSoundingNote;
     for (std::size_t i = 0; i < blocksPerSecond * 60; ++i) {
         rig.RunBlocks(1);
         const std::size_t changes = rig.Application().TestPitchNoteChangesLastBlock();
@@ -811,19 +885,38 @@ TEST_CASE(pitch_several_reports_in_one_block_send_one_change) {
         REQUIRE_TRUE(events.Size() <= 2);  // at most a note-off and a note-on, regardless of `changes`.
         if (changes >= 2) {
             ++severalReportBlocksSeen;
-            if (events.Size() == 2) {
-                const std::optional<DecodedNoteEvent> first = DecodeNoteEvent(events[0]);
-                const std::optional<DecodedNoteEvent> second = DecodeNoteEvent(events[1]);
-                REQUIRE_TRUE(first.has_value() && !first->isNoteOn);   // note-off first.
-                REQUIRE_TRUE(second.has_value() && second->isNoteOn);  // note-on second.
-                REQUIRE_TRUE(first->note != second->note);  // a genuine change, not a same-note replay.
-                REQUIRE_TRUE(events[0].frame == events[1].frame);  // both at the later report's frame.
+        }
+        if (events.Size() == 2) {
+            ++twoEventBlocksSeen;
+            const std::optional<DecodedNoteEvent> first = DecodeNoteEvent(events[0]);
+            const std::optional<DecodedNoteEvent> second = DecodeNoteEvent(events[1]);
+            REQUIRE_TRUE(first.has_value() && !first->isNoteOn);   // note-off first.
+            REQUIRE_TRUE(second.has_value() && second->isNoteOn);  // note-on second.
+            REQUIRE_TRUE(first->note != second->note);  // a genuine change, not a same-note replay.
+            REQUIRE_TRUE(events[0].frame == events[1].frame);  // both at the later report's frame.
+            REQUIRE_TRUE(lastKnownSoundingNote.has_value() && *lastKnownSoundingNote == first->note);
+            lastKnownSoundingNote = second->note;
+        } else if (events.Size() == 1) {
+            const std::optional<DecodedNoteEvent> only = DecodeNoteEvent(events[0]);
+            REQUIRE_TRUE(only.has_value());
+            if (only->isNoteOn) {
+                // A note-on with nothing else this block: only valid when no
+                // note was already sounding -- a genuine change instead
+                // needs the note-off too (a poly synth downstream would
+                // otherwise stack a stuck note from the one this dropped).
+                REQUIRE_TRUE(!lastKnownSoundingNote.has_value());
+                lastKnownSoundingNote = only->note;
+            } else {
+                REQUIRE_TRUE(lastKnownSoundingNote.has_value() && *lastKnownSoundingNote == only->note);
+                lastKnownSoundingNote = std::nullopt;
             }
         }
     }
-    // Positive control: this patch really does produce blocks where several
-    // reports land and disagree -- otherwise the assertions above never ran.
+    // Positive controls: this patch really does produce blocks where several
+    // reports land and disagree, and blocks where that disagreement reaches
+    // the MIDI-out pair -- otherwise the assertions above never ran.
     REQUIRE_TRUE(severalReportBlocksSeen > 0);
+    REQUIRE_TRUE(twoEventBlocksSeen > 0);
 }
 
 // ---------------------------------------------------------------------------

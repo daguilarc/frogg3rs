@@ -752,9 +752,6 @@ public:
     // its own test is its only reader.
     std::size_t PitchDetectorConstructions() const { return pitchDetectorConstructions_; }
 
-    // See lastPitchNoteOnSourceLevel_'s own comment.
-    float TestLastPitchNoteOnSourceLevel() const { return lastPitchNoteOnSourceLevel_; }
-
     // See pitchNoteChangesThisBlockForTest_'s own comment.
     std::size_t TestPitchNoteChangesLastBlock() const { return pitchNoteChangesThisBlockForTest_; }
 
@@ -1568,7 +1565,6 @@ public:
                 // the follower's level AT THE NOTE-ON'S FRAME (captured
                 // above, not re-read after the loop) times 127, rounded and
                 // held within 1 to 127.
-                lastPitchNoteOnSourceLevel_ = pitchNoteOnLevelAtChange;
                 const std::uint8_t velocity =
                     midiOutVelocity_.has_value()
                         ? *midiOutVelocity_
@@ -2875,12 +2871,6 @@ private:
     // note-off on the wrong channel.
     std::optional<int> soundingPitchNote_;
     std::uint8_t pitchNoteChannel_ = 0;
-    // Test-only introspection (beside TestParameterManager/TestOutputLimiter
-    // above): the follower level a note-on's velocity was actually computed
-    // from, when the Velocity field is Level -- written at the same capture
-    // site ProcessBlock's note-on branch reads, so a test can confirm the
-    // appended byte against the value the production code itself used.
-    float lastPitchNoteOnSourceLevel_ = 0.0f;
     // Test-only: how many times the CURRENT block's per-sample loop actually
     // reassigned soundingPitchNote_ (reset to 0 at the top of every
     // ProcessBlock) -- proves several reports landed in one block, since
