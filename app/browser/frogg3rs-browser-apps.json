@@ -13,7 +13,9 @@
       "header": "Froggers.hpp",
       "cppType": "synth_froggers::FroggersApp",
       "includeDirs": [
-        "../../../../../app"
+        "../../../../../app",
+        "../../../../../External/q/q_lib/include",
+        "../../../../../External/infra/include"
       ]
     }
   ]

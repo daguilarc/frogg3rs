@@ -32,6 +32,7 @@ APP_HEADERS="$(ls "$REPO_ROOT"/app/*.hpp "$REPO_ROOT"/app/dsp/*.hpp | tr '\n' ' 
 # build-exit-code check.
 nice make -j2 -C External/Sheaf/projects/synth/apps/sheaf-patch \
   EXTRA_APP_DIR="$REPO_ROOT/app" \
+  EXTRA_APP_INCLUDE_DIRS="$REPO_ROOT/External/q/q_lib/include $REPO_ROOT/External/infra/include" \
   EXTRA_APP_HEADER=FroggersRegistration.hpp \
   EXTRA_APP_TYPE=synth_froggers::FroggersApp \
   EXTRA_APP_REGISTRAR=synth_froggers::MakeFroggersRegistration \

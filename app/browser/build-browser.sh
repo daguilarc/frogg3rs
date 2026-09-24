@@ -42,6 +42,8 @@ npm run build
 node dist/src/build-browser-apps.mjs \
   --manifest "$MANIFEST" \
   --allowed-source-root "$REPO_ROOT/app" \
+  --allowed-source-root "$REPO_ROOT/External/q/q_lib/include" \
+  --allowed-source-root "$REPO_ROOT/External/infra/include" \
   --output-root "$STAGE_REL"
 
 mkdir -p "$OUT_APPS_DIR"

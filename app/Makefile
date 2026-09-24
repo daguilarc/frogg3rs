@@ -16,6 +16,8 @@
 
 APP_DIR := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 SHEAF_SYNTH_DIR := $(APP_DIR)/../External/Sheaf/projects/synth
+Q_INCLUDE_DIR := $(APP_DIR)/../External/q/q_lib/include
+INFRA_INCLUDE_DIR := $(APP_DIR)/../External/infra/include
 
 CXX ?= clang++
 CXXFLAGS ?= -std=c++20 -Wall -Wextra -Wpedantic -O2
@@ -24,7 +26,7 @@ CXXFLAGS ?= -std=c++20 -Wall -Wextra -Wpedantic -O2
 # skeleton; the shipping builds (app/build-launcher.sh, app/standalone,
 # app/vst, app/browser) never pass it, so those assertions cost nothing
 # there and cannot abort a performance.
-CPPFLAGS := -I$(SHEAF_SYNTH_DIR)/include -DFROGGERS_DSP_CHECKS
+CPPFLAGS := -I$(SHEAF_SYNTH_DIR)/include -I$(Q_INCLUDE_DIR) -I$(INFRA_INCLUDE_DIR) -DFROGGERS_DSP_CHECKS
 
 BUILD_DIR := $(APP_DIR)/build
 APP_NAME := froggers_skeleton

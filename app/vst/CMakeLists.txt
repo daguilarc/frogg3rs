@@ -252,6 +252,8 @@ target_include_directories(FroggersVst PRIVATE
     # render-host seam FroggersPluginEditor.cpp builds on -- see that file's
     # own header comment for the full trace.
     "${SHEAF_SYNTH_DIR}/juce"
+    "${APP_DIR}/../External/q/q_lib/include"
+    "${APP_DIR}/../External/infra/include"
 )
 
 target_compile_features(FroggersVst PUBLIC cxx_std_20)
@@ -317,6 +319,8 @@ target_include_directories(FroggersVstSmokeTest PRIVATE
     "${APP_DIR}"
     "${SHEAF_SYNTH_DIR}/include"
     "${SHEAF_SYNTH_DIR}/runtime"
+    "${APP_DIR}/../External/q/q_lib/include"
+    "${APP_DIR}/../External/infra/include"
 )
 target_compile_features(FroggersVstSmokeTest PRIVATE cxx_std_20)
 # Links the plugin's own shared-code target (juce_add_plugin's FroggersVst
@@ -339,6 +343,8 @@ target_include_directories(FroggersVstHostTests PRIVATE
     "${APP_DIR}"
     "${SHEAF_SYNTH_DIR}/include"
     "${SHEAF_SYNTH_DIR}/runtime"
+    "${APP_DIR}/../External/q/q_lib/include"
+    "${APP_DIR}/../External/infra/include"
 )
 target_compile_features(FroggersVstHostTests PRIVATE cxx_std_20)
 target_link_libraries(FroggersVstHostTests PRIVATE FroggersVst)
@@ -376,6 +382,8 @@ target_include_directories(FroggersVstEditorTest PRIVATE
     "${SHEAF_SYNTH_DIR}/include"
     "${SHEAF_SYNTH_DIR}/runtime"
     "${SHEAF_SYNTH_DIR}/juce"
+    "${APP_DIR}/../External/q/q_lib/include"
+    "${APP_DIR}/../External/infra/include"
 )
 target_compile_features(FroggersVstEditorTest PRIVATE cxx_std_20)
 target_link_libraries(FroggersVstEditorTest PRIVATE FroggersVst)

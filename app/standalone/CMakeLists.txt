@@ -126,6 +126,8 @@ target_include_directories(FroggersStandalone PRIVATE
     "${SHEAF_SYNTH_DIR}/include"
     "${SHEAF_SYNTH_DIR}/runtime"
     "${SHEAF_SYNTH_DIR}/juce"
+    "${APP_DIR}/../External/q/q_lib/include"
+    "${APP_DIR}/../External/infra/include"
 )
 
 target_compile_definitions(FroggersStandalone PRIVATE

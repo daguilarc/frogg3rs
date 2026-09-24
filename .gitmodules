@@ -1,3 +1,9 @@
 [submodule "External/Sheaf"]
 	path = External/Sheaf
 	url = https://github.com/jvictor0/Sheaf.git
+[submodule "External/q"]
+	path = External/q
+	url = https://github.com/cycfi/q.git
+[submodule "External/infra"]
+	path = External/infra
+	url = https://github.com/cycfi/infra.git
