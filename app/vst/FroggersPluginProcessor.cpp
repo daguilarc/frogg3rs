@@ -851,6 +851,32 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
     // (started in the constructor via startTimerHz(30)).
 }
 
+void FroggersPluginProcessor::processBlockBypassed(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) {
+    // The base implementation's own bypass contract (clearing any output
+    // channel beyond the input count) still applies; only the two gaps it
+    // leaves are patched below.
+    AudioProcessor::processBlockBypassed(buffer, midiMessages);
+
+    // Bypassed: engine_.ProcessBlock() must not run this block (the base
+    // class's own contract is audio passes through unprocessed), so the
+    // host's incoming MIDI is never handed to engine_ to be cleared the way
+    // processBlock() clears it above -- clear it here instead, for the same
+    // reason: a synth that declares MIDI input accepted still sends out
+    // only its own messages, never what came in.
+    midiMessages.clear();
+
+    // A Pitch note left sounding at the moment the host bypasses this
+    // plugin would otherwise hang until engine_.ProcessBlock() runs again
+    // and either sees the output fall quiet or Pitch stop being chosen --
+    // neither of which happens while bypassed. End it now instead, at
+    // frame 0 (the only frame this block has any of its own state for).
+    if (const std::optional<synth::AppMidiOutEvent> noteOff =
+            engine_.Application().EndSoundingPitchNoteForBypass()) {
+        const std::uint8_t bytes[3] = {noteOff->statusByte, noteOff->data1, noteOff->data2};
+        midiMessages.addEvent(bytes, 3, 0);
+    }
+}
+
 void FroggersPluginProcessor::timerCallback() {
     // Tick order mirrors Sheaf Runtime.hpp's own timerCallback()
     // (External/Sheaf/projects/synth/runtime/Runtime.hpp:974-984): the engine's message-thread tick runs first.

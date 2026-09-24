@@ -166,6 +166,14 @@ public:
     void releaseResources() override;
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) override;
+    // A host that bypasses this plugin calls this instead of processBlock(),
+    // so engine_.ProcessBlock() never runs a bypassed block and the app's
+    // audio-thread state (detector, sounding note) stays frozen instead of
+    // free-running against silence. The host's own incoming MIDI must still
+    // not pass through (processBlock()'s own contract, above), and a Pitch
+    // note left sounding at the moment of bypass must not hang for as long
+    // as the host stays bypassed -- see the .cpp for the full trace.
+    void processBlockBypassed(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) override;
 
     // Fires once per actual bus-layout change (never once per
     // processBlock()) -- see this method's own comment in the .cpp for the

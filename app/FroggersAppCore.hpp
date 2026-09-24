@@ -729,6 +729,24 @@ public:
     std::uint8_t MidiOutCcNumber() const { return midiOutCcNumber_; }
     std::optional<std::uint8_t> MidiOutVelocity() const { return midiOutVelocity_; }
 
+    // For a host that bypasses this app instead of continuing to call
+    // ProcessBlock(): ends a sounding Pitch note right away (note-off) and
+    // resets the detector, the same two things leaving Pitch or the output
+    // falling quiet already do inside ProcessBlock(), so the note is never
+    // left stuck sounding for as long as the host keeps bypassing. Returns
+    // the note-off event when a note was sounding, or nullopt when none was.
+    std::optional<synth::AppMidiOutEvent> EndSoundingPitchNoteForBypass() {
+        if (!soundingPitchNote_.has_value()) {
+            return std::nullopt;
+        }
+        const synth::AppMidiOutEvent event = PitchNoteOffEvent(pitchNoteChannel_, *soundingPitchNote_, 0);
+        soundingPitchNote_ = std::nullopt;
+        if (pitchDetector_.has_value()) {
+            pitchDetector_->reset();
+        }
+        return event;
+    }
+
     // How many times the Pitch detector has been emplaced, counted at the
     // one emplace site in PrepareToPlay() -- this member owns that seam and
     // its own test is its only reader.
@@ -983,6 +1001,16 @@ public:
         }
     }
 
+    // Builds the note-off event for a Pitch note that stopped sounding, on
+    // the channel its note-on used. The one place this event is built:
+    // ProcessBlock()'s block-start content/channel-change branch, its
+    // post-loop pair below, and EndSoundingPitchNoteForBypass() above all
+    // call this rather than each writing the same 0x80-status bytes.
+    static synth::AppMidiOutEvent PitchNoteOffEvent(std::uint8_t channel, int note, std::size_t frame) {
+        const std::uint8_t noteOffStatus = static_cast<std::uint8_t>(0x80 | (channel & 0x0F));
+        return synth::AppMidiOutEvent{frame, noteOffStatus, static_cast<std::uint8_t>(note), 0};
+    }
+
     // Drives the per-sample parameter-model (scene-blend, fuego), then steps
     // the DSP behind the 15 modulation sources every sample (this class's
     // modulation_ member) BEFORE parameters_.ProcessSample() so its
@@ -1003,9 +1031,7 @@ public:
         if (soundingPitchNote_.has_value() &&
             (midiOutContent_ != FroggersMidiOutContent::Pitch || midiOutChannel_ != pitchNoteChannel_) &&
             block.midiOut != nullptr) {
-            const std::uint8_t noteOffStatus = static_cast<std::uint8_t>(0x80 | (pitchNoteChannel_ & 0x0F));
-            block.midiOut->Append(synth::AppMidiOutEvent{
-                0, noteOffStatus, static_cast<std::uint8_t>(*soundingPitchNote_), 0});
+            block.midiOut->Append(PitchNoteOffEvent(pitchNoteChannel_, *soundingPitchNote_, 0));
             soundingPitchNote_ = std::nullopt;
             if (midiOutContent_ != FroggersMidiOutContent::Pitch && pitchDetector_.has_value()) {
                 pitchDetector_->reset();
@@ -1535,10 +1561,7 @@ public:
             soundingPitchNote_ != pitchNoteAtBlockStart) {
             const std::size_t stampFrame = pitchChangeFrame.value_or(0);
             if (pitchNoteAtBlockStart.has_value()) {
-                const std::uint8_t noteOffStatus =
-                    static_cast<std::uint8_t>(0x80 | (pitchNoteChannel_ & 0x0F));
-                block.midiOut->Append(synth::AppMidiOutEvent{
-                    stampFrame, noteOffStatus, static_cast<std::uint8_t>(*pitchNoteAtBlockStart), 0});
+                block.midiOut->Append(PitchNoteOffEvent(pitchNoteChannel_, *pitchNoteAtBlockStart, stampFrame));
             }
             if (soundingPitchNote_.has_value()) {
                 // The Velocity field's fixed value, or, when it is Level,

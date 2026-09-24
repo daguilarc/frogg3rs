@@ -2869,6 +2869,92 @@ TEST_CASE(plugin_apps_messages_reach_the_host_buffer_at_their_frames) {
 }
 
 // ---------------------------------------------------------------------------
+// plugin_bypass_clears_incoming_midi_and_ends_a_sounding_pitch_note
+// ---------------------------------------------------------------------------
+// A host that bypasses this plugin calls processBlockBypassed() instead of
+// processBlock(), which never runs while bypassed: engine_.ProcessBlock()
+// does not run either, so the sounding-note bookkeeping inside it (leaving
+// Pitch, the output falling quiet) never fires. Without its own override,
+// this plugin's incoming MIDI would pass straight through during bypass
+// (processBlock()'s "never accept incoming MIDI" contract only applies to
+// processBlock() itself), and a note left sounding at the moment of bypass
+// would hang for as long as the host stays bypassed.
+TEST_CASE(plugin_bypass_clears_incoming_midi_and_ends_a_sounding_pitch_note) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("plugin_bypass_ends_pitch_note"));
+    FakePlayHead playHead;
+    processor.setPlayHead(&playHead);
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+
+    synth::AppMidiOutSettings settings;
+    settings.contentId = synth_froggers::kFroggersMidiOutContentPitchId;
+    settings.channel = 6;
+    processor.ApplicationForTest().SetMidiOutSetting(settings);
+
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    auto runBlock = [&] {
+        buffer.clear();
+        processor.processBlock(buffer, midi);
+    };
+
+    // The first playhead observation only establishes a baseline (only a
+    // TRANSITION pushes a Start/Stop message, see processBlock()'s own
+    // comment) -- a false baseline first, so setting SetPlaying(true) next
+    // is an actual edge.
+    playHead.SetPlaying(false);
+    runBlock();
+    playHead.SetPlaying(true);
+    runBlock();  // detects the edge, buffers it (does not push).
+    processor.PumpMessageThreadForTest();  // pushes the one Start.
+    runBlock();  // drains + applies it.
+
+    // Run the default patch until Pitch reports a sounding note (the same
+    // wait app/FroggersMidiOutTests.cpp's own pitch tests use), capturing
+    // which note and channel it is so the note-off below can be checked
+    // against the real value rather than an assumed one.
+    std::uint8_t soundingNote = 0;
+    bool sawNoteOn = false;
+    for (int i = 0; i < 4000 && !sawNoteOn; ++i) {
+        runBlock();
+        for (const juce::MidiMessageMetadata metadata : midi) {
+            if ((metadata.data[0] & 0xF0) == 0x90) {
+                sawNoteOn = true;
+                soundingNote = metadata.data[1];
+            }
+        }
+    }
+    REQUIRE_TRUE(sawNoteOn);
+
+    // Bypass: an event the host claims arrived on its own input must not
+    // reach the output, and the sounding note must end with a note-off on
+    // the channel and note it was actually sounding on.
+    juce::MidiBuffer bypassedMidi;
+    bypassedMidi.addEvent(juce::MidiMessage::controllerEvent(1, 16, 64), 10);
+    juce::AudioBuffer<float> bypassBuffer(2, 256);
+    processor.processBlockBypassed(bypassBuffer, bypassedMidi);
+
+    int eventCount = 0;
+    for (const juce::MidiMessageMetadata metadata : bypassedMidi) {
+        ++eventCount;
+        REQUIRE_TRUE(metadata.samplePosition == 0);
+        REQUIRE_TRUE(metadata.numBytes == 3);
+        REQUIRE_TRUE(metadata.data[0] == (0x80 | 6));  // Note Off, channel 6.
+        REQUIRE_TRUE(metadata.data[1] == soundingNote);
+        REQUIRE_TRUE(metadata.data[2] == 0);
+    }
+    REQUIRE_TRUE(eventCount == 1);
+
+    // No note is left sounding: resuming normal processing sends only a
+    // fresh note-on (or nothing), never another note-off for the note that
+    // already ended during bypass.
+    runBlock();
+    for (const juce::MidiMessageMetadata metadata : midi) {
+        REQUIRE_TRUE((metadata.data[0] & 0xF0) != 0x80);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Plugin surface: the MIDI-out fields row beneath the transport row
 // ---------------------------------------------------------------------------
 bool Overlaps(synth::ui::Bounds a, synth::ui::Bounds b) {
