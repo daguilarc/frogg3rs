@@ -108,15 +108,6 @@ float PitchKnobRaiseDelta(float factor) {
                                         synth_froggers::dsp::Vco::kPitchMinHz);
 }
 
-void RaiseThreeVcoPitchKnobs(synth_froggers::FroggersParameterModel& model, float factor) {
-    const float delta = PitchKnobRaiseDelta(factor);
-    for (std::size_t vco = 0; vco < 3; ++vco) {
-        synth::Parameter& pitch = model.PageParameter(
-            synth_froggers::FroggersBankId::Audio,
-            synth_froggers::AudioSlot(vco, synth_froggers::VcoSlotRole::Pitch));
-        pitch.SceneCenter(0) = std::clamp(pitch.SceneCenter(0) + delta, 0.0f, 1.0f);
-    }
-}
 
 // A note-on or note-off read from AppMidiOutEvents(), decoded once so every
 // test below reads the same shape rather than re-decoding status bytes.
@@ -396,16 +387,21 @@ TEST_CASE(pitch_default_patch_sends_note_45_and_stays_sounding) {
     REQUIRE_TRUE(*soundingNote == 45);
 }
 
+// The Pitch note the 20-step schedule below raises the default patch's
+// three VCOs to, measure-q/QShippedRule.cpp Item 2's own target.
+constexpr int kPitchStepTargetNote = 52;
+
 // ---------------------------------------------------------------------------
 // pitch_step_confirms_within_100ms
 // ---------------------------------------------------------------------------
-// The latency bound (K = 1, the requirement's own <=100 ms rule) at both
-// host block sizes it was measured at. Simplified from measure-q/
-// QLatencyRange.cpp's own 20-step, gate-phase-relative schedule to one
-// settled step per block size: reproducing the gate-phase-relative timing
-// exactly would need the master clock's own gate-phase arithmetic, which
-// nothing else here needs; the bound asserted is the requirement's own,
-// unchanged.
+// The requirement's own <=100 ms latency bound, measured the way
+// measure-q/QShippedRule.cpp Item 2 measured it (the same render
+// measure-q/report-shipped-rule.md Table 2's 75.417 ms/94.271 ms figures
+// come from): 20 up/back steps of the default patch's three VCO pitch
+// knobs, a factor of 1.5, one every quarter note (0.5 s at the default
+// 120 bpm) and landing 5% into that quarter's own gate-open window, worst
+// latency taken over all 20 "up" transitions to the real MIDI-out note-on
+// for note 52.
 void AssertPitchStepConfirmsWithin100Ms(int blockSize, double& outWorstLatencyMs) {
     Rig::AudioSettings settings;
     settings.sampleRate = 48000.0;
@@ -416,44 +412,78 @@ void AssertPitchStepConfirmsWithin100Ms(int blockSize, double& outWorstLatencyMs
     rig.Application().SetMidiOutSetting(PitchSetting(/*channel=*/0));
     rig.StartAt(0);
 
-    // Settles on the default patch's steady note (45) well past the attack
-    // transient before the step -- keeps the step's own confirmation latency
-    // uncontaminated by the startup ramp.
-    const std::size_t blocksPerSecond = static_cast<std::size_t>(48000 / blockSize);
-    for (std::size_t i = 0; i < blocksPerSecond; ++i) {
-        rig.RunBlocks(1);
-    }
+    const double quarterNoteSamples = 1.0 / rig.Engine().Clock().QuarterNotesPerSample();
+    const std::size_t offsetFrames = static_cast<std::size_t>(0.05 * quarterNoteSamples);
+    const double totalSeconds = 0.5 * 41.0 + 1.0;
+    const std::size_t totalFrames = static_cast<std::size_t>(48000.0 * totalSeconds);
 
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
-    RaiseThreeVcoPitchKnobs(model, 1.5f);
-    rig.Application().TestParameterManager().ComputeAllParameters();
+    const float delta = PitchKnobRaiseDelta(1.5f);
+    // The default patch's own VCO1/2/3 pitch knobs, read once: each step
+    // below sets an ABSOLUTE value relative to this fixed baseline (raised
+    // or back to it), not a cumulative add, so 20 up/back cycles land on
+    // exactly the same two values every time.
+    std::array<float, 3> baseline{};
+    for (std::size_t vco = 0; vco < 3; ++vco) {
+        baseline[vco] = model.PageParameter(
+                             synth_froggers::FroggersBankId::Audio,
+                             synth_froggers::AudioSlot(vco, synth_froggers::VcoSlotRole::Pitch))
+                            .SceneCenter(0);
+    }
 
-    std::optional<std::uint64_t> confirmedAtSample;
+    std::vector<std::uint64_t> raisedTransitionSamples;
+    std::vector<std::uint64_t> targetNoteOnSamples;
+
+    std::size_t framesRun = 0;
     std::uint64_t blockStartSample = 0;
-    // The step's own block start sample, stamped before RunBlocks advances
-    // the engine's sample counter.
-    std::optional<std::uint64_t> stepBlockStart;
-    for (std::size_t i = 0; i < blocksPerSecond * 2 && !confirmedAtSample.has_value(); ++i) {
-        if (i == 0) {
-            stepBlockStart = blockStartSample;
+    std::size_t nextStepIx = 0;
+    bool raised = false;
+    while (framesRun < totalFrames) {
+        if (nextStepIx < 40) {
+            const std::size_t targetFrame =
+                static_cast<std::size_t>(static_cast<double>(nextStepIx) * quarterNoteSamples) + offsetFrames;
+            if (framesRun >= targetFrame) {
+                raised = !raised;
+                for (std::size_t vco = 0; vco < 3; ++vco) {
+                    model.PageParameter(
+                             synth_froggers::FroggersBankId::Audio,
+                             synth_froggers::AudioSlot(vco, synth_froggers::VcoSlotRole::Pitch))
+                        .SceneCenter(0) = baseline[vco] + (raised ? delta : 0.0f);
+                }
+                if (raised) {
+                    raisedTransitionSamples.push_back(framesRun);
+                }
+                ++nextStepIx;
+            }
         }
         rig.RunBlocks(1);
         const synth::AppMidiOutEventList& events = rig.Engine().AppMidiOutEvents();
         for (const synth::AppMidiOutEvent& event : events) {
             const std::optional<DecodedNoteEvent> decoded = DecodeNoteEvent(event);
-            if (decoded.has_value() && decoded->isNoteOn) {
-                confirmedAtSample = blockStartSample + event.frame;
+            if (decoded.has_value() && decoded->isNoteOn && decoded->note == kPitchStepTargetNote) {
+                targetNoteOnSamples.push_back(blockStartSample + event.frame);
             }
         }
         blockStartSample += static_cast<std::uint64_t>(blockSize);
+        framesRun += static_cast<std::size_t>(blockSize);
     }
 
-    REQUIRE_TRUE(confirmedAtSample.has_value());
-    REQUIRE_TRUE(stepBlockStart.has_value());
-    REQUIRE_TRUE(*confirmedAtSample >= *stepBlockStart);
-    const std::uint64_t latencyFrames = *confirmedAtSample - *stepBlockStart;
-    REQUIRE_TRUE(latencyFrames <= 4800);  // 100 ms at 48 kHz.
-    outWorstLatencyMs = static_cast<double>(latencyFrames) * 1000.0 / 48000.0;
+    REQUIRE_TRUE(raisedTransitionSamples.size() == 20);
+
+    std::uint64_t worstLatencyFrames = 0;
+    std::size_t measuredTransitions = 0;
+    for (std::uint64_t transitionSample : raisedTransitionSamples) {
+        const auto found = std::find_if(targetNoteOnSamples.begin(), targetNoteOnSamples.end(),
+                                        [&](std::uint64_t sample) { return sample >= transitionSample; });
+        REQUIRE_TRUE(found != targetNoteOnSamples.end());
+        const std::uint64_t latencyFrames = *found - transitionSample;
+        worstLatencyFrames = std::max(worstLatencyFrames, latencyFrames);
+        ++measuredTransitions;
+    }
+
+    REQUIRE_TRUE(measuredTransitions == 20);
+    REQUIRE_TRUE(worstLatencyFrames <= 4800);  // 100 ms at 48 kHz.
+    outWorstLatencyMs = static_cast<double>(worstLatencyFrames) * 1000.0 / 48000.0;
 }
 
 TEST_CASE(pitch_step_confirms_within_100ms_at_128_and_256_frames) {
@@ -461,10 +491,8 @@ TEST_CASE(pitch_step_confirms_within_100ms_at_128_and_256_frames) {
     double worst256 = 0.0;
     AssertPitchStepConfirmsWithin100Ms(128, worst128);
     AssertPitchStepConfirmsWithin100Ms(256, worst256);
-    // Printed beside measure-q/report-shipped-rule.md Table 2's shipped-rule
-    // figures (75.417 ms at 128-frame, 94.271 ms at 256-frame) -- this
-    // test's own schedule differs (one settled step, not 20 gated ones), so
-    // an exact match is not asserted, only the requirement's <=100 ms bound.
+    // measure-q/report-shipped-rule.md Table 2's own figures for this exact
+    // render: 75.417 ms at 128-frame, 94.271 ms at 256-frame.
     std::cout << "  [pitch latency] 128-frame: " << worst128
               << " ms (shipped-rule reference 75.417 ms); 256-frame: " << worst256
               << " ms (shipped-rule reference 94.271 ms)\n";
