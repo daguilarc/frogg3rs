@@ -367,7 +367,7 @@ either pair differs or either path is missing, the run stops and reports
 BLOCKED. Both links are removed after the run, and `git status --short` and
 `git -C External/Sheaf status --short` then print nothing for them.
 
-- [ ] 0. Rebase (operator ruling: midi-out is developed and pushed on its
+- [x] 0. Rebase (operator ruling: midi-out is developed and pushed on its
       own branches, frogg3rs `midi-out` and Sheaf `app-midi-out`, and is
       rebased onto main as main stands when the operator says the other
       sessions' work on main is done; open changes nobody is working on are
@@ -382,12 +382,12 @@ BLOCKED. Both links are removed after the run, and `git status --short` and
       replacement.
       Check: `git log --oneline -1 origin/main` equals the reported frogg3rs
       base and `git merge-base --is-ancestor origin/main HEAD` exits 0.
-- [ ] 1. Move the `External/Sheaf` pin to the commit carrying `app-midi-out`.
+- [x] 1. Move the `External/Sheaf` pin to the commit carrying `app-midi-out`.
       Check: `git -C External/Sheaf grep -c "kAppMidiOutSinkIx" HEAD --
       projects/synth/include/synth/MidiController.hpp` prints a non-zero count,
       and `git -C External/Sheaf status` is clean. If the Sheaf change has not
       landed, report that and stop.
-- [ ] 2. Add Cycfi Q and its infra dependency as submodules (the operator
+- [x] 2. Add Cycfi Q and its infra dependency as submodules (the operator
       approved the download): NEW `External/q` from
       `https://github.com/cycfi/q.git` at
       `0920556c6eacb0091634310950f0c0ff5d66434a`, and NEW `External/infra` from
@@ -453,7 +453,7 @@ BLOCKED. Both links are removed after the run, and `git status --short` and
       commits above; `External/q/LICENSE` and `External/infra-LICENSE.txt`
       exist; and task 12 builds every target above by the commands at the
       top of this section, once task 6 makes the app core include Q.
-- [ ] 3. In `FroggersMidiCatalog()`, list two MIDI-out contents: id `level`,
+- [x] 3. In `FroggersMidiCatalog()`, list two MIDI-out contents: id `level`,
       label "Level (CC)", Control Change; id `pitch`, label "Pitch (notes)",
       notes, listed only on builds that offer Pitch. Whether a build offers
       Pitch is NEW compile-time `kFroggersOffersPitch` in
@@ -464,7 +464,7 @@ BLOCKED. Both links are removed after the run, and `git status --short` and
       in `app/FroggersMidiCatalogTests.cpp` passes unchanged, and a new test in
       that file asserts the two contents, their ids, labels and kinds, with
       Pitch present on the standalone.
-- [ ] 4. Settings intake: NEW `FroggersAppCore` setter for the MIDI-out
+- [x] 4. Settings intake: NEW `FroggersAppCore` setter for the MIDI-out
       setting (content id, channel 0 to 15, CC number, velocity), callable on
       the message thread. It resolves the content id against the catalog's
       MIDI-out contents on the message thread (Off, `level`, `pitch`; an
@@ -489,7 +489,7 @@ BLOCKED. Both links are removed after the run, and `git status --short` and
       setting append nothing) was moved to task 5 -- no code existed by the
       end of task 4 that could append a MIDI-out message for it to assert
       against.
-- [ ] 5. Level: a NEW `dsp::SingleEnvelopeFollower` member for the MIDI out,
+- [x] 5. Level: a NEW `dsp::SingleEnvelopeFollower` member for the MIDI out,
       given its sample rate in `PrepareToPlay`, fed the mono fold of each
       `RouteAudioSample()` result every sample. `ProcessBlock` already forms
       that fold twice per sample, for Record and for a mono device, each under
@@ -517,7 +517,7 @@ BLOCKED. Both links are removed after the run, and `git status --short` and
       test in
       `app/FroggersAudioRoutingTests.cpp` passes unchanged (binary
       `$(AUDIO_ROUTING_BIN)`).
-- [ ] 6. Pitch, as the operator's ruling states it (above, "The pitch path"):
+- [x] 6. Pitch, as the operator's ruling states it (above, "The pitch path"):
       NEW member of `FroggersAppCore` holding Cycfi Q's pitch detector,
       including `<q/pitch/pitch_detector.hpp>`. Q's detector has no default
       constructor, so the member is a std::optional of Q's pitch_detector
@@ -608,7 +608,7 @@ BLOCKED. Both links are removed after the run, and `git status --short` and
         (plugin, run by `ctest`), and a new spec in `app/browser/e2e/` that
         reads the Controllers page's Sends options (browser, run by
         `npx playwright test`), each against what task 3 records.
-- [ ] 7. Note-off rules: a sounding note's note-off, on its own channel, is
+- [x] 7. Note-off rules: a sounding note's note-off, on its own channel, is
       appended at frame 0 of the block where Pitch stops being the content or
       the channel changes, before any other message in that block; task 6's
       note rule then starts that block with no note sounding, so the block
@@ -617,13 +617,13 @@ BLOCKED. Both links are removed after the run, and `git status --short` and
       Check: new tests in `app/FroggersMidiOutTests.cpp` assert the "No note
       is left sounding" requirement's two scenarios, each shown red against a
       build without its note-off.
-- [ ] 8. Plugin output: set `NEEDS_MIDI_OUTPUT TRUE` in `app/vst/CMakeLists.txt`;
+- [x] 8. Plugin output: set `NEEDS_MIDI_OUTPUT TRUE` in `app/vst/CMakeLists.txt`;
       `producesMidi()` returns true; `processBlock` clears `midiMessages` before
       anything else, and after `engine_.ProcessBlock` adds each entry of the
       engine's MIDI-out list with `midiMessages.addEvent(bytes, 3, frame)`.
       Check: new tests in `app/vst/FroggersVstHostTests.cpp` assert the plugin
       output requirement's three scenarios, run by `ctest` as above.
-- [ ] 9. Plugin surface and session. The Channel field displays 0 to 15, the
+- [x] 9. Plugin surface and session. The Channel field displays 0 to 15, the
       same construct and numbering `app-midi-out`'s Controllers-page Channel
       field and the controller rows use (ruling, `app-midi-out`'s Q1). The
       MIDI button does not join the transport row: at the plugin's design
@@ -694,7 +694,7 @@ BLOCKED. Both links are removed after the run, and `git status --short` and
       passes unchanged; `make -C app check-catalog-covers-screen-actions`
       passes; every existing test in `app/FroggersSurfaceTests.cpp` passes
       unchanged.
-- [ ] 10. MANUAL.md (narrowed, coordinator ruling): an Audio to MIDI section
+- [x] 10. MANUAL.md (narrowed, coordinator ruling): an Audio to MIDI section
       under Audio configuration describing what ships now: where it is set
       on each build (the Controllers page in the standalone and the
       browser, the plugin's own surface in the plugin builds); what Level
@@ -716,7 +716,7 @@ BLOCKED. Both links are removed after the run, and `git status --short` and
       Check: `grep -n -i "send clock" MANUAL.md` prints at least one line,
       and the section names no DAW, plugin format or browser as confirmed
       (the operator runs have not happened yet).
-- [ ] 11. Comments made false by this change, in the files it touches: in
+- [x] 11. Comments made false by this change, in the files it touches: in
       `app/vst/FroggersPluginProcessor.hpp`, the class comment's "This class
       adds no note handling: the MIDI buffer is accepted and ignored" and the
       `acceptsMidi()` comment ("The buffer is ignored every block"); in
