@@ -377,4 +377,17 @@ inline synth::MidiAppCatalog FroggersMidiCatalog() {
     return catalog;
 }
 
+// The MIDI button's own option list: "off", then each catalog content id in
+// declaration order -- the one place this is built, used by FroggersApp's
+// own Init() (Froggers.hpp) and by the plugin's ComputeMidiOutOptionLabels()
+// (FroggersPluginProcessor.cpp).
+inline std::vector<std::string> FroggersMidiOutOptionLabels() {
+    std::vector<std::string> labels{"off"};
+    const synth::MidiAppCatalog catalog = FroggersMidiCatalog();
+    for (const synth::MidiAppMidiOutContent& content : catalog.midiOutContents) {
+        labels.push_back(content.id);
+    }
+    return labels;
+}
+
 }  // namespace synth_froggers

@@ -54,12 +54,7 @@ public:
         // Selection 0 (Off) is this call's own default; a restored session
         // moves it through SetMidiOutOptions again once the plugin reads
         // its own stored entry.
-        std::vector<std::string> midiOutLabels{"off"};
-        const synth::MidiAppCatalog catalog = FroggersMidiCatalog();
-        for (const synth::MidiAppMidiOutContent& content : catalog.midiOutContents) {
-            midiOutLabels.push_back(content.id);
-        }
-        ui_.SetMidiOutOptions(std::move(midiOutLabels), /*selection=*/0);
+        ui_.SetMidiOutOptions(FroggersMidiOutOptionLabels(), /*selection=*/0);
     }
 
     synth::ui::Surface& PortableSurface() { return ui_; }

@@ -538,12 +538,7 @@ void FroggersPluginProcessor::ApplyInputSelection(int selectionIndex) {
 }
 
 std::vector<std::string> FroggersPluginProcessor::ComputeMidiOutOptionLabels() const {
-    std::vector<std::string> labels{"off"};
-    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
-    for (const synth::MidiAppMidiOutContent& content : catalog.midiOutContents) {
-        labels.push_back(content.id);
-    }
-    return labels;
+    return synth_froggers::FroggersMidiOutOptionLabels();
 }
 
 void FroggersPluginProcessor::ApplyMidiOutSelection(int selectionIndex) {
@@ -1623,13 +1618,16 @@ void FroggersPluginProcessor::PumpStatePersistence() {
                         midiOutSettings_.ccNumber = *ccNumber;
                     }
                 }
+                // Reuses ParseAppMidiOutVelocity itself (its numeric branch)
+                // rather than re-stating the 1-127 rule here: an integer
+                // outside it, like an absent/non-integer one, refuses and
+                // leaves velocity at nullopt (Level, follow).
                 const synth::JSON velocityJson = midiOutJson.Get(kMidiOutVelocityKey);
-                if (IsJsonInteger(velocityJson) && velocityJson.IntegerValue() >= 1 &&
-                    velocityJson.IntegerValue() <= 127) {
-                    midiOutSettings_.velocity = static_cast<std::uint8_t>(velocityJson.IntegerValue());
-                } else {
-                    midiOutSettings_.velocity = std::nullopt;  // absent = Level (follow).
-                }
+                const std::optional<std::optional<std::uint8_t>> parsedVelocity =
+                    IsJsonInteger(velocityJson)
+                        ? synth::ParseAppMidiOutVelocity(std::to_string(velocityJson.IntegerValue()))
+                        : std::nullopt;
+                midiOutSettings_.velocity = parsedVelocity.value_or(std::nullopt);
                 engine_.Application().SetMidiOutSetting(midiOutSettings_);
                 PushMidiOutFieldsToSurface();
             } else {
