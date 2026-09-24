@@ -225,22 +225,29 @@ selectors listing the machine's own audio devices, plus a **Retry Input** button
 named Audio I/O rather than Audio so it is not read as the Audio parameter page. A
 **Controllers** page maps an external MIDI controller to this app's own controls; see MIDI controllers, below. A **Sync** page lets the transport slave to incoming MIDI clock (**Receive
 clock**, **Receive transport** toggles, a **PPQN** field 1–960); while slaved, the BPM control (Global
-controls, above) becomes a read-only status display instead of an editable slider.
+controls, above) becomes a read-only status display instead of an editable slider. The same page's
+**Send clock** and **Send transport** toggles send the transport the other way, out through each
+mapped controller row's own **MIDI out** port (MIDI controllers, below); neither one ever reaches the
+app's own MIDI out port (Audio to MIDI, below).
 
 ### Plugin (VST3 / AU)
 
 The DAW owns audio devices, transport and tempo.
 
 **Transport and tempo** follow the host. The plugin's own surface shows only Freeze (labeled "FREEZE")
-where the standalone shows Play, Stop, Freeze, and Record. Whenever the host reports a tempo, the BPM
-control becomes a read-only display, "BPM `<value>` (external clock)", the same display the standalone
-shows while slaved to incoming MIDI clock.
+and the **IN:** input-selector button, unchanged, where the standalone shows Play, Stop, Freeze, and
+Record; a row beneath it holds the MIDI-out controls (see the **MIDI** paragraph below), the **MIDI**
+button first, then **Channel**, **CC** and **Velocity** fields, wrapping into a second row where the
+width demands it. Whenever the host reports a tempo, the BPM control becomes a read-only display, "BPM
+`<value>` (external clock)", the same display the standalone shows while slaved to incoming MIDI clock.
 
 **MIDI** reaches this instrument entirely through host-parameter automation. Every parameter — each
 page's 14 page parameters, its own Crispy, the one shared Crunchy, and Freeze — is exposed to the host as
 a standard automatable plugin parameter, so a DAW's own MIDI-learn/CC-mapping targets one of these the
 same way it would target any other plugin parameter. The plugin accepts the host's MIDI buffer but does
-not read it itself.
+not read it itself. The plugin also has its own MIDI output now (Audio to MIDI, below), set from the row
+beneath the transport row rather than from a Controllers page; the DAW routes that output like any other
+plugin MIDI source.
 
 **Input audio** is opt-in. The plugin has one optional stereo input bus, disabled until the host routes
 into it. On the plugin's own surface, an **IN:** button beside Freeze cycles through **None** (the
@@ -255,6 +262,27 @@ The transport runs on its own internal clock, the same as the standalone (Play, 
 editable BPM slider). Audio input requires the browser's own microphone permission, granted through a
 **Retry Input** action; nothing is captured, and External Audio stays silent, until that permission is
 granted. A stopped recording downloads as `YYYY-MM-DD.wav`.
+
+### Audio to MIDI
+
+The app can turn what it is playing into MIDI out: **Off**, **Level**, or **Pitch**. In the standalone
+and the browser build, it is set on the Controllers page's own Audio to MIDI section (MIDI controllers,
+below), alongside the controller rows. In the plugin, it is set on the plugin's own surface, the row
+beneath the transport row (Plugin, above), with a **MIDI** button cycling **MIDI: OFF**, **MIDI:
+LEVEL**, and **MIDI: PITCH**; the DAW routes that output like any other plugin MIDI source, not through
+a Controllers page.
+
+Either way, a **Channel** field (0 to 15) and a **CC** field (0 to 127) set where Level's Control
+Changes go. A **Velocity** field sets Pitch's note-on velocity: either a fixed number 1 to 127, or
+**Level**, which follows the output level at each note-on instead.
+
+**Level** sends a Control Change on the set channel and CC number, at most 50 times a second and only
+when the value changes.
+
+**Pitch** sends monophonic notes, one at a time: it tracks the fundamental of what the instrument is
+playing from 50 Hz to 5,000 Hz, so a note below 50 Hz or above 5,000 Hz is not tracked.
+
+The defaults are Off, channel 0, CC 16, and velocity following the level.
 
 ---
 
