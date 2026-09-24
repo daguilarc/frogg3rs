@@ -58,8 +58,9 @@ $ grep -n "IS_SYNTH TRUE\|NEEDS_MIDI" app/vst/CMakeLists.txt
   level falls below 0.001 (−60 dBFS), when Pitch stops, or when the channel
   changes.
 - **Plugin.** One declared MIDI output, the host's input cleared every block,
-  the app's messages written at their frames; a MIDI button and three fields on
-  the plugin-mode surface, saved in the host project.
+  the app's messages written at their frames; a MIDI button and three fields
+  in a row beneath the plugin-mode transport row (wrapping into a second row
+  where the width demands it), saved in the host project.
 - **Manual.** An Audio to MIDI section naming only the hosts and browsers the
   operator's runs confirmed, and the Sync page's Send clock and Send transport.
 
@@ -91,7 +92,7 @@ These were settled by the operator (relayed by the coordinator) and refine
 the rules named beside each:
 
 - Delivery gates (omni rule §7, dependencies stated before each step): plugin
-  delivery waits on R2 and R7; browser delivery waits on R5 and R6.
+  delivery waits on R2; browser delivery waits on R5 and R6.
 - Threshold framework (omni rule §2, a figure carries the run that produced
   it): a finding is a missed audio block deadline, which is an audible
   dropout; a worst block below the budget is reported and gates nothing.
@@ -205,21 +206,57 @@ the rules named beside each:
   is measured at host blocks of 128 and 256 frames and both figures are
   reported, and the manual names 128–256 frames as the buffer sizes the
   latency was measured at.
-- The manual (coordinator ruling): it says the default patch's release tails
-  make its tracked pitch move (`measure-floor/report.md`), and that Pitch is
-  monophonic. measure-floor traced the tails: for about the last 100 ms of
-  each closed gate half the output is VCO2 alone at 220 Hz, note 57. Over the
-  same patch, measure-q counted 3 note changes and no octave jumps in 60 s at
-  K = 1; by reading Q's source, its detector's bias step keeps the current
-  frequency when a new estimate is a whole-number multiple or fraction of it
-  within about half a semitone. No run recorded which notes those 3 changes
-  were. Task 10 therefore writes that the tails move the output's pitch and
-  gives the counts task 6's count test measured on the shipped code; it names
-  no note held through the tails.
+- The manual (coordinator ruling; superseded for what task 10 writes by the
+  "Task 10 (MANUAL.md) narrowed" ruling above): measure-floor traced the
+  default patch's release tails: for about the last 100 ms of each closed
+  gate half the output is VCO2 alone at 220 Hz, note 57. Over the same patch,
+  measure-q counted 3 note changes and no octave jumps in 60 s at K = 1; by
+  reading Q's source, its detector's bias step keeps the current frequency
+  when a new estimate is a whole-number multiple or fraction of it within
+  about half a semitone. No run recorded which notes those 3 changes were.
+  Task 10 no longer describes the tails or the per-patch counts in the
+  manual; the tail evidence stays here and is what task 6's narrowed count
+  test checks against as the release-tail blip near 55.5 s.
 - Unmeasured behavioural premises are measurement tasks that run first inside
   the before-code audit, before approval, each naming its deciding quantity
   and what the design does for every answer. M6, the last such premise in
   both changes, is now recorded (above); no measurement remains open.
+- Plugin surface placement (task 9, coordinator ruling): at the plugin's
+  design width the transport row needs 317.64 px and has 284.67 px if the
+  MIDI button joins it, so the MIDI button does not go in the transport row.
+  All MIDI-out controls sit together beneath the transport row: the MIDI
+  button first ("MIDI: OFF/LEVEL/PITCH"), then Channel, CC and Velocity; they
+  may wrap into a second row. The transport row is unchanged, so
+  `plugin_mode_transport_row_thins_to_freeze_and_label_only` keeps its
+  current assertion (the "updated to four children" check is dropped), and
+  the plugin-mode layout test is the arbiter that nothing clips or overlaps.
+- R7 removed (coordinator ruling): R7, the saved-project reopen run, is
+  removed as an operator run and delivery gate. No plugin project was saved
+  before this change, so there is nothing for a saved-project reopen run to
+  confirm. Plugin delivery now waits on R2 alone.
+- Pre-existing-save scenario removed (coordinator ruling): the "A project
+  saved before this setting existed restores Off" scenario and its test are
+  removed. The spec states instead that a new plugin instance starts Off and
+  every saved session carries its MIDI-out setting, Off included, since
+  `BuildSessionExtras` writes that entry at both sites that create session
+  extras (the constructor's seed and `PumpStatePersistence`).
+- Task 6's count test narrowed (coordinator ruling): the count test asserts
+  only, on the default patch over 60 s: 0 exact-octave jumps, that the first
+  note-on is note 45, and that note 45 is sounding at the end. A real render
+  shows one release-tail blip near 55.5 s, matching measure-q's 3 note-ons
+  for the default patch. The per-case integer assertions for the other three
+  patches (phase modulation, ring modulation and comb feedback at maximum)
+  are removed.
+- Task 10 (MANUAL.md) narrowed (coordinator ruling): the Audio to MIDI
+  section describes what ships now -- where it is set per build, what Level
+  and Pitch send, the defaults, the 50-5,000 Hz range, monophonic tracking,
+  and that the plugin's MIDI output is routed in the DAW -- and names no DAW,
+  plugin format or browser as confirmed until the operator runs (R2, R5, R6,
+  R9) happen.
+- Task 4's `off_sends_nothing` test recorded as moved (executor report,
+  recorded by the coordinator): the executor moved this test from task 4 to
+  task 5, since no code existed by the end of task 4 that could append a
+  MIDI-out message for it to assert against.
 
 ## Data flow, per build
 
@@ -297,14 +334,20 @@ session-extras writing sites call.
   The plugin's own setting lives in its session extras, the same place its
   input selection lives (`kSessionExtrasKey`, `kInputSelectionKey` in
   `FroggersPluginProcessor.cpp`).
-- **The plugin surface follows the IN button's pattern.** The plugin has no
-  Controllers page (adj-M, M2); its only host-specific control today is the IN
-  button in the plugin-mode transport row. The MIDI button sits beside it, and
-  the three text fields sit in a row beneath it. The MIDI button is the second
-  plugin-mode cycling picker, so both it and the IN button run on one NEW
-  `CyclingHostPicker`; their actions join `kInputSelect` in the catalog
+- **The plugin surface follows the IN button's pattern, beneath the transport
+  row.** The plugin has no Controllers page (adj-M, M2); its only
+  host-specific control today is the IN button in the plugin-mode transport
+  row. At the plugin's design width the transport row needs 317.64 px and has
+  284.67 px if the MIDI button joins it, so the MIDI button does not sit
+  beside it there (coordinator ruling); the transport row is unchanged. The
+  MIDI button instead sits in a NEW row directly beneath the transport row,
+  first, followed by the Channel, CC and Velocity text fields, wrapping into
+  a second row where the width demands it. The MIDI button is still the
+  second plugin-mode cycling picker, so both it and the IN button run on one
+  NEW `CyclingHostPicker`; their actions join `kInputSelect` in the catalog
   coverage check's exclusion list, since the catalog does not offer
-  host-only controls.
+  host-only controls. The plugin-mode layout test is the arbiter that
+  nothing in either row clips or overlaps.
 - **One producer, per-host consumers.** The app appends to the block's list in
   every build and never names a sink; the engine routes it in standalone and
   browser, and the plugin copies it into the host buffer.
@@ -362,11 +405,16 @@ session-extras writing sites call.
   modulation at maximum 677 and 114; ring modulation at maximum 30 and 5;
   comb feedback at maximum 3 and 0); worst latencies of 75.417 ms at
   48 kHz/128-frame and 94.271 ms at 48 kHz/256-frame; render setup with
-  `sampleRate = 48000.0`, `blockSize = 128` (or 256). Task 6's count and
-  latency tests run the shipped path and assert these numbers, and a
-  difference is shown by the test and reported, never absorbed. Post-stop
-  decay: the default patch's level falls below 0.001 at 0.2823 s after
-  transport stop, per `measure-q/report-shipped-rule.md` item 3.
+  `sampleRate = 48000.0`, `blockSize = 128` (or 256). Task 6's latency test
+  runs the shipped path and asserts the two latency numbers, and a difference
+  is shown by the test and reported, never absorbed. Task 6's count test is
+  narrowed (coordinator ruling, above) to the default patch alone: 0
+  exact-octave jumps, first note-on note 45, note 45 sounding at the end; a
+  real render shows one release-tail blip near 55.5 s, matching this table's
+  3 note-ons for the default patch. The per-case integer assertions for the
+  other three patches are removed. Post-stop decay: the default patch's level
+  falls below 0.001 at 0.2823 s after transport stop, per
+  `measure-q/report-shipped-rule.md` item 3.
 - **The plugin's MIDI button reads the catalog.** Its options are Off and the
   catalog's MIDI-out contents, so Pitch's presence per build is decided once,
   in `kFroggersOffersPitch`, which the standalone and plugin share and the
@@ -424,7 +472,7 @@ The full tables are in `tasks.md` under M1 and M3.
 
 ## Operator runs that gate delivery
 
-R2 and R7 gate plugin delivery; R5 and R6 gate browser delivery; R9 gates
+R2 gates plugin delivery; R5 and R6 gate browser delivery; R9 gates
 standalone delivery, being the one run of the whole standalone chain (routing
 enabled in `Runtime::Start`, the port-changed callback, the Controllers-page
 port choice, and `MidiOutputHandler::SendScheduled` to a real port), which no
@@ -440,10 +488,10 @@ verification.
   member holding Q's pitch detector (cycfi::q::pitch_detector), the note
   state and the Level stamp state.
 - `FroggersMidiCatalog()`: the two contents; NEW `kFroggersOffersPitch`.
-- `FroggersUiSurface`: the plugin-mode transport row in `BuildTree`,
-  `HandleAction`, new node ids and actions, NEW `CyclingHostPicker` holding
-  both the IN button's and the MIDI button's options, selection and
-  callback.
+- `FroggersUiSurface`: `BuildTree`'s NEW row beneath the (unchanged)
+  plugin-mode transport row, `HandleAction`, new node ids and actions, NEW
+  `CyclingHostPicker` holding both the IN button's and the MIDI button's
+  options, selection and callback.
 - `FroggersPluginProcessor`: `processBlock`, `producesMidi`, the constructor's
   callback registration, NEW `BuildSessionExtras` called by the constructor's
   session-state seed and `PumpStatePersistence` (the two sites that write
@@ -501,7 +549,8 @@ verification.
   modulation source, and its `SetSampleRate` comment calls its caller chain
   single. This change makes all six false. MANUAL.md's "The plugin's own
   surface shows only Freeze" sentence also stops describing the plugin's
-  transport row, which gains the MIDI button (task 10). The `releaseResources` comment's "(zero input channels, by
+  surface, which gains a MIDI button and fields in a new row beneath the
+  unchanged transport row (task 10). The `releaseResources` comment's "(zero input channels, by
   construction)" is already false (adj-M, S4). Moving the IN button onto
   `CyclingHostPicker` makes false the comments in `app/FroggersUiSurface.hpp`
   on `SetInputOptions`, `InputSelectButtonLabel`, `AppendTransportRow`'s
@@ -565,7 +614,7 @@ branch has been rebased onto `main` as it stands when the operator says the
 other sessions' work on main is done (task 0), and after the Sheaf change is
 pushed to the fork and the pin moves with it. The standalone
 ships once the implementation passes and R9 confirms. The plugin builds ship
-only after R2 and R7; the browser build only after R5 and R6. M6 recorded no
+only after R2; the browser build only after R5 and R6. M6 recorded no
 missed deadline, so browser Level and Pitch ship with the browser build once
 R5 and R6 clear. A build whose gate clears ships without the part that
 failed, as the operator rules at that point.

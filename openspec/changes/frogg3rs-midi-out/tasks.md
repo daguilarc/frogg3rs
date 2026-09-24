@@ -294,14 +294,12 @@ here, per host, and task 10 writes the manual from it.
       - Cleared for every DAW of a format: plugin delivery stops and the
         operator rules whether that format ships.
       Gates plugin delivery.
-- [ ] R7. Saved plugin state after the event bus is added. Save a project with
-      the plugin built from `main` before this change, then reopen it with this
-      change's build, in Live, Logic and Reaper.
-      Confirms: state and routing restored.
-      Clears: plugin reset, missing, or rescanned with state lost.
-      - Confirmed in all three: plugin delivery may proceed.
-      - Cleared in any: plugin delivery stops and the operator rules.
-      Gates plugin delivery.
+R7 (a saved-project reopen run: save a project with the plugin built from
+`main` before this change, then reopen it with this change's build) is
+removed as an operator run and delivery gate (coordinator ruling): no plugin
+project was saved before this change, so there is nothing for it to confirm.
+Plugin delivery waits on R2 alone.
+
 - [ ] R9. Standalone MIDI out end to end. Build the playable app with
       `./app/build-launcher.sh`, open `Frogg3rs.app`, open Controllers, choose
       an IAC port in the Audio to MIDI section, set Sends to Level and then
@@ -477,18 +475,20 @@ BLOCKED. Both links are removed after the run, and `git status --short` and
       audio thread exchanges it for the sentinel at the start of the next
       block and applies what it took. `Init` registers the setter with the
       app context's MIDI-out callback.
-      Check: a new test in NEW `app/FroggersMidiOutTests.cpp`, beside
-      `app/FroggersAudioRoutingTests.cpp`, asserts the Off scenario: ten
-      seconds of the default patch, transport running, at the default setting
-      append nothing. It is shown red against a build whose default content
-      is Level, not against a tree without the setter, where nothing appends
-      either. `app/Makefile` builds the file into NEW
+      Check: `app/Makefile` builds NEW
+      `app/FroggersMidiOutTests.cpp`, beside
+      `app/FroggersAudioRoutingTests.cpp`, into NEW
       `app/build/froggers_midi_out_tests` with the same flags and libraries
       as `$(AUDIO_ROUTING_BIN)`, and runs it in `test`: the binary is added
       to `test`'s prerequisites and to its recipe, beside
       `$(AUDIO_ROUTING_BIN)`. Run: `nice make -C app -j2 test`, and, if it
       stops before this binary, `app/build/froggers_midi_out_tests` by path.
       Every later test in this file runs the same way.
+      Recorded (executor report): the Off scenario's test (asserting that
+      ten seconds of the default patch, transport running, at the default
+      setting append nothing) was moved to task 5 -- no code existed by the
+      end of task 4 that could append a MIDI-out message for it to assert
+      against.
 - [ ] 5. Level: a NEW `dsp::SingleEnvelopeFollower` member for the MIDI out,
       given its sample rate in `PrepareToPlay`, fed the mono fold of each
       `RouteAudioSample()` result every sample. `ProcessBlock` already forms
@@ -507,7 +507,14 @@ BLOCKED. Both links are removed after the run, and `git status --short` and
       Check: new tests in the MIDI-out test file assert the Level
       requirement's four behaviour scenarios and the "Only the chosen content
       is sent" scenario's Level half; the 50-a-second scenario's test is shown
-      red against a build without the 20 ms condition; every existing test in
+      red against a build without the 20 ms condition; this task also adds
+      the Off scenario's test (moved here from task 4, recorded there: no
+      code existed by the end of task 4 that could append a message for it
+      to assert against), asserting that ten seconds of the default patch,
+      transport running, at the default setting append nothing, shown red
+      against a build whose default content is Level, not against a tree
+      without task 4's setter, where nothing appends either; every existing
+      test in
       `app/FroggersAudioRoutingTests.cpp` passes unchanged (binary
       `$(AUDIO_ROUTING_BIN)`).
 - [ ] 6. Pitch, as the operator's ruling states it (above, "The pitch path"):
@@ -567,20 +574,21 @@ BLOCKED. Both links are removed after the run, and `git status --short` and
         frames later, which puts every latency past 100 ms whatever the
         green worst was. If the green worst differs from the shipped-rule figure
         at either block size, the report says by how much.
-      - Counts. The test renders 60 s of each of M3's four patches at 48 kHz
-        and 128 frames with Pitch chosen (the default patch, and the three
-        set as `measure-pitch/snapshot/frogg3rs/app/M3Harness.cpp` sets
-        them), counts the note-ons and the note-ons 12 semitones from the
-        previous note-on, and asserts these numbers from the shipped rule
-        (`measure-q/report-shipped-rule.md` Table 1, render setup 48 kHz / 128-frame):
-        default patch 3 note-ons and 0 octave jumps; phase modulation at maximum 677
-        note-ons and 114 octave jumps; ring modulation at maximum 30 note-ons and 5 octave jumps;
-        comb feedback at maximum 3 note-ons and 0 octave jumps. It also prints how many
-        note-offs step 1 caused per patch. It is shown red against a build whose detector's highest
-        frequency is 1,500 Hz, where measure-q recorded ring modulation at
-        maximum as 25 and 2. If the green run fails, the test prints every
-        count, the task stops, and the report gives the counts and step 1's
-        note-off counts; the numbers in the test are not edited.
+      - Counts (narrowed, coordinator ruling). The test renders 60 s of the
+        default patch at 48 kHz and 128 frames with Pitch chosen and asserts
+        only: 0 note-ons 12 semitones from the previous note-on over the
+        render (no exact-octave jump), the first note-on is note 45, and
+        note 45 is the note sounding at the render's end. A real render
+        shows one release-tail blip near 55.5 s, matching measure-q's 3
+        note-ons for the default patch (`measure-q/report-shipped-rule.md`
+        Table 1). The per-case integer assertions this task's Check
+        previously stated for all four patches -- default patch 3 note-ons
+        and 0 octave jumps; phase modulation at maximum 677 and 114; ring
+        modulation at maximum 30 and 5; comb feedback at maximum 3 and 0 --
+        are removed. It also prints how many note-offs step 1 caused. If the
+        green run fails, the test prints what it asserts, the task stops,
+        and the report gives the numbers; the numbers in the test are not
+        edited.
       - Silence. The test plays the default patch with Pitch chosen for 2 s,
         stops the transport, and renders up to 30 s more; it asserts that a
         note-off for the note sounding at the stop is appended after the
@@ -617,16 +625,20 @@ BLOCKED. Both links are removed after the run, and `git status --short` and
       output requirement's three scenarios, run by `ctest` as above.
 - [ ] 9. Plugin surface and session. The Channel field displays 0 to 15, the
       same construct and numbering `app-midi-out`'s Controllers-page Channel
-      field and the controller rows use (ruling, `app-midi-out`'s Q1). In
-      plugin mode, a
-      MIDI button after the IN button in the transport row cycling "MIDI:
+      field and the controller rows use (ruling, `app-midi-out`'s Q1). The
+      MIDI button does not join the transport row: at the plugin's design
+      width the transport row needs 317.64 px and has 284.67 px if the MIDI
+      button joins it (coordinator ruling), so the transport row is
+      unchanged. In plugin mode, a NEW row directly after the transport row
+      in the same parent, present only in plugin mode, holds the MIDI-out
+      controls together, in order: the MIDI button first, cycling "MIDI:
       OFF" and then "MIDI: " followed by each MIDI-out content's id in
       capitals, in catalog order ("MIDI: LEVEL", and "MIDI: PITCH" where the
       catalog lists Pitch), the options built from `FroggersMidiCatalog()`'s
-      MIDI-out contents rather than listed again here, and a
-      NEW row directly after the transport row in the same parent, present
-      only in plugin mode, holding three `TextField` nodes: Channel, CC, and
-      Velocity, which accepts "Level" or a whole number 1 to 127. Each field
+      MIDI-out contents rather than listed again here; then three
+      `TextField` nodes: Channel, CC, and Velocity, which accepts "Level" or
+      a whole number 1 to 127. This row may wrap into a second row where the
+      width demands it. Each field
       checks an entry with `app-midi-out`'s `ParseAppMidiOutChannel`,
       `ParseAppMidiOutCcNumber` or `ParseAppMidiOutVelocity`; an entry they
       refuse leaves the stored value and the field shows it again, as sru-71
@@ -635,18 +647,23 @@ BLOCKED. Both links are removed after the run, and `git status --short` and
       button the second, so NEW `CyclingHostPicker` in
       `app/FroggersUiSurface.hpp` holds the labels, the selection, the
       label prefix and the changed callback, and builds the button label
-      and the next selection; the IN button moves onto it
+      and the next selection; the IN button stays in the transport row and
+      moves onto it
       (`SetInputOptions`, `SetInputSelectionChangedCallback`,
       `InputSelectButtonLabel` and the `kInputSelect` branch of
-      `HandleAction` delegate to it) and the MIDI button is the second
-      instance. The plugin applies the button and fields through task 4's
-      setter. The two sites that write session extras (the constructor's
-      seed and `PumpStatePersistence`) build the same object today; NEW
+      `HandleAction` delegate to it) and the MIDI button, in the new row
+      beneath, is the second instance. The plugin applies the button and
+      fields through task 4's setter. The two sites that write session
+      extras (the constructor's seed and `PumpStatePersistence`) build the
+      same object today; NEW
       `BuildSessionExtras` in `FroggersPluginProcessor.cpp`, taking the arena,
       writes the freeze latch, visible page, input selection and the new
       MIDI-out entry, and both sites call it. The restore path reads the
-      MIDI-out entry beside `kInputSelectionKey`; a missing entry restores Off
-      with channel 0, CC 16 and Level.
+      MIDI-out entry beside `kInputSelectionKey`; since `BuildSessionExtras`
+      writes that entry at both sites that create session extras, a new
+      instance starts Off (channel 0, CC 16, Level) and every saved session
+      carries its MIDI-out setting, Off included, so there is no restore
+      case where the entry is missing (coordinator ruling).
       The new `FroggersActions` constants for the button and the fields are
       the plugin host's own MIDI-out controls, not offered by the MIDI
       catalog: they are added to the exclusion list of
@@ -658,14 +675,17 @@ BLOCKED. Both links are removed after the run, and `git status --short` and
       ids.
       Check: `plugin_mode_transport_row_thins_to_freeze_and_label_only` and
       `production_processor_surface_is_plugin_mode_with_bpm_display_only_while_host_tempo_engaged`
-      in `app/vst/FroggersVstHostTests.cpp` are both updated to four children
-      with the MIDI button fourth, reading "MIDI: OFF", and pass; a new test
-      in that file builds the surface in plugin mode at
+      in `app/vst/FroggersVstHostTests.cpp` keep their current three-children
+      assertion and pass unchanged (coordinator ruling: the transport row is
+      unchanged, so the MIDI button does not become a fourth child there); a
+      new test in that file builds the surface in plugin mode at
       `FroggersPageLayout::kDefaultWidth` by `kDefaultHeight` (the design size
       the plugin editor scales uniformly) and asserts that every node in the
-      transport row and the new row lies fully inside its parent and the
-      root, and that no two siblings in either row overlap; it is shown red
-      against a row widened past the transport stack's width; new tests in
+      transport row and in the new row (or rows, where it wraps) beneath it
+      lies fully inside its parent and the root, and that no two siblings in
+      any of those rows overlap -- this test is the arbiter that nothing
+      clips or overlaps; it is shown red against a row widened past the
+      surface's width; new tests in
       that file assert the surface requirement's other scenarios, the one for
       "The standalone's setting does not switch the plugin on" shown red
       against a plugin whose engine enables MIDI-out routing, not against a
@@ -674,36 +694,28 @@ BLOCKED. Both links are removed after the run, and `git status --short` and
       passes unchanged; `make -C app check-catalog-covers-screen-actions`
       passes; every existing test in `app/FroggersSurfaceTests.cpp` passes
       unchanged.
-- [ ] 10. MANUAL.md: an Audio to MIDI section under Audio configuration naming
-      where it is set on each build; what Level sends, and that it sends at
-      most 50 times a second and only when the value changes; that Pitch is
-      monophonic, sending one note at a time, and detects fundamentals from
-      50 Hz to 5,000 Hz, so a note below 50 Hz or above 5,000 Hz is not sent
-      as its own pitch and is not tracked (Q-R: 5,000 Hz is the VCOs' own
-      ceiling, 50 Hz is the floor the <=100 ms latency ruling allows); that
-      the default patch's
-      release tails change its output's pitch — for about the last 100 ms of
-      each closed gate half the output is VCO2 alone at 220 Hz
-      (`measure-floor/report.md`) — and the note changes and octave jumps in
-      60 s that task 6's count test measured on the shipped code for that
-      patch and for phase modulation at its maximum (measure-q recorded 3
-      and 0, and 677 and 114), naming no note held through the tails, since
-      no run recorded one; the worst note latency task 6's latency test
-      printed for the shipped code at 128-frame and 256-frame buffers at
-      48 kHz (measure-q recorded 75 ms and 94 ms), and that 128–256 frames
-      are the buffer sizes it was measured at; that a note ends when the
-      output falls quiet; the defaults; and only
-      the hosts and browsers R2, R5 and R6 confirmed, and the standalone as R9
-      confirmed it. The Plugin paragraph's MIDI sentence says the plugin now
+- [ ] 10. MANUAL.md (narrowed, coordinator ruling): an Audio to MIDI section
+      under Audio configuration describing what ships now: where it is set
+      on each build (the Controllers page in the standalone and the
+      browser, the plugin's own surface in the plugin builds); what Level
+      sends (a Control Change, at most 50 times a second and only when the
+      value changes) and what Pitch sends (monophonic notes, one at a time,
+      tracking fundamentals from 50 Hz to 5,000 Hz, so a note below 50 Hz or
+      above 5,000 Hz is not tracked); the defaults (Off, channel 0, CC 16,
+      velocity following the level); and that the plugin's MIDI output is
+      routed in the DAW, not on a Controllers page. It names no DAW, plugin
+      format or browser as confirmed until the operator runs (R2, R5, R6,
+      R9) happen. The Plugin paragraph's MIDI sentence says the plugin now
       has a MIDI output; the Transport and tempo paragraph's "The plugin's own
       surface shows only Freeze" sentence names what the plugin's transport
-      row holds: Freeze, its label, the IN button and the MIDI button, with
-      the Channel, CC and Velocity row beneath; the Standalone paragraph's
+      row holds, unchanged (Freeze, its label and the IN button), and the
+      new row beneath it (the MIDI button, then Channel, CC and Velocity,
+      which may wrap into a second row); the Standalone paragraph's
       Sync page sentence names Send clock and Send transport and says they
       reach controller outputs and never the MIDI out port.
-      Check: `grep -n -i "send clock" MANUAL.md` prints at least one line, and
-      every host named in the section appears as confirmed in the R2, R5, R6
-      or R9 results recorded above.
+      Check: `grep -n -i "send clock" MANUAL.md` prints at least one line,
+      and the section names no DAW, plugin format or browser as confirmed
+      (the operator runs have not happened yet).
 - [ ] 11. Comments made false by this change, in the files it touches: in
       `app/vst/FroggersPluginProcessor.hpp`, the class comment's "This class
       adds no note handling: the MIDI buffer is accepted and ignored" and the

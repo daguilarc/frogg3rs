@@ -17,7 +17,9 @@ Every channel value in this capability, in requirements and scenarios alike, is 
 #### Scenario: Off sends nothing
 - **WHEN** the app runs the default patch for ten seconds with the MIDI-out choice at its default
 - **THEN** no MIDI-out message is appended in any block
-- Check: none yet. Task 4 adds the test.
+- Check: none yet. Task 5 adds the test (moved there from task 4 by the
+  executor: no code existed by the end of task 4 that could append anything
+  for it to assert against).
 
 #### Scenario: Only the chosen content is sent
 - **WHEN** Level is chosen and the default patch plays
@@ -81,7 +83,7 @@ At most one note change is sent per block: when the detector reports more than o
 
 The note-on velocity is the Velocity field's fixed value, or, when the field is Level (the default), the follower's level at the note-on's frame times 127, rounded and held within 1 to 127.
 
-measure-q/report-range.md counted note changes per minute and octave jumps over 60 s at 48 kHz and 128 frames, K = 1, at the ruled range (50-5,000 Hz), with no note-off on a quiet output: the default patch 3 and 0, phase modulation at its maximum 677 and 114, ring modulation at its maximum 30 and 5 (moved from 25 and 2 at the narrower 50-1,500 Hz range measure-q part 2 first used, since the wider ceiling admits some of that patch's higher-frequency inharmonic content), comb feedback at its maximum 3 and 0. The shipped rule's counts are measured in `measure-q/report-shipped-rule.md` Table 1: default patch 3 note-ons and 0 octave jumps; phase modulation at maximum 677 note-ons and 114 octave jumps; ring modulation at maximum 30 note-ons and 5 octave jumps; comb feedback at maximum 3 note-ons and 0 octave jumps, with render setup `sampleRate = 48000.0`, `blockSize = 128`. Task 6's count test asserts these numbers against the shipped rule.
+measure-q/report-range.md counted note changes per minute and octave jumps over 60 s at 48 kHz and 128 frames, K = 1, at the ruled range (50-5,000 Hz), with no note-off on a quiet output: the default patch 3 and 0, phase modulation at its maximum 677 and 114, ring modulation at its maximum 30 and 5 (moved from 25 and 2 at the narrower 50-1,500 Hz range measure-q part 2 first used, since the wider ceiling admits some of that patch's higher-frequency inharmonic content), comb feedback at its maximum 3 and 0. The shipped rule's counts are measured in `measure-q/report-shipped-rule.md` Table 1: default patch 3 note-ons and 0 octave jumps; phase modulation at maximum 677 note-ons and 114 octave jumps; ring modulation at maximum 30 note-ons and 5 octave jumps; comb feedback at maximum 3 note-ons and 0 octave jumps, with render setup `sampleRate = 48000.0`, `blockSize = 128`. Task 6's count test is narrowed (coordinator ruling) to the default patch alone: it asserts 0 exact-octave jumps over the 60 s, that the first note-on is note 45, and that note 45 is the note sounding at the render's end. A real render shows one release-tail blip near 55.5 s, matching this table's 3 note-ons for the default patch. The per-case integer assertions for the other three patches are removed.
 
 #### Scenario: The default patch sends note 45
 - **WHEN** Pitch is chosen and the default patch plays for ten seconds
@@ -142,7 +144,7 @@ Releasing a port (another port chosen, None, or shutdown) is covered by the libr
 ### Requirement: The plugin offers one MIDI output carrying only the app's messages
 The plugin SHALL declare one MIDI output, SHALL clear the host's incoming MIDI at the start of every block, and SHALL write into the host's buffer only the app's MIDI-out messages for that block, each at its frame.
 
-The VST3 and AU builds deliver this only after the operator's routing run (R2) and saved-project run (R7) confirm it.
+The VST3 and AU builds deliver this only after the operator's routing run (R2) confirms it. R7, a saved-project reopen run, is removed as an operator run and delivery gate (coordinator ruling): no plugin project was saved before this change, so there is nothing for it to confirm.
 
 Today the plugin declares no MIDI output: `producesMidi()` returns false, `app/vst/CMakeLists.txt` sets `NEEDS_MIDI_INPUT TRUE` and no `NEEDS_MIDI_OUTPUT`, whose default is FALSE, and `processBlock` ignores the buffer (feasibility claim C6; Frogg3rs adjudication adj-M, M3). JUCE treats whatever is left in the buffer when `processBlock` returns as the plugin's output ("Any messages left in the MIDI buffer when this method has finished are assumed to be the processor's MIDI output", JUCE `AudioProcessor` documentation). The host's input events cannot reach the output today only because no output is declared (adj-M, S1), so declaring one without clearing the buffer would pass them through. JUCE 8.0.12, the version the plugin builds against, reserves 2,048 bytes in the wrapper's MIDI buffer before each prepare in the VST3 and AU wrappers (R8), and at most two messages are written per block.
 
@@ -162,31 +164,28 @@ Today the plugin declares no MIDI output: `producesMidi()` returns false, `app/v
 - Check: none yet. Task 8 adds the test.
 
 ### Requirement: The plugin player sets the MIDI out on the instrument's own surface
-WHILE the app is hosted as a plugin, the surface SHALL show a MIDI button beside the IN button that cycles Off, Level and Pitch (Pitch only on builds that offer it), and Channel, CC and Velocity text fields in a row beneath the transport row, each refusing an entry outside its range and showing the stored value again, and the plugin SHALL save these with the host project, restore them on reload, and SHALL NOT take them from the shared runtime configuration.
+WHILE the app is hosted as a plugin, the surface SHALL show, in a row beneath the transport row (wrapping into a second row where the width demands it), a MIDI button that cycles Off, Level and Pitch (Pitch only on builds that offer it), followed by Channel, CC and Velocity text fields, each refusing an entry outside its range and showing the stored value again; the transport row itself is unchanged (coordinator ruling: at the plugin's design width the transport row needs 317.64 px and has 284.67 px if the MIDI button joins it); and the plugin SHALL save these with the host project, restore them on reload, and SHALL NOT take them from the shared runtime configuration.
+
+A new plugin instance starts with its MIDI out Off, and every saved session carries its MIDI-out setting, Off included, so there is no restore case that lacks one (coordinator ruling).
 
 The plugin builds have no Controllers page (adj-M, M2), so the setting lives on the surface. The plugin loads the standalone's configuration file (adj-M, S3), so a MIDI-out setting the standalone saved would switch the plugin on unless the plugin ignores it. The library forwards that setting only to hosts that route MIDI out (sar-36); the plugin does not, and applies its own setting through the same app entry point.
 
 The standalone and browser builds set the MIDI out on the Controllers page (sru-71) and show no MIDI-out control on the instrument's surface.
 
-#### Scenario: The plugin transport row gains the MIDI button
+#### Scenario: The plugin transport row is unchanged; the MIDI button sits beneath it
 - **WHEN** the surface is built in plugin mode
-- **THEN** the transport row holds Freeze, the FREEZE label, the IN button and the MIDI button, which reads "MIDI: OFF"
+- **THEN** the transport row holds only Freeze, the FREEZE label and the IN button, unchanged, and the new row beneath it holds the MIDI button first, which reads "MIDI: OFF"
 - **AND** Play, Stop and Record are absent
-- Check: `app/vst/FroggersVstHostTests.cpp: plugin_mode_transport_row_thins_to_freeze_and_label_only`, updated by task 9 for the fourth child
+- Check: `app/vst/FroggersVstHostTests.cpp: plugin_mode_transport_row_thins_to_freeze_and_label_only`, unchanged (coordinator ruling: the transport row does not gain the MIDI button)
 
 #### Scenario: The plugin rows fit the surface
 - **WHEN** the surface is built in plugin mode at its design size
-- **THEN** every node of the transport row and of the Channel, CC and Velocity row lies inside its parent and the surface, and no two siblings overlap
-- Check: none yet. Task 9 adds the test.
+- **THEN** every node of the transport row and of the row (or rows, where it wraps) beneath it holding the MIDI button, Channel, CC and Velocity lies inside its parent and the surface, and no two siblings overlap
+- Check: none yet. Task 9 adds the test, which is the arbiter that nothing clips or overlaps.
 
 #### Scenario: The setting survives the project
 - **WHEN** Pitch, channel 3, CC 20 and a fixed velocity of 100 are set, the host saves the project, and the project is reopened
 - **THEN** the surface shows those values and the app sends Pitch on channel 3 at velocity 100
-- Check: none yet. Task 9 adds the test.
-
-#### Scenario: A project saved before this setting existed restores Off
-- **WHEN** a session saved without a MIDI-out entry is restored
-- **THEN** the MIDI button reads "MIDI: OFF" and the fields show channel 0, CC 16 and Level
 - Check: none yet. Task 9 adds the test.
 
 #### Scenario: The standalone's setting does not switch the plugin on
@@ -195,11 +194,11 @@ The standalone and browser builds set the MIDI out on the Controllers page (sru-
 - Check: none yet. Task 9 adds the test.
 
 ### Requirement: The manual says where the MIDI out works and what it sends
-MANUAL.md SHALL describe the MIDI out as it ships on each build: where it is set, what Level and Pitch send, the defaults, that Level sends at most 50 times a second, that Pitch is monophonic and the range of fundamentals it detects, how the default patch's release tails move the output's pitch and what Pitch sends there, the worst note latency measured and the host block sizes it was measured at, and the hosts and browsers the operator's runs showed it working in.
+MANUAL.md SHALL describe the MIDI out as it ships now: where it is set on each build, what Level sends and what Pitch sends, the defaults, that Level sends at most 50 times a second, that Pitch is monophonic and tracks fundamentals from 50 Hz to 5,000 Hz, and that the plugin's MIDI output is routed in the DAW.
 
-The manual names only the hosts and browsers the R2, R5, R6 and R9 runs confirmed.
+The manual names no DAW, plugin format or browser as confirmed until the operator runs (R2, R5, R6 and R9) happen (coordinator ruling, narrowing this requirement's earlier scope).
 
 #### Scenario: The manual names only confirmed hosts
 - **WHEN** MANUAL.md's Audio to MIDI section is read after delivery
-- **THEN** every DAW, plugin format and browser it names as receiving MIDI out is one whose R2, R5 or R6 run confirmed
+- **THEN** every DAW, plugin format and browser it names as receiving MIDI out is one whose R2, R5 or R6 run confirmed, and none is named before its run happens
 - Check: none. Task 10 writes the section from the recorded run results; no automated check reads it.
