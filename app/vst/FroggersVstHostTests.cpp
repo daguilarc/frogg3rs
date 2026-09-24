@@ -2839,7 +2839,7 @@ TEST_CASE(plugin_incoming_midi_does_not_pass_through) {
 // ---------------------------------------------------------------------------
 // plugin_incoming_midi_does_not_pass_through_while_level_sends
 // ---------------------------------------------------------------------------
-// A18: the test above only exercises Off, where the app appends nothing --
+// The test above only exercises Off, where the app appends nothing --
 // a clear() that only ran when the app had nothing of its own to add would
 // pass it unnoticed. Level DOES send on this block (the first-ever Level
 // Control Change always sends), so both the incoming event and the app's
@@ -2907,7 +2907,7 @@ TEST_CASE(plugin_apps_messages_reach_the_host_buffer_at_their_frames) {
 // ---------------------------------------------------------------------------
 // plugin_cc_field_parses_and_refuses_its_boundaries
 // ---------------------------------------------------------------------------
-// A7: plugin_midi_out_setting_survives_the_project commits "20" only -- no
+// plugin_midi_out_setting_survives_the_project commits "20" only -- no
 // plugin-surface test exercises a refused CC entry. 128 is one past the
 // valid 0-127 range; a refused commit must leave both the setting and the
 // rendered field exactly as they were, and 127 (the boundary itself) must
@@ -3152,7 +3152,7 @@ TEST_CASE(plugin_mode_rows_fit_the_surface) {
     REQUIRE_TRUE(fieldsRow != nullptr);
     CheckContainmentAndNoOverlap(tree, *fieldsRow, root->bounds);
 
-    // A19: the two checks above never look past the transport row and the
+    // The two checks above never look past the transport row and the
     // MIDI-out fields row themselves -- the kLeftRows stack beneath them
     // (Scope, Scenes, Scene Blend, Bpm) could still be squeezed to near
     // nothing by the new row claiming space ahead of them, and any leaf

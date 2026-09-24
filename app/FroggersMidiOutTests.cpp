@@ -151,7 +151,7 @@ std::optional<DecodedNoteEvent> DecodeNoteEvent(const synth::AppMidiOutEvent& ev
 // ---------------------------------------------------------------------------
 // app_context_midi_out_callback_reaches_froggers_app_core
 // ---------------------------------------------------------------------------
-// A1: every other test in this file drives FroggersAppCore::
+// Every other test in this file drives FroggersAppCore::
 // SetMidiOutSetting() directly -- none of them can tell whether Init()
 // actually registered it as the AppContext's MIDI-out settings callback,
 // the route Engine::SetAppMidiOutConfig uses for the standalone and browser
@@ -370,7 +370,7 @@ TEST_CASE(level_cc_value_matches_an_independently_computed_follower_level) {
 // ---------------------------------------------------------------------------
 // level_cc_gap_is_20ms_at_44100_and_96000hz
 // ---------------------------------------------------------------------------
-// A12: the 20 ms minimum gap (ceil(0.02 * sampleRate) frames) scaled by the
+// The 20 ms minimum gap (ceil(0.02 * sampleRate) frames) scaled by the
 // actual configured rate, not the 48 kHz it happens to default to -- a
 // hardcoded frame count would read half the real gap at 96 kHz and pass
 // unnoticed at every test that only ever runs at 48 kHz.
@@ -544,7 +544,7 @@ TEST_CASE(pitch_default_patch_sends_note_45_and_stays_sounding) {
 // ---------------------------------------------------------------------------
 // pitch_first_note_is_45_at_44100_and_96000hz
 // ---------------------------------------------------------------------------
-// A12: the detector is constructed at the actual configured sample rate,
+// The detector is constructed at the actual configured sample rate,
 // not a rate it happens to default to -- a hardcoded 48 kHz would shift
 // every detected frequency (about +1.47 semitones at 44.1 kHz, an octave
 // down at 96 kHz), so the default patch's first note would read as
@@ -582,7 +582,7 @@ TEST_CASE(pitch_first_note_is_45_at_44100_and_96000hz) {
 // ---------------------------------------------------------------------------
 // pitch_tracks_the_ruled_range_edges
 // ---------------------------------------------------------------------------
-// A13: the ruled 50-5,000 Hz range is exercised past the default patch's own
+// The ruled 50-5,000 Hz range is exercised past the default patch's own
 // 110 Hz -- a low edge inside 50-100 Hz and a note above 1 kHz -- so a
 // narrower detector range (e.g. a 100 Hz floor or a 1,000 Hz ceiling) is
 // caught even though the default patch's own note still detects fine.
@@ -987,7 +987,7 @@ TEST_CASE(pitch_switching_away_ends_the_note) {
 // ---------------------------------------------------------------------------
 // pitch_switching_to_off_ends_the_note
 // ---------------------------------------------------------------------------
-// A15: the existing switching-away test only ever switches Pitch->Level.
+// The existing switching-away test only ever switches Pitch->Level.
 // Off is a real, separate content value (not merely "not Pitch") and is
 // exactly the plugin's MIDI button cycle's Pitch->Off step and the
 // Controllers page's Sends=Off -- both reachable without ever passing
