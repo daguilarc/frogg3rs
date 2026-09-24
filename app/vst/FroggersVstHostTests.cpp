@@ -2788,6 +2788,24 @@ TEST_CASE(input_bus_stereo_second_channel_and_sum_reach_the_external_audio_sourc
               << secondChannelValue << " (expected 0.4), sum=" << sumValue << " (expected 0.7).\n";
 }
 
+// ---------------------------------------------------------------------------
+// plugin_catalog_lists_pitch_alongside_level
+// ---------------------------------------------------------------------------
+// The plugin build offers Pitch (M1 recorded no missed deadline) -- proven
+// here against the same catalog app/FroggersMidiCatalogTests.cpp's
+// catalog_lists_level_and_pitch_as_midi_out_contents proves for the
+// standalone, reached through the real compiled plugin processor rather
+// than a second copy.
+TEST_CASE(plugin_catalog_lists_pitch_alongside_level) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("plugin_catalog_pitch"));
+    const synth::MidiAppCatalog catalog = processor.ApplicationForTest().MidiCatalog();
+    REQUIRE_TRUE(synth_froggers::kFroggersOffersPitch);
+    REQUIRE_TRUE(catalog.midiOutContents.size() == 2);
+    REQUIRE_TRUE(catalog.midiOutContents[0].id == synth_froggers::kFroggersMidiOutContentLevelId);
+    REQUIRE_TRUE(catalog.midiOutContents[1].id == synth_froggers::kFroggersMidiOutContentPitchId);
+    REQUIRE_TRUE(catalog.midiOutContents[1].kind == synth::MidiControlType::Note);
+}
+
 }  // namespace
 
 int main() {

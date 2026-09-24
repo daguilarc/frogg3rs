@@ -93,6 +93,8 @@
 #include "synth/PortableUI.hpp"
 #include "synth/PortableUIBuilders.hpp"
 
+#include <q/pitch/pitch_detector.hpp>
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -423,6 +425,16 @@ public:
         // output frames, rounded up (960 at 48 kHz).
         midiOutCcMinFrameGap_ = static_cast<std::uint64_t>(std::ceil(0.02 * sampleRate));
 
+        // Pitch's detector: emplaced fresh on every PrepareToPlay (construction
+        // allocates, so it never happens lazily from the audio callback), at
+        // Q-R's range and hysteresis (50-5,000 Hz, -30 dB). A prior detector,
+        // if any, is destroyed and replaced -- there is no meaningful state to
+        // carry across a sample-rate change. pitchDetectorConstructions_ is
+        // incremented at this one emplace site only.
+        pitchDetector_.emplace(cycfi::q::frequency(50.0), cycfi::q::frequency(5000.0),
+                               static_cast<float>(sampleRate), cycfi::q::dB(-30.0));
+        ++pitchDetectorConstructions_;
+
         // Root-cause fix (a robustness gap found while diagnosing "Play
         // produces no audio in the real Runtime"): `synth::Engine::Prepare()`
         // calls `MasterClock::Prepare()` UNCONDITIONALLY before this hook
@@ -717,6 +729,17 @@ public:
     std::uint8_t MidiOutCcNumber() const { return midiOutCcNumber_; }
     std::optional<std::uint8_t> MidiOutVelocity() const { return midiOutVelocity_; }
 
+    // How many times the Pitch detector has been emplaced, counted at the
+    // one emplace site in PrepareToPlay() -- this member owns that seam and
+    // its own test is its only reader.
+    std::size_t PitchDetectorConstructions() const { return pitchDetectorConstructions_; }
+
+    // See lastPitchNoteOnSourceLevel_'s own comment.
+    float TestLastPitchNoteOnSourceLevel() const { return lastPitchNoteOnSourceLevel_; }
+
+    // See pitchNoteChangesThisBlockForTest_'s own comment.
+    std::size_t TestPitchNoteChangesLastBlock() const { return pitchNoteChangesThisBlockForTest_; }
+
     // Detected via AppConcepts.hpp's
     // HasProcessFrame concept; synth::Engine invokes this once per block,
     // after message drains and before ProcessBlock() (AppConcepts.hpp's own
@@ -1000,6 +1023,15 @@ public:
         // function -- so re-testing it every frame below was re-evaluating a
         // loop-invariant up to 48,000x/second. Hoisted here, once per block.
         const bool hasOutputs = block.outputs != nullptr;
+
+        // Pitch's per-block change bookkeeping: at most one note-off/note-on
+        // pair is appended per block (see the post-loop block below), stamped
+        // at the frame of the report that set the FINAL state, whichever
+        // sample in the block that was.
+        const std::optional<int> pitchNoteAtBlockStart = soundingPitchNote_;
+        std::optional<std::size_t> pitchChangeFrame;
+        pitchNoteChangesThisBlockForTest_ = 0;
+        float pitchNoteOnLevelAtChange = 0.0f;
 
         for (std::size_t frame = 0; frame < block.numFrames; ++frame) {
             const std::uint64_t absoluteOutputSample = block.startSample + frame;
@@ -1339,6 +1371,46 @@ public:
             // its result is APPENDED below depends on the content.
             const float midiOutLevel = midiOutLevelFollower_.Process(monoFold);
 
+            // Q's detector: also called every sample regardless of content
+            // (M1/M6's own measurement shape), whenever PrepareToPlay has
+            // constructed one. Only Pitch's own tracking below (gated on the
+            // chosen content) reads the report.
+            const bool pitchReported = pitchDetector_.has_value() && (*pitchDetector_)(monoFold);
+
+            if (midiOutContent_ == FroggersMidiOutContent::Pitch && pitchDetector_.has_value()) {
+                if (soundingPitchNote_.has_value() && midiOutLevel < 0.001f) {
+                    // Step 1 (coordinator ruling): the output fell quiet --
+                    // end the sounding note here and reset the detector so
+                    // the next note is taken fresh rather than biased toward
+                    // the one that just ended.
+                    soundingPitchNote_ = std::nullopt;
+                    pitchDetector_->reset();
+                    pitchChangeFrame = frame;
+                    ++pitchNoteChangesThisBlockForTest_;
+                } else {
+                    // Step 3: a report whose frequency is 0 (before the
+                    // detector's first periodic-enough report, or right
+                    // after reset()) changes nothing and the note formula is
+                    // not evaluated on it -- the frequency > 0.0f guard below
+                    // is exactly that.
+                    const float frequency = pitchDetector_->get_frequency();
+                    if (pitchReported && frequency > 0.0f && midiOutLevel >= 0.001f) {
+                        // Step 2: K = 1 (M3) -- any report naming a different
+                        // note, or any note when none sounds, becomes the
+                        // sounding note at this frame.
+                        const int note = static_cast<int>(std::lround(
+                            69.0 + 12.0 * std::log2(static_cast<double>(frequency) / 440.0)));
+                        if (!soundingPitchNote_.has_value() || *soundingPitchNote_ != note) {
+                            soundingPitchNote_ = note;
+                            pitchNoteChannel_ = midiOutChannel_;
+                            pitchChangeFrame = frame;
+                            pitchNoteOnLevelAtChange = midiOutLevel;
+                            ++pitchNoteChangesThisBlockForTest_;
+                        }
+                    }
+                }
+            }
+
             // DIAGNOSTIC (2026-08-07), OFF unless FROGG3RS_STOP_DIAG is set
             // in the environment -- see stopDiagBlocks_'s own comment. Tracks
             // this block's output peak only while the diagnostic window is
@@ -1431,6 +1503,37 @@ public:
                     lastMidiOutCcValueSent_ = ccValue;
                     lastMidiOutCcSampleSent_ = absoluteOutputSample;
                 }
+            }
+        }
+
+        // Pitch's note-off/note-on pair, at most one per block: appended
+        // only when the sounding note actually differs from the one
+        // sounding at the block's start, stamped at the frame of the report
+        // that set the final state (note-off first, coordinator ruling).
+        if (midiOutContent_ == FroggersMidiOutContent::Pitch && block.midiOut != nullptr &&
+            soundingPitchNote_ != pitchNoteAtBlockStart) {
+            const std::size_t stampFrame = pitchChangeFrame.value_or(0);
+            if (pitchNoteAtBlockStart.has_value()) {
+                const std::uint8_t noteOffStatus =
+                    static_cast<std::uint8_t>(0x80 | (pitchNoteChannel_ & 0x0F));
+                block.midiOut->Append(synth::AppMidiOutEvent{
+                    stampFrame, noteOffStatus, static_cast<std::uint8_t>(*pitchNoteAtBlockStart), 0});
+            }
+            if (soundingPitchNote_.has_value()) {
+                // The Velocity field's fixed value, or, when it is Level,
+                // the follower's level AT THE NOTE-ON'S FRAME (captured
+                // above, not re-read after the loop) times 127, rounded and
+                // held within 1 to 127.
+                lastPitchNoteOnSourceLevel_ = pitchNoteOnLevelAtChange;
+                const std::uint8_t velocity =
+                    midiOutVelocity_.has_value()
+                        ? *midiOutVelocity_
+                        : static_cast<std::uint8_t>(std::clamp(
+                              static_cast<int>(std::lround(127.0f * pitchNoteOnLevelAtChange)), 1, 127));
+                const std::uint8_t noteOnStatus =
+                    static_cast<std::uint8_t>(0x90 | (pitchNoteChannel_ & 0x0F));
+                block.midiOut->Append(synth::AppMidiOutEvent{
+                    stampFrame, noteOnStatus, static_cast<std::uint8_t>(*soundingPitchNote_), velocity});
             }
         }
 
@@ -2712,6 +2815,34 @@ private:
     // timeline. nullopt = no Control Change sent yet.
     std::optional<int> lastMidiOutCcValueSent_;
     std::optional<std::uint64_t> lastMidiOutCcSampleSent_;
+
+    // Pitch's detector: std::optional because cycfi::q::pitch_detector has no
+    // default constructor; emplaced only in PrepareToPlay() (see that
+    // method's own comment). Constructed alongside MidiSender::Start() by
+    // that same PrepareToPlay-thread contract (coordinator ruling) --
+    // nothing here calls MidiSender::Start() itself, that is the runtime
+    // shell's own call.
+    std::optional<cycfi::q::pitch_detector> pitchDetector_;
+    std::size_t pitchDetectorConstructions_ = 0;
+    // The note currently sounding while Pitch is chosen (nullopt = none);
+    // only ProcessBlock's Pitch branch mutates this. pitchNoteChannel_ is
+    // the channel ITS note-on used, captured at that note-on and read back
+    // at its eventual note-off, so a later channel change cannot send the
+    // note-off on the wrong channel.
+    std::optional<int> soundingPitchNote_;
+    std::uint8_t pitchNoteChannel_ = 0;
+    // Test-only introspection (beside TestParameterManager/TestOutputLimiter
+    // above): the follower level a note-on's velocity was actually computed
+    // from, when the Velocity field is Level -- written at the same capture
+    // site ProcessBlock's note-on branch reads, so a test can confirm the
+    // appended byte against the value the production code itself used.
+    float lastPitchNoteOnSourceLevel_ = 0.0f;
+    // Test-only: how many times the CURRENT block's per-sample loop actually
+    // reassigned soundingPitchNote_ (reset to 0 at the top of every
+    // ProcessBlock) -- proves several reports landed in one block, since
+    // the append logic below sends at most one pair regardless of this
+    // count.
+    std::size_t pitchNoteChangesThisBlockForTest_ = 0;
 
     std::atomic<double> tempoDisplayBpm_{synth::MasterClock::kDefaultTempoBpm};
     std::atomic<bool> tempoExternallyClocked_{false};
