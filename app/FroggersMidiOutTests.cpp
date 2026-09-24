@@ -264,6 +264,120 @@ TEST_CASE(moving_level_is_sent_at_most_50_times_a_second) {
         }
     }
     REQUIRE_TRUE(ccCount <= 50);
+    // Lower bound: the gain square wave forces a change every block, far
+    // faster than the 20 ms gate, so a real 20 ms limiter sends close to the
+    // ideal 50/s (46 observed) -- a limiter gating at some much wider
+    // interval (e.g. once a second) would also read <= 50 and pass unnoticed
+    // without this bound.
+    REQUIRE_TRUE(ccCount >= 40);
+}
+
+// ---------------------------------------------------------------------------
+// level_cc_value_matches_an_independently_computed_follower_level
+// ---------------------------------------------------------------------------
+// The Level CC's actual byte, checked against a known level rather than only
+// "differs from the last one sent": replays the captured output audio
+// through a FRESH dsp::SingleEnvelopeFollower (the same formula and
+// SetSampleRate() call, an object of its own -- independent of production's
+// own midiOutLevelFollower_) and asserts every sent CC equals
+// round(127 * that independent level) at the sent event's own sample. A
+// wrong scale (e.g. 254x instead of 127x) or a wrong speed (e.g. a missing
+// SetSampleRate() call, which changes the level this independent replica
+// converges to at any given sample) both show up as a mismatch.
+TEST_CASE(level_cc_value_matches_an_independently_computed_follower_level) {
+    Rig::AudioSettings settings48k128;
+    settings48k128.sampleRate = 48000.0;
+    settings48k128.blockSize = 128;
+    Rig rig(/*patchPumpBudgetBlocks=*/64,
+           UseScratchRuntimeDataPaths("level_cc_matches_independent_follower"), settings48k128);
+
+    rig.Application().SetMidiOutSetting(LevelSetting(/*channel=*/0, /*ccNumber=*/16));
+    rig.StartAt(0);
+
+    synth_froggers::dsp::SingleEnvelopeFollower independentFollower;
+    independentFollower.SetSampleRate(48000.0f);
+
+    std::vector<float> independentLevelAtSample;
+    struct SentCc { std::uint64_t sample; std::uint8_t value; };
+    std::vector<SentCc> sentCcs;
+
+    constexpr std::size_t kBlocksPerSecond = 48000 / 128;
+    std::uint64_t blockStartSample = 0;
+    for (std::size_t i = 0; i < kBlocksPerSecond; ++i) {
+        rig.RunBlocks(1);
+        for (const auto& frame : rig.Output()) {
+            const float fold = 0.5f * (frame.channels[0] + frame.channels[1]);
+            independentLevelAtSample.push_back(independentFollower.Process(fold));
+        }
+        rig.ClearOutput();
+        const synth::AppMidiOutEventList& events = rig.Engine().AppMidiOutEvents();
+        for (const synth::AppMidiOutEvent& event : events) {
+            REQUIRE_TRUE(event.statusByte == 0xB0);  // Control Change, channel 0.
+            sentCcs.push_back({blockStartSample + event.frame, event.data2});
+        }
+        blockStartSample += 128;
+    }
+
+    REQUIRE_TRUE(sentCcs.size() > 1);  // the attack ramp sends more than the first-ever value.
+    for (const SentCc& sent : sentCcs) {
+        REQUIRE_TRUE(sent.sample < independentLevelAtSample.size());
+        const int expected =
+            std::clamp(static_cast<int>(std::lround(127.0f * independentLevelAtSample[sent.sample])), 0, 127);
+        REQUIRE_TRUE(static_cast<int>(sent.value) == expected);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// level_cc_gap_is_20ms_at_44100_and_96000hz
+// ---------------------------------------------------------------------------
+// A12: the 20 ms minimum gap (ceil(0.02 * sampleRate) frames) scaled by the
+// actual configured rate, not the 48 kHz it happens to default to -- a
+// hardcoded frame count would read half the real gap at 96 kHz and pass
+// unnoticed at every test that only ever runs at 48 kHz.
+void AssertLevelCcGapIsAbout20Ms(double sampleRate, const char* scratchName) {
+    Rig::AudioSettings settings;
+    settings.sampleRate = sampleRate;
+    settings.blockSize = 128;
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths(scratchName), settings);
+
+    rig.Application().SetMidiOutSetting(LevelSetting(/*channel=*/0, /*ccNumber=*/16));
+    rig.StartAt(0);
+
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    synth::Parameter& gain = model.PageParameter(synth_froggers::FroggersBankId::Drive, 1);
+
+    const std::size_t blocksPerSecond = static_cast<std::size_t>(sampleRate / 128.0);
+    std::optional<std::uint64_t> lastSentAbsoluteSample;
+    std::uint64_t absoluteSample = 0;
+    std::optional<std::uint64_t> minGapSamples;
+    for (std::size_t i = 0; i < blocksPerSecond; ++i) {
+        gain.SceneCenter(0) = (i % 2 == 0) ? 0.02f : 1.0f;
+        rig.Application().TestParameterManager().ComputeAllParameters();
+        rig.RunBlocks(1);
+        absoluteSample += 128;
+        const synth::AppMidiOutEventList& events = rig.Engine().AppMidiOutEvents();
+        REQUIRE_TRUE(events.Size() <= 1);
+        if (events.Size() == 1) {
+            const std::uint64_t sentAtSample = absoluteSample - 128 + events[0].frame;
+            if (lastSentAbsoluteSample.has_value()) {
+                const std::uint64_t gap = sentAtSample - *lastSentAbsoluteSample;
+                minGapSamples = minGapSamples.has_value() ? std::min(*minGapSamples, gap) : gap;
+            }
+            lastSentAbsoluteSample = sentAtSample;
+        }
+    }
+    REQUIRE_TRUE(minGapSamples.has_value());
+    // The enforced minimum, and the same bound quantized up to the next
+    // block boundary (sends only land at a block's last frame, so the
+    // smallest OBSERVED gap can be up to one block period above it).
+    const auto enforcedMinGapSamples = static_cast<std::uint64_t>(std::ceil(0.02 * sampleRate));
+    REQUIRE_TRUE(*minGapSamples >= enforcedMinGapSamples);
+    REQUIRE_TRUE(*minGapSamples < enforcedMinGapSamples + 128);
+}
+
+TEST_CASE(level_cc_gap_is_20ms_at_44100_and_96000hz) {
+    AssertLevelCcGapIsAbout20Ms(44100.0, "level_cc_gap_44100");
+    AssertLevelCcGapIsAbout20Ms(96000.0, "level_cc_gap_96000");
 }
 
 // ---------------------------------------------------------------------------
@@ -385,6 +499,44 @@ TEST_CASE(pitch_default_patch_sends_note_45_and_stays_sounding) {
     REQUIRE_TRUE(octaveJumpCount == 0);
     REQUIRE_TRUE(soundingNote.has_value());
     REQUIRE_TRUE(*soundingNote == 45);
+}
+
+// ---------------------------------------------------------------------------
+// pitch_first_note_is_45_at_44100_and_96000hz
+// ---------------------------------------------------------------------------
+// A12: the detector is constructed at the actual configured sample rate,
+// not a rate it happens to default to -- a hardcoded 48 kHz would shift
+// every detected frequency (about +1.47 semitones at 44.1 kHz, an octave
+// down at 96 kHz), so the default patch's first note would read as
+// something other than 45.
+void AssertPitchFirstNoteIs45(double sampleRate, const char* scratchName) {
+    Rig::AudioSettings settings;
+    settings.sampleRate = sampleRate;
+    settings.blockSize = 128;
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths(scratchName), settings);
+
+    rig.Application().SetMidiOutSetting(PitchSetting(/*channel=*/0));
+    rig.StartAt(0);
+
+    std::optional<std::uint8_t> firstNoteOn;
+    const std::size_t blocksPerSecond = static_cast<std::size_t>(sampleRate / 128.0);
+    for (std::size_t i = 0; i < blocksPerSecond && !firstNoteOn.has_value(); ++i) {
+        rig.RunBlocks(1);
+        const synth::AppMidiOutEventList& events = rig.Engine().AppMidiOutEvents();
+        for (const synth::AppMidiOutEvent& event : events) {
+            const std::optional<DecodedNoteEvent> decoded = DecodeNoteEvent(event);
+            if (decoded.has_value() && decoded->isNoteOn) {
+                firstNoteOn = decoded->note;
+            }
+        }
+    }
+    REQUIRE_TRUE(firstNoteOn.has_value());
+    REQUIRE_TRUE(*firstNoteOn == 45);
+}
+
+TEST_CASE(pitch_first_note_is_45_at_44100_and_96000hz) {
+    AssertPitchFirstNoteIs45(44100.0, "pitch_note45_44100");
+    AssertPitchFirstNoteIs45(96000.0, "pitch_note45_96000");
 }
 
 // The Pitch note the 20-step schedule below raises the default patch's
