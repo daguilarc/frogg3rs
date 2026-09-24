@@ -427,7 +427,7 @@ public:
 
         // Pitch's detector: emplaced fresh on every PrepareToPlay (construction
         // allocates, so it never happens lazily from the audio callback), at
-        // Q-R's range and hysteresis (50-5,000 Hz, -30 dB). A prior detector,
+        // the ruled range and hysteresis (50-5,000 Hz, -30 dB). A prior detector,
         // if any, is destroyed and replaced -- there is no meaningful state to
         // carry across a sample-rate change. pitchDetectorConstructions_ is
         // incremented at this one emplace site only.
@@ -1410,38 +1410,37 @@ public:
             // each of those sites.
             const float monoFold = 0.5f * (sample.l + sample.r);
 
-            // Fed every sample regardless of the chosen MIDI-out content
-            // (feasibility claim C13's own measurement shape): only whether
-            // its result is APPENDED below depends on the content.
+            // Fed every sample regardless of the chosen MIDI-out content:
+            // only whether its result is APPENDED below depends on the
+            // content.
             const float midiOutLevel = midiOutLevelFollower_.Process(monoFold);
 
-            // Q's detector: also called every sample regardless of content
-            // (M1/M6's own measurement shape), whenever PrepareToPlay has
-            // constructed one. Only Pitch's own tracking below (gated on the
-            // chosen content) reads the report.
+            // Q's detector: also called every sample regardless of content,
+            // whenever PrepareToPlay has constructed one. Only Pitch's own
+            // tracking below (gated on the chosen content) reads the report.
             const bool pitchReported = pitchDetector_.has_value() && (*pitchDetector_)(monoFold);
 
             if (midiOutContent_ == FroggersMidiOutContent::Pitch && pitchDetector_.has_value()) {
                 if (soundingPitchNote_.has_value() && midiOutLevel < 0.001f) {
-                    // Step 1 (coordinator ruling): the output fell quiet --
-                    // end the sounding note here and reset the detector so
-                    // the next note is taken fresh rather than biased toward
-                    // the one that just ended.
+                    // The output fell quiet -- end the sounding note here
+                    // and reset the detector so the next note is taken
+                    // fresh rather than biased toward the one that just
+                    // ended.
                     soundingPitchNote_ = std::nullopt;
                     pitchDetector_->reset();
                     pitchChangeFrame = frame;
                     ++pitchNoteChangesThisBlockForTest_;
                 } else {
-                    // Step 3: a report whose frequency is 0 (before the
-                    // detector's first periodic-enough report, or right
-                    // after reset()) changes nothing and the note formula is
-                    // not evaluated on it -- the frequency > 0.0f guard below
-                    // is exactly that.
+                    // A report whose frequency is 0 (before the detector's
+                    // first periodic-enough report, or right after reset())
+                    // changes nothing and the note formula is not evaluated
+                    // on it -- the frequency > 0.0f guard below is exactly
+                    // that.
                     const float frequency = pitchDetector_->get_frequency();
                     if (pitchReported && frequency > 0.0f && midiOutLevel >= 0.001f) {
-                        // Step 2: K = 1 (M3) -- any report naming a different
-                        // note, or any note when none sounds, becomes the
-                        // sounding note at this frame.
+                        // K = 1: any report naming a different note, or any
+                        // note when none sounds, becomes the sounding note
+                        // at this frame.
                         const int note = static_cast<int>(std::lround(
                             69.0 + 12.0 * std::log2(static_cast<double>(frequency) / 440.0)));
                         if (!soundingPitchNote_.has_value() || *soundingPitchNote_ != note) {
@@ -1528,9 +1527,9 @@ public:
             // output has been computed and written.
             vcoScopeWriter_.AdvanceIndex();
 
-            // Level's Control Change, at each block's last frame only
-            // (coordinator ruling: at most once per 20 ms, only on a changed
-            // value). The frame count since the last Control Change carries
+            // Level's Control Change, at each block's last frame only, at
+            // most once per 20 ms, only on a changed value. The frame count
+            // since the last Control Change carries
             // across blocks via lastMidiOutCcSampleSent_, an absolute
             // output-sample stamp, not a per-block counter.
             if (frame + 1 == block.numFrames && midiOutContent_ == FroggersMidiOutContent::Level &&
@@ -1553,7 +1552,7 @@ public:
         // Pitch's note-off/note-on pair, at most one per block: appended
         // only when the sounding note actually differs from the one
         // sounding at the block's start, stamped at the frame of the report
-        // that set the final state (note-off first, coordinator ruling).
+        // that set the final state, note-off first.
         if (midiOutContent_ == FroggersMidiOutContent::Pitch && block.midiOut != nullptr &&
             soundingPitchNote_ != pitchNoteAtBlockStart) {
             const std::size_t stampFrame = pitchChangeFrame.value_or(0);
@@ -2859,9 +2858,8 @@ private:
     // Pitch's detector: std::optional because cycfi::q::pitch_detector has no
     // default constructor; emplaced only in PrepareToPlay() (see that
     // method's own comment). Constructed alongside MidiSender::Start() by
-    // that same PrepareToPlay-thread contract (coordinator ruling) --
-    // nothing here calls MidiSender::Start() itself, that is the runtime
-    // shell's own call.
+    // that same PrepareToPlay-thread contract -- nothing here calls
+    // MidiSender::Start() itself, that is the runtime shell's own call.
     std::optional<cycfi::q::pitch_detector> pitchDetector_;
     std::size_t pitchDetectorConstructions_ = 0;
     // The note currently sounding while Pitch is chosen (nullopt = none);

@@ -124,7 +124,7 @@ constexpr const char* kInputSelectionKey = "inputSelection";
 // independent state, read back only here. BuildSessionExtras() writes this
 // key at both sites that create session extras, so every saved session
 // carries a MIDI-out entry, Off included -- there is no restore case where
-// it is missing (coordinator ruling).
+// it is missing.
 constexpr const char* kMidiOutKey = "midiOut";
 constexpr const char* kMidiOutContentIdKey = "contentId";
 constexpr const char* kMidiOutChannelKey = "channel";

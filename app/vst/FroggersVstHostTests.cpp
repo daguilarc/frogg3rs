@@ -574,8 +574,8 @@ TEST_CASE(plugin_mode_transport_row_thins_to_freeze_and_label_only) {
     // A bare-context surface (app_ == nullptr, this function's
     // own Attach() call) never had SetInputOptions() called on it, so it
     // renders its own default -- just "None" -- the same "unavailable"
-    // reading a disabled bus produces (inputOptionLabels_'s own NSDMI
-    // comment, FroggersUiSurface.hpp). Builder::Button() stores its display
+    // reading a disabled bus produces (inputPicker_'s own NSDMI default,
+    // FroggersUiSurface.hpp). Builder::Button() stores its display
     // text in Node::label (not Node::text, unlike a Label node -- see the
     // comment on the Freeze label just above for the reverse case).
     const synth::ui::Node* inputSelect = FindNodeById(tree, synth_froggers::FroggersNodeIds::kInputSelect);
@@ -2792,8 +2792,9 @@ TEST_CASE(input_bus_stereo_second_channel_and_sum_reach_the_external_audio_sourc
 // ---------------------------------------------------------------------------
 // plugin_catalog_lists_pitch_alongside_level
 // ---------------------------------------------------------------------------
-// The plugin build offers Pitch (M1 recorded no missed deadline) -- proven
-// here against the same catalog app/FroggersMidiCatalogTests.cpp's
+// The plugin build offers Pitch (no missed audio-thread-cost deadline was
+// measured for it) -- proven here against the same catalog
+// app/FroggersMidiCatalogTests.cpp's
 // catalog_lists_level_and_pitch_as_midi_out_contents proves for the
 // standalone, reached through the real compiled plugin processor rather
 // than a second copy.

@@ -56,9 +56,9 @@
 namespace synth_froggers {
 
 // Whether this build offers Pitch as a MIDI-out content. True for the
-// standalone and the plugin, which share one audio-thread-cost measurement
-// (M1), and true for the browser build too, told apart here by
-// __EMSCRIPTEN__ (M6 recorded no missed audio-worklet deadline there).
+// standalone and the plugin, which share one audio-thread-cost measurement,
+// and true for the browser build too, told apart here by __EMSCRIPTEN__ (no
+// missed audio-worklet deadline was measured there).
 #if defined(__EMSCRIPTEN__)
 inline constexpr bool kFroggersOffersPitch = true;
 #else

@@ -625,16 +625,16 @@ TEST_CASE(pitch_tracks_the_ruled_range_edges) {
 }
 
 // The Pitch note the 20-step schedule below raises the default patch's
-// three VCOs to, measure-q/QShippedRule.cpp Item 2's own target.
+// three VCOs to, measure-q/QShippedRule.cpp's own worst-latency target.
 constexpr int kPitchStepTargetNote = 52;
 
 // ---------------------------------------------------------------------------
 // pitch_step_confirms_within_100ms
 // ---------------------------------------------------------------------------
 // The requirement's own <=100 ms latency bound, measured the way
-// measure-q/QShippedRule.cpp Item 2 measured it (the same render
-// measure-q/report-shipped-rule.md Table 2's 75.417 ms/94.271 ms figures
-// come from): 20 up/back steps of the default patch's three VCO pitch
+// measure-q/QShippedRule.cpp's own worst-latency render measured it (the
+// same render measure-q/report-shipped-rule.md Table 2's 75.417 ms/94.271
+// ms figures come from): 20 up/back steps of the default patch's three VCO pitch
 // knobs, a factor of 1.5, one every quarter note (0.5 s at the default
 // 120 bpm) and landing 5% into that quarter's own gate-open window, worst
 // latency taken over all 20 "up" transitions to the real MIDI-out note-on
@@ -882,9 +882,11 @@ TEST_CASE(pitch_velocity_follows_the_level_unless_fixed) {
 // block, reset every block) finds those blocks from outside; the appended
 // events are then checked against the requirement: at most a note-off and a
 // note-on, the note-on naming whatever note was ACTUALLY sounding at the
-// block's end (which TestPitchNoteChangesLastBlock() alone cannot say, so
-// this also cross-checks against the following block's own start state,
-// implicitly continuous with this block's note-on).
+// block's end. A running last-known-sounding-note, tracked from the
+// decoded events across every block in the render (not just the ones this
+// counter flags), confirms each note-on's note against what the PREVIOUS
+// block left sounding, so a note-on naming an intermediate report instead
+// of the final one would show up as a mismatch there.
 TEST_CASE(pitch_several_reports_in_one_block_send_one_change) {
     Rig::AudioSettings settings;
     settings.sampleRate = 48000.0;

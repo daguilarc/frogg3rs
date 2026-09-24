@@ -147,11 +147,11 @@ inline constexpr const char* kFreezeLabel = "froggers.transport.freeze.label";
 inline constexpr const char* kInputSelect = "froggers.transport.input";
 // The row directly beneath the transport row, plugin-host mode only,
 // holding every MIDI-out control together, in order: the MIDI button
-// (kMidiSelect), then the Channel, CC and Velocity TextFields. The
-// transport row itself is unchanged (coordinator ruling: at the plugin's
-// design width the transport row needs 317.64 px and has 284.67 px if the
-// MIDI button joins it) -- this row wraps into a second line where the
-// width demands it (LayoutOptions::wrap).
+// (kMidiSelect), then the Channel, CC and Velocity TextFields. It sits in
+// its own row rather than joining the transport row, since at the plugin's
+// design width the transport row needs 317.64 px and has only 284.67 px
+// left if the MIDI button joins it -- this row wraps into a second line
+// where the width demands it (LayoutOptions::wrap).
 inline constexpr const char* kMidiOutFieldsRow = "froggers.transport.midi_fields";
 // The plugin's own MIDI-out content selector, the second CyclingHostPicker
 // instance (after kInputSelect above), first child of kMidiOutFieldsRow.
@@ -1065,11 +1065,12 @@ public:
     }
 
     // The MIDI-out content selector's own options: the app's static catalog
-    // (Off, then FroggersMidiCatalog()'s midiOutContents in order), handed
-    // once by Froggers.hpp's Init() -- see CyclingHostPicker's own comment
-    // for why SetOptions is the one entry point that can move the
-    // selection without a tap; `selection` restores whichever content a
-    // session restore or a construction-time default names.
+    // (Off, then FroggersMidiCatalog()'s midiOutContents in order). Called
+    // by Froggers.hpp's Init() once, and by the plugin's own
+    // ApplyMidiOutSelection() on every selection and every restore -- see
+    // CyclingHostPicker's own comment for why SetOptions is the one entry
+    // point that can move the selection without a tap; `selection` names
+    // whichever content is current.
     void SetMidiOutOptions(std::vector<std::string> labels, int selection) {
         midiPicker_.SetOptions(std::move(labels), selection);
     }

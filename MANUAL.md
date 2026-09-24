@@ -235,7 +235,7 @@ app's own MIDI out port (Audio to MIDI, below).
 The DAW owns audio devices, transport and tempo.
 
 **Transport and tempo** follow the host. The plugin's own surface shows only Freeze (labeled "FREEZE")
-and the **IN:** input-selector button, unchanged, where the standalone shows Play, Stop, Freeze, and
+and the **IN:** input-selector button, where the standalone shows Play, Stop, Freeze, and
 Record; a row beneath it holds the MIDI-out controls (see the **MIDI** paragraph below), the **MIDI**
 button first, then **Channel**, **CC** and **Velocity** fields, wrapping into a second row where the
 width demands it. Whenever the host reports a tempo, the BPM control becomes a read-only display, "BPM
@@ -245,7 +245,7 @@ width demands it. Whenever the host reports a tempo, the BPM control becomes a r
 page's 14 page parameters, its own Crispy, the one shared Crunchy, and Freeze — is exposed to the host as
 a standard automatable plugin parameter, so a DAW's own MIDI-learn/CC-mapping targets one of these the
 same way it would target any other plugin parameter. The plugin accepts the host's MIDI buffer but does
-not read it itself. The plugin also has its own MIDI output now (Audio to MIDI, below), set from the row
+not read it itself. The plugin has its own MIDI output (Audio to MIDI, below), set from the row
 beneath the transport row rather than from a Controllers page; the DAW routes that output like any other
 plugin MIDI source.
 
@@ -272,9 +272,10 @@ beneath the transport row (Plugin, above), with a **MIDI** button cycling **MIDI
 LEVEL**, and **MIDI: PITCH**; the DAW routes that output like any other plugin MIDI source, not through
 a Controllers page.
 
-Either way, a **Channel** field (0 to 15) and a **CC** field (0 to 127) set where Level's Control
-Changes go. A **Velocity** field sets Pitch's note-on velocity: either a fixed number 1 to 127, or
-**Level**, which follows the output level at each note-on instead.
+Either way, a **Channel** field (0 to 15) sets which channel Level's Control Changes and Pitch's notes go
+out on, and a **CC** field (0 to 127) sets which Control Change number Level uses. A **Velocity** field
+sets Pitch's note-on velocity: either a fixed number 1 to 127, or **Level**, which follows the output
+level at each note-on instead.
 
 **Level** sends a Control Change on the set channel and CC number, at most 50 times a second and only
 when the value changes.
