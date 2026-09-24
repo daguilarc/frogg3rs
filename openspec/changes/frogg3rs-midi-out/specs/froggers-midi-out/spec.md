@@ -84,8 +84,8 @@ The note-on velocity is the Velocity field's fixed value, or, when the field is 
 A measurement counted note changes per minute and octave jumps over 60 s at 48 kHz and 128 frames, K = 1, at the ruled range (50-5,000 Hz), with no note-off on a quiet output: the default patch 3 and 0, phase modulation at its maximum 677 and 114, ring modulation at its maximum 30 and 5 (moved from 25 and 2 at the narrower 50-1,500 Hz range first used, since the wider ceiling admits some of that patch's higher-frequency inharmonic content), comb feedback at its maximum 3 and 0, with render setup `sampleRate = 48000.0`, `blockSize = 128`. The count test is narrowed to the default patch alone: it asserts 0 exact-octave jumps over the 60 s, that the first note-on is note 45, and that note 45 is the note sounding at the render's end. A real render shows one release-tail blip near 55.5 s, matching the measured 3 note-ons for the default patch. The per-case integer assertions for the other three patches are removed.
 
 #### Scenario: The default patch sends note 45
-- **WHEN** Pitch is chosen and the default patch plays for ten seconds
-- **THEN** a note-on for note 45 is sent and is the note sounding for most of the ten seconds
+- **WHEN** Pitch is chosen and the default patch plays for 60 seconds
+- **THEN** a note-on for note 45 is sent and is the note sounding for most of the render, with 0 exact-octave jumps
 - Check: `app/FroggersMidiOutTests.cpp: pitch_default_patch_sends_note_45_and_stays_sounding`
 
 #### Scenario: A pitch step is sent within 100 ms
