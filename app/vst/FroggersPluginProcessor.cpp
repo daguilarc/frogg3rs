@@ -1595,6 +1595,15 @@ void FroggersPluginProcessor::PumpStatePersistence() {
                         const auto found = std::find(midiLabels.begin() + 1, midiLabels.end(), contentId);
                         if (found != midiLabels.end()) {
                             ApplyMidiOutSelection(static_cast<int>(std::distance(midiLabels.begin(), found)));
+                        } else {
+                            // Named by a session this build's current
+                            // catalog does not have (e.g. saved with Pitch
+                            // chosen, restored into a build without it):
+                            // falls back to index 0 (Off), same as the
+                            // empty-contentId branch above, rather than
+                            // leaving whatever was selected before this
+                            // restore in place.
+                            ApplyMidiOutSelection(0);
                         }
                     }
                 }

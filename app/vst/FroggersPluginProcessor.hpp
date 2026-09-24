@@ -201,9 +201,14 @@ public:
     // before this app's own messages are added (see processBlock()): a
     // synth that declares MIDI input accepted is fine with no note input
     // wiring. NEEDS_MIDI_OUTPUT TRUE declares MIDI output; producesMidi()
-    // must agree with that too.
+    // must agree with that too -- checked below at compile time, since
+    // producesMidi() is a hard-coded true regardless of what the build
+    // actually declares.
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return true; }
+    static_assert(JucePlugin_ProducesMidiOutput,
+                  "NEEDS_MIDI_OUTPUT (app/vst/CMakeLists.txt) must stay TRUE: producesMidi() above always answers "
+                  "true, so a build that stopped declaring a MIDI output bus would still claim one to the host.");
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
 

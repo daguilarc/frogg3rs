@@ -2836,6 +2836,40 @@ TEST_CASE(plugin_incoming_midi_does_not_pass_through) {
 }
 
 // ---------------------------------------------------------------------------
+// plugin_incoming_midi_does_not_pass_through_while_level_sends
+// ---------------------------------------------------------------------------
+// A18: the test above only exercises Off, where the app appends nothing --
+// a clear() that only ran when the app had nothing of its own to add would
+// pass it unnoticed. Level DOES send on this block (the first-ever Level
+// Control Change always sends), so both the incoming event and the app's
+// own message are present at once, and only the app's own must survive.
+TEST_CASE(plugin_incoming_midi_does_not_pass_through_while_level_sends) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("plugin_incoming_midi_blocked_level"));
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+
+    synth::AppMidiOutSettings settings;
+    settings.contentId = synth_froggers::kFroggersMidiOutContentLevelId;
+    settings.channel = 4;
+    settings.ccNumber = 20;
+    processor.ApplicationForTest().SetMidiOutSetting(settings);
+
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    midi.addEvent(juce::MidiMessage::controllerEvent(9, 111, 99), 5);
+    buffer.clear();
+    processor.processBlock(buffer, midi);
+
+    int eventCount = 0;
+    for (const juce::MidiMessageMetadata metadata : midi) {
+        ++eventCount;
+        REQUIRE_TRUE(metadata.data[0] == 0xB4);  // the app's own CC, channel 4.
+        REQUIRE_TRUE(metadata.data[1] == 20);    // the set CC number, not the incoming one's.
+    }
+    REQUIRE_TRUE(eventCount == 1);  // only the app's own message.
+}
+
+// ---------------------------------------------------------------------------
 // plugin_apps_messages_reach_the_host_buffer_at_their_frames
 // ---------------------------------------------------------------------------
 TEST_CASE(plugin_apps_messages_reach_the_host_buffer_at_their_frames) {
@@ -2864,8 +2898,40 @@ TEST_CASE(plugin_apps_messages_reach_the_host_buffer_at_their_frames) {
         REQUIRE_TRUE(metadata.numBytes == 3);
         REQUIRE_TRUE(metadata.data[0] == 0xB4);  // Control Change, channel 4.
         REQUIRE_TRUE(metadata.data[1] == 20);    // the set CC number.
+        REQUIRE_TRUE(metadata.data[2] == 0);     // the first-ever value: no output yet this block.
     }
     REQUIRE_TRUE(eventCount == 1);
+}
+
+// ---------------------------------------------------------------------------
+// plugin_cc_field_parses_and_refuses_its_boundaries
+// ---------------------------------------------------------------------------
+// A7: plugin_midi_out_setting_survives_the_project commits "20" only -- no
+// plugin-surface test exercises a refused CC entry. 128 is one past the
+// valid 0-127 range; a refused commit must leave both the setting and the
+// rendered field exactly as they were, and 127 (the boundary itself) must
+// still be accepted.
+TEST_CASE(plugin_cc_field_parses_and_refuses_its_boundaries) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("plugin_cc_field_boundaries"));
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+
+    processor.EditorSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kMidiSelect));
+    processor.EditorSurface().DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kMidiCcCommit, "20"));
+    REQUIRE_TRUE(processor.MidiOutSettingsForTest().ccNumber == 20);
+
+    processor.EditorSurface().DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kMidiCcCommit, "128"));
+    REQUIRE_TRUE(processor.MidiOutSettingsForTest().ccNumber == 20);  // refused: unchanged.
+
+    const synth::ui::Node* ccField =
+        FindNodeById(processor.EditorSurface().BuildTree(), synth_froggers::FroggersNodeIds::kMidiOutCc);
+    REQUIRE_TRUE(ccField != nullptr && ccField->text == "20");  // the rendered field agrees.
+
+    processor.EditorSurface().DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kMidiCcCommit, "127"));
+    REQUIRE_TRUE(processor.MidiOutSettingsForTest().ccNumber == 127);  // the boundary itself is accepted.
 }
 
 // ---------------------------------------------------------------------------
@@ -3020,6 +3086,14 @@ void CheckContainmentAndNoOverlap(const synth::ui::NodeTree& tree, const synth::
         const synth::ui::Bounds childIAbsolute = AbsoluteBounds(tree, childI->id.value);
         REQUIRE_TRUE(FullyInside(childIAbsolute, containerAbsolute));
         REQUIRE_TRUE(FullyInside(childIAbsolute, root));
+        if (childI->children.empty()) {
+            // A leaf (a field, a label, a button -- not a container laid out
+            // from its own children): zero width or height renders nothing
+            // and, for a field, cannot be tapped, even though it still
+            // passes containment and non-overlap.
+            REQUIRE_TRUE(childIAbsolute.width > 0.0f);
+            REQUIRE_TRUE(childIAbsolute.height > 0.0f);
+        }
         for (std::size_t j = i + 1; j < container.children.size(); ++j) {
             const synth::ui::Node* childJ = FindNodeById(tree, container.children[j].value);
             REQUIRE_TRUE(childJ != nullptr);
@@ -3076,6 +3150,63 @@ TEST_CASE(plugin_mode_rows_fit_the_surface) {
     const synth::ui::Node* fieldsRow = FindNodeById(tree, synth_froggers::FroggersNodeIds::kMidiOutFieldsRow);
     REQUIRE_TRUE(fieldsRow != nullptr);
     CheckContainmentAndNoOverlap(tree, *fieldsRow, root->bounds);
+
+    // A19: the two checks above never look past the transport row and the
+    // MIDI-out fields row themselves -- the kLeftRows stack beneath them
+    // (Scope, Scenes, Scene Blend, Bpm) could still be squeezed to near
+    // nothing by the new row claiming space ahead of them, and any leaf
+    // field anywhere could still be zero-sized. Checking the whole tree
+    // from root covers every row this surface renders, not just the two the
+    // MIDI-out row change touched directly.
+    CheckContainmentAndNoOverlap(tree, *root, root->bounds);
+}
+
+// ---------------------------------------------------------------------------
+// plugin_restore_of_an_unknown_midi_out_content_falls_back_to_off
+// ---------------------------------------------------------------------------
+// Possible defect: PumpStatePersistence()'s restore calls
+// ApplyMidiOutSelection() for an empty contentId (Off) or one found in the
+// current catalog, but does nothing for a non-empty, unrecognized one (a
+// build without Pitch restoring a session saved with Pitch chosen) --
+// contradicting ApplyMidiOutSelection()'s own comment, that a selection the
+// current catalog does not have "falls back to index 0 (Off)".
+TEST_CASE(plugin_restore_of_an_unknown_midi_out_content_falls_back_to_off) {
+    frogg3rs_vst::FroggersPluginProcessor source(ScratchDataPaths("midi_out_unknown_content_source"));
+    source.setRateAndBufferSizeDetails(48000.0, 256);
+    source.prepareToPlay(48000.0, 256);
+    source.EditorSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kMidiSelect));  // Off -> Level.
+    REQUIRE_TRUE(source.MidiOutSettingsForTest().contentId == synth_froggers::kFroggersMidiOutContentLevelId);
+
+    juce::AudioBuffer<float> sourceBuffer(2, 256);
+    juce::MidiBuffer sourceMidi;
+    PumpAndSettle(source, sourceBuffer, sourceMidi);
+
+    juce::MemoryBlock state;
+    source.getStateInformation(state);
+    std::string stateText(static_cast<const char*>(state.getData()), state.getSize());
+    const std::string needle = std::string("\"") + synth_froggers::kFroggersMidiOutContentLevelId + "\"";
+    const std::size_t at = stateText.find(needle);
+    REQUIRE_TRUE(at != std::string::npos);
+    stateText.replace(at, needle.size(), "\"not-a-real-content\"");
+    source.releaseResources();
+
+    frogg3rs_vst::FroggersPluginProcessor target(ScratchDataPaths("midi_out_unknown_content_target"));
+    target.setRateAndBufferSizeDetails(48000.0, 256);
+    target.prepareToPlay(48000.0, 256);
+    // Off -> Level -> Pitch: a DIFFERENT selection from the tampered state
+    // below, so "left in place" is observable rather than accidentally
+    // already matching the correct fallback.
+    target.EditorSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kMidiSelect));
+    target.EditorSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kMidiSelect));
+    REQUIRE_TRUE(target.MidiOutSettingsForTest().contentId == synth_froggers::kFroggersMidiOutContentPitchId);
+
+    target.setStateInformation(stateText.data(), static_cast<int>(stateText.size()));
+    juce::AudioBuffer<float> targetBuffer(2, 256);
+    juce::MidiBuffer targetMidi;
+    PumpAndSettle(target, targetBuffer, targetMidi);
+
+    REQUIRE_TRUE(target.MidiOutSettingsForTest().contentId.empty());  // Off, not left at Pitch.
+    target.releaseResources();
 }
 
 // ---------------------------------------------------------------------------
