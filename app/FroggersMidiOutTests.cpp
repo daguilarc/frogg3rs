@@ -149,6 +149,29 @@ std::optional<DecodedNoteEvent> DecodeNoteEvent(const synth::AppMidiOutEvent& ev
 }
 
 // ---------------------------------------------------------------------------
+// app_context_midi_out_callback_reaches_froggers_app_core
+// ---------------------------------------------------------------------------
+// A1: every other test in this file drives FroggersAppCore::
+// SetMidiOutSetting() directly -- none of them can tell whether Init()
+// actually registered it as the AppContext's MIDI-out settings callback,
+// the route Engine::SetAppMidiOutConfig uses for the standalone and browser
+// (the plugin calls SetMidiOutSetting() directly, so it would keep working
+// even if this registration were removed). This invokes the callback
+// itself, the same way the engine does.
+TEST_CASE(app_context_midi_out_callback_reaches_froggers_app_core) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("app_context_midi_out_callback"));
+
+    REQUIRE_TRUE(rig.Application().MidiOutContent() == synth_froggers::FroggersMidiOutContent::Off);
+    REQUIRE_TRUE(static_cast<bool>(rig.Engine().Context().appMidiOutSettingsChangedCallback));
+
+    rig.Engine().Context().appMidiOutSettingsChangedCallback(PitchSetting(/*channel=*/7));
+    rig.RunBlocks(1);
+
+    REQUIRE_TRUE(rig.Application().MidiOutContent() == synth_froggers::FroggersMidiOutContent::Pitch);
+    REQUIRE_TRUE(rig.Application().MidiOutChannel() == 7);
+}
+
+// ---------------------------------------------------------------------------
 // off_sends_nothing
 // ---------------------------------------------------------------------------
 // Placed beside Level's own tests: with the setting at its default (Off),
