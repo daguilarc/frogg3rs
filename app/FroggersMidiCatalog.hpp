@@ -54,6 +54,16 @@
 
 namespace synth_froggers {
 
+// Whether this build offers Pitch as a MIDI-out content. True for the
+// standalone and the plugin, which share one audio-thread-cost measurement
+// (M1), and true for the browser build too, told apart here by
+// __EMSCRIPTEN__ (M6 recorded no missed audio-worklet deadline there).
+#if defined(__EMSCRIPTEN__)
+inline constexpr bool kFroggersOffersPitch = true;
+#else
+inline constexpr bool kFroggersOffersPitch = true;
+#endif
+
 namespace {
 
 // A momentary control that fires one app action on press and nothing on
@@ -356,6 +366,12 @@ inline synth::MidiAppCatalog FroggersMidiCatalog() {
         LaunchpadProMk3DeviceDefault(),
         LaunchpadMiniMk3DeviceDefault(),
     };
+    catalog.midiOutContents = {
+        {"level", "Level (CC)", synth::MidiControlType::Cc},
+    };
+    if constexpr (kFroggersOffersPitch) {
+        catalog.midiOutContents.push_back({"pitch", "Pitch (notes)", synth::MidiControlType::Note});
+    }
     return catalog;
 }
 

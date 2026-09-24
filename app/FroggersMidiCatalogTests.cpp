@@ -408,6 +408,26 @@ TEST_CASE(catalog_names_the_bpm_action_as_its_tempo_action) {
 }
 
 // ---------------------------------------------------------------------------
+// catalog_lists_level_and_pitch_as_midi_out_contents
+// ---------------------------------------------------------------------------
+TEST_CASE(catalog_lists_level_and_pitch_as_midi_out_contents) {
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+
+    REQUIRE_TRUE(synth_froggers::kFroggersOffersPitch);
+    REQUIRE_TRUE(catalog.midiOutContents.size() == 2);
+
+    const synth::MidiAppMidiOutContent& level = catalog.midiOutContents[0];
+    REQUIRE_TRUE(level.id == "level");
+    REQUIRE_TRUE(level.label == "Level (CC)");
+    REQUIRE_TRUE(level.kind == synth::MidiControlType::Cc);
+
+    const synth::MidiAppMidiOutContent& pitch = catalog.midiOutContents[1];
+    REQUIRE_TRUE(pitch.id == "pitch");
+    REQUIRE_TRUE(pitch.label == "Pitch (notes)");
+    REQUIRE_TRUE(pitch.kind == synth::MidiControlType::Note);
+}
+
+// ---------------------------------------------------------------------------
 // device_defaults_are_valid_and_address_exactly_the_documented_controls
 // ---------------------------------------------------------------------------
 TEST_CASE(device_defaults_are_valid_and_address_exactly_the_documented_controls) {
