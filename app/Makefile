@@ -382,16 +382,21 @@ $(CONTROLLERS_PAGE_BIN): $(CONTROLLERS_PAGE_SOURCES) $(APP_DIR)/Froggers.hpp $(A
 
 # --- catalog-covers-every-screen-action check -----------------------------
 # Every FroggersActions constant (FroggersUiSurface.hpp) must be both
-# offered by the MIDI catalog and routed by HandleAction, except the five
+# offered by the MIDI catalog and routed by HandleAction, except the nine
 # that are not MIDI-mappable actions:
-#   kSceneBlend      -- offered as the library's own analog Scene Blend kind.
-#   kEncoderPress    -- the catalog's own encoderPressAction, not a listed action.
-#   kEncoderDrag     -- the screen's mouse route into the library's ParamIncDec.
-#   kInputSelect     -- the plugin host's input picker, not offered.
-#   kViewportNarrow  -- a browser shell flag, not a control.
+#   kSceneBlend         -- offered as the library's own analog Scene Blend kind.
+#   kEncoderPress       -- the catalog's own encoderPressAction, not a listed action.
+#   kEncoderDrag        -- the screen's mouse route into the library's ParamIncDec.
+#   kInputSelect        -- the plugin host's input picker, not offered.
+#   kMidiSelect         -- the plugin host's own MIDI-out content picker, not offered.
+#   kMidiChannelCommit  -- the plugin host's own MIDI-out Channel field, not offered.
+#   kMidiCcCommit       -- the plugin host's own MIDI-out CC field, not offered.
+#   kMidiVelocityCommit -- the plugin host's own MIDI-out Velocity field, not offered.
+#   kViewportNarrow     -- a browser shell flag, not a control.
 check-catalog-covers-screen-actions:
 	@bash $(APP_DIR)/check_catalog_covers_screen_actions.sh "$(APP_DIR)" \
-	    kSceneBlend kEncoderPress kEncoderDrag kInputSelect kViewportNarrow
+	    kSceneBlend kEncoderPress kEncoderDrag kInputSelect kMidiSelect kMidiChannelCommit \
+	    kMidiCcCommit kMidiVelocityCommit kViewportNarrow
 
 test: check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions check-docs-match-parameter-table check-spec-checks-resolve check-citations-resolve check-modified-requirements-restate-promoted check-no-planning-history check-no-bank-page-conflation check-artifact-symbols-resolve check-delay-capacity-parameters-are-swept check-delay-capacity-break-proofs check-twister-manual-diagrams-drift $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN) $(CONTROLLERS_PAGE_BIN) $(MIDI_OUT_BIN)
 	$(TEST_BIN)

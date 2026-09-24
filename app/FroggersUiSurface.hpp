@@ -79,6 +79,7 @@
 #include "synth/EncoderDraw.hpp"
 #include "synth/MasterClock.hpp"
 #include "synth/ParameterModulation.hpp"
+#include "synth/PatchPersistence.hpp"
 #include "synth/PortableUI.hpp"
 #include "synth/PortableUIBuilders.hpp"
 
@@ -144,6 +145,22 @@ inline constexpr const char* kFreezeLabel = "froggers.transport.freeze.label";
 // file does not render (see this file's header comment, "Where it lives is
 // the only real difference from the standalone").
 inline constexpr const char* kInputSelect = "froggers.transport.input";
+// The row directly beneath the transport row, plugin-host mode only,
+// holding every MIDI-out control together, in order: the MIDI button
+// (kMidiSelect), then the Channel, CC and Velocity TextFields. The
+// transport row itself is unchanged (coordinator ruling: at the plugin's
+// design width the transport row needs 317.64 px and has 284.67 px if the
+// MIDI button joins it) -- this row wraps into a second line where the
+// width demands it (LayoutOptions::wrap).
+inline constexpr const char* kMidiOutFieldsRow = "froggers.transport.midi_fields";
+// The plugin's own MIDI-out content selector, the second CyclingHostPicker
+// instance (after kInputSelect above), first child of kMidiOutFieldsRow.
+// Its own label TEXT the currently selected content (e.g. "MIDI: OFF",
+// "MIDI: LEVEL"), built from FroggersMidiCatalog()'s midiOutContents.
+inline constexpr const char* kMidiSelect = "froggers.transport.midi";
+inline constexpr const char* kMidiOutChannel = "froggers.transport.midi_fields.channel";
+inline constexpr const char* kMidiOutCc = "froggers.transport.midi_fields.cc";
+inline constexpr const char* kMidiOutVelocity = "froggers.transport.midi_fields.velocity";
 // Row 3 of the left block (FroggersCellMap): Play | Stop | Freeze | Record.
 inline constexpr const char* kTransportRow = "froggers.layout.left.transport";
 // The transport cell, the plates row over the notice line.
@@ -258,6 +275,16 @@ inline constexpr const char* kEncoderDrag = "froggers.encoder.drag";
 // None). See FroggersNodeIds::kInputSelect above and HandleAction's own
 // branch for the exact cycle/callback mechanics.
 inline constexpr const char* kInputSelect = "froggers.transport.input";
+// Cycles the plugin's MIDI-out content selection the same way kInputSelect
+// cycles the input channel -- see FroggersNodeIds::kMidiSelect above.
+inline constexpr const char* kMidiSelect = "froggers.transport.midi";
+// The three MIDI-out field commits: dispatched with the entered text as the
+// action's value, checked with app-midi-out's ParseAppMidiOutChannel/
+// ParseAppMidiOutCcNumber/ParseAppMidiOutVelocity; an entry they refuse
+// leaves the stored field value in place (see HandleAction's own branches).
+inline constexpr const char* kMidiChannelCommit = "froggers.transport.midi_fields.channel_commit";
+inline constexpr const char* kMidiCcCommit = "froggers.transport.midi_fields.cc_commit";
+inline constexpr const char* kMidiVelocityCommit = "froggers.transport.midi_fields.velocity_commit";
 // Dispatched by a browser shell to report its own viewport width, not
 // something this surface measures itself. Selects the narrow topology:
 // equal outer split weights, and the Randomize/Reset buttons emitted
@@ -902,6 +929,78 @@ inline std::vector<synth::ui::DrawCommand> BuildEncoderLabelRowCommands(std::str
     return synth::ui::BuildFourteenSegmentCommands(padded, rowBounds, onColor, offColor, columns);
 }
 
+// A plugin-host-only Button that cycles through a fixed option list on
+// tap, its own label reading "<prefix><CURRENT OPTION, UPPER-CASED>" --
+// the shape the input-select control (kInputSelect) already had; the
+// MIDI-out content selector (kMidiSelect) is the second instance, so this
+// holds what both share (labels, the selection, the label prefix and the
+// changed callback) and builds the button label and the next selection.
+// `labels` is host-owned data (the plugin derives it from its own live bus
+// for IN, or the app's static catalog for MIDI): SetOptions() is the ONLY
+// entry point that can move the selection WITHOUT going through a tap
+// (CycleToNext(), the operator's own route), so a host-side re-validation
+// always lands here too, not a second path.
+class CyclingHostPicker {
+public:
+    // `defaultOption` is what a bare-context picker (SetOptions() never
+    // called -- there is no such window in production; only a
+    // bare-context surface, e.g. FroggersSurfaceTests.cpp/
+    // FroggersVstHostTests.cpp's layout-only helpers, would ever observe
+    // this default) renders: "None" for the input picker, "off" for the
+    // MIDI-out picker -- the two are not interchangeable, so each instance
+    // states its own rather than sharing one hardcoded default.
+    CyclingHostPicker(std::string labelPrefix, std::string defaultOption)
+        : labelPrefix_(std::move(labelPrefix)), labels_{std::move(defaultOption)} {}
+
+    void SetOptions(std::vector<std::string> labels, int selection) {
+        labels_ = std::move(labels);
+        const int count = static_cast<int>(labels_.size());
+        selection_ = (count > 0 && selection >= 0 && selection < count) ? selection : 0;
+    }
+
+    void SetChangedCallback(std::function<void(int)> callback) { changedCallback_ = std::move(callback); }
+
+    int Selection() const { return selection_; }
+
+    // "<prefix><OPTION, UPPER-CASED>", falling back to labels_[0] if
+    // selection_ is somehow out of range (SetOptions()/CycleToNext() both
+    // clamp it -- this is a display-only guard against reading past the
+    // vector, not a second validation path).
+    std::string ButtonLabel() const {
+        if (labels_.empty()) {
+            return labelPrefix_;
+        }
+        const std::size_t index =
+            (selection_ >= 0 && static_cast<std::size_t>(selection_) < labels_.size())
+                ? static_cast<std::size_t>(selection_)
+                : std::size_t{0};
+        std::string label = labelPrefix_;
+        for (char c : labels_[index]) {
+            label.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+        }
+        return label;
+    }
+
+    // Cycles to the next option (wrapping), applied directly (a live
+    // render-state write) and handed to the changed callback so the host
+    // can decide what the new selection means and whether to accept it.
+    void CycleToNext() {
+        const int count = static_cast<int>(labels_.size());
+        if (count > 0) {
+            selection_ = (selection_ + 1) % count;
+            if (changedCallback_) {
+                changedCallback_(selection_);
+            }
+        }
+    }
+
+private:
+    std::string labelPrefix_;
+    std::vector<std::string> labels_;
+    int selection_ = 0;
+    std::function<void(int)> changedCallback_;
+};
+
 class FroggersUiSurface final : public synth::ui::Surface {
 public:
     void Attach(synth::AppContext* context, FroggersAppCore* app) {
@@ -945,15 +1044,13 @@ public:
     // whenever that bus's shape might have changed -- construction, a host
     // layout change, or a restored session. `selection` is an index into
     // `labels`, clamped into range here (never trusted from the caller):
-    // this is the ONLY entry point that can move inputSelection_ WITHOUT
-    // going through the operator's own tap (HandleAction's kInputSelect
+    // this is the ONLY entry point that can move inputPicker_'s selection
+    // WITHOUT going through the operator's own tap (HandleAction's kInputSelect
     // branch below, the ONLY other writer), so a plugin-side re-validation
     // (a layout change that removed the selected channel) always lands here
     // too, not a second path.
     void SetInputOptions(std::vector<std::string> labels, int selection) {
-        inputOptionLabels_ = std::move(labels);
-        const int count = static_cast<int>(inputOptionLabels_.size());
-        inputSelection_ = (count > 0 && selection >= 0 && selection < count) ? selection : 0;
+        inputPicker_.SetOptions(std::move(labels), selection);
     }
 
     // Message-thread only (same contract as every other write path in this
@@ -964,7 +1061,51 @@ public:
     // callback's registration site (FroggersPluginProcessor's constructor)
     // for why re-validation belongs there, not here.
     void SetInputSelectionChangedCallback(std::function<void(int)> callback) {
-        inputSelectionChangedCallback_ = std::move(callback);
+        inputPicker_.SetChangedCallback(std::move(callback));
+    }
+
+    // The MIDI-out content selector's own options: the app's static catalog
+    // (Off, then FroggersMidiCatalog()'s midiOutContents in order), handed
+    // once by Froggers.hpp's Init() -- see CyclingHostPicker's own comment
+    // for why SetOptions is the one entry point that can move the
+    // selection without a tap; `selection` restores whichever content a
+    // session restore or a construction-time default names.
+    void SetMidiOutOptions(std::vector<std::string> labels, int selection) {
+        midiPicker_.SetOptions(std::move(labels), selection);
+    }
+
+    // Registers the callback HandleAction's kMidiSelect branch invokes with
+    // the NEXT index it just cycled to -- the plugin maps that index back
+    // to a content id and applies it through FroggersAppCore::
+    // SetMidiOutSetting() (the same app entry point Init() registers for
+    // the standalone/browser Controllers-page path).
+    void SetMidiSelectionChangedCallback(std::function<void(int)> callback) {
+        midiPicker_.SetChangedCallback(std::move(callback));
+    }
+
+    // The three MIDI-out fields' current stored values (message-thread
+    // facts the plugin owns, same split as SetInputOptions above):
+    // construction, a restored session, or an accepted field commit all
+    // call this so the fields render the value actually in effect. nullopt
+    // velocity displays "Level".
+    void SetMidiOutFields(int channel, int ccNumber, std::optional<int> velocity) {
+        midiOutFieldChannel_ = channel;
+        midiOutFieldCcNumber_ = ccNumber;
+        midiOutFieldVelocity_ = velocity;
+    }
+
+    // Registered by the plugin: invoked with the parsed, already-validated
+    // value only when HandleAction's own commit branch (below) accepts the
+    // entry -- a refused entry calls none of these, leaving the stored
+    // field value (and therefore what the field displays next) unchanged.
+    void SetMidiChannelCommittedCallback(std::function<void(std::uint8_t)> callback) {
+        midiChannelCommittedCallback_ = std::move(callback);
+    }
+    void SetMidiCcCommittedCallback(std::function<void(std::uint8_t)> callback) {
+        midiCcCommittedCallback_ = std::move(callback);
+    }
+    void SetMidiVelocityCommittedCallback(std::function<void(std::optional<std::uint8_t>)> callback) {
+        midiVelocityCommittedCallback_ = std::move(callback);
     }
 
     synth::ui::NodeTree BuildTree() override {
@@ -1058,10 +1199,18 @@ private:
 
     // The kLeftRows stack, emitted into whichever Column carries it: the
     // chrome block itself when wide, the block's left-hand inner column
-    // when narrow.
+    // when narrow. kLeftRows itself is unchanged (its weights govern every
+    // host, not just the plugin): the MIDI-out fields row is appended here,
+    // directly after the transport row, in the SAME parent Column, only in
+    // plugin-host mode -- not one of kLeftRows' own five weighted entries,
+    // since every other host never renders it and its own weight would
+    // otherwise steal a share from the ones that do.
     void AppendLeftRows(synth::ui::Builder& builder) const {
         for (const FroggersCellMap::LeftRow& row : FroggersCellMap::kLeftRows) {
             AppendLeftRow(builder, row);
+            if (row.kind == FroggersCellMap::LeftKind::Transport && pluginHostMode_) {
+                AppendMidiOutFieldsRow(builder);
+            }
         }
     }
 
@@ -1216,21 +1365,12 @@ private:
     // square
     // regardless of the row's resolved width.
     // "IN: <current option, upper-cased>" -- same all-caps
-    // convention kFreezeLabel's "FREEZE" already uses beside it. Falls back
-    // to inputOptionLabels_[0] ("None") if inputSelection_ is somehow out
-    // of range (it never should be -- SetInputOptions()/HandleAction's own
-    // kInputSelect branch both clamp it -- this is a display-only guard
-    // against reading past the vector, not a second validation path).
-    std::string InputSelectButtonLabel() const {
-        const std::size_t index = (inputSelection_ >= 0 && static_cast<std::size_t>(inputSelection_) < inputOptionLabels_.size())
-                                       ? static_cast<std::size_t>(inputSelection_)
-                                       : std::size_t{0};
-        std::string label = "IN: ";
-        for (char c : inputOptionLabels_[index]) {
-            label.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
-        }
-        return label;
-    }
+    // convention kFreezeLabel's "FREEZE" already uses beside it. See
+    // CyclingHostPicker::ButtonLabel() for the fallback/clamp behaviour.
+    std::string InputSelectButtonLabel() const { return inputPicker_.ButtonLabel(); }
+    // "MIDI: <current content, upper-cased>" ("MIDI: OFF", "MIDI: LEVEL",
+    // "MIDI: PITCH") -- the second CyclingHostPicker instance, same shape.
+    std::string MidiSelectButtonLabel() const { return midiPicker_.ButtonLabel(); }
 
     void AppendTransportRow(synth::ui::Builder& builder, float rowWeight) const {
         // The transport cell is now a Column: the plates Row on top, sized
@@ -1268,7 +1408,7 @@ private:
         const bool pluginHostMode = pluginHostMode_;
         // The input-select Button's own rendered text -- computed
         // fresh every rebuild (this file's header comment: the tree
-        // rebuilds every frame) from inputOptionLabels_/inputSelection_,
+        // rebuilds every frame) from inputPicker_'s own current selection,
         // the same "read live state fresh, capture the read INTO the
         // lambda by value" idiom `app`/`pluginHostMode` just above already
         // use, since the row-builder lambda below is not a member function
@@ -1389,6 +1529,64 @@ private:
           if (!transportNotice.empty()) {
               col.Label(FroggersNodeIds::kTransportNotice, transportNotice, synth::ui::ControlStyle{});
           }
+        });
+    }
+
+    // The row directly after the transport row (same parent -- see
+    // AppendLeftRows' own call site), plugin-host mode only, holding every
+    // MIDI-out control together: the MIDI button first, then Channel, CC
+    // and Velocity. The transport row itself is unchanged (coordinator
+    // ruling: at the plugin's design width the transport row needs
+    // 317.64 px and has 284.67 px if the MIDI button joins it) -- this
+    // row's own LayoutOptions::wrap lets the layout resolver break it onto
+    // a second line when these four children do not fit one, rather than
+    // this file predicting exact pixel widths itself; the new layout test
+    // (FroggersVstHostTests.cpp) is the arbiter that nothing then clips or
+    // overlaps. Each TextField's caption is a sibling Label FinishControl
+    // emits (PortableUIBuilders.hpp's own ControlStyle::caption contract),
+    // the same shape app-midi-out's Controllers-page Channel/CC/Velocity
+    // fields already use. Intrinsic on the row's own main axis (vertical,
+    // inside the kLeftRows Column) so it takes only the height its one or
+    // two lines need, leaving kLeftRows' weighted rows their original
+    // shares.
+    void AppendMidiOutFieldsRow(synth::ui::Builder& builder) const {
+        synth::ui::LayoutOptions rowLayout;
+        rowLayout.main = synth::ui::Extent::Intrinsic();
+        rowLayout.cross = synth::ui::Extent::Weight(1.0f);
+        rowLayout.padding = 0.0f;
+        rowLayout.gap = FroggersPageLayout::kGap;
+        rowLayout.wrap = true;
+
+        const std::string midiSelectLabel = MidiSelectButtonLabel();
+        const std::string channelText = std::to_string(midiOutFieldChannel_);
+        const std::string ccText = std::to_string(midiOutFieldCcNumber_);
+        const std::string velocityText =
+            midiOutFieldVelocity_.has_value() ? std::to_string(*midiOutFieldVelocity_) : std::string("Level");
+
+        builder.Row(FroggersNodeIds::kMidiOutFieldsRow, rowLayout,
+                    [midiSelectLabel, channelText, ccText, velocityText](synth::ui::Builder& b) {
+            synth::ui::ControlStyle midiSelectStyle{};
+            midiSelectStyle.layout.cross = synth::ui::Extent::Intrinsic();
+            b.Button(FroggersNodeIds::kMidiSelect, midiSelectLabel,
+                     synth::ui::Action::Named(FroggersActions::kMidiSelect), midiSelectStyle);
+
+            synth::ui::ControlStyle channelStyle{};
+            channelStyle.caption = "Channel";
+            channelStyle.layout.main = synth::ui::Extent::Intrinsic();
+            b.TextField(FroggersNodeIds::kMidiOutChannel, "Channel", channelText,
+                        synth::ui::Action::Named(FroggersActions::kMidiChannelCommit), channelStyle);
+
+            synth::ui::ControlStyle ccStyle{};
+            ccStyle.caption = "CC";
+            ccStyle.layout.main = synth::ui::Extent::Intrinsic();
+            b.TextField(FroggersNodeIds::kMidiOutCc, "CC", ccText,
+                        synth::ui::Action::Named(FroggersActions::kMidiCcCommit), ccStyle);
+
+            synth::ui::ControlStyle velocityStyle{};
+            velocityStyle.caption = "Velocity";
+            velocityStyle.layout.main = synth::ui::Extent::Intrinsic();
+            b.TextField(FroggersNodeIds::kMidiOutVelocity, "Velocity", velocityText,
+                        synth::ui::Action::Named(FroggersActions::kMidiVelocityCommit), velocityStyle);
         });
     }
 
@@ -2353,18 +2551,57 @@ private:
         if (action.name == FroggersActions::kInputSelect) {
             // Cycles to the next option in the list this surface was last
             // handed (SetInputOptions(), above) -- None -> channel 1 -> ...
-            // -> Sum -> None. Applied to inputSelection_ directly (a live
-            // render-state write, the same "surface owns this fact, the
-            // plugin listens for changes" split pluginHostMode_ established
-            // above) and handed to the plugin's callback so IT can
-            // re-validate against the actual bus and decide consent --
-            // this method never decides connectedness itself.
-            const int count = static_cast<int>(inputOptionLabels_.size());
-            if (count > 0) {
-                const int next = (inputSelection_ + 1) % count;
-                inputSelection_ = next;
-                if (inputSelectionChangedCallback_) {
-                    inputSelectionChangedCallback_(next);
+            // -> Sum -> None. Applied directly (a live render-state write,
+            // the same "surface owns this fact, the plugin listens for
+            // changes" split pluginHostMode_ established above) and handed
+            // to the plugin's callback so IT can re-validate against the
+            // actual bus and decide consent -- this method never decides
+            // connectedness itself.
+            inputPicker_.CycleToNext();
+            return;
+        }
+        if (action.name == FroggersActions::kMidiSelect) {
+            // Cycles to the next MIDI-out content (Off -> Level -> Pitch ->
+            // Off, or Off -> Level -> Off on a build without Pitch) --
+            // same shape as kInputSelect above, the plugin's callback
+            // applying it through FroggersAppCore::SetMidiOutSetting().
+            midiPicker_.CycleToNext();
+            return;
+        }
+        if (action.name == FroggersActions::kMidiChannelCommit) {
+            const float parsed = FroggersParseFloat(action.value, std::numeric_limits<float>::quiet_NaN());
+            const std::optional<std::uint8_t> channel =
+                std::isfinite(parsed) ? synth::ParseAppMidiOutChannel(static_cast<double>(parsed)) : std::nullopt;
+            if (channel.has_value()) {
+                midiOutFieldChannel_ = *channel;
+                if (midiChannelCommittedCallback_) {
+                    midiChannelCommittedCallback_(*channel);
+                }
+            }
+            // An entry the parser refuses leaves midiOutFieldChannel_ (and
+            // therefore what the field renders next) exactly as it was --
+            // sru-71's own rule, no different branch needed for the refusal.
+            return;
+        }
+        if (action.name == FroggersActions::kMidiCcCommit) {
+            const float parsed = FroggersParseFloat(action.value, std::numeric_limits<float>::quiet_NaN());
+            const std::optional<std::uint8_t> ccNumber =
+                std::isfinite(parsed) ? synth::ParseAppMidiOutCcNumber(static_cast<double>(parsed)) : std::nullopt;
+            if (ccNumber.has_value()) {
+                midiOutFieldCcNumber_ = *ccNumber;
+                if (midiCcCommittedCallback_) {
+                    midiCcCommittedCallback_(*ccNumber);
+                }
+            }
+            return;
+        }
+        if (action.name == FroggersActions::kMidiVelocityCommit) {
+            const std::optional<std::optional<std::uint8_t>> parsed =
+                synth::ParseAppMidiOutVelocity(action.value);
+            if (parsed.has_value()) {
+                midiOutFieldVelocity_ = parsed->has_value() ? std::optional<int>(**parsed) : std::nullopt;
+                if (midiVelocityCommittedCallback_) {
+                    midiVelocityCommittedCallback_(*parsed);
                 }
             }
             return;
@@ -2540,9 +2777,19 @@ private:
     // tests, would ever observe this default) renders the control exactly
     // as if the bus were disabled, never as if something were already
     // selected.
-    std::vector<std::string> inputOptionLabels_{"None"};
-    int inputSelection_ = 0;
-    std::function<void(int)> inputSelectionChangedCallback_;
+    CyclingHostPicker inputPicker_{"IN: ", "None"};
+    // See SetMidiOutOptions()'s own comment. Defaults to "off" (index 0),
+    // the same bare-context-only reading inputPicker_'s own "None" default
+    // carries above.
+    CyclingHostPicker midiPicker_{"MIDI: ", "off"};
+    // See SetMidiOutFields()'s own comment. Defaults match AppMidiOutSettings'
+    // own (channel 0, CC 16, velocity following the level).
+    int midiOutFieldChannel_ = 0;
+    int midiOutFieldCcNumber_ = 16;
+    std::optional<int> midiOutFieldVelocity_;
+    std::function<void(std::uint8_t)> midiChannelCommittedCallback_;
+    std::function<void(std::uint8_t)> midiCcCommittedCallback_;
+    std::function<void(std::optional<std::uint8_t>)> midiVelocityCommittedCallback_;
     mutable std::uint64_t fallbackTimestamp_ = 1;
 };
 

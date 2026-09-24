@@ -91,6 +91,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -2865,6 +2866,298 @@ TEST_CASE(plugin_apps_messages_reach_the_host_buffer_at_their_frames) {
         REQUIRE_TRUE(metadata.data[1] == 20);    // the set CC number.
     }
     REQUIRE_TRUE(eventCount == 1);
+}
+
+// ---------------------------------------------------------------------------
+// Plugin surface: the MIDI-out fields row beneath the transport row
+// ---------------------------------------------------------------------------
+bool Overlaps(synth::ui::Bounds a, synth::ui::Bounds b) {
+    return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
+bool FullyInside(synth::ui::Bounds inner, synth::ui::Bounds outer) {
+    return inner.x >= outer.x - 0.01f && inner.y >= outer.y - 0.01f &&
+           inner.x + inner.width <= outer.x + outer.width + 0.01f &&
+           inner.y + inner.height <= outer.y + outer.height + 0.01f;
+}
+
+// A resolved node's `bounds` are PARENT-relative, not accumulated screen
+// coordinates (PortableUI.hpp's coordinate contract): a backend's rendered
+// position is a node's own bounds folded over its ancestor chain's own
+// local offsets. Reproduced here (app/FroggersSurfaceTests.cpp's own
+// AbsoluteBounds()) rather than shared, since that file is a standalone
+// binary with its own main() app/vst/ cannot link against.
+synth::ui::Bounds AbsoluteBounds(const synth::ui::NodeTree& tree, const std::string& id) {
+    std::map<std::string, std::string> parentOf;
+    for (const synth::ui::Node& node : tree.nodes) {
+        for (const synth::ui::NodeId& child : node.children) {
+            parentOf[child.value] = node.id.value;
+        }
+    }
+    const synth::ui::Node* node = FindNodeById(tree, id);
+    if (node == nullptr) {
+        return {};
+    }
+    synth::ui::Bounds bounds = node->bounds;
+    std::string current = id;
+    for (;;) {
+        const auto found = parentOf.find(current);
+        if (found == parentOf.end()) {
+            break;
+        }
+        const synth::ui::Node* parent = FindNodeById(tree, found->second);
+        if (parent == nullptr) {
+            break;
+        }
+        bounds.x += parent->bounds.x;
+        bounds.y += parent->bounds.y;
+        current = found->second;
+    }
+    return bounds;
+}
+
+// Recursively asserts every descendant of `container` lies fully inside its
+// own immediate parent and inside `root`, and that no two siblings at any
+// level overlap -- the general shape "every node in the transport row and
+// in the new row (or rows, where it wraps) beneath it" needs, since a
+// TextField's caption is a sibling Label FinishControl wraps one level
+// down (ControlStyle's own "a caption is NOT a field" contract,
+// PortableUI.hpp), not a direct child of the row itself. Every comparison
+// is done in ABSOLUTE (AbsoluteBounds()-folded) coordinates -- two nodes
+// several containers apart otherwise cannot be compared meaningfully.
+void CheckContainmentAndNoOverlap(const synth::ui::NodeTree& tree, const synth::ui::Node& container,
+                                  synth::ui::Bounds root) {
+    const synth::ui::Bounds containerAbsolute = AbsoluteBounds(tree, container.id.value);
+    for (std::size_t i = 0; i < container.children.size(); ++i) {
+        const synth::ui::Node* childI = FindNodeById(tree, container.children[i].value);
+        REQUIRE_TRUE(childI != nullptr);
+        const synth::ui::Bounds childIAbsolute = AbsoluteBounds(tree, childI->id.value);
+        REQUIRE_TRUE(FullyInside(childIAbsolute, containerAbsolute));
+        REQUIRE_TRUE(FullyInside(childIAbsolute, root));
+        for (std::size_t j = i + 1; j < container.children.size(); ++j) {
+            const synth::ui::Node* childJ = FindNodeById(tree, container.children[j].value);
+            REQUIRE_TRUE(childJ != nullptr);
+            const synth::ui::Bounds childJAbsolute = AbsoluteBounds(tree, childJ->id.value);
+            REQUIRE_TRUE(!Overlaps(childIAbsolute, childJAbsolute));
+        }
+        if (!childI->children.empty()) {
+            CheckContainmentAndNoOverlap(tree, *childI, root);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// plugin_transport_row_is_unchanged_midi_button_sits_beneath_it
+// ---------------------------------------------------------------------------
+TEST_CASE(plugin_transport_row_is_unchanged_midi_button_sits_beneath_it) {
+    const synth::ui::NodeTree tree = BuildFroggersTree(/*pluginHostMode=*/true);
+
+    const synth::ui::Node* row = FindNodeById(tree, synth_froggers::FroggersNodeIds::kTransportRow);
+    REQUIRE_TRUE(row != nullptr);
+    REQUIRE_TRUE(row->children.size() == 3);  // unchanged: Freeze, its label, the IN button.
+    REQUIRE_TRUE(row->children[0].value == synth_froggers::FroggersNodeIds::kFreeze);
+    REQUIRE_TRUE(row->children[1].value == synth_froggers::FroggersNodeIds::kFreezeLabel);
+    REQUIRE_TRUE(row->children[2].value == synth_froggers::FroggersNodeIds::kInputSelect);
+    REQUIRE_TRUE(FindNodeById(tree, synth_froggers::FroggersNodeIds::kPlay) == nullptr);
+    REQUIRE_TRUE(FindNodeById(tree, synth_froggers::FroggersNodeIds::kStop) == nullptr);
+    REQUIRE_TRUE(FindNodeById(tree, synth_froggers::FroggersNodeIds::kRecord) == nullptr);
+
+    const synth::ui::Node* fieldsRow = FindNodeById(tree, synth_froggers::FroggersNodeIds::kMidiOutFieldsRow);
+    REQUIRE_TRUE(fieldsRow != nullptr);
+    REQUIRE_TRUE(!fieldsRow->children.empty());
+    REQUIRE_TRUE(fieldsRow->children[0].value == synth_froggers::FroggersNodeIds::kMidiSelect);
+    const synth::ui::Node* midiSelect = FindNodeById(tree, synth_froggers::FroggersNodeIds::kMidiSelect);
+    REQUIRE_TRUE(midiSelect != nullptr && midiSelect->label == "MIDI: OFF");
+}
+
+// ---------------------------------------------------------------------------
+// plugin_mode_rows_fit_the_surface
+// ---------------------------------------------------------------------------
+// The arbiter: builds the surface in plugin mode at the design size
+// (FroggersApp::Config()'s uiWidth/uiHeight, which is FroggersPageLayout::
+// kDefaultWidth/kDefaultHeight -- BuildFroggersTree already resolves
+// RootBounds() against them) and asserts nothing in the transport row or
+// the MIDI-out fields row (or rows, once wrapped) clips or overlaps.
+TEST_CASE(plugin_mode_rows_fit_the_surface) {
+    const synth::ui::NodeTree tree = BuildFroggersTree(/*pluginHostMode=*/true);
+    const synth::ui::Node* root = FindNodeById(tree, synth_froggers::FroggersNodeIds::kRoot);
+    REQUIRE_TRUE(root != nullptr);
+
+    const synth::ui::Node* transportRow = FindNodeById(tree, synth_froggers::FroggersNodeIds::kTransportRow);
+    REQUIRE_TRUE(transportRow != nullptr);
+    CheckContainmentAndNoOverlap(tree, *transportRow, root->bounds);
+
+    const synth::ui::Node* fieldsRow = FindNodeById(tree, synth_froggers::FroggersNodeIds::kMidiOutFieldsRow);
+    REQUIRE_TRUE(fieldsRow != nullptr);
+    CheckContainmentAndNoOverlap(tree, *fieldsRow, root->bounds);
+}
+
+// ---------------------------------------------------------------------------
+// plugin_midi_out_setting_survives_the_project
+// ---------------------------------------------------------------------------
+TEST_CASE(plugin_midi_out_setting_survives_the_project) {
+    frogg3rs_vst::FroggersPluginProcessor source(ScratchDataPaths("midi_out_survives_source"));
+    source.setRateAndBufferSizeDetails(48000.0, 256);
+    source.prepareToPlay(48000.0, 256);
+
+    // Off -> Level -> Pitch: two taps of the MIDI button, catalog order.
+    source.EditorSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kMidiSelect));
+    source.EditorSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kMidiSelect));
+    source.EditorSurface().DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kMidiChannelCommit, "3"));
+    source.EditorSurface().DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kMidiCcCommit, "20"));
+    source.EditorSurface().DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kMidiVelocityCommit, "100"));
+
+    REQUIRE_TRUE(source.MidiOutSettingsForTest().contentId == synth_froggers::kFroggersMidiOutContentPitchId);
+    REQUIRE_TRUE(source.MidiOutSettingsForTest().channel == 3);
+    REQUIRE_TRUE(source.MidiOutSettingsForTest().ccNumber == 20);
+    REQUIRE_TRUE(source.MidiOutSettingsForTest().velocity.has_value() &&
+                *source.MidiOutSettingsForTest().velocity == 100);
+
+    // getStateInformation() returns the cached snapshot PumpStatePersistence()
+    // (message-thread, via the timer) last built -- same "settle before
+    // saving" discipline state_information_round_trips_the_input_selection_
+    // when_a_channel_is_chosen above uses, so the cache actually reflects
+    // the edits just dispatched rather than construction-time state.
+    juce::AudioBuffer<float> sourceBuffer(2, 256);
+    juce::MidiBuffer sourceMidi;
+    PumpAndSettle(source, sourceBuffer, sourceMidi);
+
+    juce::MemoryBlock state;
+    source.getStateInformation(state);
+    REQUIRE_TRUE(state.getSize() > 0);
+    source.releaseResources();
+
+    frogg3rs_vst::FroggersPluginProcessor fresh(ScratchDataPaths("midi_out_survives_restore"));
+    fresh.setRateAndBufferSizeDetails(48000.0, 256);
+    fresh.prepareToPlay(48000.0, 256);
+    // Confirmed Off FIRST -- a fresh processor's own real default -- so the
+    // restore assertions below cannot pass merely because the setting
+    // happens to already be where it started.
+    REQUIRE_TRUE(fresh.MidiOutSettingsForTest().contentId.empty());
+
+    fresh.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+    juce::AudioBuffer<float> freshBuffer(2, 256);
+    juce::MidiBuffer midi;
+    PumpAndSettle(fresh, freshBuffer, midi);
+
+    REQUIRE_TRUE(fresh.MidiOutSettingsForTest().contentId == synth_froggers::kFroggersMidiOutContentPitchId);
+    REQUIRE_TRUE(fresh.MidiOutSettingsForTest().channel == 3);
+    REQUIRE_TRUE(fresh.MidiOutSettingsForTest().ccNumber == 20);
+    REQUIRE_TRUE(fresh.MidiOutSettingsForTest().velocity.has_value() &&
+                *fresh.MidiOutSettingsForTest().velocity == 100);
+
+    // "the surface shows those values": the restored settings reach the
+    // portable surface's own rendered fields, not just this class's
+    // internal copy.
+    const synth::ui::NodeTree restoredTree = fresh.EditorSurface().BuildTree();
+    const synth::ui::Node* midiSelect =
+        FindNodeById(restoredTree, synth_froggers::FroggersNodeIds::kMidiSelect);
+    REQUIRE_TRUE(midiSelect != nullptr && midiSelect->label == "MIDI: PITCH");
+    const synth::ui::Node* channelField =
+        FindNodeById(restoredTree, synth_froggers::FroggersNodeIds::kMidiOutChannel);
+    REQUIRE_TRUE(channelField != nullptr && channelField->text == "3");
+    const synth::ui::Node* ccField = FindNodeById(restoredTree, synth_froggers::FroggersNodeIds::kMidiOutCc);
+    REQUIRE_TRUE(ccField != nullptr && ccField->text == "20");
+    const synth::ui::Node* velocityField =
+        FindNodeById(restoredTree, synth_froggers::FroggersNodeIds::kMidiOutVelocity);
+    REQUIRE_TRUE(velocityField != nullptr && velocityField->text == "100");
+
+    // "the app sends Pitch on channel 3 at velocity 100": a real render,
+    // through the host playhead, until the default patch's own note-on
+    // (fixed velocity, so this is exact -- no follower-level derivation
+    // needed).
+    FakePlayHead playHead;
+    fresh.setPlayHead(&playHead);
+    playHead.SetPlaying(false);
+    fresh.processBlock(freshBuffer, midi);
+    fresh.PumpMessageThreadForTest();
+    playHead.SetPlaying(true);
+    fresh.processBlock(freshBuffer, midi);
+    fresh.PumpMessageThreadForTest();
+    fresh.processBlock(freshBuffer, midi);  // drains + applies the Start edge.
+
+    bool sawPitchNoteOn = false;
+    for (int block = 0; block < 400 && !sawPitchNoteOn; ++block) {
+        freshBuffer.clear();
+        fresh.processBlock(freshBuffer, midi);
+        for (const juce::MidiMessageMetadata metadata : midi) {
+            if (metadata.numBytes == 3 && (metadata.data[0] & 0xF0) == 0x90) {
+                REQUIRE_TRUE((metadata.data[0] & 0x0F) == 3);  // the set channel.
+                REQUIRE_TRUE(metadata.data[2] == 100);         // the fixed velocity.
+                sawPitchNoteOn = true;
+                break;
+            }
+        }
+    }
+    REQUIRE_TRUE(sawPitchNoteOn);
+
+    fresh.setPlayHead(nullptr);
+    fresh.releaseResources();
+}
+
+// ---------------------------------------------------------------------------
+// plugin_standalones_setting_does_not_switch_the_plugin_on
+// ---------------------------------------------------------------------------
+TEST_CASE(plugin_standalones_setting_does_not_switch_the_plugin_on) {
+    // The shared runtime configuration is what the standalone's Controllers
+    // page writes (sar-36's own route) -- writing one HERE, holding Level,
+    // before the processor exists, proves the plugin does not read it for
+    // its own MIDI-out setting, rather than merely asserting a default that
+    // would read the same whether or not this class ever consulted the
+    // file. This is also the shape this test's own Check names as the
+    // red-proof: a plugin whose engine called EnableAppMidiOutRouting()
+    // would have this file's Level setting delivered through
+    // AppContext::appMidiOutSettingsChangedCallback (the same one-time
+    // Initialize() delivery the standalone/browser rely on, Engine.hpp) --
+    // this class's constructor never makes that call, and even if it did,
+    // its own ApplyMidiOutSelection(0) seed (right after Initialize(), see
+    // that call site's own comment) re-applies this plugin's own Off default
+    // before any block runs. Both guards are real and independent; isolating
+    // the first one's own red-proof requires suppressing the second only for
+    // that one proof run, then restoring both.
+    const synth::RuntimeDataPaths paths = ScratchDataPaths("midi_out_standalone_does_not_switch_on");
+    {
+        synth::AppMidiOutConfig midiOut;
+        midiOut.settings.contentId = synth_froggers::kFroggersMidiOutContentLevelId;
+        synth::JsonArena arena(synth::PatchSerializationContext{}.initialArenaCapacity);
+        const synth::JSON root = synth::BuildRuntimeConfigJSON(
+            arena, synth::MidiInstrumentConfig{}, synth::AudioDeviceState{}, synth::SyncConfig{},
+            /*lastPatchVersion=*/std::nullopt, midiOut);
+        char* dumped = root.Dumps(JSON_ENCODE_ANY);
+        REQUIRE_TRUE(dumped != nullptr);
+        std::ofstream configFile(paths.configFile, std::ios::binary);
+        configFile << dumped;
+        std::free(dumped);
+    }
+
+    frogg3rs_vst::FroggersPluginProcessor processor(paths);
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+    REQUIRE_TRUE(processor.MidiOutSettingsForTest().contentId.empty());
+
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    buffer.clear();
+    processor.processBlock(buffer, midi);
+    REQUIRE_TRUE(midi.getNumEvents() == 0);
+    // The APP's own applied state (FroggersAppCore::MidiOutContent(),
+    // audio-thread-owned, ProcessFrame's own per-block apply) is what
+    // actually decides whether audio-thread code sends anything -- checking
+    // only this class's own midiOutSettings_ copy above would miss a leak
+    // through a DIFFERENT delivery path: sar-36's engine-level
+    // AppContext::appMidiOutSettingsChangedCallback, which
+    // FroggersAppCore::Init() registers unconditionally for every host
+    // (Froggers.hpp) and Engine::Initialize() invokes once whenever
+    // EnableAppMidiOutRouting() was called before it -- this class's
+    // constructor never makes that call, so this stays Off regardless of
+    // what the shared configuration file holds.
+    REQUIRE_TRUE(processor.ApplicationForTest().MidiOutContent() ==
+                synth_froggers::FroggersMidiOutContent::Off);
+
+    processor.releaseResources();
 }
 
 }  // namespace

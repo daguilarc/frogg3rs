@@ -45,6 +45,21 @@ public:
         // context/state, the same call Braid4.hpp makes
         // (`ui_.Attach(context, this)`).
         ui_.Attach(context, this);
+
+        // The plugin's MIDI-out content picker's own options: Off, then
+        // the catalog's midiOutContents in declaration order -- the same
+        // static list every host's catalog reports, handed here (not by
+        // FroggersUiSurface.hpp itself, which cannot include this file --
+        // see FroggersMidiCatalog.hpp's own include-direction comment).
+        // Selection 0 (Off) is this call's own default; a restored session
+        // moves it through SetMidiOutOptions again once the plugin reads
+        // its own stored entry.
+        std::vector<std::string> midiOutLabels{"off"};
+        const synth::MidiAppCatalog catalog = FroggersMidiCatalog();
+        for (const synth::MidiAppMidiOutContent& content : catalog.midiOutContents) {
+            midiOutLabels.push_back(content.id);
+        }
+        ui_.SetMidiOutOptions(std::move(midiOutLabels), /*selection=*/0);
     }
 
     synth::ui::Surface& PortableSurface() { return ui_; }

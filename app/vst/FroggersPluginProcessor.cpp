@@ -114,6 +114,22 @@ constexpr const char* kVisiblePageIndexKey = "visibleBankIndex";
 // 0 ("None"), the same default a fresh session already starts at -- opt-in
 // audio is off until the operator affirmatively selects a channel again.
 constexpr const char* kInputSelectionKey = "inputSelection";
+// Fourth sessionExtras sibling key: the plugin's own MIDI-out setting --
+// content id, channel, CC number and velocity, an object rather than a
+// scalar (BuildSessionExtras() builds it, both write sites call that one
+// function so it cannot drift from kFreezeLatchedKey/kVisiblePageIndexKey/
+// kInputSelectionKey above). The plugin never takes this setting from the
+// shared runtime configuration (sar-36 forwards it only to hosts that
+// route MIDI out, which this one does not) -- this key is its own,
+// independent state, read back only here. BuildSessionExtras() writes this
+// key at both sites that create session extras, so every saved session
+// carries a MIDI-out entry, Off included -- there is no restore case where
+// it is missing (coordinator ruling).
+constexpr const char* kMidiOutKey = "midiOut";
+constexpr const char* kMidiOutContentIdKey = "contentId";
+constexpr const char* kMidiOutChannelKey = "channel";
+constexpr const char* kMidiOutCcKey = "ccNumber";
+constexpr const char* kMidiOutVelocityKey = "velocity";  // absent = follow the level ("Level").
 
 // A present-but-wrong-typed value is treated the same as an absent one
 // (left alone) rather than silently coerced to false -- IsNull() alone
@@ -126,6 +142,8 @@ bool IsJsonBoolean(synth::JSON json) { return json.m_node != nullptr && json.m_n
 // bank-index sibling key: a missing or wrong-typed value is left alone
 // rather than coerced to 0 via JSON::IntegerValue()'s own fallback.
 bool IsJsonInteger(synth::JSON json) { return json.m_node != nullptr && json.m_node->m_type == synth::JsonType::Integer; }
+// Same strict, type-first treatment, for kMidiOutContentIdKey.
+bool IsJsonString(synth::JSON json) { return json.m_node != nullptr && json.m_node->m_type == synth::JsonType::String; }
 
 }  // namespace
 
@@ -166,6 +184,10 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     // through teardown, including FroggersAppCore::~FroggersAppCore()'s
     // own unregistration through this same pointer.
     engine_.Context().inputRoutingSignal = &inputRoutingSignal_;
+    // Deliberately never calls engine_.EnableAppMidiOutRouting(): the
+    // standalone/browser's shared runtime configuration file is not this
+    // plugin's own MIDI-out setting (see the ApplyMidiOutSelection(0) seed
+    // below, and plugin_standalones_setting_does_not_switch_the_plugin_on).
     // Called ONCE, in the constructor -- not in prepareToPlay(), which JUCE
     // may call repeatedly (sample-rate/block-size renegotiation). Mirrors
     // Runtime::Start() calling engine_.Initialize() once, before any audio
@@ -231,6 +253,39 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     // inputRoutingSignal_ rather than assumed.
     ApplyInputSelection(inputSelection_);
 
+    // The MIDI-out content picker and its three fields, same downcast and
+    // registration-before-seed discipline as the input selector just
+    // above. The three field callbacks apply the parsed, already-validated
+    // value FroggersUiSurface::HandleAction's own commit branches hand
+    // them (that class does the ParseAppMidiOutChannel/CcNumber/Velocity
+    // checking itself, since it already has the catalog's contentId
+    // constants and this class does not need to duplicate the parse) --
+    // this class only ever applies an accepted value.
+    {
+        synth_froggers::FroggersUiSurface& surface =
+            static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface());
+        surface.SetMidiSelectionChangedCallback([this](int selectionIndex) { ApplyMidiOutSelection(selectionIndex); });
+        surface.SetMidiChannelCommittedCallback([this](std::uint8_t channel) {
+            midiOutSettings_.channel = channel;
+            engine_.Application().SetMidiOutSetting(midiOutSettings_);
+        });
+        surface.SetMidiCcCommittedCallback([this](std::uint8_t ccNumber) {
+            midiOutSettings_.ccNumber = ccNumber;
+            engine_.Application().SetMidiOutSetting(midiOutSettings_);
+        });
+        surface.SetMidiVelocityCommittedCallback([this](std::optional<std::uint8_t> velocity) {
+            midiOutSettings_.velocity = velocity;
+            engine_.Application().SetMidiOutSetting(midiOutSettings_);
+        });
+    }
+    // Seeds Off, channel 0, CC 16, Level -- AppMidiOutSettings' own
+    // defaults, and this plugin's "no saved session" starting point (the
+    // standalone's own shared configuration is never consulted here --
+    // sar-36 forwards a routed setting only to hosts that enable engine
+    // routing, which this plugin does not).
+    ApplyMidiOutSelection(0);
+    PushMidiOutFieldsToSurface();
+
     // FroggersParameterModel's Parameters (and
     // FroggersApp's production DispatchAction seam, for Freeze) only exist
     // once engine_.Initialize() has returned (app_.Init() runs inside it,
@@ -266,22 +321,11 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
             // corrupting the rest of the document, which degrades to
             // exactly the "no sessionExtras key" case restore already has
             // to handle.
-            synth::JSON sessionExtras = arena.Object();
-            sessionExtras.SetNew(kFreezeLatchedKey, arena.Boolean(engine_.Application().FreezeLatched()));
-            // Same sibling-key treatment as kFreezeLatchedKey above, seeded
-            // with the visible page's own actual current value (0, the
-            // default FroggersParameterModel::Init() selects, this early)
-            // rather than an assumed constant -- see PumpStatePersistence()'s
-            // steady-state write of this same key for the accessor this
-            // mirrors.
-            sessionExtras.SetNew(kVisiblePageIndexKey,
-                                  arena.Integer(static_cast<std::int64_t>(synth_froggers::FroggersVisiblePageIndex(engine_.Context()))));
-            // Same sibling-key treatment, seeded with inputSelection_'s own
-            // actual current value (0, "None" -- ApplyInputSelection() has
-            // already run once by this point in the constructor, above)
-            // rather than an assumed constant.
-            sessionExtras.SetNew(kInputSelectionKey, arena.Integer(static_cast<std::int64_t>(inputSelection_)));
-            root.SetNew(kSessionExtrasKey, sessionExtras);
+            // ApplyInputSelection()/ApplyMidiOutSelection() have both
+            // already run once by this point in the constructor, above, so
+            // this seeds the cache with their actual current (default)
+            // values rather than assumed constants.
+            root.SetNew(kSessionExtrasKey, BuildSessionExtras(arena));
             if (char* dumped = root.Dumps(JSON_ENCODE_ANY)) {
                 cachedStateJsonText_ = dumped;
                 std::free(dumped);
@@ -491,6 +535,60 @@ void FroggersPluginProcessor::ApplyInputSelection(int selectionIndex) {
     // comment on why the apply is deferred off this, message-thread,
     // call).
     inputRoutingSignal_.Publish(inputSelection_ != 0);
+}
+
+std::vector<std::string> FroggersPluginProcessor::ComputeMidiOutOptionLabels() const {
+    std::vector<std::string> labels{"off"};
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+    for (const synth::MidiAppMidiOutContent& content : catalog.midiOutContents) {
+        labels.push_back(content.id);
+    }
+    return labels;
+}
+
+void FroggersPluginProcessor::ApplyMidiOutSelection(int selectionIndex) {
+    const std::vector<std::string> labels = ComputeMidiOutOptionLabels();
+    const int optionCount = static_cast<int>(labels.size());
+    // Re-validated every time this runs, same discipline as
+    // ApplyInputSelection() above -- a selection a restored session named
+    // that the current catalog does not have (a build without Pitch)
+    // falls back to index 0 (Off).
+    midiOutSelection_ = (selectionIndex >= 0 && selectionIndex < optionCount) ? selectionIndex : 0;
+    // Index 0 ("off", the picker's own display label) maps to the EMPTY
+    // string -- AppMidiOutSettings::contentId's own documented Off value --
+    // rather than the literal label text, so this plugin's stored setting
+    // matches the same convention the standalone/browser's own
+    // AppMidiOutConfig persistence uses.
+    midiOutSettings_.contentId =
+        midiOutSelection_ == 0 ? std::string() : labels[static_cast<std::size_t>(midiOutSelection_)];
+    static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface())
+        .SetMidiOutOptions(labels, midiOutSelection_);
+    engine_.Application().SetMidiOutSetting(midiOutSettings_);
+}
+
+void FroggersPluginProcessor::PushMidiOutFieldsToSurface() {
+    const std::optional<int> velocity =
+        midiOutSettings_.velocity.has_value() ? std::optional<int>(*midiOutSettings_.velocity) : std::nullopt;
+    static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface())
+        .SetMidiOutFields(midiOutSettings_.channel, midiOutSettings_.ccNumber, velocity);
+}
+
+synth::JSON FroggersPluginProcessor::BuildSessionExtras(synth::JsonArena& arena) {
+    synth::JSON sessionExtras = arena.Object();
+    sessionExtras.SetNew(kFreezeLatchedKey, arena.Boolean(engine_.Application().FreezeLatched()));
+    sessionExtras.SetNew(
+        kVisiblePageIndexKey,
+        arena.Integer(static_cast<std::int64_t>(synth_froggers::FroggersVisiblePageIndex(engine_.Context()))));
+    sessionExtras.SetNew(kInputSelectionKey, arena.Integer(static_cast<std::int64_t>(inputSelection_)));
+    synth::JSON midiOut = arena.Object();
+    midiOut.SetNew(kMidiOutContentIdKey, arena.String(midiOutSettings_.contentId.c_str()));
+    midiOut.SetNew(kMidiOutChannelKey, arena.Integer(static_cast<std::int64_t>(midiOutSettings_.channel)));
+    midiOut.SetNew(kMidiOutCcKey, arena.Integer(static_cast<std::int64_t>(midiOutSettings_.ccNumber)));
+    if (midiOutSettings_.velocity.has_value()) {
+        midiOut.SetNew(kMidiOutVelocityKey, arena.Integer(static_cast<std::int64_t>(*midiOutSettings_.velocity)));
+    }
+    sessionExtras.SetNew(kMidiOutKey, midiOut);
+    return sessionExtras;
 }
 
 bool FroggersPluginProcessor::ResolveSelectedInputChannel(const float* const* channels, int numChannels,
@@ -1448,6 +1546,57 @@ void FroggersPluginProcessor::PumpStatePersistence() {
                         ApplyInputSelection(static_cast<int>(requestedInputSelection));
                     }
                 }
+                // Fourth sessionExtras key: the MIDI-out entry (see
+                // kMidiOutKey's own comment) -- every session
+                // BuildSessionExtras() wrote carries one, Off included, so
+                // this always finds real values to restore; contentId is
+                // still matched against a FRESH ComputeMidiOutOptionLabels()
+                // (the current catalog), never trusted blind, same
+                // discipline as the input-selection check just above.
+                const synth::JSON midiOutJson = root.Get(kSessionExtrasKey).Get(kMidiOutKey);
+                const synth::JSON contentIdJson = midiOutJson.Get(kMidiOutContentIdKey);
+                if (IsJsonString(contentIdJson)) {
+                    const std::vector<std::string> midiLabels = ComputeMidiOutOptionLabels();
+                    const std::string contentId = contentIdJson.StringValue();
+                    // Empty (AppMidiOutSettings::contentId's own Off value,
+                    // what BuildSessionExtras() writes for it -- see
+                    // ApplyMidiOutSelection()'s own comment) is always
+                    // index 0; anything else is matched against the
+                    // catalog's own content ids, index 1 onward.
+                    if (contentId.empty()) {
+                        ApplyMidiOutSelection(0);
+                    } else {
+                        const auto found = std::find(midiLabels.begin() + 1, midiLabels.end(), contentId);
+                        if (found != midiLabels.end()) {
+                            ApplyMidiOutSelection(static_cast<int>(std::distance(midiLabels.begin(), found)));
+                        }
+                    }
+                }
+                const synth::JSON channelJson = midiOutJson.Get(kMidiOutChannelKey);
+                if (IsJsonInteger(channelJson)) {
+                    const std::optional<std::uint8_t> channel =
+                        synth::ParseAppMidiOutChannel(static_cast<double>(channelJson.IntegerValue()));
+                    if (channel.has_value()) {
+                        midiOutSettings_.channel = *channel;
+                    }
+                }
+                const synth::JSON ccJson = midiOutJson.Get(kMidiOutCcKey);
+                if (IsJsonInteger(ccJson)) {
+                    const std::optional<std::uint8_t> ccNumber =
+                        synth::ParseAppMidiOutCcNumber(static_cast<double>(ccJson.IntegerValue()));
+                    if (ccNumber.has_value()) {
+                        midiOutSettings_.ccNumber = *ccNumber;
+                    }
+                }
+                const synth::JSON velocityJson = midiOutJson.Get(kMidiOutVelocityKey);
+                if (IsJsonInteger(velocityJson) && velocityJson.IntegerValue() >= 1 &&
+                    velocityJson.IntegerValue() <= 127) {
+                    midiOutSettings_.velocity = static_cast<std::uint8_t>(velocityJson.IntegerValue());
+                } else {
+                    midiOutSettings_.velocity = std::nullopt;  // absent = Level (follow).
+                }
+                engine_.Application().SetMidiOutSetting(midiOutSettings_);
+                PushMidiOutFieldsToSurface();
             } else {
                 const std::lock_guard<std::mutex> lock(stateBlockMutex_);
                 pendingRestoreJsonText_ = std::move(*restoreText);
@@ -1470,25 +1619,11 @@ void FroggersPluginProcessor::PumpStatePersistence() {
         // issues a new request, which happens later, further down this
         // function, only after this reset() below has run.
         synth::JsonArena& responseArena = *response.document.arena;
-        synth::JSON sessionExtras = responseArena.Object();
-        sessionExtras.SetNew(kFreezeLatchedKey, responseArena.Boolean(engine_.Application().FreezeLatched()));
-        // Same sibling-key treatment, read fresh at attach time from the
-        // SAME live selection state the editor itself renders from --
-        // FroggersVisiblePageIndex(), which the editor's own
-        // CurrentPageIndex() also delegates to -- never FroggersAppCore::
-        // ActivePageIndex(), which can differ from the visible page while a
-        // host automation write is in flight (see that accessor's own
-        // comment). Safe to read here, off the audio thread, for the same
-        // reason the editor's own BuildTree() reads the same uiState from
-        // the message thread every refresh.
-        sessionExtras.SetNew(kVisiblePageIndexKey,
-                              responseArena.Integer(static_cast<std::int64_t>(synth_froggers::FroggersVisiblePageIndex(engine_.Context()))));
-        // Same sibling-key treatment, read fresh from inputSelection_ --
-        // this class's own single write path is ApplyInputSelection(), so
-        // there is nothing to go stale between transitions the way a
-        // polled value could.
-        sessionExtras.SetNew(kInputSelectionKey, responseArena.Integer(static_cast<std::int64_t>(inputSelection_)));
-        response.document.root.SetNew(kSessionExtrasKey, sessionExtras);
+        // Read fresh at attach time from the SAME live state each field's
+        // own single write path maintains (FreezeLatched(),
+        // FroggersVisiblePageIndex(), inputSelection_, midiOutSettings_) --
+        // see BuildSessionExtras()'s own comment.
+        response.document.root.SetNew(kSessionExtrasKey, BuildSessionExtras(responseArena));
 
         if (char* dumped = response.document.root.Dumps(JSON_ENCODE_ANY)) {
             std::string text(dumped);

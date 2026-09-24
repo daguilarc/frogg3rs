@@ -322,6 +322,9 @@ public:
     // "None"; see ComputeInputOptionLabels()'s own comment for what the
     // rest of the index space means.
     int InputSelectionForTest() const { return inputSelection_; }
+    // Test-only accessor: this plugin's own canonical MIDI-out setting --
+    // see midiOutSettings_'s own comment.
+    const synth::AppMidiOutSettings& MidiOutSettingsForTest() const { return midiOutSettings_; }
 
     // Test-only accessor: the SAME option list ApplyInputSelection() just
     // pushed to the portable surface (ComputeInputOptionLabels() is
@@ -686,6 +689,49 @@ private:
     // written ONLY by ApplyInputSelection() above, so no path can set it to
     // an unvalidated value.
     int inputSelection_ = 0;
+
+    // The MIDI-out content picker's own static option list: "off", then
+    // FroggersMidiCatalog()'s midiOutContents in declaration order. Unlike
+    // ComputeInputOptionLabels() this never depends on a live bus, but is
+    // still computed fresh (not cached) rather than duplicated, so it can
+    // never drift from the catalog the standalone/browser Controllers page
+    // and the plugin's own catalog test both read.
+    std::vector<std::string> ComputeMidiOutOptionLabels() const;
+
+    // The single write path for the MIDI button's own selection --
+    // same shape as ApplyInputSelection() above (bounds-checked against a
+    // fresh ComputeMidiOutOptionLabels(), pushes the resulting selection
+    // into the portable surface, applies it through FroggersAppCore::
+    // SetMidiOutSetting(), the same app entry point the standalone/browser
+    // reach through Engine::SetAppMidiOutConfig).
+    void ApplyMidiOutSelection(int selectionIndex);
+
+    // Pushes midiOutSettings_'s channel/ccNumber/velocity into the portable
+    // surface's own displayed fields (SetMidiOutFields()) -- called after
+    // construction's seed and after a restore, the two moments the stored
+    // values can change without going through the fields' own commit
+    // actions (which already update the surface directly, in
+    // FroggersUiSurface::HandleAction).
+    void PushMidiOutFieldsToSurface();
+
+    // Builds the ONE sessionExtras object both write sites
+    // (the constructor's seed and PumpStatePersistence()) attach --
+    // freezeLatched, the visible-page index, inputSelection and the
+    // MIDI-out entry -- so the four sibling keys cannot drift apart the way
+    // two separately hand-written builds could.
+    synth::JSON BuildSessionExtras(synth::JsonArena& arena);
+
+    // This plugin's own canonical copy of the MIDI-out setting -- written
+    // ONLY by ApplyMidiOutSelection() (content) and the three field-commit
+    // callbacks (channel/ccNumber/velocity), applied to FroggersAppCore
+    // through SetMidiOutSetting() every time any of the four changes. Never
+    // taken from the shared runtime configuration (sar-36 forwards that
+    // only to hosts that route MIDI out) -- this is the plugin's own,
+    // independent state.
+    synth::AppMidiOutSettings midiOutSettings_;
+    // An index into ComputeMidiOutOptionLabels()'s own return value (0 ==
+    // Off, the default), the MIDI-out counterpart of inputSelection_ above.
+    int midiOutSelection_ = 0;
 
     // Scratch storage for ResolveSelectedInputChannel()'s output -- this
     // block's single resolved input channel, built fresh every processBlock()
