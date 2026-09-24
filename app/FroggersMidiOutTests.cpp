@@ -792,6 +792,37 @@ TEST_CASE(pitch_quiet_output_ends_the_note) {
 }
 
 // ---------------------------------------------------------------------------
+// pitch_stopping_content_resets_the_detector_even_without_a_sounding_note
+// ---------------------------------------------------------------------------
+// The transport is never started, so the output (and therefore the mono
+// fold the detector reads) stays exactly and steadily silent the whole
+// time: no note ever sounds while Pitch is chosen. Switching away from
+// Pitch in that state must still reset the detector -- a reset gated on a
+// sounding note (the bug this catches) never fires here, since none ever
+// sounds, and PitchDetectorResetCount() would stay unchanged instead of
+// advancing by exactly one.
+TEST_CASE(pitch_stopping_content_resets_the_detector_even_without_a_sounding_note) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64,
+           UseScratchRuntimeDataPaths("pitch_stop_resets_without_sounding"));
+
+    rig.Application().SetMidiOutSetting(PitchSetting(/*channel=*/0));
+    rig.RunBlocks(1);
+    REQUIRE_TRUE(rig.Application().MidiOutContent() == synth_froggers::FroggersMidiOutContent::Pitch);
+    // Silence the whole time this block ran: nothing was ever sounding.
+    REQUIRE_TRUE(rig.Engine().AppMidiOutEvents().Size() == 0);
+    const std::size_t resetsBeforeSwitch = rig.Application().PitchDetectorResetCount();
+
+    rig.Application().SetMidiOutSetting(OffSetting(/*channel=*/0));
+    rig.RunBlocks(1);
+
+    REQUIRE_TRUE(rig.Application().MidiOutContent() == synth_froggers::FroggersMidiOutContent::Off);
+    // Still nothing was ever sounding, so no note-off was appended either --
+    // the only thing this switch could possibly do is reset the detector.
+    REQUIRE_TRUE(rig.Engine().AppMidiOutEvents().Size() == 0);
+    REQUIRE_TRUE(rig.Application().PitchDetectorResetCount() == resetsBeforeSwitch + 1);
+}
+
+// ---------------------------------------------------------------------------
 // pitch_velocity_follows_the_level_unless_fixed
 // ---------------------------------------------------------------------------
 TEST_CASE(pitch_velocity_follows_the_level_unless_fixed) {

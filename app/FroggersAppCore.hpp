@@ -729,6 +729,17 @@ public:
     std::uint8_t MidiOutCcNumber() const { return midiOutCcNumber_; }
     std::optional<std::uint8_t> MidiOutVelocity() const { return midiOutVelocity_; }
 
+    // The pitch detector's one reset() call site: guards the has_value()
+    // check once instead of each caller repeating it, and counts every call
+    // so PitchDetectorResetCount() below can prove which of the detector's
+    // reset triggers actually ran.
+    void ResetPitchDetector() {
+        if (pitchDetector_.has_value()) {
+            pitchDetector_->reset();
+            ++pitchDetectorResetCount_;
+        }
+    }
+
     // For a host that bypasses this app instead of continuing to call
     // ProcessBlock(): ends a sounding Pitch note right away (note-off) and
     // resets the detector, the same two things leaving Pitch or the output
@@ -741,9 +752,7 @@ public:
         }
         const synth::AppMidiOutEvent event = PitchNoteOffEvent(pitchNoteChannel_, *soundingPitchNote_, 0);
         soundingPitchNote_ = std::nullopt;
-        if (pitchDetector_.has_value()) {
-            pitchDetector_->reset();
-        }
+        ResetPitchDetector();
         return event;
     }
 
@@ -751,6 +760,11 @@ public:
     // one emplace site in PrepareToPlay() -- this member owns that seam and
     // its own test is its only reader.
     std::size_t PitchDetectorConstructions() const { return pitchDetectorConstructions_; }
+
+    // How many times the Pitch detector has actually been reset, counted at
+    // ResetPitchDetector() above (the detector's one reset() call site) --
+    // this member owns that seam and its own test is its only reader.
+    std::size_t PitchDetectorResetCount() const { return pitchDetectorResetCount_; }
 
     // See pitchNoteChangesThisBlockForTest_'s own comment.
     std::size_t TestPitchNoteChangesLastBlock() const { return pitchNoteChangesThisBlockForTest_; }
@@ -802,11 +816,23 @@ public:
         const std::uint32_t midiOutRequest = pendingMidiOutSetting_.exchange(
             kNoPendingMidiOutSetting, std::memory_order_acq_rel);
         if (midiOutRequest != kNoPendingMidiOutSetting) {
+            const FroggersMidiOutContent previousMidiOutContent = midiOutContent_;
             midiOutContent_ = static_cast<FroggersMidiOutContent>(midiOutRequest & 0xFF);
             midiOutChannel_ = static_cast<std::uint8_t>((midiOutRequest >> 8) & 0xFF);
             midiOutCcNumber_ = static_cast<std::uint8_t>((midiOutRequest >> 16) & 0xFF);
             const std::uint8_t velocityByte = static_cast<std::uint8_t>((midiOutRequest >> 24) & 0xFF);
             midiOutVelocity_ = velocityByte == 0 ? std::nullopt : std::optional<std::uint8_t>(velocityByte);
+            // Pitch stopping being the chosen content resets the detector
+            // right here, at the one place content actually changes, so a
+            // stale estimate never survives to bias the next time Pitch is
+            // chosen -- regardless of whether a note happened to be
+            // sounding at the moment of the switch. A sounding note itself,
+            // when there is one, is ended separately at ProcessBlock()'s
+            // block-start branch below.
+            if (previousMidiOutContent == FroggersMidiOutContent::Pitch &&
+                midiOutContent_ != FroggersMidiOutContent::Pitch) {
+                ResetPitchDetector();
+            }
         }
 
         const int pageRequest = pendingPageSelect_.exchange(-1, std::memory_order_acq_rel);
@@ -1021,18 +1047,15 @@ public:
         // changed since that note's own note-on, its note-off is appended
         // here, at frame 0, before anything else this block -- so the
         // per-sample Pitch tracking below (which reads soundingPitchNote_
-        // as "no note sounding" from here on) starts this block clean, and
-        // the block still appends at most two messages. Pitch stopping
-        // being the content also resets the detector here (coordinator
-        // ruling), same as a quiet output does.
+        // as "no note sounding" from here on) starts this block clean. The
+        // detector itself is not reset here: ProcessFrame() above already
+        // reset it, unconditionally, the moment Pitch stopped being the
+        // content, whether or not a note happened to be sounding then.
         if (soundingPitchNote_.has_value() &&
             (midiOutContent_ != FroggersMidiOutContent::Pitch || midiOutChannel_ != pitchNoteChannel_) &&
             block.midiOut != nullptr) {
             block.midiOut->Append(PitchNoteOffEvent(pitchNoteChannel_, *soundingPitchNote_, 0));
             soundingPitchNote_ = std::nullopt;
-            if (midiOutContent_ != FroggersMidiOutContent::Pitch && pitchDetector_.has_value()) {
-                pitchDetector_->reset();
-            }
         }
 
         // External audio (slots 13/14) connectedness is never derived from
@@ -1427,7 +1450,7 @@ public:
                     // fresh rather than biased toward the one that just
                     // ended.
                     soundingPitchNote_ = std::nullopt;
-                    pitchDetector_->reset();
+                    ResetPitchDetector();
                     pitchChangeFrame = frame;
                     ++pitchNoteChangesThisBlockForTest_;
                 } else {
@@ -2862,6 +2885,9 @@ private:
     // MidiSender::Start() itself, that is the runtime shell's own call.
     std::optional<cycfi::q::pitch_detector> pitchDetector_;
     std::size_t pitchDetectorConstructions_ = 0;
+    // Counted at ResetPitchDetector() above, the detector's one reset()
+    // call site.
+    std::size_t pitchDetectorResetCount_ = 0;
     // The note currently sounding while Pitch is chosen (nullopt = none);
     // only ProcessBlock's Pitch branch mutates this. pitchNoteChannel_ is
     // the channel ITS note-on used, captured at that note-on and read back
