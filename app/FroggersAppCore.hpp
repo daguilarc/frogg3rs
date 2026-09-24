@@ -135,6 +135,18 @@ inline std::size_t FroggersVisiblePageIndex(const synth::AppContext& context) {
 // comment there.
 inline std::vector<std::uint8_t> EncodeWavPcm16Mono(std::span<const float> samples, float sampleRate);
 
+// The MIDI-out setting's content ids, matching FroggersMidiCatalog.hpp's own
+// midiOutContents entries verbatim -- declared here, the shared base both
+// that file and this one reach, so the catalog and the resolver below can
+// never drift apart.
+inline constexpr const char* kFroggersMidiOutContentLevelId = "level";
+inline constexpr const char* kFroggersMidiOutContentPitchId = "pitch";
+
+// What the app is currently sending on its MIDI out, applied from the
+// engine's MIDI-out settings callback (sar-36) by FroggersAppCore::Init's
+// registration below.
+enum class FroggersMidiOutContent : std::uint8_t { Off = 0, Level = 1, Pitch = 2 };
+
 class FroggersAppCore {
 public:
     // The ONLY hand-written constructor work this class needs -- everything
@@ -289,6 +301,15 @@ public:
         // running, so the signal's current value can be read and applied
         // here, once, without racing anything.
         modulation_.SetExternalAudioConnected(context_->InputRouted());
+
+        // sar-36: registers this app's MIDI-out setting resolver as the
+        // engine's MIDI-out settings callback. Runs on the message thread
+        // (AppContext::SetAppMidiOutSettingsChangedCallback's own contract)
+        // and only ever queues the packed result -- ProcessFrame() below
+        // (audio thread, once per block) is what applies it, same reason as
+        // the routed-input callback above.
+        context_->SetAppMidiOutSettingsChangedCallback(
+            [this](const synth::AppMidiOutSettings& settings) { ApplyMidiOutSettings(settings); });
 
         // Applies the default patch once, on first start, now that slate
         // indices 6-8 (VCO audio sources) exist.
@@ -654,6 +675,14 @@ public:
     // the audio thread can allocate/lock/block, which is a dropout risk).
     bool LastRandomizePartial() const { return lastRandomizePartial_.load(std::memory_order_acquire); }
 
+    // The MIDI-out setting ProcessFrame() last applied (audio-thread only,
+    // like activePageIx_) -- what the send logic below reads to decide
+    // whether, and how, to append to context_->midiOut.
+    FroggersMidiOutContent MidiOutContent() const { return midiOutContent_; }
+    std::uint8_t MidiOutChannel() const { return midiOutChannel_; }
+    std::uint8_t MidiOutCcNumber() const { return midiOutCcNumber_; }
+    std::optional<std::uint8_t> MidiOutVelocity() const { return midiOutVelocity_; }
+
     // Detected via AppConcepts.hpp's
     // HasProcessFrame concept; synth::Engine invokes this once per block,
     // after message drains and before ProcessBlock() (AppConcepts.hpp's own
@@ -693,6 +722,19 @@ public:
         const int routedRequest = pendingExternalAudioRouted_.exchange(-1, std::memory_order_acq_rel);
         if (routedRequest >= 0) {
             modulation_.SetExternalAudioConnected(routedRequest != 0);
+        }
+
+        // Applies the most recent MIDI-out setting queued by Init()'s
+        // callback (message thread), if any -- same at-most-once-per-block
+        // exchange idiom as routedRequest above.
+        const std::uint32_t midiOutRequest = pendingMidiOutSetting_.exchange(
+            kNoPendingMidiOutSetting, std::memory_order_acq_rel);
+        if (midiOutRequest != kNoPendingMidiOutSetting) {
+            midiOutContent_ = static_cast<FroggersMidiOutContent>(midiOutRequest & 0xFF);
+            midiOutChannel_ = static_cast<std::uint8_t>((midiOutRequest >> 8) & 0xFF);
+            midiOutCcNumber_ = static_cast<std::uint8_t>((midiOutRequest >> 16) & 0xFF);
+            const std::uint8_t velocityByte = static_cast<std::uint8_t>((midiOutRequest >> 24) & 0xFF);
+            midiOutVelocity_ = velocityByte == 0 ? std::nullopt : std::optional<std::uint8_t>(velocityByte);
         }
 
         const int pageRequest = pendingPageSelect_.exchange(-1, std::memory_order_acq_rel);
@@ -1526,6 +1568,29 @@ public:
 
 private:
     synth::AppContext* context_ = nullptr;
+
+    // Resolves an incoming MIDI-out setting against the catalog's own
+    // content ids (Off, kFroggersMidiOutContentLevelId,
+    // kFroggersMidiOutContentPitchId; anything else, including empty, is
+    // Off) and packs it with the channel, CC number and velocity into the
+    // pending atomic below -- callable on the message thread, the
+    // AppContext::appMidiOutSettingsChangedCallback contract Init()
+    // registers this as.
+    void ApplyMidiOutSettings(const synth::AppMidiOutSettings& settings) {
+        FroggersMidiOutContent content = FroggersMidiOutContent::Off;
+        if (settings.contentId == kFroggersMidiOutContentLevelId) {
+            content = FroggersMidiOutContent::Level;
+        } else if (settings.contentId == kFroggersMidiOutContentPitchId) {
+            content = FroggersMidiOutContent::Pitch;
+        }
+        const std::uint8_t channel = settings.channel <= 15 ? settings.channel : static_cast<std::uint8_t>(0);
+        const std::uint8_t velocity = settings.velocity.value_or(0);
+        const std::uint32_t packed = static_cast<std::uint32_t>(content) |
+                                      (static_cast<std::uint32_t>(channel) << 8) |
+                                      (static_cast<std::uint32_t>(settings.ccNumber) << 16) |
+                                      (static_cast<std::uint32_t>(velocity) << 24);
+        pendingMidiOutSetting_.store(packed, std::memory_order_release);
+    }
 
     // The single clock-read call
     // site for this class. Returns the transport quarter-note position at
@@ -2574,6 +2639,21 @@ private:
     // idiom as pendingPageSelect_/pendingEncoderPress_ above. -1 = no
     // pending transition, 0 = not routed, 1 = routed.
     std::atomic<int> pendingExternalAudioRouted_{-1};
+    // Queued by Init()'s MIDI-out settings callback (message thread, sar-36);
+    // drained by ProcessFrame() (audio thread). Packs content (byte 0: 0 =
+    // Off, matching FroggersMidiOutContent), channel (byte 1), CC number
+    // (byte 2) and velocity (byte 3: 0 = follow the level) into one word,
+    // same pending-atomic/sentinel/exchange idiom as
+    // pendingExternalAudioRouted_ above; all-ones can never be a real packed
+    // value (content only ever holds 0-2) so it is the sentinel.
+    static constexpr std::uint32_t kNoPendingMidiOutSetting = 0xFFFFFFFFu;
+    std::atomic<std::uint32_t> pendingMidiOutSetting_{kNoPendingMidiOutSetting};
+    // Applied state ProcessFrame() above writes and MidiOut*() below read;
+    // audio-thread-only after Init(), like activePageIx_ beside it.
+    FroggersMidiOutContent midiOutContent_ = FroggersMidiOutContent::Off;
+    std::uint8_t midiOutChannel_ = 0;
+    std::uint8_t midiOutCcNumber_ = 16;
+    std::optional<std::uint8_t> midiOutVelocity_;
 
     std::atomic<double> tempoDisplayBpm_{synth::MasterClock::kDefaultTempoBpm};
     std::atomic<bool> tempoExternallyClocked_{false};

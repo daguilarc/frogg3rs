@@ -41,6 +41,7 @@
 // default sends none, so its buttons stay dark; Generic mode lights its
 // own buttons and rings itself.
 
+#include "FroggersAppCore.hpp"
 #include "FroggersParameters.hpp"
 #include "FroggersUiSurface.hpp"
 
@@ -367,10 +368,11 @@ inline synth::MidiAppCatalog FroggersMidiCatalog() {
         LaunchpadMiniMk3DeviceDefault(),
     };
     catalog.midiOutContents = {
-        {"level", "Level (CC)", synth::MidiControlType::Cc},
+        {kFroggersMidiOutContentLevelId, "Level (CC)", synth::MidiControlType::Cc},
     };
     if constexpr (kFroggersOffersPitch) {
-        catalog.midiOutContents.push_back({"pitch", "Pitch (notes)", synth::MidiControlType::Note});
+        catalog.midiOutContents.push_back(
+            {kFroggersMidiOutContentPitchId, "Pitch (notes)", synth::MidiControlType::Note});
     }
     return catalog;
 }
