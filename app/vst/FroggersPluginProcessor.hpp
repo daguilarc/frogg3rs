@@ -53,8 +53,10 @@
 // Transport: FroggersAppCore's ASR gate stays closed (silence) until the
 // transport is started via synth::MessageIn::Start + SetDesiredTransportRunning
 // (FroggersAppCore.hpp's ProcessBlock()/TransportQuarterNotesAt() gating
-// comment). This class adds no note handling: the MIDI buffer is accepted
-// and ignored (see acceptsMidi() below).
+// comment). This class adds no note handling: the incoming MIDI buffer is
+// cleared every block, never read (see acceptsMidi()/producesMidi()
+// below); the plugin's own MIDI output is the app's own messages, added
+// after engine_.ProcessBlock() in processBlock() below.
 //
 // Host transport and tempo: the DAW is the transport AND tempo authority. Both producers
 // below are driven from `getPlayHead()`, and both obey the SAME

@@ -59,23 +59,27 @@ struct VcoEnvelopeFollowers
     }
 };
 
-// Feeds the "external audio envelope follower" modulation source (slot 14).
-// The external-audio source is a single channel, so it needs exactly one of
-// VcoEnvelopeFollowers's three identical per-tap formulas, not all three --
-// this is that same formula (the retired simulator's f236915^:sim/V2EnvelopeFollowerBank.hpp:19-35),
+// A single-channel envelope follower: exactly one of VcoEnvelopeFollowers's
+// three identical per-tap formulas, not all three -- this is that same
+// formula (the retired simulator's f236915^:sim/V2EnvelopeFollowerBank.hpp:19-35),
 // generalized to one channel instead of duplicating VcoEnvelopeFollowers's
 // 3-wide array for a single tap or wastefully feeding one signal into all
-// three of its lanes.
+// three of its lanes. Two production instances: the "external audio
+// envelope follower" modulation source (slot 14, FroggersModulation.hpp's
+// externalAudioEf_) and Level's own MIDI-out follower
+// (FroggersAppCore.hpp's midiOutLevelFollower_), fed the output's own mono
+// fold rather than the routed external input.
 struct SingleEnvelopeFollower
 {
     float level = 0.0f;
     float attackCoeff = 0.05f;
     float releaseCoeff = 0.01f;
 
-    // Same single-caller chain as VcoEnvelopeFollowers::SetSampleRate
-    // above (this app's other production caller of this struct), rooted at
-    // the same sample-rate-validating PrepareToPlay() -- a `44100.0f`
-    // re-guard would be unreachable for the same reason.
+    // Both production callers (FroggersModulation.hpp's externalAudioEf_
+    // and FroggersAppCore.hpp's midiOutLevelFollower_, see this struct's
+    // own comment) call this from their own sample-rate-validating
+    // PrepareToPlay() -- a `44100.0f` re-guard would be unreachable for the
+    // same reason at both call sites.
     void SetSampleRate(float sampleRate)
     {
         constexpr float kAttackSeconds = 0.01f;
