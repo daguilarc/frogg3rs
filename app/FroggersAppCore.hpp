@@ -991,6 +991,27 @@ public:
     // now-resolved (post-fuego, post-modulation) parameter values into the
     // real DSP chain and sums it to the stereo output bus.
     void ProcessBlock(synth::AudioBlock& block) {
+        // No note is left sounding: when a note is sounding and either
+        // Pitch has stopped being the chosen content or the channel has
+        // changed since that note's own note-on, its note-off is appended
+        // here, at frame 0, before anything else this block -- so the
+        // per-sample Pitch tracking below (which reads soundingPitchNote_
+        // as "no note sounding" from here on) starts this block clean, and
+        // the block still appends at most two messages. Pitch stopping
+        // being the content also resets the detector here (coordinator
+        // ruling), same as a quiet output does.
+        if (soundingPitchNote_.has_value() &&
+            (midiOutContent_ != FroggersMidiOutContent::Pitch || midiOutChannel_ != pitchNoteChannel_) &&
+            block.midiOut != nullptr) {
+            const std::uint8_t noteOffStatus = static_cast<std::uint8_t>(0x80 | (pitchNoteChannel_ & 0x0F));
+            block.midiOut->Append(synth::AppMidiOutEvent{
+                0, noteOffStatus, static_cast<std::uint8_t>(*soundingPitchNote_), 0});
+            soundingPitchNote_ = std::nullopt;
+            if (midiOutContent_ != FroggersMidiOutContent::Pitch && pitchDetector_.has_value()) {
+                pitchDetector_->reset();
+            }
+        }
+
         // External audio (slots 13/14) connectedness is never derived from
         // `block.inputs` itself: whether a channel is present in the block
         // is a different question from whether the operator actually routed

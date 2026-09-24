@@ -646,6 +646,91 @@ TEST_CASE(pitch_several_reports_in_one_block_send_one_change) {
     REQUIRE_TRUE(severalReportBlocksSeen > 0);
 }
 
+// ---------------------------------------------------------------------------
+// pitch_switching_away_ends_the_note
+// ---------------------------------------------------------------------------
+TEST_CASE(pitch_switching_away_ends_the_note) {
+    Rig::AudioSettings settings48k128;
+    settings48k128.sampleRate = 48000.0;
+    settings48k128.blockSize = 128;
+    Rig rig(/*patchPumpBudgetBlocks=*/64,
+           UseScratchRuntimeDataPaths("pitch_switching_away_ends_note"), settings48k128);
+
+    rig.Application().SetMidiOutSetting(PitchSetting(/*channel=*/5));
+    rig.StartAt(0);
+    constexpr std::size_t kBlocksPerSecond = 48000 / 128;
+    for (std::size_t i = 0; i < kBlocksPerSecond; ++i) {
+        rig.RunBlocks(1);
+    }
+    REQUIRE_TRUE(rig.Application().MidiOutContent() == synth_froggers::FroggersMidiOutContent::Pitch);
+
+    rig.Application().SetMidiOutSetting(LevelSetting(/*channel=*/5, /*ccNumber=*/16));
+    rig.RunBlocks(1);
+    const synth::AppMidiOutEventList& events = rig.Engine().AppMidiOutEvents();
+    REQUIRE_TRUE(events.Size() >= 1);
+    const std::optional<DecodedNoteEvent> first = DecodeNoteEvent(events[0]);
+    REQUIRE_TRUE(first.has_value());
+    REQUIRE_TRUE(!first->isNoteOn);        // note-off, before any other message.
+    REQUIRE_TRUE(first->note == 45);       // the note that was sounding.
+    REQUIRE_TRUE(first->channel == 5);     // the channel it was sounding on.
+    REQUIRE_TRUE(events[0].frame == 0);    // frame 0.
+}
+
+// ---------------------------------------------------------------------------
+// pitch_changing_the_channel_ends_the_note_on_the_old_channel
+// ---------------------------------------------------------------------------
+TEST_CASE(pitch_changing_the_channel_ends_the_note_on_the_old_channel) {
+    Rig::AudioSettings settings48k128;
+    settings48k128.sampleRate = 48000.0;
+    settings48k128.blockSize = 128;
+    Rig rig(/*patchPumpBudgetBlocks=*/64,
+           UseScratchRuntimeDataPaths("pitch_changing_channel_ends_note"), settings48k128);
+
+    rig.Application().SetMidiOutSetting(PitchSetting(/*channel=*/0));
+    rig.StartAt(0);
+    constexpr std::size_t kBlocksPerSecond = 48000 / 128;
+    for (std::size_t i = 0; i < kBlocksPerSecond; ++i) {
+        rig.RunBlocks(1);
+    }
+    REQUIRE_TRUE(rig.Application().MidiOutContent() == synth_froggers::FroggersMidiOutContent::Pitch);
+
+    rig.Application().SetMidiOutSetting(PitchSetting(/*channel=*/1));
+    rig.RunBlocks(1);
+    const synth::AppMidiOutEventList& firstEvents = rig.Engine().AppMidiOutEvents();
+    REQUIRE_TRUE(firstEvents.Size() >= 1);
+    const std::optional<DecodedNoteEvent> off = DecodeNoteEvent(firstEvents[0]);
+    REQUIRE_TRUE(off.has_value());
+    REQUIRE_TRUE(!off->isNoteOn);
+    REQUIRE_TRUE(off->note == 45);
+    REQUIRE_TRUE(off->channel == 0);  // sent on the OLD channel.
+    REQUIRE_TRUE(firstEvents[0].frame == 0);
+
+    // The next note-on -- possibly later in this SAME block (a fresh report
+    // can land right after the block-start note-off, since the per-block
+    // bookkeeping above already reads no note as sounding), or in a later
+    // one -- is on the new channel.
+    bool sawNextNoteOn = false;
+    for (std::size_t eventIx = 1; eventIx < firstEvents.Size(); ++eventIx) {
+        const std::optional<DecodedNoteEvent> decoded = DecodeNoteEvent(firstEvents[eventIx]);
+        if (decoded.has_value() && decoded->isNoteOn) {
+            sawNextNoteOn = true;
+            REQUIRE_TRUE(decoded->channel == 1);
+        }
+    }
+    for (std::size_t i = 0; i < kBlocksPerSecond && !sawNextNoteOn; ++i) {
+        rig.RunBlocks(1);
+        const synth::AppMidiOutEventList& events = rig.Engine().AppMidiOutEvents();
+        for (const synth::AppMidiOutEvent& event : events) {
+            const std::optional<DecodedNoteEvent> decoded = DecodeNoteEvent(event);
+            if (decoded.has_value() && decoded->isNoteOn) {
+                sawNextNoteOn = true;
+                REQUIRE_TRUE(decoded->channel == 1);
+            }
+        }
+    }
+    REQUIRE_TRUE(sawNextNoteOn);
+}
+
 }  // namespace
 
 int main() {
