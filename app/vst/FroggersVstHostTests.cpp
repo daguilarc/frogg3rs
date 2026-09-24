@@ -2806,6 +2806,67 @@ TEST_CASE(plugin_catalog_lists_pitch_alongside_level) {
     REQUIRE_TRUE(catalog.midiOutContents[1].kind == synth::MidiControlType::Note);
 }
 
+// ---------------------------------------------------------------------------
+// plugin_scans_with_a_midi_output
+// ---------------------------------------------------------------------------
+TEST_CASE(plugin_scans_with_a_midi_output) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("plugin_scans_midi_output"));
+    REQUIRE_TRUE(processor.producesMidi());
+    REQUIRE_TRUE(processor.acceptsMidi());
+}
+
+// ---------------------------------------------------------------------------
+// plugin_incoming_midi_does_not_pass_through
+// ---------------------------------------------------------------------------
+TEST_CASE(plugin_incoming_midi_does_not_pass_through) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("plugin_incoming_midi_blocked"));
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+    // The MIDI-out setting is Off by default: nothing this app appends.
+    REQUIRE_TRUE(processor.ApplicationForTest().MidiOutContent() ==
+                synth_froggers::FroggersMidiOutContent::Off);
+
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    midi.addEvent(juce::MidiMessage::controllerEvent(1, 16, 64), 10);
+    buffer.clear();
+    processor.processBlock(buffer, midi);
+    REQUIRE_TRUE(midi.getNumEvents() == 0);
+}
+
+// ---------------------------------------------------------------------------
+// plugin_apps_messages_reach_the_host_buffer_at_their_frames
+// ---------------------------------------------------------------------------
+TEST_CASE(plugin_apps_messages_reach_the_host_buffer_at_their_frames) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("plugin_messages_reach_buffer"));
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+
+    synth::AppMidiOutSettings settings;
+    settings.contentId = synth_froggers::kFroggersMidiOutContentLevelId;
+    settings.channel = 4;
+    settings.ccNumber = 20;
+    processor.ApplicationForTest().SetMidiOutSetting(settings);
+
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    buffer.clear();
+    processor.processBlock(buffer, midi);
+
+    // The first-ever Level Control Change always sends (no prior value to
+    // compare against) -- the same rule app/FroggersMidiOutTests.cpp's
+    // steady_level_sends_nothing_more test exercises for the standalone.
+    int eventCount = 0;
+    for (const juce::MidiMessageMetadata metadata : midi) {
+        ++eventCount;
+        REQUIRE_TRUE(metadata.samplePosition == 255);  // the block's last frame.
+        REQUIRE_TRUE(metadata.numBytes == 3);
+        REQUIRE_TRUE(metadata.data[0] == 0xB4);  // Control Change, channel 4.
+        REQUIRE_TRUE(metadata.data[1] == 20);    // the set CC number.
+    }
+    REQUIRE_TRUE(eventCount == 1);
+}
+
 }  // namespace
 
 int main() {

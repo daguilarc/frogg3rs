@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <utility>
 
@@ -552,11 +553,11 @@ void FroggersPluginProcessor::processorLayoutsChanged() {
 
 void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) {
     juce::ScopedNoDenormals noDenormals;
-    // The plugin does NOT consume notes: the buffer is accepted and
-    // ignored. No note/MIDI wiring exists in FroggersAppCore's ProcessBlock
-    // at all -- draining nothing out of `midiMessages` here is deliberate,
-    // not an oversight.
-    juce::ignoreUnused(midiMessages);
+    // The plugin does not consume the host's incoming notes: the buffer is
+    // cleared before anything else, so nothing the host wrote can pass
+    // through, and is then filled ONLY with this app's own MIDI-out
+    // messages, added below after engine_.ProcessBlock() has appended them.
+    midiMessages.clear();
 
     // Teardown gap: a pure liveness heartbeat for
     // timerCallback()'s staleness detection -- incremented unconditionally,
@@ -698,6 +699,15 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
     block.numRequestedInputChannels = engine_.Config().numAudioInputs;
 
     engine_.ProcessBlock(block, NowMicros());
+
+    // This app's own MIDI-out messages for this block, at most two: each is
+    // added at its own frame, into the buffer this method already cleared
+    // above, so the host sees exactly what the app appended and nothing it
+    // sent in.
+    for (const synth::AppMidiOutEvent& event : engine_.AppMidiOutEvents()) {
+        const std::uint8_t bytes[3] = {event.statusByte, event.data1, event.data2};
+        midiMessages.addEvent(bytes, 3, static_cast<int>(event.frame));
+    }
 
     // Publish every host-exposed parameter's current
     // display value into its own atomic UIState snapshot, for

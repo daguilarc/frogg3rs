@@ -187,11 +187,13 @@ public:
 
     const juce::String getName() const override { return "Frogg3rs"; }
     // NEEDS_MIDI_INPUT TRUE (CMakeLists.txt) declares MIDI input accepted;
-    // acceptsMidi() must agree. The buffer is ignored every block (see
-    // processBlock()): a synth that declares MIDI input accepted is fine
-    // with no note wiring.
+    // acceptsMidi() must agree. The incoming buffer is cleared every block
+    // before this app's own messages are added (see processBlock()): a
+    // synth that declares MIDI input accepted is fine with no note input
+    // wiring. NEEDS_MIDI_OUTPUT TRUE declares MIDI output; producesMidi()
+    // must agree with that too.
     bool acceptsMidi() const override { return true; }
-    bool producesMidi() const override { return false; }
+    bool producesMidi() const override { return true; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
 

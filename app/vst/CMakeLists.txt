@@ -128,10 +128,12 @@ juce_add_plugin(FroggersVst
     PLUGIN_CODE Fr3g
     FORMATS ${FROGGERS_VST_FORMATS}
     IS_SYNTH TRUE
-    # "a synth that declares MIDI input accepted is fine; no
-    # note wiring" -- FroggersPluginProcessor::acceptsMidi() agrees (TRUE),
-    # and processBlock() ignores the MIDI buffer entirely.
+    # "a synth that declares MIDI input accepted is fine; no note input
+    # wiring" -- FroggersPluginProcessor::acceptsMidi() agrees (TRUE), and
+    # processBlock() clears the incoming buffer every block. NEEDS_MIDI_OUTPUT
+    # declares the one MIDI output the plugin now has; producesMidi() agrees.
     NEEDS_MIDI_INPUT TRUE
+    NEEDS_MIDI_OUTPUT TRUE
     COPY_PLUGIN_AFTER_BUILD FALSE
 )
 
