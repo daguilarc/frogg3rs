@@ -94,6 +94,16 @@ synth::AppMidiOutSettings PitchSetting(std::uint8_t channel,
     return settings;
 }
 
+// An unrecognized (here: empty) contentId resolves to Off -- SetMidiOutSetting's
+// own fallback for anything that is not the Level or Pitch catalog id. Takes
+// a channel so a switching-away test can hold the channel fixed across the
+// switch, isolating the content check from the channel-changed one beside it.
+synth::AppMidiOutSettings OffSetting(std::uint8_t channel) {
+    synth::AppMidiOutSettings settings;
+    settings.channel = channel;
+    return settings;
+}
+
 // The knob-space delta that multiplies a VCO's frequency by `factor`,
 // independent of its current value: dsp::Vco's pitch knob maps
 // exponentially across [kPitchMinHz, kPitchMaxHz]
@@ -938,6 +948,41 @@ TEST_CASE(pitch_switching_away_ends_the_note) {
     REQUIRE_TRUE(rig.Application().MidiOutContent() == synth_froggers::FroggersMidiOutContent::Pitch);
 
     rig.Application().SetMidiOutSetting(LevelSetting(/*channel=*/5, /*ccNumber=*/16));
+    rig.RunBlocks(1);
+    const synth::AppMidiOutEventList& events = rig.Engine().AppMidiOutEvents();
+    REQUIRE_TRUE(events.Size() >= 1);
+    const std::optional<DecodedNoteEvent> first = DecodeNoteEvent(events[0]);
+    REQUIRE_TRUE(first.has_value());
+    REQUIRE_TRUE(!first->isNoteOn);        // note-off, before any other message.
+    REQUIRE_TRUE(first->note == 45);       // the note that was sounding.
+    REQUIRE_TRUE(first->channel == 5);     // the channel it was sounding on.
+    REQUIRE_TRUE(events[0].frame == 0);    // frame 0.
+}
+
+// ---------------------------------------------------------------------------
+// pitch_switching_to_off_ends_the_note
+// ---------------------------------------------------------------------------
+// A15: the existing switching-away test only ever switches Pitch->Level.
+// Off is a real, separate content value (not merely "not Pitch") and is
+// exactly the plugin's MIDI button cycle's Pitch->Off step and the
+// Controllers page's Sends=Off -- both reachable without ever passing
+// through Level.
+TEST_CASE(pitch_switching_to_off_ends_the_note) {
+    Rig::AudioSettings settings48k128;
+    settings48k128.sampleRate = 48000.0;
+    settings48k128.blockSize = 128;
+    Rig rig(/*patchPumpBudgetBlocks=*/64,
+           UseScratchRuntimeDataPaths("pitch_switching_to_off_ends_note"), settings48k128);
+
+    rig.Application().SetMidiOutSetting(PitchSetting(/*channel=*/5));
+    rig.StartAt(0);
+    constexpr std::size_t kBlocksPerSecond = 48000 / 128;
+    for (std::size_t i = 0; i < kBlocksPerSecond; ++i) {
+        rig.RunBlocks(1);
+    }
+    REQUIRE_TRUE(rig.Application().MidiOutContent() == synth_froggers::FroggersMidiOutContent::Pitch);
+
+    rig.Application().SetMidiOutSetting(OffSetting(/*channel=*/5));
     rig.RunBlocks(1);
     const synth::AppMidiOutEventList& events = rig.Engine().AppMidiOutEvents();
     REQUIRE_TRUE(events.Size() >= 1);
