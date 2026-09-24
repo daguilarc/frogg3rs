@@ -76,6 +76,9 @@ MODULATION_BIN := $(BUILD_DIR)/froggers_modulation_tests
 AUDIO_ROUTING_SOURCES := $(APP_DIR)/FroggersAudioRoutingTests.cpp
 AUDIO_ROUTING_BIN := $(BUILD_DIR)/froggers_audio_routing_tests
 
+MIDI_OUT_SOURCES := $(APP_DIR)/FroggersMidiOutTests.cpp
+MIDI_OUT_BIN := $(BUILD_DIR)/froggers_midi_out_tests
+
 # --- VCO scope + transfer-function visualizer tests -------------
 # Scope-channel-bound/connected-flag checks need a real FroggersApp
 # (constructor wiring + ProcessBlock), so this uses the same
@@ -336,6 +339,9 @@ $(MODULATION_BIN): $(MODULATION_SOURCES) $(APP_DIR)/FroggersModulation.hpp $(APP
 $(AUDIO_ROUTING_BIN): $(AUDIO_ROUTING_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersModulation.hpp $(APP_DIR)/FroggersParameters.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
 	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(AUDIO_ROUTING_SOURCES) $(SHEAF_LIB) -o $@
 
+$(MIDI_OUT_BIN): $(MIDI_OUT_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersMidiCatalog.hpp $(APP_DIR)/FroggersParameters.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
+	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(MIDI_OUT_SOURCES) $(SHEAF_LIB) -o $@
+
 # --- visualizer target ---------------------------------------------------------
 $(VISUALIZER_BIN): $(VISUALIZER_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersModulation.hpp $(APP_DIR)/FroggersParameters.hpp $(APP_DIR)/FroggersTransferFunctionVisualizer.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
 	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(VISUALIZER_SOURCES) $(SHEAF_LIB) -o $@
@@ -387,7 +393,7 @@ check-catalog-covers-screen-actions:
 	@bash $(APP_DIR)/check_catalog_covers_screen_actions.sh "$(APP_DIR)" \
 	    kSceneBlend kEncoderPress kEncoderDrag kInputSelect kViewportNarrow
 
-test: check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions check-docs-match-parameter-table check-spec-checks-resolve check-citations-resolve check-modified-requirements-restate-promoted check-no-planning-history check-no-bank-page-conflation check-artifact-symbols-resolve check-delay-capacity-parameters-are-swept check-delay-capacity-break-proofs check-twister-manual-diagrams-drift $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN) $(CONTROLLERS_PAGE_BIN)
+test: check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions check-docs-match-parameter-table check-spec-checks-resolve check-citations-resolve check-modified-requirements-restate-promoted check-no-planning-history check-no-bank-page-conflation check-artifact-symbols-resolve check-delay-capacity-parameters-are-swept check-delay-capacity-break-proofs check-twister-manual-diagrams-drift $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN) $(CONTROLLERS_PAGE_BIN) $(MIDI_OUT_BIN)
 	$(TEST_BIN)
 	$(MONO_VALIDATION_BIN)
 	$(DSP_TEST_BIN)
@@ -400,6 +406,7 @@ test: check-no-juce check-no-firmware-includes check-microphone-usage check-cata
 	$(SURFACE_BIN)
 	$(MIDI_CATALOG_BIN)
 	$(CONTROLLERS_PAGE_BIN)
+	$(MIDI_OUT_BIN)
 
 clean:
 	rm -rf $(BUILD_DIR)

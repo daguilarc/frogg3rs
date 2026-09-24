@@ -76,6 +76,7 @@
 #include "dsp/Delay.hpp"
 #include "dsp/Drive.hpp"
 #include "dsp/DspMath.hpp"
+#include "dsp/EnvelopeFollowers.hpp"
 #include "dsp/FilterFx.hpp"
 #include "dsp/Limiter.hpp"
 #include "dsp/RecoveryTier.hpp"
@@ -302,14 +303,16 @@ public:
         // here, once, without racing anything.
         modulation_.SetExternalAudioConnected(context_->InputRouted());
 
-        // sar-36: registers this app's MIDI-out setting resolver as the
-        // engine's MIDI-out settings callback. Runs on the message thread
-        // (AppContext::SetAppMidiOutSettingsChangedCallback's own contract)
-        // and only ever queues the packed result -- ProcessFrame() below
-        // (audio thread, once per block) is what applies it, same reason as
-        // the routed-input callback above.
+        // sar-36: registers this app's own MIDI-out setter (below) as the
+        // engine's MIDI-out settings callback, for the hosts that deliver a
+        // setting through Engine::SetAppMidiOutConfig (the standalone and
+        // browser, via their Controllers page). Runs on the message thread
+        // (AppContext::SetAppMidiOutSettingsChangedCallback's own contract).
+        // The plugin does not go through this path -- it calls
+        // SetMidiOutSetting() directly, the same app entry point, from its
+        // own surface fields.
         context_->SetAppMidiOutSettingsChangedCallback(
-            [this](const synth::AppMidiOutSettings& settings) { ApplyMidiOutSettings(settings); });
+            [this](const synth::AppMidiOutSettings& settings) { SetMidiOutSetting(settings); });
 
         // Applies the default patch once, on first start, now that slate
         // indices 6-8 (VCO audio sources) exist.
@@ -415,6 +418,10 @@ public:
         filterChain_.Configure(sampleRate_);  // The Filter page's own limiter's coeffs, same reason.
         reverb_.Configure(sampleRate_);  // Reverb's own wetLimiter coeffs, same reason.
         driveBlendPhase_.Configure(sampleRate_);  // This stage's own outputLimiter coeffs, same reason.
+        midiOutLevelFollower_.SetSampleRate(sampleRate_);  // Level's own 10 ms/50 ms coefficients.
+        // The minimum output-frame gap between two Control Changes: 20 ms of
+        // output frames, rounded up (960 at 48 kHz).
+        midiOutCcMinFrameGap_ = static_cast<std::uint64_t>(std::ceil(0.02 * sampleRate));
 
         // Root-cause fix (a robustness gap found while diagnosing "Play
         // produces no audio in the real Runtime"): `synth::Engine::Prepare()`
@@ -674,6 +681,33 @@ public:
     // from the UI thread -- ProcessFrame() itself never logs (fprintf on
     // the audio thread can allocate/lock/block, which is a dropout risk).
     bool LastRandomizePartial() const { return lastRandomizePartial_.load(std::memory_order_acquire); }
+
+    // The app's one MIDI-out setter (content id, channel 0-15, CC number,
+    // velocity), callable on the message thread by any host: Init() below
+    // registers it as the engine's MIDI-out settings callback for the
+    // standalone and browser (delivered through Engine::SetAppMidiOutConfig,
+    // sar-36), and the plugin calls it directly from its own surface fields
+    // -- one definition, so the two paths cannot drift apart. Resolves the
+    // content id against the catalog's own ids (Off,
+    // kFroggersMidiOutContentLevelId, kFroggersMidiOutContentPitchId;
+    // anything else, including empty, is Off) and packs it with the
+    // channel, CC number and velocity into the pending atomic ProcessFrame()
+    // (audio thread, once per block) exchanges and applies.
+    void SetMidiOutSetting(const synth::AppMidiOutSettings& settings) {
+        FroggersMidiOutContent content = FroggersMidiOutContent::Off;
+        if (settings.contentId == kFroggersMidiOutContentLevelId) {
+            content = FroggersMidiOutContent::Level;
+        } else if (settings.contentId == kFroggersMidiOutContentPitchId) {
+            content = FroggersMidiOutContent::Pitch;
+        }
+        const std::uint8_t channel = settings.channel <= 15 ? settings.channel : static_cast<std::uint8_t>(0);
+        const std::uint8_t velocity = settings.velocity.value_or(0);
+        const std::uint32_t packed = static_cast<std::uint32_t>(content) |
+                                      (static_cast<std::uint32_t>(channel) << 8) |
+                                      (static_cast<std::uint32_t>(settings.ccNumber) << 16) |
+                                      (static_cast<std::uint32_t>(velocity) << 24);
+        pendingMidiOutSetting_.store(packed, std::memory_order_release);
+    }
 
     // The MIDI-out setting ProcessFrame() last applied (audio-thread only,
     // like activePageIx_) -- what the send logic below reads to decide
@@ -1293,6 +1327,18 @@ public:
             // delay's and the reverb's Width controls reach a listener.
             const dsp::StereoSample sample = RouteAudioSample();
 
+            // The one mono fold of this sample: Record's capture, a mono
+            // device's write, the MIDI-out level follower and the pitch
+            // detector all read this same value -- computed once here,
+            // right after RouteAudioSample(), rather than separately at
+            // each of those sites.
+            const float monoFold = 0.5f * (sample.l + sample.r);
+
+            // Fed every sample regardless of the chosen MIDI-out content
+            // (feasibility claim C13's own measurement shape): only whether
+            // its result is APPENDED below depends on the content.
+            const float midiOutLevel = midiOutLevelFollower_.Process(monoFold);
+
             // DIAGNOSTIC (2026-08-07), OFF unless FROGG3RS_STOP_DIAG is set
             // in the environment -- see stopDiagBlocks_'s own comment. Tracks
             // this block's output peak only while the diagnostic window is
@@ -1309,7 +1355,7 @@ public:
             if (recordArmed_.load(std::memory_order_acquire) && transportRunningNow) {
                 const std::uint64_t recordedSoFar = recordFrames_.load(std::memory_order_acquire);
                 if (recordedSoFar < recordBuffer_.size()) {
-                    recordBuffer_[recordedSoFar] = 0.5f * (sample.l + sample.r);
+                    recordBuffer_[recordedSoFar] = monoFold;
                     recordFrames_.store(recordedSoFar + 1, std::memory_order_release);
                 } else {
                     recordTruncated_.store(true, std::memory_order_release);
@@ -1339,10 +1385,8 @@ public:
                 // missing. Two or more channels alternate L/R, so a stereo
                 // device gets the image and a surround one gets the pair
                 // repeated across its pairs rather than silence past the
-                // second channel.
-                const float monoFold = block.numOutputChannels == 1
-                                           ? 0.5f * (sample.l + sample.r)
-                                           : 0.0f;
+                // second channel. Reuses the one fold computed above rather
+                // than recomputing it a second time.
                 for (int channelIx = 0; channelIx < block.numOutputChannels; ++channelIx) {
                     float* const channel = block.outputs[static_cast<std::size_t>(channelIx)];
                     if (channel != nullptr) {
@@ -1367,6 +1411,27 @@ public:
             // the end of this per-frame loop's body, after this sample's
             // output has been computed and written.
             vcoScopeWriter_.AdvanceIndex();
+
+            // Level's Control Change, at each block's last frame only
+            // (coordinator ruling: at most once per 20 ms, only on a changed
+            // value). The frame count since the last Control Change carries
+            // across blocks via lastMidiOutCcSampleSent_, an absolute
+            // output-sample stamp, not a per-block counter.
+            if (frame + 1 == block.numFrames && midiOutContent_ == FroggersMidiOutContent::Level &&
+                block.midiOut != nullptr) {
+                const int ccValue =
+                    std::clamp(static_cast<int>(std::lround(127.0f * midiOutLevel)), 0, 127);
+                const bool changed = !lastMidiOutCcValueSent_.has_value() || *lastMidiOutCcValueSent_ != ccValue;
+                const bool gapOk = !lastMidiOutCcSampleSent_.has_value() ||
+                                    (absoluteOutputSample - *lastMidiOutCcSampleSent_) >= midiOutCcMinFrameGap_;
+                if (changed && gapOk) {
+                    const std::uint8_t statusByte = static_cast<std::uint8_t>(0xB0 | (midiOutChannel_ & 0x0F));
+                    block.midiOut->Append(synth::AppMidiOutEvent{
+                        frame, statusByte, midiOutCcNumber_, static_cast<std::uint8_t>(ccValue)});
+                    lastMidiOutCcValueSent_ = ccValue;
+                    lastMidiOutCcSampleSent_ = absoluteOutputSample;
+                }
+            }
         }
 
         // No once-per-block clearing step here anymore -- the single
@@ -1568,29 +1633,6 @@ public:
 
 private:
     synth::AppContext* context_ = nullptr;
-
-    // Resolves an incoming MIDI-out setting against the catalog's own
-    // content ids (Off, kFroggersMidiOutContentLevelId,
-    // kFroggersMidiOutContentPitchId; anything else, including empty, is
-    // Off) and packs it with the channel, CC number and velocity into the
-    // pending atomic below -- callable on the message thread, the
-    // AppContext::appMidiOutSettingsChangedCallback contract Init()
-    // registers this as.
-    void ApplyMidiOutSettings(const synth::AppMidiOutSettings& settings) {
-        FroggersMidiOutContent content = FroggersMidiOutContent::Off;
-        if (settings.contentId == kFroggersMidiOutContentLevelId) {
-            content = FroggersMidiOutContent::Level;
-        } else if (settings.contentId == kFroggersMidiOutContentPitchId) {
-            content = FroggersMidiOutContent::Pitch;
-        }
-        const std::uint8_t channel = settings.channel <= 15 ? settings.channel : static_cast<std::uint8_t>(0);
-        const std::uint8_t velocity = settings.velocity.value_or(0);
-        const std::uint32_t packed = static_cast<std::uint32_t>(content) |
-                                      (static_cast<std::uint32_t>(channel) << 8) |
-                                      (static_cast<std::uint32_t>(settings.ccNumber) << 16) |
-                                      (static_cast<std::uint32_t>(velocity) << 24);
-        pendingMidiOutSetting_.store(packed, std::memory_order_release);
-    }
 
     // The single clock-read call
     // site for this class. Returns the transport quarter-note position at
@@ -2654,6 +2696,22 @@ private:
     std::uint8_t midiOutChannel_ = 0;
     std::uint8_t midiOutCcNumber_ = 16;
     std::optional<std::uint8_t> midiOutVelocity_;
+
+    // Level's own follower (10 ms attack, 50 ms release, dsp::
+    // SingleEnvelopeFollower's own coefficients), fed the shared mono fold
+    // every sample regardless of the chosen content -- a separate instance
+    // from FroggersModulation.hpp's externalAudioEf_, which tracks the
+    // routed INPUT rather than this app's OUTPUT. Configured from the host
+    // rate in PrepareToPlay().
+    dsp::SingleEnvelopeFollower midiOutLevelFollower_;
+    // ceil(0.02 * sampleRate) (960 at 48 kHz), set in PrepareToPlay(): the
+    // minimum output-frame gap between two Control Changes.
+    std::uint64_t midiOutCcMinFrameGap_ = 960;
+    // Carries across blocks (an absolute output-sample stamp, not a
+    // per-block counter) so the 20 ms gap is measured on the real output
+    // timeline. nullopt = no Control Change sent yet.
+    std::optional<int> lastMidiOutCcValueSent_;
+    std::optional<std::uint64_t> lastMidiOutCcSampleSent_;
 
     std::atomic<double> tempoDisplayBpm_{synth::MasterClock::kDefaultTempoBpm};
     std::atomic<bool> tempoExternallyClocked_{false};
