@@ -274,12 +274,13 @@ TEST_CASE(external_audio_stays_disconnected_when_the_routed_signal_is_never_publ
 }
 
 // End-to-end proof that the
-// ComputeAllParameters() reseed inside FroggersAppCore::ApplyAppCommand()
-// (FroggersAppCore.hpp) actually reaches the display through the REAL
+// ComputeAllParameters() reseed, which FroggersAppCore::ProcessFrame()
+// (FroggersAppCore.hpp) runs whenever ApplyAppCommand() set
+// recomputeNeeded_, actually reaches the display through the REAL
 // production path: a dispatched Randomize All (message thread) -> a pushed
 // MessageIn::AppCommand -> ApplyAppCommand() (audio thread, applied by
-// synth::Engine's drain, before ProcessFrame()'s own recompute) -> the
-// reseed. FroggersModulationTests.cpp's own randomize tests call
+// synth::Engine's drain, marks recomputeNeeded_) -> ProcessFrame()'s own
+// recompute -> the reseed. FroggersModulationTests.cpp's own randomize tests call
 // FroggersModulation.hpp's RandomizeAll()/RandomizePage() directly against a
 // bare ParameterManager, which never exercises FroggersAppCore::
 // ApplyAppCommand() at all -- this is the one place in the suite that proves
@@ -293,7 +294,7 @@ TEST_CASE(randomize_all_command_through_apply_app_command_updates_the_display) {
 
     rig.Application().PortableSurface().DispatchAction(
         synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
-    rig.RunBlocks(1);  // ApplyAppCommand() applies the press and reseeds, same block.
+    rig.RunBlocks(1);  // ApplyAppCommand() applies the press; ProcessFrame() reseeds, same block.
 
     // Randomize All (drill-in level 0) touches every top-level parameter
     // across all six banks -- find any depth it materialized
@@ -322,10 +323,9 @@ TEST_CASE(randomize_all_command_through_apply_app_command_updates_the_display) {
 
 // LastRandomizePartial() defaults false and stays false across an
 // ordinary Randomize All press with ample storage headroom (the default
-// FroggersModulationSlate::kDepthParameterStorageCapacity is 1440; the
-// 793-915 figure this comment once cited was the retired 61-parameter
-// design's ceiling, not this app's), proving the accessor is
-// wired and does not false-positive on a healthy randomize.
+// FroggersModulationSlate::kDepthParameterStorageCapacity is 1440),
+// proving the accessor is wired and does not false-positive on a
+// healthy randomize.
 TEST_CASE(randomize_all_with_ample_capacity_reports_not_partial) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
         /*patchPumpBudgetBlocks=*/64,
