@@ -102,15 +102,14 @@ mechanism no app or story reaches.
 ## S2. Storage watermark
 
 - [ ] S2.1 `ParameterGroup::SetStorageLowWatermark(std::size_t)` and
-      `ParameterGroup::StorageLowWatermark()`;
-      `RequestParameterStorageBatchIfLow` and the request-size floor in
-      `ParameterManager::RequestParameterStorageBatch` read it, compared
-      against `AvailableParameterSlots()` as today. Default
-      `numModulators * 2`.
+      `ParameterGroup::StorageLowWatermark()`; `RequestParameterStorageBatchIfLow`
+      reads it, compared against `AvailableParameterSlots()` as today.
+      Default `numModulators * 2`. `ParameterManager::RequestParameterStorageBatch`
+      has no request-size floor; it requests `minimumAdditionalParameters`.
       Check: a case in `projects/synth/tests/parameter_modulation_tests.cpp`:
       with the watermark set to 100 and 89 slots available after an
-      allocation, the request pushed is for 100 (the floor is the
-      watermark); at the default watermark on the same group, no request.
+      allocation, the request pushed carries the shortfall below the
+      watermark; at the default watermark on the same group, no request.
       Break: ignore the setter; red.
 
 ## S3. A patch never applies with a depth missing, at startup or running
@@ -127,10 +126,13 @@ mechanism no app or story reaches.
       leave a group's available storage below that group's watermark,
       with the per-group need counted by `MissingDepthsForValuesJSON`
       (carried from `app-o1-audit` 6ac80442; that commit's own startup
-      branch and its construct are not). The arena branch stays as each
-      site has it (`GrowAndReset` inline at startup;
+      branch and its construct are not). The arena branch's growth step
+      stays as each site has it (`GrowAndReset` inline at startup;
       `GrowSerializationArenaForTick` with its cap while running, whose cap
-      path clears only its own reason). The helper is the storage
+      path clears only its own reason); the stash-and-raise step around it
+      at the two running call sites (`ProcessBlock`'s retry,
+      `DrainPatchInputBus`) is one shared `StashPendingPatchMessage`,
+      parameterized by which status fired. The helper is the storage
       provisioning only, written once in `Engine`:
       `AddParameterStorageBatch` of need plus watermark on each group,
       called directly so the group's pending low-water request cannot
