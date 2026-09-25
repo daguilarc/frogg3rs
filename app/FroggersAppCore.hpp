@@ -97,15 +97,20 @@
 #include <atomic>
 #include <chrono>       // QueueRecordingExport's local-date file name.
 #include <cmath>
+#include <condition_variable>  // FroggersExportEncoder's worker wait.
 #include <cstdio>   // Stop diagnostic (stopDiagBlocks_): std::fprintf.
 #include <cstdlib>  // Stop diagnostic (stopDiagEnabled_): std::getenv.
 #include <cstddef>
 #include <cstdint>      // EncodeWavPcm16Mono's byte/sample types.
 #include <ctime>        // QueueRecordingExport's local-date file name.
+#include <deque>    // FroggersExportEncoder's job/finished-export queues.
 #include <limits>
+#include <memory>   // recordBuffer_'s std::unique_ptr<float[]>.
+#include <mutex>    // FroggersExportEncoder's own mutex.
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <thread>   // FroggersExportEncoder's worker thread.
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -134,6 +139,123 @@ inline std::size_t FroggersVisiblePageIndex(const synth::AppContext& context) {
 // beside its own tests' idiom of exercising it standalone; see its own
 // comment there.
 inline std::vector<std::uint8_t> EncodeWavPcm16Mono(std::span<const float> samples, float sampleRate);
+
+// Encodes a finished take to WAV on its own thread, so a long take's Stop
+// never holds the UI/message thread for the encode
+// (QueueRecordingExport()'s own comment covers the copy OPT-29's other half
+// already removed). EnsureStarted() is called by the first ArmRecording()
+// only -- an app with no Record (the plugin) never starts a thread here.
+// One mutex, held only to push or pop a job or a finished export, never
+// during an encode; the worker waits on a condition variable between jobs.
+class FroggersExportEncoder {
+public:
+    // A queued take: its sample storage, moved out of recordBuffer_ (never
+    // copied) with the capacity it was allocated at, the frame count
+    // actually recorded within it, and what the finished export should be
+    // named/noted.
+    struct Job {
+        std::unique_ptr<float[]> storage;
+        std::size_t capacity = 0;
+        std::uint64_t frameCount = 0;
+        float sampleRate = 0.0f;
+        std::string fileName;
+        std::string note;
+    };
+    // A finished encode: the FileExport QueueRecordingExport used to build
+    // itself before this class existed, plus the job's storage and capacity
+    // handed back so TakePendingFileExport() can return it to
+    // recordBuffer_.
+    struct FinishedExport {
+        synth::FileExport fileExport;
+        std::unique_ptr<float[]> storage;
+        std::size_t capacity = 0;
+    };
+
+    FroggersExportEncoder() = default;
+    FroggersExportEncoder(const FroggersExportEncoder&) = delete;
+    FroggersExportEncoder& operator=(const FroggersExportEncoder&) = delete;
+    ~FroggersExportEncoder() {
+        if (thread_.joinable()) {
+            {
+                const std::lock_guard<std::mutex> lock(mutex_);
+                stop_ = true;
+            }
+            cv_.notify_all();
+            thread_.join();
+        }
+    }
+
+    // UI/message thread, from ArmRecording() only. A no-op once the thread
+    // already exists.
+    void EnsureStarted() {
+        if (!thread_.joinable()) {
+            thread_ = std::thread([this] { WorkerLoop(); });
+        }
+    }
+
+    // UI/message thread, from QueueRecordingExport() only.
+    void Enqueue(Job job) {
+        {
+            const std::lock_guard<std::mutex> lock(mutex_);
+            jobs_.push_back(std::move(job));
+        }
+        cv_.notify_one();
+    }
+
+    // UI/message thread. One finished export in the order Enqueue() queued
+    // it (one worker thread, one queue each way), or nullopt if none has
+    // completed yet.
+    std::optional<FinishedExport> TakeFinished() {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        if (finished_.empty()) {
+            return std::nullopt;
+        }
+        FinishedExport result = std::move(finished_.front());
+        finished_.pop_front();
+        return result;
+    }
+
+    // How many jobs the worker has finished encoding so far -- test-only,
+    // so a case can wait for an encode to actually run rather than racing
+    // it.
+    std::uint64_t EncodedCount() const { return encodedCount_.load(std::memory_order_acquire); }
+
+private:
+    void WorkerLoop() {
+        while (true) {
+            Job job;
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                cv_.wait(lock, [this] { return stop_ || !jobs_.empty(); });
+                if (jobs_.empty()) {
+                    return;  // only reachable via stop_, the wait's own predicate
+                }
+                job = std::move(jobs_.front());
+                jobs_.pop_front();
+            }
+            // The encode itself runs with no lock held.
+            synth::FileExport fileExport;
+            fileExport.fileName = job.fileName;
+            fileExport.mediaType = "audio/wav";
+            fileExport.bytes =
+                EncodeWavPcm16Mono(std::span<const float>(job.storage.get(), job.frameCount), job.sampleRate);
+            fileExport.note = job.note;
+            {
+                const std::lock_guard<std::mutex> lock(mutex_);
+                finished_.push_back(FinishedExport{std::move(fileExport), std::move(job.storage), job.capacity});
+            }
+            encodedCount_.fetch_add(1, std::memory_order_release);
+        }
+    }
+
+    std::thread thread_;
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    bool stop_ = false;
+    std::deque<Job> jobs_;
+    std::deque<FinishedExport> finished_;
+    std::atomic<std::uint64_t> encodedCount_{0};
+};
 
 class FroggersAppCore {
 public:
@@ -493,16 +615,28 @@ public:
     // is stopped -- v1 precedent for the wording
     // (b9a8199^:desktop/Source/MainComponent.cpp:201, reference only, not
     // ported): exactly "Press Play before recording." via
-    // RecordRefusalReason() below. All
-    // allocation happens here, on the UI thread, never on the audio thread
+    // RecordRefusalReason() below.
+    // Allocation happens here, on the UI thread, never on the audio thread
     // -- `capacityFramesOverride` lets tests bound the buffer far below the
     // real kMaxRecordSeconds*sampleRate_ cap (~345 MB at 30 minutes/48kHz);
-    // production callers pass the default (0).
+    // production callers pass the default (0). The buffer is only
+    // reallocated when it does not exist yet or the requested capacity
+    // changed; a re-arm at the same capacity reuses it. Zeroing is spread
+    // over parts (kCapturePrepareFramesPerPart's own comment): this call
+    // does the one part that covers the buffer's start, so the audio thread
+    // never first-touches an unprepared page at the very beginning of a
+    // take, and MessageThreadTick() (below) prepares the rest across later
+    // ticks, well ahead of the audio thread's real-time write position.
     bool ArmRecording(std::size_t capacityFramesOverride = 0) {
         if (!TransportRunning()) {
             recordRefusalReason_ = kRecordRefusalReason;
             return false;
         }
+        // A take is exported only after an arm, so the worker thread is
+        // started here, lazily, the first time this ever succeeds -- an app
+        // with no Record (the plugin) never starts one. A no-op on every
+        // later call.
+        exportEncoder_.EnsureStarted();
         // Disarm first, with sequential consistency, before touching
         // recordBuffer_ below -- see recordWriterInBlock_'s own comment for
         // why both this store and the wait's load must be seq_cst. Then wait
@@ -510,7 +644,7 @@ public:
         // finish: recordWriterInBlock_ brackets ProcessBlock()'s whole
         // per-sample loop, so once this read sees it false, that block is
         // done touching recordBuffer_ (or never armed at all this call) and
-        // resizing it below is safe. At most one block long (5.3 ms at 256
+        // replacing it below is safe. At most one block long (5.3 ms at 256
         // frames/48 kHz); never spins while no block is running, since
         // recordWriterInBlock_ starts false and only ProcessBlock() sets it
         // true.
@@ -519,14 +653,24 @@ public:
         }
         // A Record press that beats the engine's own per-tick
         // TakePendingFileExport() poll (see that method's own comment) would
-        // otherwise have this call's recordBuffer_.assign() below wipe out a
+        // otherwise have this call's reallocation below wipe out a
         // truncated capture that was never exported -- flush it first so a
         // fresh take never wipes an unsaved one.
         QueueTruncatedExportIfPending();
         const std::size_t capacityFrames = capacityFramesOverride != 0
             ? capacityFramesOverride
             : static_cast<std::size_t>(kMaxRecordSeconds * sampleRate_);
-        recordBuffer_.assign(capacityFrames, 0.0f);
+        if (recordBuffer_ == nullptr || capacityFrames != recordCapacityFrames_) {
+            // Uninitialized storage, not zero-filled here: make_unique_for_overwrite
+            // leaves the pages untouched, so first touch is this call's own
+            // PrepareNextCaptureBufferPart() below and MessageThreadTick()'s
+            // later ones, spread over parts instead of one zeroing pass
+            // across the whole capacity at allocation.
+            recordBuffer_ = std::make_unique_for_overwrite<float[]>(capacityFrames);
+            recordCapacityFrames_ = capacityFrames;
+            recordPreparedFrames_ = 0;
+        }
+        PrepareNextCaptureBufferPart();
         recordFrames_.store(0, std::memory_order_release);
         recordTruncated_.store(false, std::memory_order_release);
         recordRefusalReason_ = nullptr;
@@ -543,12 +687,18 @@ public:
     // RecordedFrameCount() below (v1 precedent for the truncation wording,
     // reference only: "Recording stopped at the 30-minute limit.",
     // b9a8199^:desktop/Source/MainComponent.cpp:219).
-    void StopRecording() { recordArmed_.store(false, std::memory_order_release); }
+    // seq_cst, not release: QueueRecordingExport()'s own comment (below)
+    // argues that only seq_cst on both sides of both flags closes the
+    // window where the audio thread's block still reads armed=true after
+    // this store -- a release store here would let that read be reordered
+    // ahead of it (store-buffering), the exact outcome recordWriterInBlock_'s
+    // comment rules out.
+    void StopRecording() { recordArmed_.store(false, std::memory_order_seq_cst); }
 
     // Read-back for the capture (UI thread). Safe to call while still armed
     // (reads whatever has been written so far).
     std::span<const float> RecordedAudio() const {
-        return std::span<const float>(recordBuffer_.data(), RecordedFrameCount());
+        return std::span<const float>(recordBuffer_.get(), RecordedFrameCount());
     }
     std::uint64_t RecordedFrameCount() const { return recordFrames_.load(std::memory_order_acquire); }
     bool RecordingTruncated() const { return recordTruncated_.load(std::memory_order_acquire); }
@@ -564,25 +714,43 @@ public:
     // Queues the just-stopped recording as a file export -- called by the
     // SURFACE (FroggersUiSurface::HandleAction) once it decides a stop
     // counted as "finished with data," never internally by StopRecording()
-    // itself. UI-thread call: encodes the captured samples to a WAV byte
-    // stream, names the file from today's local date, and stores it for the
-    // host's engine to pick up and hand to whatever it installed through
+    // itself. UI-thread call: moves the captured samples (not a copy) into a
+    // job for exportEncoder_'s worker thread, which encodes them to WAV off
+    // this thread and names the file from today's local date; the finished
+    // export reaches the host's engine through TakePendingFileExport() below
+    // once the worker is done, to hand to whatever it installed through
     // Engine::SetFileExportHandler -- this class only names and encodes the
     // file; the host decides how (and whether) to save it.
     void QueueRecordingExport() {
-        const std::vector<float> samples(RecordedAudio().begin(), RecordedAudio().end());
-        std::vector<std::uint8_t> bytes = EncodeWavPcm16Mono(samples, RecordSampleRate());
+        // Same handshake ArmRecording() uses before touching recordBuffer_/
+        // recordCapacityFrames_ (see recordWriterInBlock_'s own comment for
+        // the ordering argument): recordArmed_ is already false by every
+        // caller's own guard (QueueTruncatedExportIfPending's
+        // !RecordArmed(), or the surface's Stop, which calls
+        // StopRecording() first), but the audio thread may still be
+        // finishing the block that saw the old armed state, and this call
+        // moves recordBuffer_ out from under it.
+        while (recordWriterInBlock_.load(std::memory_order_seq_cst)) {
+        }
 
         const std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         char dateBuffer[16] = {};
         std::strftime(dateBuffer, sizeof(dateBuffer), "%Y-%m-%d", std::localtime(&now));
 
-        synth::FileExport fileExport;
-        fileExport.fileName = std::string(dateBuffer) + ".wav";
-        fileExport.mediaType = "audio/wav";
-        fileExport.bytes = std::move(bytes);
-        fileExport.note = RecordingTruncated() ? "stopped at the 30-minute limit" : "";
-        pendingExport_ = std::move(fileExport);
+        FroggersExportEncoder::Job job;
+        job.storage = std::move(recordBuffer_);
+        job.capacity = recordCapacityFrames_;
+        job.frameCount = RecordedFrameCount();
+        job.sampleRate = RecordSampleRate();
+        job.fileName = std::string(dateBuffer) + ".wav";
+        job.note = RecordingTruncated() ? "stopped at the 30-minute limit" : "";
+        // recordBuffer_ is now null; the audio thread's bound check reads
+        // recordCapacityFrames_ before ever indexing it, so zeroing the
+        // capacity here (recordArmed_ already false) keeps that check safe
+        // even for a block already past the wait above with a stale read.
+        recordCapacityFrames_ = 0;
+        recordPreparedFrames_ = 0;
+        exportEncoder_.Enqueue(std::move(job));
         captureExported_ = true;
     }
     // Satisfies synth::HasFileExports -- the engine calls this once per
@@ -591,13 +759,47 @@ public:
     // QueueTruncatedExportIfPending()'s own comment): the audio thread
     // disarms on its own the instant it hits the cap, so no Stop/Record
     // press ever follows to queue that capture's export -- this poll is the
-    // only place left that can pick it up.
+    // only place left that can pick it up. Returns at most one finished
+    // export per call, in the order QueueRecordingExport() queued them; a
+    // take still encoding returns nullopt until a later tick's poll finds
+    // it done.
     std::optional<synth::FileExport> TakePendingFileExport() {
         QueueTruncatedExportIfPending();
-        std::optional<synth::FileExport> fileExport = std::move(pendingExport_);
-        pendingExport_.reset();
-        return fileExport;
+        std::optional<FroggersExportEncoder::FinishedExport> finished = exportEncoder_.TakeFinished();
+        if (!finished.has_value()) {
+            return std::nullopt;
+        }
+        // The storage returns to recordBuffer_ only when nothing has armed
+        // a newer take into it already; otherwise it is simply freed here
+        // (finished->storage going out of scope). Its prepared count is set
+        // to its own capacity, so a re-arm at the same capacity reuses it
+        // with no further PrepareNextCaptureBufferPart() work -- a take
+        // stopped so early that its buffer had not finished preparing when
+        // it was queued (PrepareNextCaptureBufferPart() does not run while
+        // a buffer is away encoding, since recordCapacityFrames_ reads 0
+        // then) is treated as prepared anyway; only a reused buffer's
+        // still-unprepared tail, in that narrow case, can still first-touch
+        // on the audio thread the way the unfixed code always did.
+        if (recordBuffer_ == nullptr) {
+            recordCapacityFrames_ = finished->capacity;
+            recordBuffer_ = std::move(finished->storage);
+            recordPreparedFrames_ = recordCapacityFrames_;
+        }
+        return std::move(finished->fileExport);
     }
+
+    // Satisfies synth::HasMessageThreadTick -- the engine calls this once
+    // per message-thread tick, after the file exports above are drained
+    // (Engine::MessageThreadTick's own comment). Prepares the next part of
+    // the capture buffer (PrepareNextCaptureBufferPart() below) so a long
+    // take's zeroing never lands on the UI thread in one block.
+    void MessageThreadTick() { PrepareNextCaptureBufferPart(); }
+
+    // How many takes exportEncoder_'s worker has actually encoded --
+    // test-only, same "TestXxx() convention read-only, measurement not
+    // control" as TestDelay()/TestReverb() above, so a case can wait for a
+    // real encode to have run rather than racing the worker thread.
+    std::uint64_t TestExportEncoderCount() const { return exportEncoder_.EncodedCount(); }
 
     // The surface's request API
     // -- called from FroggersUiSurface::DispatchAction (UI/message thread).
@@ -1287,7 +1489,7 @@ public:
             // silently drop half the signal from every recording.
             if (recordArmedThisBlock && transportRunningNow) {
                 const std::uint64_t recordedSoFar = recordFrames_.load(std::memory_order_acquire);
-                if (recordedSoFar < recordBuffer_.size()) {
+                if (recordedSoFar < recordCapacityFrames_) {
                     recordBuffer_[recordedSoFar] = 0.5f * (sample.l + sample.r);
                     recordFrames_.store(recordedSoFar + 1, std::memory_order_release);
                 } else {
@@ -2505,6 +2707,25 @@ private:
         visit(outputLimiter_, dsp::FiniteOnly{});
     }
 
+    // Zeroes the next kCapturePrepareFramesPerPart frames of recordBuffer_
+    // starting at recordPreparedFrames_ and advances it, or does nothing
+    // once it reaches recordCapacityFrames_. Called from ArmRecording()
+    // (once, so the very start of a take is always prepared before it can
+    // be written) and from MessageThreadTick() (once per tick, until the
+    // whole capacity is prepared) -- both UI/message-thread calls, never the
+    // audio thread. recordBuffer_ is null only before the first ArmRecording
+    // ever runs, when recordCapacityFrames_ is also 0, so the bound below
+    // already skips the call in that case.
+    void PrepareNextCaptureBufferPart() {
+        if (recordPreparedFrames_ >= recordCapacityFrames_) {
+            return;
+        }
+        const std::size_t remaining = recordCapacityFrames_ - recordPreparedFrames_;
+        const std::size_t thisPart = std::min<std::size_t>(kCapturePrepareFramesPerPart, remaining);
+        std::fill_n(recordBuffer_.get() + recordPreparedFrames_, thisPart, 0.0f);
+        recordPreparedFrames_ += thisPart;
+    }
+
     // A capture that hits its cap disarms itself on the audio thread the
     // instant it happens (recordArmed_.store(false) inside ProcessBlock's
     // per-sample loop above, :1186-1194) -- no Stop/Record press ever
@@ -2514,7 +2735,7 @@ private:
     // once per message-thread tick regardless of any UI press, so that
     // poll alone is enough to pick a truncated capture up; a Record press
     // that beats the poll goes through ArmRecording(), so this call there
-    // flushes the old capture before recordBuffer_.assign() wipes it out
+    // flushes the old capture before ArmRecording() replaces the buffer
     // from under it. captureExported_ keeps a capture from being queued
     // twice across repeated calls from either caller.
     void QueueTruncatedExportIfPending() {
@@ -2634,13 +2855,29 @@ private:
     // that value for the whole block. recordWriterInBlock_ (below) brackets
     // the per-sample loop that may write into recordBuffer_, so
     // ArmRecording() (UI thread) can wait for an in-flight block to finish
-    // before it resizes the buffer that block might still be writing into
-    // or reading the size of -- see recordWriterInBlock_'s own comment for
-    // the ordering argument, and ArmRecording()'s for the wait.
-    // All allocation happens once, in ArmRecording() (UI thread, above);
-    // the audio thread only ever appends to an already-sized recordBuffer_
-    // or clears a flag, never allocates.
-    std::vector<float> recordBuffer_;
+    // before it replaces the buffer that block might still be writing into
+    // or reading the capacity of -- see recordWriterInBlock_'s own comment
+    // for the ordering argument, and ArmRecording()'s for the wait.
+    // Allocation happens only in ArmRecording() (UI thread, above), and only
+    // when the requested capacity changed; the audio thread only ever
+    // appends to it or clears a flag, never allocates. Uninitialized
+    // storage (make_unique_for_overwrite<float[]>, not std::vector's or
+    // make_unique's zero-filling): ArmRecording() and MessageThreadTick() zero it in parts
+    // (PrepareNextCaptureBufferPart() below) instead of one pass across the
+    // whole capacity, so first touch happens on the UI/message thread ahead
+    // of the audio thread's real-time write position, never on the audio
+    // thread itself.
+    std::unique_ptr<float[]> recordBuffer_;
+    // The audio thread's own bound check reads this (ProcessBlock()'s
+    // per-sample capture hook, below), not recordBuffer_'s own size --
+    // std::unique_ptr<float[]> carries no size of its own.
+    std::size_t recordCapacityFrames_ = 0;
+    // UI/message-thread-only (never touched by the audio thread, same as
+    // recordRefusalReason_/captureExported_ below): how many
+    // frames from 0 have been written with zeros so far.
+    // PrepareNextCaptureBufferPart() advances it; ArmRecording() resets it
+    // to 0 whenever it allocates a new buffer.
+    std::size_t recordPreparedFrames_ = 0;
     std::atomic<bool> recordArmed_{false};
     // True from just before ProcessBlock()'s per-sample loop starts to just
     // after it ends, unconditionally on every block -- brackets every block
@@ -2661,23 +2898,33 @@ private:
     std::atomic<std::uint64_t> recordFrames_{0};
     std::atomic<bool> recordTruncated_{false};
     static constexpr float kMaxRecordSeconds = 30.0f * 60.0f;
+    // The most PrepareNextCaptureBufferPart() zeroes in one call: the
+    // largest multiple of 48,000 frames (one second at the production
+    // sample rate) that takes at most a tenth of the 30 Hz UI tick
+    // (3,333,333 ns) at the rate the unchanged code's single zeroing pass
+    // measured -- 27,468,750 ns for 86,400,000 frames
+    // (evidence/runs-M3/out/measure_2_12.out's first-arm median), 0.318 ns
+    // per frame for allocation, first touch and zeroing together.
+    static constexpr std::size_t kCapturePrepareFramesPerPart = 10'464'000;
     // UI-thread-only (written/read only from ArmRecording()/
     // RecordRefusalReason() above, never touched by the audio thread) -- no
     // atomic needed.
     static constexpr const char* kRecordRefusalReason = "Press Play before recording.";
     const char* recordRefusalReason_ = nullptr;
 
-    // Storage for QueueRecordingExport()'s output, drained by
-    // TakePendingFileExport() -- message-thread-only, same as
-    // recordRefusalReason_ just above (never touched by the audio thread).
-    std::optional<synth::FileExport> pendingExport_;
+    // Encodes QueueRecordingExport()'s queued takes to WAV off this thread;
+    // TakePendingFileExport() drains its finished exports. Owns its own
+    // thread, started lazily by the first successful ArmRecording()
+    // (EnsureStarted()'s own comment); its destructor stops and joins it,
+    // same lifetime as this object.
+    FroggersExportEncoder exportEncoder_;
     // Whether the CURRENT capture (the one ArmRecording() most recently
     // set up) has already been queued for export -- set by
     // QueueRecordingExport(), cleared by ArmRecording() for the next
     // capture. Lets QueueTruncatedExportIfPending() (below) queue a
     // cap-triggered truncation's export exactly once, even though both
     // TakePendingFileExport() and ArmRecording() call it on every
-    // invocation. Message-thread-only, same as pendingExport_ above.
+    // invocation. Message-thread-only, same as recordRefusalReason_ above.
     bool captureExported_ = false;
 
     // DIAGNOSTIC (2026-08-07). "Stop does not stop" has never

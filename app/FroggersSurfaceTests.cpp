@@ -31,6 +31,7 @@
 #error "Froggers surface tests must not see JUCE headers"
 #endif
 
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -45,6 +46,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -3370,6 +3372,24 @@ TEST_CASE(record_action_refused_while_stopped_shows_the_transport_notice) {
     rig.RunBlocks(4);
 }
 
+// The export encoder runs on its own worker thread (FroggersAppCore.hpp's
+// FroggersExportEncoder): a take's export arrives once the worker has
+// encoded it, not on the first poll after it is queued. Polls
+// TakePendingFileExport() every 1 ms until it returns an export or 2,000
+// calls (2 s) have been made; the takes these cases record are at most a
+// few thousand frames, which the worker encodes in well under a
+// millisecond, so this bound leaves the wait deterministic in practice.
+std::optional<synth::FileExport> PollForFileExport(synth_froggers::FroggersApp& app) {
+    for (int attempt = 0; attempt < 2000; ++attempt) {
+        std::optional<synth::FileExport> fileExport = app.TakePendingFileExport();
+        if (fileExport.has_value()) {
+            return fileExport;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return std::nullopt;
+}
+
 TEST_CASE(record_action_stop_with_data_queues_one_named_wav_export) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
         /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("record_wav_export"));
@@ -3386,7 +3406,7 @@ TEST_CASE(record_action_stop_with_data_queues_one_named_wav_export) {
 
     surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRecord));
 
-    const std::optional<synth::FileExport> fileExport = app.TakePendingFileExport();
+    const std::optional<synth::FileExport> fileExport = PollForFileExport(app);
     REQUIRE_TRUE(fileExport.has_value());
     REQUIRE_TRUE(fileExport->mediaType == "audio/wav");
     REQUIRE_TRUE(fileExport->bytes.size() >= 4 && fileExport->bytes[0] == 'R' && fileExport->bytes[1] == 'I' &&
@@ -3402,6 +3422,42 @@ TEST_CASE(record_action_stop_with_data_queues_one_named_wav_export) {
 
     // A second take, with no further Record stop, yields none.
     REQUIRE_TRUE(!app.TakePendingFileExport().has_value());
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
+    rig.RunBlocks(4);
+}
+
+// Guards FroggersExportEncoder's own worker thread: the export's bytes are
+// the worker's encode of the samples as they stood when Stop queued the
+// job, and EncodedCount() -- incremented only by the worker, after an
+// encode -- reads 1, not 0. Fails with the encode moved back into
+// QueueRecordingExport (no worker thread ever runs), under which
+// EncodedCount() stays 0 forever.
+TEST_CASE(a_stopped_take_is_encoded_off_the_message_thread_to_the_same_bytes) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("record_worker_encode"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    synth_froggers::FroggersApp& app = rig.Application();
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
+    rig.RunBlocks(8);
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRecord));
+    rig.RunBlocks(8);
+    REQUIRE_TRUE(app.RecordedFrameCount() > 0);
+    const std::vector<float> samplesAtStop(app.RecordedAudio().begin(), app.RecordedAudio().end());
+    const float sampleRate = app.RecordSampleRate();
+    REQUIRE_TRUE(app.TestExportEncoderCount() == 0);
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRecord));
+
+    const std::optional<synth::FileExport> fileExport = PollForFileExport(app);
+    REQUIRE_TRUE(fileExport.has_value());
+
+    const std::vector<std::uint8_t> expectedBytes = synth_froggers::EncodeWavPcm16Mono(samplesAtStop, sampleRate);
+    REQUIRE_TRUE(fileExport->bytes == expectedBytes);
+    REQUIRE_TRUE(app.TestExportEncoderCount() == 1);
 
     surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
     rig.RunBlocks(4);
@@ -3442,6 +3498,17 @@ TEST_CASE(truncated_capture_queues_its_export_without_a_stop_press) {
     REQUIRE_TRUE(app.RecordingTruncated());
     REQUIRE_TRUE(!app.RecordArmed());
 
+    // The export encoder runs on its own worker thread now
+    // (FroggersAppCore.hpp's FroggersExportEncoder), so the handler above
+    // receives the export once the worker has encoded it, not on the tick
+    // that queued the job. One block at a time (each pairs a
+    // MessageThreadTick, which drains a finished export to the handler),
+    // sleeping 1 ms between, until the handler has received one or 2,000
+    // blocks have run.
+    for (int attempt = 0; attempt < 2000 && exportedFiles.empty(); ++attempt) {
+        rig.RunBlocks(1);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
     REQUIRE_TRUE(exportedFiles.size() == 1);
     const synth::FileExport& fileExport = exportedFiles.front();
     REQUIRE_TRUE(fileExport.note == "stopped at the 30-minute limit");
@@ -3535,7 +3602,7 @@ TEST_CASE(arming_after_an_unpolled_truncated_capture_flushes_it_first) {
     REQUIRE_TRUE(app.ArmRecording(/*capacityFramesOverride=*/static_cast<std::size_t>(kCapacityFrames)));
     REQUIRE_TRUE(app.RecordArmed());
 
-    const std::optional<synth::FileExport> fileExport = app.TakePendingFileExport();
+    const std::optional<synth::FileExport> fileExport = PollForFileExport(app);
     REQUIRE_TRUE(fileExport.has_value());
     REQUIRE_TRUE(fileExport->note == "stopped at the 30-minute limit");
     REQUIRE_TRUE((fileExport->bytes.size() - 44) / 2 == kCapacityFrames);

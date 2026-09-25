@@ -199,10 +199,12 @@ private:
             // `chooser` is captured into its own completion callback (JUCE's
             // documented FileChooser lifetime contract: the object must
             // outlive the dialog), so it self-destructs once this fires.
-            // `fileExport` is captured by value: the async completion fires
-            // later (after the user picks a file), well after the engine's
-            // own FileExport that produced this call has gone out of scope.
-            chooser->launchAsync(flags, [chooser, fileExport](const juce::FileChooser& fc) {
+            // `fileExport` is moved into the inner lambda's own capture,
+            // not copied: the async completion fires later (after the user
+            // picks a file), well after the engine's own FileExport that
+            // produced this call has gone out of scope, and nothing here
+            // reads the outer `fileExport` again once the chooser launches.
+            chooser->launchAsync(flags, [chooser, fileExport = std::move(fileExport)](const juce::FileChooser& fc) {
                 const juce::File file = fc.getResult();
                 if (file == juce::File{}) {
                     return;  // Cancelled.

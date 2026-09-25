@@ -8,6 +8,16 @@ gesture clause and names the checks the rig runs. The Play plate's
 transport-running read moves to what the engine publishes; its scenarios
 are unchanged.
 
+### Requirement: Stopping a long take never holds a UI tick
+WHEN a take stops, THE app SHALL encode it on a thread other than the UI and message thread, and SHALL offer the file at the first message-thread tick after the encode finishes; the file's bytes SHALL be the bytes the one-pass encode produces.
+
+#### Scenario: A 30-minute take
+- **WHEN** a 30-minute take stops
+- **THEN** no UI or message-thread call spends more than 33,333,333 ns on it
+- **AND** the file is offered within one tick of the encode finishing
+- **AND** its bytes equal the one-pass encode's
+- Check: not yet delivered; the change's encode task adds the case
+
 ## MODIFIED Requirements
 
 ### Requirement: Reset restores the default patch
