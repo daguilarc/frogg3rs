@@ -2259,6 +2259,46 @@ TEST_CASE(bpm_slider_is_read_only_and_shows_recovered_tempo_while_externally_clo
     REQUIRE_TRUE(foundStatusText);
 }
 
+TEST_CASE(bpm_slider_push_reaches_the_clock_diagnostics_publication_and_is_gated_by_the_context_sync_config) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("bpm_clock_diagnostics"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    synth::AppContext& context = rig.Engine().Context();
+
+    // TRN-02/BPM-01: dragging the slider to 300 reaches the tempo the
+    // engine publishes for every runtime page to read
+    // (AppContext::clockDiagnostics), the same route this surface's own
+    // display now reads.
+    surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBpm, "300.0"));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(std::fabs(context.clockDiagnostics->Snapshot().currentBpm - 300.0) < 0.5);
+
+    // SYN-03: with receive-clock requested, the slider renders as the
+    // read-only line and a dispatched kBpm pushes nothing -- both read
+    // through AppContext::syncConfiguration, never a mirror this surface
+    // keeps.
+    REQUIRE_TRUE(rig.Engine().RequestSyncConfiguration(synth::SyncConfig{.receiveClock = true}));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(context.syncConfiguration().receiveClock);
+
+    const double tempoBeforeAttempt = context.clockDiagnostics->Snapshot().currentBpm;
+    surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBpm, "222.0"));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(std::fabs(context.clockDiagnostics->Snapshot().currentBpm - tempoBeforeAttempt) < 0.5);
+
+    const synth::ui::NodeTree tree = surface.BuildTree();
+    bool foundStatusText = false;
+    for (const synth::ui::Node& node : tree.nodes) {
+        if (node.id.value == synth_froggers::FroggersNodeIds::kBpm) {
+            REQUIRE_TRUE(node.kind == synth::ui::NodeKind::StatusText);
+            foundStatusText = true;
+        }
+    }
+    REQUIRE_TRUE(foundStatusText);
+}
+
 // This test used
 // to be `bpm_label_indicates_no_effect_while_transport_is_stopped`, pinning
 // a "BPM (no effect while stopped)" annotation that switched in and out with

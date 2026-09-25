@@ -48,8 +48,16 @@ for name in $names; do
         in_catalog=1
     fi
 
+    # A name is routed either by its own `if (action.name ==
+    # FroggersActions::X)` branch, or by a row of the app-command table
+    # HandleAction dispatches through in one loop (`{FroggersActions::X,
+    # FroggersCommand::...}`) -- the eight presses that travel as
+    # synth::MessageIn::AppCommand share that one loop rather than a branch
+    # each.
     routed=0
     if grep -qE "action\.name == FroggersActions::${name}\b" "$ui_surface"; then
+        routed=1
+    elif grep -qE "\{FroggersActions::${name}, FroggersCommand::" "$ui_surface"; then
         routed=1
     fi
 

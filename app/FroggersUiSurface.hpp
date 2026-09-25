@@ -2271,62 +2271,37 @@ private:
             return;
         }
 
-        // App-request bridge (see FroggersAppCore.hpp's header comment):
-        // encoder press (drill-in cap), Randomize All/Page, BPM. (Crunchy
-        // removed operator 2026-07-27 -- see this file's header comment.)
-        if (action.name == FroggersActions::kEncoderPress) {
-            app_->RequestEncoderPress(FroggersParseSize(action.value, 0));
-            return;
-        }
-        if (action.name == FroggersActions::kPageSelect) {
-            app_->RequestPageSelect(FroggersParseSize(action.value, 0));
-            return;
-        }
-        // The carousel arrows route through the SAME single selection
-        // authority as the page buttons above (RequestPageSelect -- no
-        // second selection state).
-        // GATED on DrillLevel() == 0, the same source
-        // AppendModulationHeaderRow reads to decide whether to emit the
-        // arrow nodes at all: HandleAction matches on action NAME with no
-        // node-presence check, so without this gate a synthetic dispatch
-        // while drilled would still switch pages and, via the ProcessFrame
-        // drain reconstructing drillIn_ on any page change
-        // (FroggersAppCore.hpp's `ProcessFrame`), silently exit the drill -- even
-        // though no arrow node exists in the tree to click.
-        if (action.name == FroggersActions::kPagePrevious) {
-            if (app_->DrillLevel() == 0) {
-                const std::size_t bankIx =
-                    (CurrentPageIndex() + kFroggersPageCount - 1) % kFroggersPageCount;
-                app_->RequestPageSelect(bankIx);
+        // The eight presses that travel as synth::MessageIn::AppCommand --
+        // encoder press (drill-in cap), page select and its two carousel
+        // arrows, Randomize All/Page, Reset All/Page -- mapped from their
+        // action name to the app's own command number through one table.
+        // (Crunchy removed operator 2026-07-27 -- see this file's header
+        // comment.) The arrows no longer resolve their own target or gate on
+        // DrillLevel() here: FroggersAppCore::ApplyAppCommand does both, from
+        // its own current page, on the audio thread. FroggersParseSize on an
+        // action with no value (every command but encoder press and page
+        // select) returns its 0 fallback, which every one of those commands
+        // ignores, so one parse serves all eight.
+        static constexpr struct {
+            const char* actionName;
+            FroggersCommand command;
+        } kAppCommandTable[] = {
+            {FroggersActions::kEncoderPress, FroggersCommand::kEncoderPress},
+            {FroggersActions::kPageSelect, FroggersCommand::kPageSelect},
+            {FroggersActions::kPagePrevious, FroggersCommand::kPagePrevious},
+            {FroggersActions::kPageNext, FroggersCommand::kPageNext},
+            {FroggersActions::kRandomizeAll, FroggersCommand::kRandomizeAll},
+            {FroggersActions::kRandomizePage, FroggersCommand::kRandomizePage},
+            {FroggersActions::kResetAll, FroggersCommand::kResetAll},
+            {FroggersActions::kResetPage, FroggersCommand::kResetPage},
+        };
+        for (const auto& entry : kAppCommandTable) {
+            if (action.name == entry.actionName) {
+                PushMessage(synth::MessageIn::AppCommand(
+                    NowMicros(), static_cast<std::size_t>(entry.command),
+                    static_cast<float>(FroggersParseSize(action.value, 0))));
+                return;
             }
-            return;
-        }
-        if (action.name == FroggersActions::kPageNext) {
-            if (app_->DrillLevel() == 0) {
-                // No `+ kFroggersPageCount` term here, unlike kPagePrevious
-                // above: this is a plain addition of two non-negative
-                // std::size_t values, which cannot underflow, so there is no
-                // borrow to guard against the way the subtraction above has.
-                const std::size_t bankIx = (CurrentPageIndex() + 1) % kFroggersPageCount;
-                app_->RequestPageSelect(bankIx);
-            }
-            return;
-        }
-        if (action.name == FroggersActions::kRandomizeAll) {
-            app_->RequestRandomizeAll();
-            return;
-        }
-        if (action.name == FroggersActions::kRandomizePage) {
-            app_->RequestRandomizePage();
-            return;
-        }
-        if (action.name == FroggersActions::kResetAll) {
-            app_->RequestResetAll();
-            return;
-        }
-        if (action.name == FroggersActions::kResetPage) {
-            app_->RequestResetPage();
-            return;
         }
         if (action.name == FroggersActions::kBpm) {
             // Belt-and-suspenders -- the slider itself renders as a
@@ -2335,9 +2310,13 @@ private:
             // guard here means the audio-thread's own no-op
             // (MasterClock::SetTempoBpm's `syncConfig_.receiveClock` check)
             // is not the ONLY thing preventing a stray request from an
-            // out-of-date rendered tree.
-            if (!app_->TempoExternallyClocked()) {
-                app_->RequestTempoBpm(static_cast<double>(FroggersParseFloat(action.value, 120.0f)));
+            // out-of-date rendered tree. Reads the same requested sync
+            // configuration the audio thread reads (AppContext::
+            // syncConfiguration), never a mirror this surface keeps.
+            if (context_ != nullptr && context_->syncConfiguration && !context_->syncConfiguration().receiveClock) {
+                const float bpm = FroggersParseFloat(action.value, 120.0f);
+                const float normalized = (bpm - kFroggersBpmMin) / (kFroggersBpmMax - kFroggersBpmMin);
+                PushMessage(synth::MessageIn::SetTempoBpmNormalized(NowMicros(), normalized));
             }
             return;
         }
