@@ -1403,28 +1403,34 @@ void FroggersPluginProcessor::PumpStatePersistence() {
                 // page exactly where FroggersParameterModel::Init() already
                 // put it (page 0). Unlike the Freeze latch, this does NOT
                 // write a host parameter's JUCE value directly: the visible
-                // page is not a host-automatable parameter, and
-                // FroggersAppCore::RequestPageSelect() (the same public seam
-                // FroggersUiSurface.hpp's own page buttons call) is the only
-                // authority that also reconstructs drillIn_ for the restored
-                // page -- pushing MessageIn::SelectParamBank or writing
-                // activePageIx_/drillIn_ directly would bypass that
-                // reconstruction. A saved index a host project can name that
-                // this build no longer has (kFroggersPageCount shrank, or
-                // the blob is corrupt/hostile) is bounds-checked HERE,
-                // before ever reaching RequestPageSelect(), rather than
-                // trusted blind: ProcessFrame()'s own internal pageRequest
-                // check (FroggersAppCore.hpp) only guards against a
-                // negative/too-large `int` after a std::size_t round trip,
-                // which a negative int64_t here could already have
-                // aliased into a large positive std::size_t before ever
-                // reaching that check.
+                // page is not a host-automatable parameter, and this
+                // dispatches through the exact seam FroggersUiSurface.hpp's
+                // own page buttons use -- PortableSurface().DispatchAction()
+                // with a page-select action carrying the target page as its
+                // value, the same call PumpStatePersistence()'s Play/Stop
+                // restore above already makes. That reaches
+                // FroggersAppCore::ApplyAppCommand on the audio thread (via
+                // MessageIn::AppCommand), the sole authority that also
+                // reconstructs drillIn_ for the restored page through
+                // SelectPage() -- writing activePageIx_/drillIn_ directly
+                // here would bypass that reconstruction. A saved index a
+                // host project can name that this build no longer has
+                // (kFroggersPageCount shrank, or the blob is corrupt/hostile)
+                // is bounds-checked HERE, before ever dispatching, rather
+                // than trusted blind: ApplyAppCommand's own bankIx bound
+                // (FroggersAppCore.hpp) only guards a std::size_t already
+                // truncated from the float this action's value round-trips
+                // through, which a negative int64_t here could already have
+                // aliased into a large positive value before ever reaching
+                // that check.
                 const synth::JSON visiblePageIndexJson = root.Get(kSessionExtrasKey).Get(kVisiblePageIndexKey);
                 if (IsJsonInteger(visiblePageIndexJson)) {
                     const std::int64_t requestedPageIx = visiblePageIndexJson.IntegerValue();
                     if (requestedPageIx >= 0 &&
                         static_cast<std::uint64_t>(requestedPageIx) < synth_froggers::kFroggersPageCount) {
-                        engine_.Application().RequestPageSelect(static_cast<std::size_t>(requestedPageIx));
+                        engine_.Application().PortableSurface().DispatchAction(synth::ui::Action::WithValue(
+                            synth_froggers::FroggersActions::kPageSelect,
+                            std::to_string(requestedPageIx)));
                     }
                 }
                 // Same missing-or-wrong-typed-is-a-no-op treatment as the two
