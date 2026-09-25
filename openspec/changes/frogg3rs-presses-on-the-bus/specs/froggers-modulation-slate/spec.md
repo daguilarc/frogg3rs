@@ -1,18 +1,18 @@
 # Delta — `froggers-modulation-slate`
 
-A Randomize press zeroes a knob's existing depths inside its draw, and the
-zeroed slots are released only after the whole press, so a press can need
-old plus new slots at once; when none is free the knob silently gets fewer
-routes than it drew. The operator ruled this the bug to fix. The
-requirement below restates the promoted text and adds the storage rule; the
-draw half is unchanged.
+Depth storage runs short through real player paths: a parameter-page
+Randomize All after a drill session draws fewer routes than it drew, and a
+Load or session restore of a patch saved from that session drops depths and
+reports Ok. The operator ruled the first the bug to fix. The requirement
+below restates the promoted text and adds the storage rule; the draw half
+is unchanged.
 
 ## MODIFIED Requirements
 
 ### Requirement: Randomized source count is biased toward few, and depth storage is allocated once
 The randomizer SHALL draw its source count geometrically, each count half as likely as the one below it, from a floor that depends on WHICH GESTURE was pressed and where: Randomize All at a drilled-in modulation level draws from a floor of one, so every such press draws at least one source and one source is the most likely outcome; every other randomize draw — Randomize All on a parameter page, and Randomize Page at any level — draws from a floor of zero, so about half of those calls draw no sources at all. Depth storage for a given source SHALL be allocated once, on first use, rather than reallocated on each press; and storage for a source the current roll did not pick SHALL be released as part of the press, so that repeated randomization presses do not accumulate depth parameters no current source assignment accounts for.
 
-A press SHALL zero every depth it will redraw before it draws any, and SHALL release the zeroed slots before the draw, so that the draw needs at most the slots its new sources add. The app SHALL set each group's depth-storage low watermark to the most depths one press can add at its largest view and SHALL size the launch batch to cover it, so the framework's own low-water request keeps available storage above one press. A press that still finds fewer available slots than it needs SHALL request the shortfall and hold at the head of the UI bus, unchanged, asking again on every block until the storage arrives, and SHALL then run whole; a press SHALL NOT draw fewer routes than it drew.
+The app SHALL set the group's depth-storage low watermark to the same constant that sizes its launch batch, the most depths one press can create (every parameter carrying a depth for every source), so that the framework's own low-water request, made at every allocation on the audio thread and provisioned at the next message tick, keeps available storage above one press before the next tick's presses; and a patch SHALL get its own storage before it applies, at startup and running (the framework's requirement). Under that, a press SHALL NOT draw fewer routes than it drew, and a patch SHALL NOT open with a depth missing, through any path a player reaches: a page press after a drill session that has grown live depths past the launch storage, a relaunch or session restore that opens a patch saved from such a session, a Load of it while running, or a press in the same tick as a patch that fits.
 
 A parameter the zero-floor draw leaves at no sources SHALL carry no modulation
 depth and SHALL therefore show no modulation badge, so that a randomized bank
@@ -60,12 +60,22 @@ to randomize exactly what is displayed and a floor is not part of that.
 - **AND** the storm is scoped to a different bank than the armed depth, because a randomize covering that bank would re-roll the depth itself and say nothing about what the release may take
 - Check: `app/FroggersAudioRoutingTests.cpp`'s `release_keeps_an_armed_depth_and_takes_a_neutral_one`. Passing; red with the release removed, on the neutral half.
 
-#### Scenario: Available storage stays above one press
-- **WHEN** Randomize All is pressed fifty times at four blocks per press
-- **THEN** at every press the available depth-slot count is at least the depths that press can add at its view
-- Check: not yet delivered; the change's task 4.2 adds the case to FroggersAudioRoutingTests.cpp; red with the framework's default watermark once depths grow past the launch storage
+#### Scenario: A page press after a long drill session draws whole
+- **WHEN** the player drills into each parameter, presses Randomize All at level 1, opens each level-2 view and presses Randomize All there, and returns, until live depths exceed the launch storage, and then presses Randomize All on a parameter page
+- **THEN** no parameter gets fewer routes than it drew
+- Check: not yet delivered; the change's task 4.1 adds the case to FroggersAudioRoutingTests.cpp; red at the framework's default watermark
 
-#### Scenario: A press that finds storage short waits, then runs whole
-- **WHEN** the watermark is forced to zero, and a Load of a depth-heavy patch and a Randomize All are dispatched in one tick
-- **THEN** the Randomize is unapplied after the Load's block, applied whole within two message ticks with no depth short, and a Reset dispatched after it lands after it
-- Check: not yet delivered; the change's task 4.3 adds the case to FroggersAudioRoutingTests.cpp
+#### Scenario: A relaunch opens a patch saved from that session whole
+- **WHEN** a fresh instance starts on data paths whose last-opened patch was saved from the session above
+- **THEN** every depth the patch carries is live before the first audio block
+- Check: not yet delivered; the change's task 4.1 adds the case to FroggersAudioRoutingTests.cpp
+
+#### Scenario: A Load of that patch while running is whole after the retry
+- **WHEN** a running instance loads, or a host restores, the same patch
+- **THEN** the running patch is unchanged until the provisioning tick and every depth the patch carries is live after the retry
+- Check: not yet delivered; the change's task 4.1 adds the case to FroggersAudioRoutingTests.cpp
+
+#### Scenario: A press in the same tick as a patch that fits draws whole
+- **WHEN** a patch that fits on its own is loaded in the same message tick as a Randomize All is pressed
+- **THEN** the press draws whole and the patch applies
+- Check: not yet delivered; the change's task 4.1 adds the case to FroggersAudioRoutingTests.cpp
