@@ -109,7 +109,7 @@ constexpr const char* kVisiblePageIndexKey = "visibleBankIndex";
 // (PumpStatePersistence()) for the accessor/authority each direction uses,
 // and ApplyInputSelection()'s own comment for why the restore side
 // bounds-checks against the CURRENT bus rather than trusting the stored
-// index. Missing key (a blob saved before this change existed) restores to
+// index. Missing key (a blob saved before this key existed) restores to
 // 0 ("None"), the same default a fresh session already starts at -- opt-in
 // audio is off until the operator affirmatively selects a channel again.
 constexpr const char* kInputSelectionKey = "inputSelection";

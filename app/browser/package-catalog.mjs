@@ -11,10 +11,10 @@
 //     - immutable, content-addressed package (build id derived from
 //       artifact content)
 //   External/Sheaf/openspec/specs/synth-browser-app-catalog/spec.md
-//     - sbac-2 (:25-39): catalog schema, media types, SHA-256 digests
-//     - sbac-3 (:41-51): global id is "<publisher-id>/<app-id>"
-//     - sbac-7 (:95-106): CORS package sidecar materialization
-//     - sbac-10 (:140-157): first-party catalog + package, local dev source
+//     - (:25-39): catalog schema, media types, SHA-256 digests
+//     - (:41-51): global id is "<publisher-id>/<app-id>"
+//     - (:95-106): CORS package sidecar materialization
+//     - (:140-157): first-party catalog + package, local dev source
 //
 // DOES NOT REIMPLEMENT Sheaf's generic package/catalog tooling. Reused
 // directly (read-only imports, no Sheaf source edited):
@@ -44,8 +44,8 @@
 // checkout, and `publishSite` additionally emits a full generic launcher
 // site (index.html, rollback pages, runtime modules) that
 // froggers-browser-package/spec.md's "Registry listing requires no Sheaf
-// source change" + sbac-11's "Pages artifact excludes launcher authority"
-// explicitly say we must NOT ship (GitHub Pages is a publisher-only
+// source change" + External/Sheaf/openspec/specs/synth-browser-app-catalog/spec.md's
+// "Pages artifact excludes launcher authority" explicitly say we must NOT ship (GitHub Pages is a publisher-only
 // catalog/package origin here, not a launcher). We are a third-party
 // publisher assembling our OWN catalog; `assemblePackage` + `parseCatalog`
 // are the generic building blocks meant for exactly that, and are used

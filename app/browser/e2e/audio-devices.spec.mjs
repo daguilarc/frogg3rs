@@ -131,8 +131,8 @@ test.describe("audio device lists", () => {
 // `deviceId` and `label` empty, so it can offer no device to select, and Retry
 // re-requests the empty selection and arms the release sentinel. Nothing in
 // that state reaches `getUserMedia`, which is the only call that can raise a
-// permission prompt -- so before this change there was no sequence of actions
-// that reached a microphone at all.
+// permission prompt -- so no sequence of actions in this state reaches a
+// microphone at all.
 //
 // Everything here drives a STUBBED `navigator.mediaDevices`. The project's own
 // `--use-fake-device-for-media-stream` flag hands the page labelled devices

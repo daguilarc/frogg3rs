@@ -2523,8 +2523,8 @@ TEST_CASE(state_information_legacy_blob_without_input_selection_key_restores_to_
     const std::string fullText(static_cast<const char*>(fullState.getData()), fullState.getSize());
     // Reuses the SAME trimming helper the bank-index "missing key" test
     // above uses: it keeps only "freezeLatched" in sessionExtras, so the
-    // trimmed blob has no "inputSelection" key either -- exactly "a blob
-    // saved before this change existed."
+    // trimmed blob has no "inputSelection" key either -- exactly a blob
+    // saved before the "inputSelection" key existed.
     const std::string trimmedText = BuildPatchTextWithSessionExtrasKeepingOnlyFreezeLatched(fullText);
     REQUIRE_TRUE(trimmedText.find("sessionExtras") != std::string::npos);
     REQUIRE_TRUE(trimmedText.find("inputSelection") == std::string::npos);

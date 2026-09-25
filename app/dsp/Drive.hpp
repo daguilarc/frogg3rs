@@ -245,10 +245,9 @@ struct Oversampler2x
     // (Drive slot 9, "Anti-alias brightness" / "ABrt"): the knob is
     // repurposed from a one-pole brightness trim (which could not reach
     // the aliasing band, see class comment above) into a clean-to-grit
-    // crossfade. knob01 == 1 (this control's new default,
-    // FroggersParameters.hpp) is ALL grit -- bit-identical to what shipped
-    // before this change, `cleanMix` at its own default of 0.0 -- and
-    // knob01 == 0 is the clean 4x path, to within the equal-power law's own
+    // crossfade. knob01 == 1 (this control's default, FroggersParameters.hpp)
+    // is ALL grit -- bit-identical to `cleanMix` at its own default of 0.0 --
+    // and knob01 == 0 is the clean 4x path, to within the equal-power law's own
     // endpoint residual: `EqualPowerWetDry` reaches this end at theta ==
     // pi/2, where float `cos` returns -4.37e-8 rather than 0, so a trace of
     // the grit leg survives at about -147 dB. That endpoint is clean, not

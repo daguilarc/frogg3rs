@@ -2222,9 +2222,9 @@ TEST_CASE(lane_six_visualizer_omits_the_full_node_background_but_still_draws_its
     REQUIRE_TRUE(lane6SawPolyline);
     REQUIRE_TRUE(lane6SawPlayhead);
 
-    // (c) Lanes 1-5 are unaffected -- this change touches only lane 6's
-    // constructor argument; each of the other five still draws exactly its
-    // own trace/playhead pair.
+    // (c) Lanes 1-5 are unaffected -- only lane 6's constructor argument
+    // differs; each of the other five still draws exactly its own
+    // trace/playhead pair.
     for (std::size_t lane = kModSlotRandomSh1; lane <= kModSlotRandomSh5; ++lane) {
         const std::vector<synth::ui::DrawCommand> laneCommands = DrawLane(lane);
         bool laneSawPolyline = false;

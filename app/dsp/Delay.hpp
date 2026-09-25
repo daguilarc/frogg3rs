@@ -826,8 +826,8 @@ struct StereoDelay
         // clamped the fbEff*fbDrive PRODUCT to unity. That form is
         // NON-MONOTONIC: at fbDrive 4.0 it runs 0.98 -> 0.25, so raising
         // Freeze LOWERED loop gain (3.92 -> 1.00). A knob that goes down as
-        // it turns up violates this change's own requirement that a control
-        // move "in the direction its name implies". What `fbDrive` multiplies
+        // it turns up violates the requirement that a control move "in the
+        // direction its name implies". What `fbDrive` multiplies
         // afterward is Feedback Drive's business, exactly as it is for every
         // other value in this loop.
         //

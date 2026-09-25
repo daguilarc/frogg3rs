@@ -479,9 +479,9 @@ TEST_CASE(output_clamp_never_engages_for_normal_level_default_patch) {
     // A normal-level signal passes through the clamp bit-identical: since
     // SanitizeOutputSample's clamp is a no-op for any |x| already <=
     // kMaxOutputMagnitude, proving every sample of the untouched default
-    // patch stays strictly under the NEW (tighter) 1.0f ceiling
-    // proves the clamp never fires for it -- so this change could not have
-    // altered a single one of its samples.
+    // patch stays strictly under the tighter 1.0f ceiling
+    // proves the clamp never fires for it -- so tightening the ceiling could
+    // not have altered a single one of its samples.
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("output_clamp_normal_level"));
     rig.StartAt(0);
     rig.RunBlocks(8);
@@ -736,7 +736,7 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
 
 // -----------------------------------------------------------------------
 // The test above proves the master stays at unity
-// under STATIC knobs only. This change's own acceptance criterion is "all
+// under STATIC knobs only. This test's own acceptance criterion is "all
 // maxima, modulation live" -- measurement showed DriveBlendPhase's allpass
 // coefficient (read fresh every sample from the Drive/Phase knob) hitting
 // 50.5x under periodic phase/content coincidence, the largest known
@@ -2717,7 +2717,7 @@ TEST_CASE(encoder_edit_while_frozen_changes_the_output_measurably) {
 // own Fixture calls FroggersModulationSlate::Step() directly (its own
 // header comment: "no Engine/SynthRig needed"), bypassing
 // FroggersAppCore::ProcessBlock entirely -- exactly where this gate lives --
-// so it structurally cannot observe this change. This file already drives
+// so it structurally cannot observe the gate. This file already drives
 // ProcessBlock through the real synth_rig::SynthRig<FroggersApp> path (see
 // e.g. the stopping_transport_silences_self_sustaining_delay_and_reverb
 // tests above), so it is the correct home, following the same TEST_CASE/

@@ -832,8 +832,7 @@ public:
                 // The same vector already takes ~999 pushes from this same
                 // thread whenever the operator drills out, which is the wider
                 // exposure and is not created here; sizing that reservation
-                // is a Sheaf-side question this change deliberately does not
-                // open.
+                // is a Sheaf-side question this file leaves open.
                 context_->parameterManager->CollectNeutralLocalParameters();
             }
             // ONE reseed covering both drains above, for two different reasons.

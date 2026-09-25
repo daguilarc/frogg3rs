@@ -10521,7 +10521,7 @@ TEST_CASE(drive_gain_makes_distortion_and_the_manglers_act_at_any_gain) {
     srr2Only.srr2 = 0.60f;
 
     // -26 dB is a five-percent spectral difference, the "plainly audible"
-    // threshold this change measured every Drive control's floor against.
+    // threshold every Drive control's floor is measured against.
     constexpr double kPlainlyAudibleDb = -26.0;
     const double xorDb = diffDb(render(xorOnly), reference);
     const double bitsDb = diffDb(render(bitsOnly), reference);

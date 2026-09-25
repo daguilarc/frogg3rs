@@ -30,8 +30,8 @@ test.describe("first-visit boot race", () => {
 // Suppressing the boot-error report while an isolation attempt is owed is
 // only safe because every path where no reload is coming settles the
 // attempt instead. If it ever stops settling, the page goes silently
-// blank forever -- strictly worse than the false panel this change
-// removed, because a visitor is left with no reason at all. Registration
+// blank forever -- strictly worse than showing a false panel, because a
+// visitor is left with no reason at all. Registration
 // failing is the cleanest way to reach that path: coi-serviceworker.js's
 // register().catch() settles, site-boot.mjs proceeds, the un-isolated
 // SharedArrayBuffer transfer throws for real, and the panel MUST appear.

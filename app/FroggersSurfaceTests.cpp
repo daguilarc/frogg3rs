@@ -1037,10 +1037,10 @@ TEST_CASE(page_carousel_arrows_are_centered_in_the_modulation_header_band_at_top
 // drilled) rather than merely hiding one side. Complements the existing
 // modulation_header_shown_only_while_drilled_in_and_matches_the_level /
 // modulation_header_sits_below_page_row_and_above_parameter_cells tests
-// above, which this change re-anchors onto kModulationHeaderTitle for their
-// own draw-content checks (see that constant's own comment,
-// FroggersUiSurface.hpp) since kModulationHeader is no longer the leaf that
-// carries the title's draw commands.
+// above, which check their own draw content against kModulationHeaderTitle
+// (see that constant's own comment, FroggersUiSurface.hpp) since
+// kModulationHeader is no longer the leaf that carries the title's draw
+// commands.
 TEST_CASE(modulation_header_band_bounds_are_identical_across_drill_states_and_arrows_vanish_while_drilled) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
         /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("page_carousel_arrows_drilled"));
@@ -2149,9 +2149,8 @@ TEST_CASE(scene_blend_slider_presents_1_to_2_while_the_underlying_blend_stays_0_
     REQUIRE_TRUE(std::fabs(blendNodeAtDefault->value - 1.0f) < 0.001f);
 
     // Push the underlying blend to its other extreme via the Scene 2
-    // button (unaffected by this change) and confirm the
-    // presented value follows with the same +1 offset -- 1.0 blend presents
-    // as 2.0.
+    // button and confirm the presented value follows with the same +1
+    // offset -- 1.0 blend presents as 2.0.
     surface.DispatchAction(
         synth::ui::Action::WithValue(synth_froggers::FroggersActions::kSceneSelect, "1"));
     rig.RunBlocks(4);
