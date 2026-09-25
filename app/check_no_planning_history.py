@@ -32,9 +32,33 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_common import walk_sources  # noqa: E402
+from check_common import joined_at, walk_sources  # noqa: E402
 
 NAME = "check-no-planning-history"
+
+# ID_LABEL_PATTERN catches an audit-style id used as a standalone label: one
+# capital letter and one or two digits set off by the punctuation a label
+# uses and prose never does -- wrapped in parens ("(A15)"), immediately
+# followed by a colon ("D3:"), or hyphen-joined to a single bare capital
+# letter that is not itself a range endpoint ("R2-B", not "D1-D10" or
+# "E1-E4", where the letter after the hyphen carries its own digits). A bare
+# `[A-Z][0-9]{1,2}` with no such punctuation is deliberately NOT matched: it
+# is exactly the shape of a note name (`A4`), a register (`R2`), an ADSR
+# stage label (`S1`, `D2`), a compiler flag (`-O2`), or a grid/row reference
+# (`E1-E4`), and this tree uses all of those as real technical vocabulary --
+# confirmed by running the unpunctuated pattern across app/ and finding zero
+# of its hits were a planning-history citation.
+ID_LABEL_PATTERN = re.compile(r"\([A-Z][0-9]{1,2}\)|\b[A-Z][0-9]{1,2}:|\b[A-Z][0-9]{1,2}-[A-Z]\b")
+
+# `\s*`, not `\s+`: these two are two-word phrases, and a phrase this long
+# wraps onto a continuation comment line in practice (both did, in the two
+# lines this pattern was written to catch). `offending_lines` below also
+# searches these against `joined_at`'s output, which drops the wrap point's
+# whitespace entirely rather than inserting a space back in (see that
+# function's own docstring) -- `\s+` would then never match the join, and
+# the phrase would still slip through split exactly the way it did before.
+COORDINATOR_RULING = re.compile(r"\bcoordinator\s*ruling\b", re.I)
+FLAGGED_FOR_REVIEW = re.compile(r"\bflagged\s*for\s*review\b", re.I)
 
 PATTERNS = [
     (re.compile(r"\btasks?\b", re.I), "names a task instead of the behaviour"),
@@ -44,6 +68,22 @@ PATTERNS = [
     (re.compile(r"§\s*\d"), "cites a rule section"),
     (re.compile(r"\bproposals?\b", re.I), "cites a proposal"),
     (re.compile(r"\bSTEP\s+\d"), "cites a numbered planning step"),
+    (COORDINATOR_RULING, "cites a coordinator ruling instead of describing the code"),
+    (FLAGGED_FOR_REVIEW, "flags a sentence for review instead of stating the fact"),
+    (ID_LABEL_PATTERN, "cites an audit-style id used as a label"),
+]
+
+# Checked again against two lines joined (see `offending_lines`): the phrase
+# a wrapped comment splits across a line break, so a single-line scan never
+# sees it whole. Not the whole PATTERNS list -- a single word like `task` or
+# `proposal` cannot lose its meaning to a wrap, and re-running every pattern
+# against every joined pair would risk a match manufactured by content that
+# was never actually split (two unrelated lines whose concatenation happens
+# to spell a hit). Limited to the two patterns this shipped to fix, both of
+# which are known to wrap in this tree's actual comment width.
+WRAP_PATTERNS = [
+    (COORDINATOR_RULING, "cites a coordinator ruling instead of describing the code"),
+    (FLAGGED_FOR_REVIEW, "flags a sentence for review instead of stating the fact"),
 ]
 
 # `design doc` is DELIBERATELY ABSENT for the same reason `D[0-9]+` is. Its one
@@ -82,13 +122,29 @@ SCAN_EXT = (".cpp", ".hpp", ".py", ".sh")
 def offending_lines(path):
     out = []
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
-        for n, line in enumerate(fh, 1):
-            if any(a.search(line) for a in ALLOWED):
-                continue
-            for pat, why in PATTERNS:
-                if pat.search(line):
-                    out.append((n, why, line.strip()[:100]))
-                    break
+        lines = fh.read().splitlines()
+
+    for n, line in enumerate(lines, 1):
+        if any(a.search(line) for a in ALLOWED):
+            continue
+        for pat, why in PATTERNS:
+            if pat.search(line):
+                out.append((n, why, line.strip()[:100]))
+                break
+
+    for n in range(len(lines)):
+        joined, k, boundary = joined_at(lines, n)
+        if joined is None or any(a.search(joined) for a in ALLOWED):
+            continue
+        for pat, why in WRAP_PATTERNS:
+            m = pat.search(joined)
+            # Only a match straddling the join is one neither line spelled on
+            # its own; anything else was already reported by the per-line
+            # pass above, and re-reporting it here would double-count it.
+            if m and m.start() < boundary < m.end():
+                out.append((n + 1, why + " (split across the line break from :" + str(k + 1) + ")",
+                             (lines[n].strip() + " / " + lines[k].strip())[:100]))
+                break
     return out
 
 

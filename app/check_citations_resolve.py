@@ -37,7 +37,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_common import path_index, walk_all, walk_sources  # noqa: E402
+from check_common import joined_at, path_index, walk_all, walk_sources  # noqa: E402
 
 NAME = "check-citations-resolve"
 
@@ -70,23 +70,6 @@ SPLIT_PATH = re.compile(r"[A-Za-z0-9_./-]*[A-Za-z0-9_-]\.(?:hpp|cpp|h|mm|md|py|s
 # Every extension a comment can live in. Wider than SCAN_EXT above: a split in a
 # shell script or a markdown file is no less invisible than one in a header.
 SPLIT_EXT = (".cpp", ".hpp", ".h", ".c", ".mm", ".py", ".sh", ".mjs", ".js", ".ts", ".md")
-
-COMMENT_HEAD = re.compile(r"^\s*(?://+|#+|\*+|<!--)\s?")
-
-
-def joined_at(lines, n):
-    """Line `n` (0-based) joined to the next line that carries any text.
-
-    A citation can wrap across a bare `//` spacer, so the continuation is the
-    next line with a body rather than strictly the next line. Returns the joined
-    text, the index of the continuation, and the offset where the join happened.
-    """
-    head = lines[n].rstrip()
-    for k in range(n + 1, min(n + 3, len(lines))):
-        body = COMMENT_HEAD.sub("", lines[k])
-        if body.strip():
-            return head + body.lstrip(), k, len(head)
-    return None, None, None
 
 
 def citations_spanning(joined, boundary, paths):

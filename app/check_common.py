@@ -12,11 +12,45 @@ Not a general utility. One walk, one exclusion list, one place to correct them.
 """
 
 import os
+import re
 
 # Build outputs, vendored trees and git's own storage. `.git` matters: a walk
 # without it can match a filename inside .git/objects and report a citation as
 # resolving to something no reader can open.
 EXCLUDED_DIRS = ("build", "build-launcher", "node_modules", ".git", ".venv-pages")
+
+# A comment or markup line's own marker, stripped so `joined_at` below can
+# concatenate a wrapped comment's continuation onto its head without also
+# gluing on a second `//`. Shared because two checks now join wrapped comment
+# lines this way; see `joined_at`'s own docstring for what it does and does
+# not preserve at the join point.
+COMMENT_HEAD = re.compile(r"^\s*(?://+|#+|\*+|<!--)\s?")
+
+
+def joined_at(lines, n):
+    """Line `n` (0-based) joined to the next line that carries any text.
+
+    A citation, or a phrase, can wrap across a bare `//` spacer, so the
+    continuation is the next line with a body rather than strictly the next
+    line. Returns the joined text, the index of the continuation, and the
+    offset where the join happened.
+
+    The join drops whatever whitespace sat at the wrap point (the comment
+    head's own trailing space is stripped along with the marker, and the
+    head text is rstripped): correct for a path or identifier split at a
+    non-space character, where nothing belongs at the seam. A pattern
+    matching prose wrapped at a word boundary must allow for the resulting
+    zero-width seam itself (`\\s*`, not `\\s+`, between the words that used to
+    have a real space between them) rather than have this join insert one,
+    which would corrupt the path/identifier case every other caller relies
+    on.
+    """
+    head = lines[n].rstrip()
+    for k in range(n + 1, min(n + 3, len(lines))):
+        body = COMMENT_HEAD.sub("", lines[k])
+        if body.strip():
+            return head + body.lstrip(), k, len(head)
+    return None, None, None
 
 
 def walk_sources(root, extensions):
