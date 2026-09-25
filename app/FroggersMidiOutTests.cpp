@@ -631,14 +631,11 @@ constexpr int kPitchStepTargetNote = 52;
 // ---------------------------------------------------------------------------
 // pitch_step_confirms_within_100ms
 // ---------------------------------------------------------------------------
-// The requirement's own <=100 ms latency bound, measured the way
-// measure-q/QShippedRule.cpp's own worst-latency render measured it (the
-// same render measure-q/report-shipped-rule.md Table 2's 75.417 ms/94.271
-// ms figures come from): 20 up/back steps of the default patch's three VCO pitch
-// knobs, a factor of 1.5, one every quarter note (0.5 s at the default
-// 120 bpm) and landing 5% into that quarter's own gate-open window, worst
-// latency taken over all 20 "up" transitions to the real MIDI-out note-on
-// for note 52.
+// The requirement's own <=100 ms latency bound: 20 up/back steps of the
+// default patch's three VCO pitch knobs, a factor of 1.5, one every quarter
+// note (0.5 s at the default 120 bpm) and landing 5% into that quarter's own
+// gate-open window, worst latency taken over all 20 "up" transitions to the
+// real MIDI-out note-on for note 52.
 void AssertPitchStepConfirmsWithin100Ms(int blockSize, double& outWorstLatencyMs) {
     Rig::AudioSettings settings;
     settings.sampleRate = 48000.0;
@@ -728,11 +725,8 @@ TEST_CASE(pitch_step_confirms_within_100ms_at_128_and_256_frames) {
     double worst256 = 0.0;
     AssertPitchStepConfirmsWithin100Ms(128, worst128);
     AssertPitchStepConfirmsWithin100Ms(256, worst256);
-    // measure-q/report-shipped-rule.md Table 2's own figures for this exact
-    // render: 75.417 ms at 128-frame, 94.271 ms at 256-frame.
     std::cout << "  [pitch latency] 128-frame: " << worst128
-              << " ms (shipped-rule reference 75.417 ms); 256-frame: " << worst256
-              << " ms (shipped-rule reference 94.271 ms)\n";
+              << " ms; 256-frame: " << worst256 << " ms\n";
 }
 
 // ---------------------------------------------------------------------------
