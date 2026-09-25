@@ -109,7 +109,7 @@ WHEN a take stops, THE app SHALL encode it on a thread other than the UI and mes
 - **THEN** no UI or message-thread call spends more than 33,333,333 ns on it
 - **AND** the file is offered within one tick of the encode finishing
 - **AND** its bytes equal the one-pass encode's
-- Check: `app/FroggersSurfaceTests.cpp: a_stopped_take_is_encoded_off_the_message_thread_to_the_same_bytes` covers the bytes clause; the 33,333,333 ns and one-tick clauses are not yet delivered — the coordinator names the change that adds their case
+- Check: `app/FroggersSurfaceTests.cpp: a_stopped_take_is_encoded_off_the_message_thread_to_the_same_bytes` covers the bytes clause; the 33,333,333 ns and one-tick clauses have no check yet
 
 ### Requirement: Arming a take never touches the buffer while the audio thread writes it
 WHEN Record is armed, re-armed, or stopped and armed again, THE app SHALL clear and resize the capture buffer and reset its frame count only after the audio thread has stopped writing the previous take, and the new take SHALL begin at its first frame with no leading silence carried over. The audio thread SHALL still never allocate, and a Record press SHALL still be refused while the transport is stopped.
