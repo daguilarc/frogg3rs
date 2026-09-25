@@ -1402,8 +1402,8 @@ void FroggersPluginProcessor::PumpStatePersistence() {
                 // dispatches through the exact seam FroggersUiSurface.hpp's
                 // own page buttons use -- PortableSurface().DispatchAction()
                 // with a page-select action carrying the target page as its
-                // value, the same call PumpStatePersistence()'s Play/Stop
-                // restore above already makes. That reaches
+                // value, the same call timerCallback()'s Play/Stop
+                // restore already makes. That reaches
                 // FroggersAppCore::ApplyAppCommand on the audio thread (via
                 // MessageIn::AppCommand), the sole authority that also
                 // reconstructs drillIn_ for the restored page through
