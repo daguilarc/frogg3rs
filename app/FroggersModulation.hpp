@@ -296,6 +296,14 @@ public:
         // construct a bare ParameterManager with no such pump running).
         group_->AddParameterStorageBatch(synth::MakeParameterStorageBatch(
             group_->Config(), group_->GestureCount(), extraDepthCapacity));
+
+        // The same ceiling, as the low watermark: the most depths one press
+        // can create is also the floor a patch or a press must never be
+        // asked to fit under, so the launch batch and the watermark cannot
+        // drift apart. Sheaf's own low-water request (RequestParameterStorageBatchIfLow)
+        // and the patch-apply provisioning it shares (Engine.hpp) both read
+        // this back through ParameterGroup::StorageLowWatermark().
+        group_->SetStorageLowWatermark(kDepthParameterStorageCapacity);
     }
 
     // Sample-rate-dependent setup (VCO pitch mapping needs the real rate at

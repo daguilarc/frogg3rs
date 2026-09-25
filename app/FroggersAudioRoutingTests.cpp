@@ -1020,6 +1020,300 @@ TEST_CASE(randomize_storm_holds_its_depth_working_set) {
     }
 }
 
+// ============================================================================
+// Storage watermark: a press never draws short, a patch never loads short
+// ============================================================================
+// FroggersModulationSlate::Init sets the group's low watermark to
+// kDepthParameterStorageCapacity (the same ceiling that sizes the launch
+// batch), so Sheaf's existing low-water top-up keeps available storage
+// above what one press needs even after a long drill session, and a saved
+// or loaded patch that needs more than the launch batch gets its storage
+// before it applies (Sheaf's own provisioning, App-agnostic). The four
+// cases below are the audit's reproduced player paths: RND-01/RND-02 (a
+// page press after the working set has grown), QR-01/QR-04 (a relaunch on
+// the same data paths), FILE-07/PLG-10 (a running Load) and RND-01 again
+// (a small patch loaded the same block as a press).
+//
+// Driven at the production message-tick cadence -- one tick per six
+// blocks, never per block -- the same way
+// arming_after_an_unpolled_truncated_capture_flushes_it_first
+// (app/FroggersSurfaceTests.cpp) already drives blocks without a tick:
+// SynthRig::RunBlocks() always pairs a block with a tick, which would let
+// storage provision every block instead of only once every six, hiding an
+// early retry.
+namespace storage_watermark {
+
+// `cursor`/`sinceTick` persist across calls so a routine built from many
+// small calls ticks on the same six-block boundary one long call would.
+struct ProductionCadence {
+    std::uint64_t cursor = 1;
+    std::size_t sinceTick = 0;
+};
+
+// Runs `blocks` audio blocks directly against the engine, bypassing
+// SynthRig::RunBlocks()'s own per-block tick, and ticks the message thread
+// only when a six-block boundary is crossed.
+void RunProductionBlocks(Rig& rig, ProductionCadence& cadence, std::size_t blocks) {
+    const synth::RuntimeConfig config = synth_froggers::FroggersApp::Config();
+    const std::size_t blockFrames = static_cast<std::size_t>(config.preferredBlockSize);
+    std::vector<std::vector<float>> inputBuffers(static_cast<std::size_t>(config.numAudioInputs),
+                                                  std::vector<float>(blockFrames, 0.0f));
+    std::vector<std::vector<float>> outputBuffers(static_cast<std::size_t>(config.numAudioOutputs),
+                                                   std::vector<float>(blockFrames, 0.0f));
+    std::vector<const float*> inputPointers(inputBuffers.size());
+    std::vector<float*> outputPointers(outputBuffers.size());
+    for (std::size_t ch = 0; ch < inputPointers.size(); ++ch) {
+        inputPointers[ch] = inputBuffers[ch].data();
+    }
+    for (std::size_t ch = 0; ch < outputPointers.size(); ++ch) {
+        outputPointers[ch] = outputBuffers[ch].data();
+    }
+    for (std::size_t i = 0; i < blocks; ++i) {
+        synth::AudioBlock block;
+        block.inputs = inputPointers.empty() ? nullptr : inputPointers.data();
+        block.outputs = outputPointers.empty() ? nullptr : outputPointers.data();
+        block.numInputChannels = config.numAudioInputs;
+        block.numOutputChannels = config.numAudioOutputs;
+        block.numFrames = blockFrames;
+        block.numRequestedInputChannels = config.numAudioInputs;
+        rig.Engine().ProcessBlock(block, cadence.cursor++);
+        cadence.sinceTick += 1;
+        if (cadence.sinceTick == 6) {
+            rig.Engine().MessageThreadTick();
+            cadence.sinceTick = 0;
+        }
+    }
+}
+
+// Runs `blocks` audio blocks directly against the engine with NO tick at
+// all -- the caller decides exactly when MessageThreadTick() runs, for the
+// running-Load case below, which asserts on the exact tick boundary.
+void RunBlocksWithNoTick(Rig& rig, ProductionCadence& cadence, std::size_t blocks) {
+    const synth::RuntimeConfig config = synth_froggers::FroggersApp::Config();
+    const std::size_t blockFrames = static_cast<std::size_t>(config.preferredBlockSize);
+    std::vector<std::vector<float>> inputBuffers(static_cast<std::size_t>(config.numAudioInputs),
+                                                  std::vector<float>(blockFrames, 0.0f));
+    std::vector<std::vector<float>> outputBuffers(static_cast<std::size_t>(config.numAudioOutputs),
+                                                   std::vector<float>(blockFrames, 0.0f));
+    std::vector<const float*> inputPointers(inputBuffers.size());
+    std::vector<float*> outputPointers(outputBuffers.size());
+    for (std::size_t ch = 0; ch < inputPointers.size(); ++ch) {
+        inputPointers[ch] = inputBuffers[ch].data();
+    }
+    for (std::size_t ch = 0; ch < outputPointers.size(); ++ch) {
+        outputPointers[ch] = outputBuffers[ch].data();
+    }
+    for (std::size_t i = 0; i < blocks; ++i) {
+        synth::AudioBlock block;
+        block.inputs = inputPointers.empty() ? nullptr : inputPointers.data();
+        block.outputs = outputPointers.empty() ? nullptr : outputPointers.data();
+        block.numInputChannels = config.numAudioInputs;
+        block.numOutputChannels = config.numAudioOutputs;
+        block.numFrames = blockFrames;
+        block.numRequestedInputChannels = config.numAudioInputs;
+        rig.Engine().ProcessBlock(block, cadence.cursor++);
+    }
+}
+
+// Drills into every one of two pages' 16 top-level parameters, Randomize
+// All at level 1 (the parameter's own 15 depths, cascading automatically
+// into whichever land actually modulating one level deeper), then opens
+// EVERY one of the 15 modulator lanes' own level-2 view and Randomizes All
+// there too. The manual level-2 visits are what carry the working set past
+// the launch batch: RandomizeAll's own internal cascade skips a lane that
+// landed neutral (detail::DepthIsModulating), but opening its view
+// materializes it regardless (Bank::OpenModulationView/
+// CanOpenModulationView). Backs out to level 0 between parameters and
+// leaves the rig there.
+void DrillAndRandomizeTwoPagesDeep(Rig& rig, ProductionCadence& cadence, std::size_t firstPageIx = 0) {
+    namespace FroggersActions = synth_froggers::FroggersActions;
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    constexpr std::size_t kPagesDrilled = 2;
+    constexpr std::size_t kLanesPerParameter = synth_froggers::FroggersParameterModel::kNumModulators;
+    const std::string kBackPress = std::to_string(synth_froggers::kFroggersCrunchySlot);
+    for (std::size_t pageIx = firstPageIx; pageIx < firstPageIx + kPagesDrilled; ++pageIx) {
+        surface.DispatchAction(synth::ui::Action::WithValue(FroggersActions::kPageSelect, std::to_string(pageIx)));
+        RunProductionBlocks(rig, cadence, 1);
+        for (std::size_t slotIx = 0; slotIx < synth_froggers::kFroggersSlotsPerBank; ++slotIx) {
+            surface.DispatchAction(
+                synth::ui::Action::WithValue(FroggersActions::kEncoderPress, std::to_string(slotIx)));
+            RunProductionBlocks(rig, cadence, 1);
+            surface.DispatchAction(synth::ui::Action::Named(FroggersActions::kRandomizeAll));
+            RunProductionBlocks(rig, cadence, 1);
+            for (std::size_t laneIx = 0; laneIx < kLanesPerParameter; ++laneIx) {
+                surface.DispatchAction(
+                    synth::ui::Action::WithValue(FroggersActions::kEncoderPress, std::to_string(laneIx)));
+                RunProductionBlocks(rig, cadence, 1);
+                // A disconnected lane (e.g. External Audio/EF with nothing
+                // routed) leaves an empty cell: the press is a no-op and
+                // Level() stays at 1, never opening a view to Randomize or
+                // Back out of -- position 15 is this parameter's OWN
+                // target/back cell already at Level()==1, so pressing it
+                // unconditionally here would pop out to Level()==0 early.
+                if (rig.Application().ActiveDrillIn().Level() == 2) {
+                    surface.DispatchAction(synth::ui::Action::Named(FroggersActions::kRandomizeAll));
+                    RunProductionBlocks(rig, cadence, 1);
+                    surface.DispatchAction(synth::ui::Action::WithValue(FroggersActions::kEncoderPress, kBackPress));
+                    RunProductionBlocks(rig, cadence, 1);
+                }
+            }
+            // Back out fully to level 0 before the next top-level parameter.
+            while (rig.Application().ActiveDrillIn().Level() > 0) {
+                surface.DispatchAction(synth::ui::Action::WithValue(FroggersActions::kEncoderPress, kBackPress));
+                RunProductionBlocks(rig, cadence, 1);
+            }
+        }
+    }
+}
+
+}  // namespace storage_watermark
+
+// RND-01/RND-02: after the drill session above has grown the working set
+// well past the launch batch, the operator's own next press -- a plain,
+// undrilled parameter-page Randomize All -- must not draw short.
+TEST_CASE(page_randomize_reports_no_partial_draw_after_a_drill_session_grows_depths_past_launch_storage) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("watermark_page_randomize"));
+    storage_watermark::ProductionCadence cadence;
+    storage_watermark::DrillAndRandomizeTwoPagesDeep(rig, cadence);
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
+
+    rig.Application().PortableSurface().DispatchAction(
+        synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
+    storage_watermark::RunProductionBlocks(rig, cadence, 1);
+
+    const std::size_t liveDepths = rig.Application().Parameters().Group().LiveLocalParameterCount();
+    const std::size_t availableSlots = rig.Application().Parameters().Group().AvailableParameterSlots();
+    std::cout << "  [watermark] after the drill session: " << liveDepths << " live local depths, "
+              << availableSlots << " available slots; page Randomize All partial draw = "
+              << rig.Application().LastRandomizePartial() << ".\n";
+    REQUIRE_TRUE(!rig.Application().LastRandomizePartial());
+}
+
+// QR-01/QR-04: a relaunch on the same data paths -- Initialize() (run
+// inside the rig's constructor, before this test's first block) reopens
+// the last-saved patch through the same startup storage-shortfall
+// provisioning a running Load uses.
+TEST_CASE(a_relaunch_on_the_same_data_paths_opens_a_grown_patch_whole_before_the_first_block) {
+    const synth::RuntimeDataPaths paths = UseScratchRuntimeDataPaths("watermark_startup_reopen");
+    const std::filesystem::path patchDir = paths.patchesRoot / "grown";
+
+    std::size_t grownLiveDepths = 0;
+    {
+        Rig rig(/*patchPumpBudgetBlocks=*/64, paths);
+        storage_watermark::ProductionCadence cadence;
+        storage_watermark::DrillAndRandomizeTwoPagesDeep(rig, cadence);
+        grownLiveDepths = rig.Application().Parameters().Group().LiveLocalParameterCount();
+        REQUIRE_TRUE(rig.SavePatchAs(patchDir) == synth_rig::RigPatchStatus::Written);
+    }
+    REQUIRE_TRUE(grownLiveDepths > 0);
+
+    // A fresh rig on the SAME data paths: its constructor's Initialize()
+    // reads the runtime configuration's last-opened-patch record the save
+    // above wrote and applies that patch inline before returning.
+    Rig relaunched(/*patchPumpBudgetBlocks=*/64, paths);
+    const std::size_t reopenedLiveDepths = relaunched.Application().Parameters().Group().LiveLocalParameterCount();
+    std::cout << "  [watermark] relaunch on the same data paths: " << grownLiveDepths
+              << " live depths saved -> " << reopenedLiveDepths << " live depths open, before the first block.\n";
+    REQUIRE_TRUE(reopenedLiveDepths == grownLiveDepths);
+}
+
+// FILE-07/PLG-10: the same grown patch, Loaded onto a DIFFERENT, plain
+// running rig mid-session, that rig ALSO already drilled -- on the other
+// two pages, so its own working set does not simply overlap the incoming
+// patch's -- so real available storage is genuinely short by the time the
+// Load lands, not just nominally so. The running patch stays exactly as
+// it was across every block before the message tick that provisions the
+// shortfall, and is whole on the first block after that tick clears the
+// flag -- the same structure Sheaf's own
+// engine_running_load_stashes_under_storage_shortfall_and_retries_whole_after_the_tick_provisions
+// (External/Sheaf/projects/synth/tests/engine_tests.cpp) already proves at
+// the engine level, driven here through the real Frogg3rs app and press
+// path instead of a minimal test app.
+TEST_CASE(a_running_load_of_a_grown_patch_stays_whole_after_the_storage_tick_provisions_it) {
+    const synth::RuntimeDataPaths growPaths = UseScratchRuntimeDataPaths("watermark_running_load_source");
+    const std::filesystem::path patchDir = growPaths.patchesRoot / "grown";
+    std::size_t grownLiveDepths = 0;
+    {
+        Rig builder(/*patchPumpBudgetBlocks=*/64, growPaths);
+        storage_watermark::ProductionCadence cadence;
+        storage_watermark::DrillAndRandomizeTwoPagesDeep(builder, cadence, /*firstPageIx=*/0);
+        grownLiveDepths = builder.Application().Parameters().Group().LiveLocalParameterCount();
+        REQUIRE_TRUE(builder.SavePatchAs(patchDir) == synth_rig::RigPatchStatus::Written);
+    }
+    REQUIRE_TRUE(grownLiveDepths > 0);
+    const std::optional<std::filesystem::path> versionFile = synth::LatestPatchVersion(patchDir);
+    REQUIRE_TRUE(versionFile.has_value());
+
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("watermark_running_load_target"));
+    storage_watermark::ProductionCadence cadence;
+    storage_watermark::DrillAndRandomizeTwoPagesDeep(rig, cadence, /*firstPageIx=*/2);
+    const std::size_t baselineLiveDepths = rig.Application().Parameters().Group().LiveLocalParameterCount();
+    std::cout << "  [watermark] running rig's own working set before the Load: " << baselineLiveDepths
+              << " live, " << rig.Application().Parameters().Group().AvailableParameterSlots()
+              << " available, watermark=" << rig.Application().Parameters().Group().StorageLowWatermark() << ".\n";
+
+    // A clean six-block cadence boundary before pushing the Load.
+    while (cadence.sinceTick != 0) {
+        storage_watermark::RunProductionBlocks(rig, cadence, 1);
+    }
+
+    const synth::PatchCommandResult loadResult = rig.Engine().Patches().LoadPatch(*versionFile);
+    REQUIRE_TRUE(loadResult.status == synth::PatchCommandStatus::Ok);
+
+    // Six blocks with no tick between them: the shortfall is detected and
+    // (re-)stashed on each one, the running patch untouched throughout.
+    for (int block = 0; block < 6; ++block) {
+        storage_watermark::RunBlocksWithNoTick(rig, cadence, 1);
+        REQUIRE_TRUE(rig.Application().Parameters().Group().LiveLocalParameterCount() == baselineLiveDepths);
+    }
+    REQUIRE_TRUE(rig.Engine().HasStashedPatchMessageForTest());
+    REQUIRE_TRUE(rig.Engine().IsStorageGrowPendingForTest());
+
+    rig.Engine().MessageThreadTick();  // provisions the stashed needs, clears the flag.
+    REQUIRE_TRUE(!rig.Engine().IsStorageGrowPendingForTest());
+    REQUIRE_TRUE(rig.Engine().HasStashedPatchMessageForTest());  // the tick must not touch the stash itself.
+
+    storage_watermark::RunBlocksWithNoTick(rig, cadence, 1);  // the first block after the clear retries the stash.
+    REQUIRE_TRUE(!rig.Engine().HasStashedPatchMessageForTest());
+
+    const std::size_t reopenedLiveDepths = rig.Application().Parameters().Group().LiveLocalParameterCount();
+    std::cout << "  [watermark] running Load of a " << grownLiveDepths << "-depth patch onto a "
+              << baselineLiveDepths << "-depth running rig: " << reopenedLiveDepths
+              << " live depths after the retry.\n";
+    REQUIRE_TRUE(reopenedLiveDepths == grownLiveDepths);
+}
+
+// RND-01: a patch that fits on its own, Loaded in the same block as a
+// Randomize All press, never makes that press wait -- both apply in the
+// one block that pops them, and the press is whole.
+TEST_CASE(a_small_patch_loaded_in_the_same_block_as_a_randomize_all_press_leaves_the_press_whole) {
+    const synth::RuntimeDataPaths sourcePaths = UseScratchRuntimeDataPaths("watermark_same_tick_source");
+    const std::filesystem::path patchDir = sourcePaths.patchesRoot / "small";
+    {
+        Rig builder(/*patchPumpBudgetBlocks=*/64, sourcePaths);
+        storage_watermark::ProductionCadence builderCadence;
+        storage_watermark::RunProductionBlocks(builder, builderCadence, 6);
+        REQUIRE_TRUE(builder.SavePatchAs(patchDir) == synth_rig::RigPatchStatus::Written);
+    }
+    const std::optional<std::filesystem::path> versionFile = synth::LatestPatchVersion(patchDir);
+    REQUIRE_TRUE(versionFile.has_value());
+
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("watermark_same_tick_target"));
+    storage_watermark::ProductionCadence cadence;
+    storage_watermark::RunProductionBlocks(rig, cadence, 6);
+
+    // Both messages queued before either is popped: one block applies both.
+    const synth::PatchCommandResult loadResult = rig.Engine().Patches().LoadPatch(*versionFile);
+    REQUIRE_TRUE(loadResult.status == synth::PatchCommandStatus::Ok);
+    rig.Application().PortableSurface().DispatchAction(
+        synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
+    storage_watermark::RunProductionBlocks(rig, cadence, 1);
+
+    std::cout << "  [watermark] Load and Randomize All in the same block: partial draw = "
+              << rig.Application().LastRandomizePartial() << ".\n";
+    REQUIRE_TRUE(!rig.Application().LastRandomizePartial());
+}
+
 // The release decides what it may free. This pins that decision by arming two
 // depths on the same parameter and asserting the storm treats them
 // differently: one carrying a real value survives, one left at its neutral
