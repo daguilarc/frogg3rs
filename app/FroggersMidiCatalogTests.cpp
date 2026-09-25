@@ -811,6 +811,92 @@ TEST_CASE(twister_shifted_tempo_turn_moves_the_tempo_the_same_on_every_page) {
 }
 
 // ---------------------------------------------------------------------------
+// twister_row_mapped_to_gesture_1_fires_the_gesture_on_the_rig
+// ---------------------------------------------------------------------------
+//
+// The Twister default's six side buttons are all assigned; this repurposes
+// the Shift button (channel 3 CC 13) as Hold Gesture Select for gesture 1
+// through the same view-model route BuildHeldGestureButtonFixture uses for
+// a Custom controller's rows, so this exercises the real preset-editing
+// path a Twister row would take on this app. Holding it selects gesture 1
+// (never gesture 0, which a gestureIx defaulted to 0 would also satisfy),
+// releasing it deselects. Fails with the row left unmapped (message kind
+// reverted to its Shift default): the CC then does nothing to
+// SelectedGestureMask().
+TEST_CASE(twister_row_mapped_to_gesture_1_fires_the_gesture_on_the_rig) {
+    using Field = synth::MidiMappingRowVM::Field;
+
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+    const std::vector<synth::UISystemMessageChoice> messageCatalog = synth::MakeUISystemMessageChoices(catalog);
+    const auto holdGestureSelectIt = std::find_if(
+        messageCatalog.begin(), messageCatalog.end(),
+        [](const synth::UISystemMessageChoice& choice) {
+            return choice.message == synth::UISystemMessage::HoldGestureSelect;
+        });
+    REQUIRE_TRUE(holdGestureSelectIt != messageCatalog.end());
+    const double holdGestureSelectMessageIx =
+        static_cast<double>(std::distance(messageCatalog.begin(), holdGestureSelectIt));
+
+    const synth::MidiAppDeviceDefault& twister = RequireDeviceDefault(catalog, "froggers.twister");
+    synth::MidiControllerSlot slot;
+    slot.name = twister.id;
+    slot.kind = twister.kind;
+    slot.config = twister.config;
+    synth::MidiInstrumentConfig instrument;
+    REQUIRE_TRUE(instrument.AddController(std::move(slot)));
+
+    synth::MidiConnectionState connection;
+    connection.controllers.push_back({});
+
+    synth::MidiConfigViewModel vm;
+    vm.SetMessageCatalog(messageCatalog);
+    vm.Rebuild(instrument, connection);
+
+    // Row 5 is the Shift button (channel 3, CC 13) in TwisterDeviceDefault's
+    // own systemMessages order (FroggersMidiCatalog.hpp). Both edits below
+    // apply to this same open row presentation -- Rebuild() updates the
+    // model's persisted snapshot but does not reshape an already-open row,
+    // so the second edit runs against the same vm without an intervening
+    // Rebuild.
+    constexpr std::size_t kShiftRowIx = 5;
+    std::string reason;
+    synth::MidiInstrumentConfig withKind;
+    REQUIRE_TRUE(vm.ApplyMappingEdit(0, synth::MidiConfigSection::SystemMessages, kShiftRowIx, Field::MessageKind,
+                                      holdGestureSelectMessageIx, withKind, &reason));
+
+    synth::MidiInstrumentConfig withGesture1;
+    REQUIRE_TRUE(vm.ApplyMappingEdit(0, synth::MidiConfigSection::SystemMessages, kShiftRowIx, Field::MessageArg,
+                                      1.0, withGesture1, &reason));
+
+    // Found by address rather than by kShiftRowIx: ApplyMappingEdit writes
+    // its output config with edited rows reordered ahead of untouched
+    // stock ones, so the row's position in `withGesture1` is not
+    // kShiftRowIx itself.
+    const auto& outputRows = withGesture1.controllers[0].config.systemMessages;
+    const auto rowIt = std::find_if(outputRows.begin(), outputRows.end(),
+                                     [](const synth::MidiControllerSystemMessageAssociation& candidate) {
+                                         return candidate.control.has_value() && candidate.control->channel == 3 &&
+                                                candidate.control->cc == 13;
+                                     });
+    REQUIRE_TRUE(rowIt != outputRows.end());
+    const synth::MidiControllerSystemMessageAssociation& row = *rowIt;
+    REQUIRE_TRUE(row.press.gestureIx == 1);
+
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("twister_gesture_1"));
+    rig.RunBlocks(4);
+    rig.InstallInstrumentForTest(withGesture1);
+
+    REQUIRE_TRUE(rig.Engine().Manager().SelectedGestureMask() == 0u);
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 3, 13, 127));
+    rig.RunBlocks(kSettleBlocks);
+    REQUIRE_TRUE(rig.Engine().Manager().SelectedGestureMask() == (synth::GestureMask{1} << 1));
+
+    rig.SendMidi(0, synth::BasicMidi::CC(0, 3, 13, 0));
+    rig.RunBlocks(kSettleBlocks);
+    REQUIRE_TRUE(rig.Engine().Manager().SelectedGestureMask() == 0u);
+}
+
+// ---------------------------------------------------------------------------
 // launchpad_defaults_open_sysex_is_programmer_mode
 // ---------------------------------------------------------------------------
 TEST_CASE(launchpad_defaults_open_sysex_is_programmer_mode) {
