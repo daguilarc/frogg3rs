@@ -1536,14 +1536,14 @@ private:
     // The row directly after the transport row (same parent -- see
     // AppendLeftRows' own call site), plugin-host mode only, holding every
     // MIDI-out control together: the MIDI button first, then Channel, CC
-    // and Velocity. The transport row itself is unchanged (coordinator
-    // ruling: at the plugin's design width the transport row needs
-    // 317.64 px and has 284.67 px if the MIDI button joins it) -- this
-    // row's own LayoutOptions::wrap lets the layout resolver break it onto
-    // a second line when these four children do not fit one, rather than
-    // this file predicting exact pixel widths itself; the new layout test
-    // (FroggersVstHostTests.cpp) is the arbiter that nothing then clips or
-    // overlaps. Each TextField's caption is a sibling Label FinishControl
+    // and Velocity. The transport row itself is unchanged: at the plugin's
+    // design width it needs 317.64 px and has 284.67 px if the MIDI button
+    // joins it, so this row's own LayoutOptions::wrap lets the layout
+    // resolver break it onto a second line when these four children do not
+    // fit one, rather than this file predicting exact pixel widths itself;
+    // plugin_mode_rows_fit_the_surface (FroggersVstHostTests.cpp) checks
+    // that nothing then clips or overlaps. Each TextField's caption is a
+    // sibling Label FinishControl
     // emits (PortableUIBuilders.hpp's own ControlStyle::caption contract),
     // the same shape app-midi-out's Controllers-page Channel/CC/Velocity
     // fields already use. Intrinsic on the row's own main axis (vertical,

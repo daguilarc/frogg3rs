@@ -61,7 +61,7 @@ Cost: by reading, the follower's `Process` is a fabs, a clamp to [0, 1], one com
 #### Scenario: Browser Level CC ships only after the browser measurement
 - **WHEN** the browser build is delivered with Level offered
 - **THEN** the browser measurement has recorded no block missing its deadline in the real browser build, or the fix for the block that did has landed and the measurement has been re-run
-- Check: none. No automated check reads the measurement; it already recorded no missed deadline, so this gate is clear. This scenario is neither backed by a test nor by one of R2/R5/R6/R9 -- flagged for review.
+- Check: none. No automated check reads the measurement; it already recorded no missed deadline, so this gate is clear. This scenario is not backed by a test or by one of R2/R5/R6/R9.
 
 ### Requirement: Pitch sends the detected fundamental as monophonic notes
 WHILE Pitch is chosen, the app SHALL send one note at a time: a note-on for the detected MIDI note whenever the pitch detector reports a nonzero frequency naming a note other than the one sounding, preceded at the same frame by the note-off for the sounding note, nothing for a report whose frequency is 0, and a note-off when the output's level falls below 0.001 (−60 dBFS).
