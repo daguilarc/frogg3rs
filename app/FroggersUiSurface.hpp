@@ -1130,13 +1130,11 @@ private:
     // visualizer at that point.
     //
     // This node carries no drill-level indicator. The scope's cell sits in
-    // the CELL MAP's LEFT block (columns L1-L2), which resolves to roughly
-    // {16, 16, 284.7, 181.3} at the real 900x632 config -- physically
+    // the CELL MAP's LEFT block (columns L1-L2) -- physically
     // separate from the 16-slot grid, which lives in the RIGHT block
-    // (columns E1-E4, resolving to roughly {314.7, 16, 569.3, 600}) and is
-    // the only thing that changes content when drill-in changes. A 14px gap
-    // (FroggersPageLayout::kGap) separates x-range [16, 300.7] from x-range
-    // [314.7, 884]; they never meet, so a header painted on this node would
+    // (columns E1-E4) and is the only thing that changes content when
+    // drill-in changes. A gap (FroggersPageLayout::kGap) separates the two
+    // blocks; they never meet, so a header painted on this node would
     // not sit next to the grid it would be describing. Computed (not
     // eyeballed): FroggersSurfaceTests.cpp's
     // modulation_header_sits_below_page_row_and_above_parameter_cells,
@@ -2121,8 +2119,9 @@ private:
 
     // Which page (index into FroggersBankLayouts(), same order banks are
     // created in -- FroggersParameters.hpp's Init() loop -- and the same
-    // order `uiState->banks[]` is populated in, ParameterModulation.cpp:
-    // 3403-3406/3716-3727 push_back/populate in lockstep) is currently
+    // order `uiState->banks[]` is populated in, by bank index against
+    // `ParameterManager::PopulateUIState`'s own `banks_` in
+    // ParameterModulation.cpp) is currently
     // selected, for AppendEncoderCell's label-source lookup below. Same
     // default (0) PageSelected() above already uses when uiState isn't
     // ready yet.
