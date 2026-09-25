@@ -2308,74 +2308,79 @@ TEST_CASE(app_commands_apply_every_press_in_bus_order_within_one_tick) {
         /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("app_commands_bus_order"));
     rig.RunBlocks(4);
 
-    synth::AppContext& context = rig.Engine().Context();
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
     synth_froggers::FroggersAppCore& app = rig.Application();
-    auto pushCommand = [&](FroggersCommand command, float value) {
-        context.uiBus->Push(
-            synth::MessageIn::AppCommand(context.now(), static_cast<std::size_t>(command), value));
+    auto press = [&](const char* actionName) { surface.DispatchAction(synth::ui::Action::Named(actionName)); };
+    auto pressEncoder = [&](std::size_t encoderId) {
+        surface.DispatchAction(synth::ui::Action::WithValue(FroggersActions::kEncoderPress, std::to_string(encoderId)));
     };
 
     // MOD-09: two Back presses in one tick pop two levels, not one.
-    pushCommand(FroggersCommand::kEncoderPress, 0.0f);  // -> level 1
+    pressEncoder(0);  // -> level 1
     rig.RunBlocks(4);
-    pushCommand(FroggersCommand::kEncoderPress, static_cast<float>(kModSlotVco1Audio));  // -> level 2
+    pressEncoder(kModSlotVco1Audio);  // -> level 2
     rig.RunBlocks(4);
     REQUIRE_TRUE(app.ActiveDrillIn().Level() == 2);
     // Target/Back cell, physical position 15 at every drill level alike
     // (FroggersModulationDrillIn::PressEncoder's own comment) -- pressed
     // twice, same tick.
-    pushCommand(FroggersCommand::kEncoderPress, static_cast<float>(kFroggersCrunchySlot));
-    pushCommand(FroggersCommand::kEncoderPress, static_cast<float>(kFroggersCrunchySlot));
+    pressEncoder(kFroggersCrunchySlot);
+    pressEncoder(kFroggersCrunchySlot);
     rig.RunBlocks(4);
     REQUIRE_TRUE(app.ActiveDrillIn().Level() == 0);
 
     // SUR-03: two Page Next presses in one tick each resolve their own
     // target from the audio thread's own current page, advancing two pages.
+    // Dispatched through the surface's action handler, the real path a
+    // press travels: HandleAction() maps the action to the app command and
+    // pushes it, never resolving the target itself.
     const std::size_t startPage = app.ActivePageIndex();
-    pushCommand(FroggersCommand::kPageNext, 0.0f);
-    pushCommand(FroggersCommand::kPageNext, 0.0f);
+    press(FroggersActions::kPageNext);
+    press(FroggersActions::kPageNext);
     rig.RunBlocks(4);
     REQUIRE_TRUE(app.ActivePageIndex() == (startPage + 2) % kFroggersPageCount);
 
     // RND-01/RST-01: a Randomize All and a Reset All dispatched in the same
-    // tick apply in the order they were pushed, not grouped by kind. Drilled
-    // in first so Randomize All's floor is one (a drilled-in press always
-    // materializes at least one depth), making the outcome below
-    // deterministic regardless of the random draw.
-    pushCommand(FroggersCommand::kEncoderPress, 0.0f);  // -> level 1
-    rig.RunBlocks(4);
-    synth::Parameter* drilled = app.ActiveDrillIn().BankRef().SelectedParameter();
-    REQUIRE_TRUE(drilled != nullptr);
-    // Existence alone does not tell the two outcomes apart while still
-    // drilled in and viewing this grid: a materialized depth cell stays
-    // materialized (view-pinned) whether Reset zeroed it or Randomize drew
-    // it. The VALUE does: Reset writes every depth it touches to exactly
-    // detail::kNeutralModulationDepthCenter, and a random draw lands away
-    // from it.
-    auto anyDepthAwayFromNeutral = [&]() {
-        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
-            synth::Parameter* depth = drilled->ModulationDepthParameter(modIx);
-            if (depth == nullptr) {
-                continue;
-            }
-            constexpr float kTol = 1e-4f;
-            if (std::fabs(depth->SceneCenter(0) - detail::kNeutralModulationDepthCenter) > kTol ||
-                std::fabs(depth->SceneCenter(1) - detail::kNeutralModulationDepthCenter) > kTol) {
-                return true;
-            }
-        }
-        return false;
+    // tick apply in the order they were pushed, not grouped by kind. Run at
+    // drill level 0 (the previous section already left it there), so a
+    // Reset landing last is checked against the WHOLE launch state --
+    // every bank's page parameters and modulation depths, not just one
+    // drilled parameter's -- the same fresh-launch comparison
+    // reset_all_after_drilled_randomize_equals_a_fresh_launch_including_which_depths_exist
+    // above uses.
+    REQUIRE_TRUE(app.ActiveDrillIn().Level() == 0);
+    synth::ParameterManager& manager = rig.Engine().Manager();
+    synth_rig::SynthRig<synth_froggers::FroggersApp> referenceRig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("app_commands_bus_order_reference"));
+    referenceRig.RunBlocks(4);
+    synth::ParameterManager& referenceManager = referenceRig.Engine().Manager();
+    auto matchesFreshLaunch = [&]() {
+        synth::JsonArena actualArena(synth::JsonArena::kDefaultCapacity);
+        synth::JsonArena referenceArena(synth::JsonArena::kDefaultCapacity);
+        const synth::JSON actualJson = manager.ParameterValuesToJSON(actualArena);
+        const synth::JSON referenceJson = referenceManager.ParameterValuesToJSON(referenceArena);
+        char* actualDumped = actualJson.Dumps(0);
+        char* referenceDumped = referenceJson.Dumps(0);
+        REQUIRE_TRUE(actualDumped != nullptr);
+        REQUIRE_TRUE(referenceDumped != nullptr);
+        const std::string actualText(actualDumped);
+        const std::string referenceText(referenceDumped);
+        free(actualDumped);
+        free(referenceDumped);
+        return actualText == referenceText &&
+               app.Parameters().Group().LiveLocalParameterCount() ==
+                   referenceRig.Application().Parameters().Group().LiveLocalParameterCount();
     };
 
-    pushCommand(FroggersCommand::kResetAll, 0.0f);
-    pushCommand(FroggersCommand::kRandomizeAll, 0.0f);
+    press(FroggersActions::kResetAll);
+    press(FroggersActions::kRandomizeAll);
     rig.RunBlocks(8);
-    REQUIRE_TRUE(anyDepthAwayFromNeutral());  // Randomize, pushed second, is what lands.
+    REQUIRE_TRUE(!matchesFreshLaunch());  // Randomize, pushed second, is what lands.
 
-    pushCommand(FroggersCommand::kRandomizeAll, 0.0f);
-    pushCommand(FroggersCommand::kResetAll, 0.0f);
+    press(FroggersActions::kRandomizeAll);
+    press(FroggersActions::kResetAll);
     rig.RunBlocks(8);
-    REQUIRE_TRUE(!anyDepthAwayFromNeutral());  // Reset, pushed second, is what lands.
+    REQUIRE_TRUE(matchesFreshLaunch());  // Reset, pushed second, is what lands.
 }
 
 // ============================================================================
