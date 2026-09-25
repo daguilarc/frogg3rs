@@ -119,36 +119,33 @@ re-arm fix (carried task 2.1) uses.
    request-size floor. The default stays what it is today
    (`numModulators * 2`).
 3. A patch whose depths would leave available storage below the watermark
-   gets its storage before it applies, the way it already gets its arena,
-   at both sites that apply patch messages. The engine already retries an
-   arena-exhausted message at two sites: the startup apply, which runs
-   before audio on the thread that initializes the engine and grows the
-   arena inline, and the running apply in the audio block, which stashes
-   the message, flags the message thread, and retries after the tick has
-   grown it. A storage shortfall becomes the second reason at both sites;
-   the arena branch stays as each site has it, and the storage branch is
-   one helper, written once in the engine, that adds need plus watermark to
-   each group directly (the tick's existing handling of a storage-batch
-   request calls the same helper, so a pending low-water request cannot
-   absorb it and the provisioning line exists once).
-   At startup the helper runs inline and the patch applies before the
-   first block, so a relaunch, a browser reload and a plugin session
-   restore open with the player's patch whole (QR-01, QR-04). Running, the
-   audio thread writes the per-group need beside the stash and raises a
-   storage flag of its own (never the arena flag, whose cap path drops the
-   message); the stash is held while either flag is set, a retry that
-   still reports the shortfall re-stashes, the tick provisions and clears
-   the flag with release order, and the stashed message retries on the
-   first block after the clear, the running patch untouched until it
-   applies whole (FILE-07, PLG-10). The running check ticks at the
-   production cadence, since a rig that ticks every block would hide an
-   early retry. The count of depths a patch needs is the one
+   gets its storage before it ever reaches the parameter authority, not
+   retried after a failed apply. The caller that parses the patch document
+   -- on the message thread, in every case -- already holds the
+   `ParameterManager` before the load message even exists, so it provisions
+   there, once, immediately before pushing: NEW
+   `ParameterManager::ProvisionStorageForPatchValues` adds, to every group
+   the patch's depths would leave short of its own watermark, one storage
+   batch sized at the missing count plus the watermark (the same call the
+   engine's existing low-water top-up already makes), and leaves a group
+   with enough room already untouched. Two callers reach it, each
+   immediately before its own push: Sheaf's `PatchManager::LoadPatchVersion`
+   (an on-disk Load, whether it is the startup patch `Engine::Initialize`
+   opens or a Load on a running rig -- both go through the same call), and
+   Frogg3rs's own `FroggersPluginProcessor::PumpStatePersistence` (a DAW
+   host's `setStateInformation` restore), through `engine_.Manager()`, the
+   accessor it already uses to build the state-snapshot patch; its bus
+   ownership (patchInputBus/patchOutputBus never shared with `PatchManager`)
+   is unchanged. A relaunch, a browser reload, a plugin session restore and
+   a running Load all therefore open with the player's patch whole (QR-01,
+   QR-04, FILE-07, PLG-10) on the very drain that pops the message -- a
+   relaunch's own pre-audio drain at startup, or the first `ProcessBlock`
+   that drains it while running -- with no retry needed. The engine's
+   existing arena-exhausted retry (inline at startup; stashed for
+   `MessageThreadTick` to grow while running) is unchanged and independent
+   of this provisioning. The count of depths a patch needs is the one
    `app-o1-audit` already wrote (`MissingDepthsForValuesJSON`, carried from
-   6ac80442 without the construct or the startup branch around it). Known
-   and bounded: a press or turn made in the tick a running Load waits lands
-   before it and is overwritten by the loaded patch, exactly as one made in
-   the block before a Load is today; no story step has a Load and a press
-   in one tick.
+   6ac80442 without the construct or the startup branch around it).
 4. Carried from `app-o1-audit` as they stand, each toward a ratified step,
    with their spec deltas: the storage-batch race (2.1), output processors
    resending a declined update (2.2), the `Engine.hpp` false comments (2.3),

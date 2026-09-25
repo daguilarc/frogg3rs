@@ -1277,11 +1277,14 @@ void FroggersPluginProcessor::PumpHostParameterBridge() {
 // stateBlockMutex_), so it cannot safely push onto patchInputBus itself
 // (the single-producer contract every other push in this class already
 // honors). It deposits the raw bytes into pendingRestoreJsonText_ instead;
-// this method claims that deposit and is the one that actually parses and
-// pushes it, as a LoadFromJSON patch message -- applied by
-// DrainPatchInputBus() inside the next engine_.ProcessBlock() (audio
-// thread), exactly like every other host-driven core write in this class
-// (MessageIn::ParamSetAbsolute et al., PumpHostParameterBridge()). Applying
+// this method claims that deposit, parses it, provisions storage for it
+// (engine_.Manager().ProvisionStorageForPatchValues(), so a restored
+// document whose depths need more storage than this fresh instance already
+// has never applies short), and is the one that pushes it, as a
+// LoadFromJSON patch message -- applied by DrainPatchInputBus() inside the
+// next engine_.ProcessBlock() (audio thread), exactly like every other
+// host-driven core write in this class (MessageIn::ParamSetAbsolute et
+// al., PumpHostParameterBridge()). Applying
 // the restored values directly to the authority this way, rather than
 // writing this class's host-parameter juce::AudioProcessorParameters/
 // shadowNormalized shadows, is what keeps this from fighting
@@ -1361,6 +1364,18 @@ void FroggersPluginProcessor::PumpStatePersistence() {
             root = arena->Loads(restoreText->c_str());
         }
         if (!root.IsNull()) {
+            // Provisions storage for every group the restored document's
+            // depths would leave short, the same call PatchManager::
+            // LoadPatchVersion makes for an on-disk Load, before the
+            // message exists to push -- so the restore below never finds a
+            // group short of the storage its own depths need. Reaches the
+            // ParameterManager through engine_.Manager(), the same
+            // accessor this class already uses to build the
+            // state-snapshot patch (see the snapshot half of this
+            // comment), rather than through PatchManager: this class's bus
+            // ownership (patchInputBus/patchOutputBus never shared with
+            // PatchManager) is unchanged.
+            engine_.Manager().ProvisionStorageForPatchValues(root.Get("parameterValues"));
             const bool pushed = engine_.Context().patchInputBus->Push(
                 synth::PatchMessageIn::LoadFromJSON(synth::JsonDocument{.arena = arena, .root = root}));
             if (pushed) {

@@ -114,58 +114,42 @@ mechanism no app or story reaches.
 
 ## S3. A patch never applies with a depth missing, at startup or running
 
-- [ ] S3.1 Two apply sites already retry an arena-exhausted patch message:
-      `Engine::ApplyPendingPatchMessages` (startup, before audio, on the
-      thread that runs `Initialize`; it grows the arena inline and retries)
-      and `Engine::ProcessBlock` (running; it stashes the message in
-      `pendingPatchMessage_`, sets `arenaGrowPending_`, and
-      `MessageThreadTick` grows the arena before the retry). A depth-storage
-      shortfall becomes the second reason at both sites through one
-      provisioning helper, and no third site. `ApplyPatchMessageAndNotifyApp`
-      returns a storage-shortfall status when the patch's depths would
-      leave a group's available storage below that group's watermark,
-      with the per-group need counted by `MissingDepthsForValuesJSON`
-      (carried from `app-o1-audit` 6ac80442; that commit's own startup
-      branch and its construct are not). The arena branch's growth step
-      stays as each site has it (`GrowAndReset` inline at startup;
-      `GrowSerializationArenaForTick` with its cap while running, whose cap
-      path clears only its own reason); the stash-and-raise step around it
-      at the two running call sites (`ProcessBlock`'s retry,
-      `DrainPatchInputBus`) is one shared `StashPendingPatchMessage`,
-      parameterized by which status fired. The helper is the storage
-      provisioning only, written once in `Engine`:
-      `AddParameterStorageBatch` of need plus watermark on each group,
-      called directly so the group's pending low-water request cannot
-      absorb it; `MessageThreadTick`'s existing handling of a
-      `ParameterStorageBatchNeeded` message (its step 1) calls that helper
-      too, so the provisioning line exists once. Startup: the helper runs
-      inline and the message retries at once, as the arena case does.
-      Running: the audio thread writes the needs into a fixed-capacity
-      member beside the stash (one entry per group, sized from the
-      manager's group count at `Initialize`), only when no storage stash is
-      pending, then sets a storage-grow flag distinct from
-      `arenaGrowPending_` with release order. The barrier that holds the
-      stash holds it while either flag is set; a retry that reports the
-      storage shortfall again re-stashes under the storage reason, never
-      the terminal branch; `MessageThreadTick` reads the flag with acquire
-      order, runs the helper, and clears the flag with release order after
-      its last read of the needs; the stashed message retries on the first
-      block after the clear. The `ProcessBlock` step-list comment (its step
-      1, which names `ArenaExhausted` as the one stash reason) names both,
-      and the stash says that a message applied while a Load waits is
-      overwritten by the patch when it applies.
-      Check: two cases in `projects/synth/tests/engine_tests.cpp`. Startup:
-      a rig created on data paths whose last-opened patch needs more depths
-      than the launch batch leaves above the watermark opens with that
-      patch whole, before its first block; break: return the shortfall
-      status without provisioning, startup opens with no patch, red.
-      Running, with the rig ticking at the production cadence (one message
-      tick per six blocks, never per block, so an early retry cannot hide):
-      `LoadPatch` of the same patch on a running rig leaves the running
-      patch unchanged across the blocks before the provisioning tick and
-      every depth live after the retry; the existing arena retry test still
-      passes; break: retry before the flag clears, the Load is dropped,
-      red.
+- [ ] S3.1 Storage is provisioned before a patch load is pushed, not
+      retried after a failed apply. `ParameterManager::ProvisionStorageForPatchValues`
+      takes a parsed patch's `parameterValues` and, for every group
+      `MissingDepthsForValuesJSON` reports missing depths for whose
+      available storage would not already cover that count plus its own
+      watermark, adds one storage batch sized at count plus watermark
+      (`AddParameterStorageBatch`, called directly so the group's own
+      pending low-water request cannot absorb it) -- the same call
+      `MessageThreadTick`'s existing `ParameterStorageBatchNeeded` handling
+      uses. A group with enough room already is left untouched. Two
+      callers, each on the message thread immediately before its own push:
+      `PatchManager::LoadPatchVersion` (an on-disk Load, at startup or
+      running -- both go through it), and frogg3rs's
+      `FroggersPluginProcessor::PumpStatePersistence` (a DAW host's
+      `setStateInformation` restore), which reaches the parameter manager
+      through `engine_.Manager()`, the same accessor it already uses to
+      build the state-snapshot patch, and leaves its own bus ownership
+      (patchInputBus/patchOutputBus never shared with `PatchManager`)
+      unchanged. The message every caller pushes therefore already has the
+      storage its own depths need; `ApplyPatchMessage` never finds a group
+      short and reports no storage status of its own. The engine's
+      existing arena-exhausted retry (`Engine::ApplyPendingPatchMessages`
+      growing the arena inline at startup; `Engine::ProcessBlock` stashing
+      `pendingPatchMessage_`/`arenaGrowPending_` for `MessageThreadTick` to
+      grow while running) is unchanged and independent of this
+      provisioning.
+      Check: two cases in `projects/synth/tests/engine_tests.cpp` (a
+      startup rig whose last-opened patch needs more depths than the
+      launch batch leaves above the watermark opens with that patch whole,
+      before its first block; a running `LoadPatch` of the same shape
+      applies whole on the first block that drains it) and one in
+      `app/vst/FroggersVstHostTests.cpp`
+      (`state_information_restore_reopens_a_patch_grown_past_launch_storage_whole`:
+      a DAW restore of a patch grown past the launch storage comes back
+      whole). Break: skip the provisioning call before a push; the patch
+      opens or restores with a depth missing, red.
 
 ## S4. Carried from `app-o1-audit`
 

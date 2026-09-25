@@ -1432,10 +1432,15 @@ TEST_CASE(editor_surface_renders_real_parameter_values_before_any_process_block_
 }
 
 // -- DAW session-state persistence -------------------------------------------
-// Three properties, each its own TEST_CASE below:
+// Four properties, each its own TEST_CASE below:
 //   1. Round trip: host-automated values survive getStateInformation() ->
 //      setStateInformation() on a FRESH processor, at both the parameter
 //      authority and the host-parameter readback.
+//   1b. Storage growth: a restored document whose depths need more storage
+//      than a fresh instance already has still comes back whole --
+//      PumpStatePersistence() provisions that storage before it pushes the
+//      restore, the same way PatchManager::LoadPatchVersion provisions an
+//      on-disk Load.
 //   2. Parameter-model growth: a stored document with fewer keys than the
 //      current model leaves the missing ones at default; a stored document
 //      with a key the current model does not recognize is tolerated, not
@@ -1683,6 +1688,101 @@ TEST_CASE(state_information_round_trips_through_a_fresh_processor) {
     std::cout << "  [state] round trip: bank1.slot4=" << kTargetA << ", bank4.crispy=" << kTargetB
               << " survived getStateInformation() -> setStateInformation() on a fresh processor, at the "
                  "authority and the host readback.\n";
+}
+
+// -- 1b. Storage growth ---------------------------------------------------------
+// Froggers reserves a full press's worth (kDepthParameterStorageCapacity) as
+// the group's watermark, the same size as the launch batch, so a fresh
+// processor's own available storage sits right at the watermark with zero
+// slack: restoring a document that names any real number of modulation
+// depths already leaves a fresh target short unless something provisions
+// for it first. PumpStatePersistence() does, the same call
+// PatchManager::LoadPatchVersion makes for an on-disk Load, before either
+// one pushes the parsed document as a LoadFromJSON message.
+TEST_CASE(state_information_restore_reopens_a_patch_grown_past_launch_storage_whole) {
+    frogg3rs_vst::FroggersPluginProcessor source(ScratchDataPaths("state_grown_source"));
+    source.setRateAndBufferSizeDetails(48000.0, 256);
+    source.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> sourceBuffer(2, 256);
+    juce::MidiBuffer midi;
+    auto runBlock = [&] {
+        sourceBuffer.clear();
+        source.processBlock(sourceBuffer, midi);
+    };
+    runBlock();
+
+    synth_froggers::FroggersParameterModel& sourceModel = source.ApplicationForTest().Parameters();
+    const std::size_t launchLiveDepths = sourceModel.Group().LiveLocalParameterCount();
+
+    // Randomize All, repeated across three pages, materializes real
+    // modulation depths -- the same MessageIn::AppCommand the Randomize
+    // button drives (see the RandomizeAll test above). ParameterManager's
+    // own random source is fixed-seeded, so the depth count this reaches is
+    // deterministic, not flaky.
+    for (std::size_t page = 0; page < 3; ++page) {
+        source.ApplicationForTest().PortableSurface().DispatchAction(
+            synth::ui::Action::WithValue(synth_froggers::FroggersActions::kPageSelect, std::to_string(page)));
+        runBlock();
+        for (int press = 0; press < 10; ++press) {
+            source.ApplicationForTest().PortableSurface().DispatchAction(
+                synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
+            runBlock();
+        }
+    }
+
+    const std::size_t grownLiveDepths = sourceModel.Group().LiveLocalParameterCount();
+    std::cout << "  [state] source grown from " << launchLiveDepths << " to " << grownLiveDepths
+              << " live depths across 3 pages of Randomize All.\n";
+    REQUIRE_TRUE(grownLiveDepths >= launchLiveDepths + 20);
+
+    // getStateInformation() only returns cachedStateJsonText_, refreshed by
+    // PumpStatePersistence()'s own snapshot request/response round trip on
+    // the message thread (see that method's header comment) -- it is NOT
+    // rebuilt synchronously here. The growth loop above never pumped the
+    // message thread, so the cache is still the construction-time seed;
+    // settle it onto the grown state before reading it out.
+    PumpAndSettle(source, sourceBuffer, midi);
+
+    juce::MemoryBlock state;
+    source.getStateInformation(state);
+    REQUIRE_TRUE(state.getSize() > 0);
+
+    // Not every live depth round-trips: one left at its own neutral default
+    // is never written to patch JSON (Parameter::ToValueJSON's own
+    // HasNonDefaultState() check -- the same "a depth left at its own
+    // default is never written to patch JSON" rule
+    // WriteDeepModDepthsPatchVersion's comment documents at the engine
+    // level), so grownLiveDepths overcounts what a save/restore cycle
+    // actually carries; a Randomize All draw leaves some depths at or near
+    // their own neutral value. Restoring the SAME saved bytes back onto the
+    // source itself -- through the identical parse/provision/push path a
+    // fresh target uses -- gives the true reference count a whole restore
+    // reaches, without needing to walk depth names by hand.
+    source.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+    PumpAndSettle(source, sourceBuffer, midi);
+    const std::size_t referenceLiveDepths = sourceModel.Group().LiveLocalParameterCount();
+    std::cout << "  [state] non-default depths a save/restore cycle actually carries: " << referenceLiveDepths
+              << " (of " << grownLiveDepths << " live before saving).\n";
+    REQUIRE_TRUE(referenceLiveDepths >= launchLiveDepths + 20);
+    source.releaseResources();
+
+    // A FRESH processor, its own scratch root -- its own group starts at
+    // the same watermark-tight headroom the source started at, before any
+    // of the growth above.
+    frogg3rs_vst::FroggersPluginProcessor fresh(ScratchDataPaths("state_grown_restore"));
+    fresh.setRateAndBufferSizeDetails(48000.0, 256);
+    fresh.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> freshBuffer(2, 256);
+    fresh.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+    PumpAndSettle(fresh, freshBuffer, midi);
+
+    synth_froggers::FroggersParameterModel& freshModel = fresh.ApplicationForTest().Parameters();
+    const std::size_t reopenedLiveDepths = freshModel.Group().LiveLocalParameterCount();
+    std::cout << "  [state] restore onto a fresh target: " << reopenedLiveDepths
+              << " live depths (source's own self-restore reference: " << referenceLiveDepths << ").\n";
+    REQUIRE_TRUE(reopenedLiveDepths == referenceLiveDepths);
+
+    fresh.releaseResources();
 }
 
 // -- 2. Parameter-model growth -------------------------------------------------

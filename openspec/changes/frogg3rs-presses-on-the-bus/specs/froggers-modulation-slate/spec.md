@@ -70,10 +70,10 @@ to randomize exactly what is displayed and a floor is not part of that.
 - **THEN** every depth the patch carries is live before the first audio block
 - Check: `app/FroggersAudioRoutingTests.cpp: a_relaunch_on_the_same_data_paths_opens_a_grown_patch_whole_before_the_first_block`
 
-#### Scenario: A Load of that patch while running is whole after the retry
+#### Scenario: A Load of that patch while running is whole immediately
 - **WHEN** a running instance loads, or a host restores, the same patch
-- **THEN** the running patch is unchanged until the provisioning tick and every depth the patch carries is live after the retry
-- Check: `app/FroggersAudioRoutingTests.cpp: a_running_load_of_a_grown_patch_stays_whole_after_the_storage_tick_provisions_it`
+- **THEN** its storage is already provisioned before the load message is pushed, so every depth the patch carries is live on the same block that applies it, with no deferral
+- Check: `app/FroggersAudioRoutingTests.cpp: a_running_load_of_a_grown_patch_applies_whole_with_storage_already_provisioned` (running Load); `app/vst/FroggersVstHostTests.cpp: state_information_restore_reopens_a_patch_grown_past_launch_storage_whole` (DAW restore)
 
 #### Scenario: A press in the same tick as a patch that fits draws whole
 - **WHEN** a patch that fits on its own is loaded in the same message tick as a Randomize All is pressed

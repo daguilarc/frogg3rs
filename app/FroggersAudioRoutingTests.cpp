@@ -1028,20 +1028,20 @@ TEST_CASE(randomize_storm_holds_its_depth_working_set) {
 // kDepthParameterStorageCapacity (the same ceiling that sizes the launch
 // batch), so Sheaf's existing low-water top-up keeps available storage
 // above what one press needs even after a long drill session, and a saved
-// or loaded patch that needs more than the launch batch gets its storage
-// before it applies (Sheaf's own provisioning, App-agnostic). The four
-// cases below are reproduced player paths: RND-01/RND-02 (a
-// page press after the working set has grown), QR-01/QR-04 (a relaunch on
-// the same data paths), FILE-07/PLG-10 (a running Load) and RND-01 again
-// (a small patch loaded the same block as a press).
+// or loaded patch gets its own storage provisioned, on the message thread,
+// before its load message is even pushed (Sheaf's own
+// PatchManager::LoadPatchVersion, App-agnostic). The four cases below are
+// reproduced player paths: RND-01/RND-02 (a page press after the working
+// set has grown), QR-01/QR-04 (a relaunch on the same data paths),
+// FILE-07/PLG-10 (a running Load) and RND-01 again (a small patch loaded
+// the same block as a press).
 //
 // Driven at the production message-tick cadence -- one tick per six
 // blocks, never per block -- the same way
 // arming_after_an_unpolled_truncated_capture_flushes_it_first
 // (app/FroggersSurfaceTests.cpp) already drives blocks without a tick:
-// SynthRig::RunBlocks() always pairs a block with a tick, which would let
-// storage provision every block instead of only once every six, hiding an
-// early retry.
+// SynthRig::RunBlocks() always pairs a block with a tick, which is not the
+// cadence a real session runs at.
 namespace storage_watermark {
 
 // `cursor`/`sinceTick` persist across calls so a routine built from many
@@ -1083,36 +1083,6 @@ void RunProductionBlocks(Rig& rig, ProductionCadence& cadence, std::size_t block
             rig.Engine().MessageThreadTick();
             cadence.sinceTick = 0;
         }
-    }
-}
-
-// Runs `blocks` audio blocks directly against the engine with NO tick at
-// all -- the caller decides exactly when MessageThreadTick() runs, for the
-// running-Load case below, which asserts on the exact tick boundary.
-void RunBlocksWithNoTick(Rig& rig, ProductionCadence& cadence, std::size_t blocks) {
-    const synth::RuntimeConfig config = synth_froggers::FroggersApp::Config();
-    const std::size_t blockFrames = static_cast<std::size_t>(config.preferredBlockSize);
-    std::vector<std::vector<float>> inputBuffers(static_cast<std::size_t>(config.numAudioInputs),
-                                                  std::vector<float>(blockFrames, 0.0f));
-    std::vector<std::vector<float>> outputBuffers(static_cast<std::size_t>(config.numAudioOutputs),
-                                                   std::vector<float>(blockFrames, 0.0f));
-    std::vector<const float*> inputPointers(inputBuffers.size());
-    std::vector<float*> outputPointers(outputBuffers.size());
-    for (std::size_t ch = 0; ch < inputPointers.size(); ++ch) {
-        inputPointers[ch] = inputBuffers[ch].data();
-    }
-    for (std::size_t ch = 0; ch < outputPointers.size(); ++ch) {
-        outputPointers[ch] = outputBuffers[ch].data();
-    }
-    for (std::size_t i = 0; i < blocks; ++i) {
-        synth::AudioBlock block;
-        block.inputs = inputPointers.empty() ? nullptr : inputPointers.data();
-        block.outputs = outputPointers.empty() ? nullptr : outputPointers.data();
-        block.numInputChannels = config.numAudioInputs;
-        block.numOutputChannels = config.numAudioOutputs;
-        block.numFrames = blockFrames;
-        block.numRequestedInputChannels = config.numAudioInputs;
-        rig.Engine().ProcessBlock(block, cadence.cursor++);
     }
 }
 
@@ -1220,8 +1190,9 @@ TEST_CASE(page_randomize_reports_no_partial_draw_after_a_drill_session_grows_dep
 
 // QR-01/QR-04: a relaunch on the same data paths -- Initialize() (run
 // inside the rig's constructor, before this test's first block) reopens
-// the last-saved patch through the same startup storage-shortfall
-// provisioning a running Load uses.
+// the last-saved patch through PatchManager::LoadPatchVersion, which
+// provisions storage for the parsed patch's depths before pushing the
+// load message -- the same call a running Load uses.
 TEST_CASE(a_relaunch_on_the_same_data_paths_opens_a_grown_patch_whole_before_the_first_block) {
     const synth::RuntimeDataPaths paths = UseScratchRuntimeDataPaths("watermark_startup_reopen");
     const std::filesystem::path patchDir = paths.patchesRoot / "grown";
@@ -1250,15 +1221,11 @@ TEST_CASE(a_relaunch_on_the_same_data_paths_opens_a_grown_patch_whole_before_the
 // running rig mid-session, that rig ALSO already drilled -- on the other
 // two pages, so its own working set does not simply overlap the incoming
 // patch's -- so real available storage is genuinely short by the time the
-// Load lands, not just nominally so. The running patch stays exactly as
-// it was across every block before the message tick that provisions the
-// shortfall, and is whole on the first block after that tick clears the
-// flag -- the same structure Sheaf's own
-// engine_running_load_stashes_under_storage_shortfall_and_retries_whole_after_the_tick_provisions
-// (External/Sheaf/projects/synth/tests/engine_tests.cpp) already proves at
-// the engine level, driven here through the real Frogg3rs app and press
-// path instead of a minimal test app.
-TEST_CASE(a_running_load_of_a_grown_patch_stays_whole_after_the_storage_tick_provisions_it) {
+// Load lands, not just nominally so. LoadPatch() provisions the target
+// group's storage before it pushes the load message
+// (PatchManager::LoadPatchVersion), so the running patch is whole on the
+// very next block, with nothing stashed in between.
+TEST_CASE(a_running_load_of_a_grown_patch_applies_whole_with_storage_already_provisioned) {
     const synth::RuntimeDataPaths growPaths = UseScratchRuntimeDataPaths("watermark_running_load_source");
     const std::filesystem::path patchDir = growPaths.patchesRoot / "grown";
     std::size_t grownLiveDepths = 0;
@@ -1281,35 +1248,19 @@ TEST_CASE(a_running_load_of_a_grown_patch_stays_whole_after_the_storage_tick_pro
               << " live, " << rig.Application().Parameters().Group().AvailableParameterSlots()
               << " available, watermark=" << rig.Application().Parameters().Group().StorageLowWatermark() << ".\n";
 
-    // A clean six-block cadence boundary before pushing the Load.
-    while (cadence.sinceTick != 0) {
-        storage_watermark::RunProductionBlocks(rig, cadence, 1);
-    }
-
     const synth::PatchCommandResult loadResult = rig.Engine().Patches().LoadPatch(*versionFile);
     REQUIRE_TRUE(loadResult.status == synth::PatchCommandStatus::Ok);
 
-    // Six blocks with no tick between them: the shortfall is detected and
-    // stashed on the first one; the barrier holds the stash and skips every
-    // block after that, the running patch untouched throughout.
-    for (int block = 0; block < 6; ++block) {
-        storage_watermark::RunBlocksWithNoTick(rig, cadence, 1);
-        REQUIRE_TRUE(rig.Application().Parameters().Group().LiveLocalParameterCount() == baselineLiveDepths);
-    }
-    REQUIRE_TRUE(rig.Engine().HasStashedPatchMessageForTest());
-    REQUIRE_TRUE(rig.Engine().IsStorageGrowPendingForTest());
-
-    rig.Engine().MessageThreadTick();  // provisions the stashed needs, clears the flag.
-    REQUIRE_TRUE(!rig.Engine().IsStorageGrowPendingForTest());
-    REQUIRE_TRUE(rig.Engine().HasStashedPatchMessageForTest());  // the tick must not touch the stash itself.
-
-    storage_watermark::RunBlocksWithNoTick(rig, cadence, 1);  // the first block after the clear retries the stash.
+    // The very next block applies it whole: the target group's storage was
+    // already provisioned before the load message was pushed, so nothing
+    // stashes and no tick is needed to clear a barrier.
+    storage_watermark::RunProductionBlocks(rig, cadence, 1);
     REQUIRE_TRUE(!rig.Engine().HasStashedPatchMessageForTest());
 
     const std::size_t reopenedLiveDepths = rig.Application().Parameters().Group().LiveLocalParameterCount();
     std::cout << "  [watermark] running Load of a " << grownLiveDepths << "-depth patch onto a "
               << baselineLiveDepths << "-depth running rig: " << reopenedLiveDepths
-              << " live depths after the retry.\n";
+              << " live depths on the block that applied it.\n";
     REQUIRE_TRUE(reopenedLiveDepths == grownLiveDepths);
 }
 
