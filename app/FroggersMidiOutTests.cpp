@@ -785,6 +785,105 @@ TEST_CASE(pitch_quiet_output_ends_the_note) {
 }
 
 // ---------------------------------------------------------------------------
+// pitch_output_decaying_to_silence_ends_the_note_while_transport_keeps_running
+// ---------------------------------------------------------------------------
+// The transport is never stopped in this test (no StopAt call anywhere
+// below): the gate keeps cycling on its own quarter-note pulse the whole
+// time (FroggersAppCore::ProcessBlock's own comment: open for the first
+// half of every quarter note, closed for the second). Slowing the tempo to
+// 12 bpm (SetTempoBpm, independent of any envelope/audio rendering --
+// FroggersAudioRoutingTests.cpp's own tempo-tracking tests use the same
+// call) stretches each closed half to 2.5 s. Driving all three VCOs'
+// Envelope-bank Release knobs to 0.0f -- VcoAdsrState::kMinReleaseSeconds,
+// its floor, 5 ms -- makes every voice's own Release stage (which ramps to
+// a literal 0.0f target; only Sustain has a floor,
+// VcoAdsrState::kMinSustainLevel) finish within a few ms of the gate
+// closing, and the level follower feeding midiOutLevel (10 ms attack/50 ms
+// release, dsp::SingleEnvelopeFollower) has the rest of the 2.5 s closed
+// half to fall below 0.001, comfortably inside one cycle instead of
+// accumulating over many (at the default 120 bpm's 250 ms closed half it
+// does not: measured 22.52 s and many cycles to the first crossing).
+TEST_CASE(pitch_output_decaying_to_silence_ends_the_note_while_transport_keeps_running) {
+    Rig::AudioSettings settings48k128;
+    settings48k128.sampleRate = 48000.0;
+    settings48k128.blockSize = 128;
+    Rig rig(/*patchPumpBudgetBlocks=*/64,
+           UseScratchRuntimeDataPaths("pitch_decay_ends_note_transport_running"), settings48k128);
+
+    REQUIRE_TRUE(rig.Engine().Clock().SetTempoBpm(12.0));
+    rig.Application().SetMidiOutSetting(PitchSetting(/*channel=*/0));
+    rig.StartAt(0);
+
+    // A note must actually be sounding before the release floor is driven
+    // down, or a note-off afterward would prove nothing -- AppMidiOutEvents()
+    // holds only the most recent block's events, so this is checked every
+    // block across the warm-up, not just once after it. 2 s of warm-up
+    // stays inside the first (open) half of the first quarter note, which
+    // at 12 bpm runs to 2.5 s.
+    constexpr std::size_t kBlocksPerSecond = 48000 / 128;
+    bool sawNoteOnBeforeFastRelease = false;
+    for (std::size_t i = 0; i < kBlocksPerSecond * 2; ++i) {
+        rig.RunBlocks(1);
+        for (const synth::AppMidiOutEvent& event : rig.Engine().AppMidiOutEvents()) {
+            const std::optional<DecodedNoteEvent> decoded = DecodeNoteEvent(event);
+            if (decoded.has_value() && decoded->isNoteOn) {
+                sawNoteOnBeforeFastRelease = true;
+            }
+        }
+    }
+    REQUIRE_TRUE(rig.Application().MidiOutContent() == synth_froggers::FroggersMidiOutContent::Pitch);
+    REQUIRE_TRUE(sawNoteOnBeforeFastRelease);
+
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    model.PageParameter(synth_froggers::FroggersBankId::Envelope, 3).SceneCenter(0) = 0.0f;   // Release VCO1
+    model.PageParameter(synth_froggers::FroggersBankId::Envelope, 7).SceneCenter(0) = 0.0f;   // Release VCO2
+    model.PageParameter(synth_froggers::FroggersBankId::Envelope, 11).SceneCenter(0) = 0.0f;  // Release VCO3
+
+    // A note-off appended alongside a note-on IN THE SAME BLOCK is the K=1
+    // note-CHANGE pair (spec: "preceded at the same frame by the note-off
+    // for the sounding note"), not the quiet-ending path -- only a note-off
+    // with no note-on in that same block's event list can be the quiet
+    // path. The gate closes at 2.5 s and the wait window below runs to 8 s,
+    // comfortably covering the whole 2.5-5.0 s closed half.
+    bool sawNoteOffWhileTransportRunning = false;
+    for (std::size_t i = 0; i < kBlocksPerSecond * 8 && !sawNoteOffWhileTransportRunning; ++i) {
+        rig.RunBlocks(1);
+        const synth::AppMidiOutEventList& events = rig.Engine().AppMidiOutEvents();
+        bool blockHasNoteOff = false;
+        bool blockHasNoteOn = false;
+        for (const synth::AppMidiOutEvent& event : events) {
+            const std::optional<DecodedNoteEvent> decoded = DecodeNoteEvent(event);
+            REQUIRE_TRUE(decoded.has_value());
+            if (decoded->isNoteOn) {
+                blockHasNoteOn = true;
+            } else {
+                blockHasNoteOff = true;
+            }
+        }
+        if (blockHasNoteOff && !blockHasNoteOn) {
+            sawNoteOffWhileTransportRunning = true;
+        }
+    }
+    // The transport was never stopped above -- StartAt(0) ran once, and
+    // no StopAt call exists anywhere in this test -- so this standalone
+    // note-off can only be the level path.
+    REQUIRE_TRUE(sawNoteOffWhileTransportRunning);
+
+    // No note-on follows for a further 2 s: the gate does not reopen until
+    // 5.0 s, so a note-off this early in the closed half, with nothing
+    // sounding for a further 2 s, cannot be the next cycle's own change --
+    // confirming this was the note ending, not merely the note changing.
+    for (std::size_t i = 0; i < kBlocksPerSecond * 2; ++i) {
+        rig.RunBlocks(1);
+        for (const synth::AppMidiOutEvent& event : rig.Engine().AppMidiOutEvents()) {
+            const std::optional<DecodedNoteEvent> decoded = DecodeNoteEvent(event);
+            REQUIRE_TRUE(decoded.has_value());
+            REQUIRE_TRUE(!decoded->isNoteOn);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // pitch_stopping_content_resets_the_detector_even_without_a_sounding_note
 // ---------------------------------------------------------------------------
 // The transport is never started, so the output (and therefore the mono
