@@ -6,8 +6,8 @@
 # (External/Sheaf/projects/synth/browser/src/validate-deployed-catalog.mjs)
 # against it, proving cross-origin access, media types, decoded size, and
 # content hash all verify -- entirely over loopback HTTP, which the
-# validator explicitly allows for local tests
-# (validate-deployed-catalog.mjs:98).
+# validator explicitly allows for local tests, inside its own
+# `validateDeployedCatalog`.
 #
 # This does NOT drive a browser or Sheaf's real launcher UI -- for that
 # manual step (Sheaf's launcher genuinely loading and running frogg3rs

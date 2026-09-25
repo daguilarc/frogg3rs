@@ -5,7 +5,7 @@
 #
 # This cannot pass an out-of-tree
 # `--output-root <repo>/app/browser/dist` directly. Empirically (and confirmed by
-# reading build-browser-apps.mjs:147-152), that unconditionally throws
+# reading Sheaf's `buildBrowserApps` in build-browser-apps.mjs), that unconditionally throws
 # "outputRoot must be a dedicated directory beneath dist/wasm": `wasmRoot`
 # is always resolved from `browserRoot` (Sheaf's own
 # projects/synth/browser/dist/wasm), independent of whatever --output-root
@@ -57,7 +57,7 @@ cp "$BROWSER_ROOT/$STAGE_REL/emissions.json" "$OUT_APPS_DIR/emissions.json"
 # artifacts.{entry,wasm,pthreadWorker,wasmWorker,audioWorklet} fields to
 # match the real final layout ("apps/<appId>/<appId>.{js,wasm}", relative
 # to dist/wasm/ the same way Sheaf's own default-output-root convention
-# reports it: build-browser-apps.mjs:175-184). Fail loudly (nonzero exit,
+# reports it, also inside `buildBrowserApps`). Fail loudly (nonzero exit,
 # uncaught exception) if the expected fields are missing rather than
 # writing a half-patched report.
 node -e '

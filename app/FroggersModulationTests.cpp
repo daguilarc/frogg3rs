@@ -408,7 +408,8 @@ TEST_CASE(external_audio_cells_present_and_inert_with_no_input) {
     drillIn.PressEncoder(0);  // open L1 view -- slate stays 15 cells regardless of cabling
     // The external-audio cells are still PUSHED (present) at their fixed
     // positions (13, 14) but with a null parameter (inert / disconnected
-    // encoder rendering), per External/Sheaf/projects/synth/src/ParameterModulation.cpp:2843-2852,2784-2786.
+    // encoder rendering), per `Bank::OpenModulationView`,
+    // External/Sheaf/projects/synth/src/ParameterModulation.cpp.
     REQUIRE_TRUE(target.ModulationDepthParameter(kModSlotExternalAudio) == nullptr);
     REQUIRE_TRUE(target.ModulationDepthParameter(kModSlotExternalAudioEf) == nullptr);
     // Every OTHER (connected) source still materializes normally -- the
@@ -436,7 +437,8 @@ TEST_CASE(external_audio_cells_present_and_inert_with_no_input) {
 // counts. This proves the source's VALUE flows through: at a full (|depth|
 // == 1.0) route, the resolved value is driven entirely by the source and the
 // destination's own commanded center contributes nothing at all
-// (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2257-2270's weightSum>=1.0 branch zeroes
+// (`Parameter::ComputeAtDepth`'s weightSum>=1.0 branch,
+// External/Sheaf/projects/synth/src/ParameterModulation.cpp, zeroes
 // targetCenterScales_ -- see AttachFullPositiveAudioRateModulation's own
 // comment, below, for the fuller derivation). So pinning the destination's
 // commanded value to a KNOWN quantity, then attaching a full-positive
@@ -457,8 +459,8 @@ TEST_CASE(external_audio_cells_present_and_inert_with_no_input) {
 // accessor this mechanism is named after; `GetRaw(0)` (public) reads the
 // same resolved quantity through `currentCenter_`/`CurrentDepthSlots`, which
 // `ParameterManager::ComputeAllParameters()`'s `SnapCurrentToTarget()` call
-// keeps equal to the target ones (External/Sheaf/projects/synth/src/ParameterModulation.cpp:1207-1216,
-// 3165-3173) -- the same convergence AttachFullPositiveAudioRateModulation's
+// keeps equal to the target ones (External/Sheaf/projects/synth/src/ParameterModulation.cpp) --
+// the same convergence AttachFullPositiveAudioRateModulation's
 // own comment relies on for the depth parameter's `GetRaw()`.
 TEST_CASE(connected_external_audio_modulation_reaches_a_destination_end_to_end) {
     Fixture fx;
@@ -600,36 +602,77 @@ TEST_CASE(randomize_all_on_parameter_page_never_creates_level_two_depths) {
     });
 }
 
-TEST_CASE(randomize_all_on_parameter_page_stays_within_793_ceiling_with_external_disconnected_and_is_idempotent_capacity_wise) {
+TEST_CASE(randomize_all_with_every_coin_forced_fills_every_reached_parameter_from_every_connected_source) {
     Fixture fx;
-    fx.StepOnce(/*externalConnected=*/false);  // 13 connected sources -> 61*13 = 793 ceiling
+    fx.StepOnce(/*externalConnected=*/false);  // 13 connected sources (15 total, 2 external-audio slots null)
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+
+    // Force every coin flip to keep drawing: DrawGeometricCount's own loop
+    // is `while (count < maximum && NextRandomCoin() >= 0.5f) ++count;`, so a
+    // coin that always returns 1.0f runs it to `maximum` -- every connected
+    // source, for every parameter Randomize All reaches -- rather than
+    // stopping early. NextRandomIndex only decides WHICH sources the partial
+    // Fisher-Yates picks first, never how many; since every connected source
+    // ends up picked either way, always returning index 0 of the shrinking
+    // range is as valid a permutation as any other for this count assertion.
+    fx.manager.SetRandomSource(
+        []() { return 0.3f; },       // NextRandomValue -- irrelevant to which/how-many
+        []() { return 1.0f; },       // NextRandomCoin -- always keep drawing
+        [](std::size_t) { return std::size_t{0}; });  // NextRandomIndex -- irrelevant to the count
+
+    // The ceiling this test computes from the code's own counts, not a
+    // hand-typed constant: every non-null Bank::VisibleParameter slot across
+    // every bank RandomizeBankLevel1Depths reaches, times the connected
+    // count in the group's modulator metadata (the same for every
+    // parameter, since they share FroggersParameterModel's one group).
+    std::size_t visibleSlotCount = 0;
+    for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
+        synth::Bank& bank = fx.model.BankAt(static_cast<FroggersBankId>(bankIx));
+        for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
+            if (bank.VisibleParameter(static_cast<synth::PhysicalEncoderId>(paramIx)) != nullptr) {
+                ++visibleSlotCount;
+            }
+        }
+    }
+    std::size_t connectedCount = 0;
+    for (const synth::ModulatorMetadata& meta : fx.model.Group().GetModulators().Metadata()) {
+        if (meta.connected) {
+            ++connectedCount;
+        }
+    }
+    const std::size_t expectedCeiling = visibleSlotCount * connectedCount;
 
     auto countMaterialized = [&]() {
         std::size_t count = 0;
-        ForEachTopLevelParameter(fx.model, [&](synth::Parameter& parameter) {
-            for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
-                if (parameter.ModulationDepthParameter(modIx) != nullptr) {
-                    ++count;
+        for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
+            synth::Bank& bank = fx.model.BankAt(static_cast<FroggersBankId>(bankIx));
+            for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
+                synth::Parameter* param = bank.VisibleParameter(static_cast<synth::PhysicalEncoderId>(paramIx));
+                if (param == nullptr) {
+                    continue;
+                }
+                for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+                    if (param->ModulationDepthParameter(modIx) != nullptr) {
+                        ++count;
+                    }
                 }
             }
-        });
+        }
         return count;
     };
 
     const auto result1 = RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
     const std::size_t after1 = countMaterialized();
     REQUIRE_TRUE(!result1.partial);
-    REQUIRE_TRUE(after1 <= 61 * 13);
+    REQUIRE_TRUE(after1 == expectedCeiling);
 
     const auto result2 = RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
     const std::size_t after2 = countMaterialized();
     REQUIRE_TRUE(!result2.partial);
-    REQUIRE_TRUE(after2 <= 61 * 13);
-    // Repeated presses re-randomize already-materialized depths (or add a
-    // few more, since the coin-flip loop can touch a previously-untouched
-    // modulator next time) but never exceed the ceiling.
-    REQUIRE_TRUE(after2 >= after1);
+    // Every reached parameter is already at every connected source: a second
+    // full-coverage press re-randomizes the same set's VALUES (through the
+    // zero-then-redraw in RandomizeParameterModulationDepths), never grows it.
+    REQUIRE_TRUE(after2 == after1);
 }
 
 TEST_CASE(randomize_all_on_level_one_grid_materializes_that_parameters_own_level_two_depths_and_no_others) {
@@ -687,7 +730,8 @@ TEST_CASE(randomize_all_on_level_one_grid_never_ejects_and_still_reaches_level_t
     // underlying signal LastRandomizePartial() publishes (that accessor's
     // own comment: true when "the MOST RECENT Randomize All/Page operation
     // left FroggersRandomizeResult.partial true"), and is this file's own
-    // established idiom for the same check -- see the 793-ceiling test
+    // established idiom for the same check -- see
+    // randomize_all_with_every_coin_forced_fills_every_reached_parameter_from_every_connected_source
     // above.
     const auto result = RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
 
@@ -1132,7 +1176,8 @@ TEST_CASE(randomize_all_level_one_press_gives_its_own_depths_and_each_depths_sub
         // ones get the STRONGER assertion -- they must carry no sub-depths at
         // all. That second branch is the badge fix pinned directly. Sheaf's
         // ModulatorsAffectingMask counts a depth that merely HAS sub-modulation
-        // (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2356-2365 via HasNonZeroState), so a neutral
+        // (`Parameter::ModulatorsAffectingMask`,
+        // External/Sheaf/projects/synth/src/ParameterModulation.cpp, via HasNonZeroState), so a neutral
         // depth with sub-depths would light up as a badge for a source that is
         // modulating nothing -- measured at 13 badges against 1 live source.
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
@@ -2277,8 +2322,8 @@ TEST_CASE(reset_all_after_drilled_randomize_equals_a_fresh_launch_including_whic
 // `TargetValue(0)` is driven by the live, audio-rate-oscillating source
 // signal instead of `parameter`'s own commanded value. At depth == +1.0 the
 // route's |depth| weight sum is exactly 1.0, which zeroes
-// `targetCenterScales_` (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2257-2268's weightSum>=1.0
-// branch) -- i.e. the commanded center contributes NOTHING to
+// `targetCenterScales_` (`Parameter::ComputeAtDepth`'s weightSum>=1.0
+// branch, External/Sheaf/projects/synth/src/ParameterModulation.cpp) -- i.e. the commanded center contributes NOTHING to
 // `TargetValue(0)`; it is driven entirely by the oscillating source. VCO1's
 // pitch is pinned near the top of its kPitchMinHz-kPitchMaxHz exponential
 // map (dsp/Vco.hpp's `PitchToPhaseIncrement`): at 48 kHz and pitch==1.0 that
@@ -2361,14 +2406,15 @@ TEST_CASE(randomize_lands_the_drawn_value_under_full_positive_audio_rate_modulat
 // source6Visualizer_ is constructed with drawBackground=false
 // (FroggersModulation.hpp's own constructor, the trailing argument to
 // GangedRandomLfoVisualizer<1>). GangedRandomLfoVisualizer::
-// AppendBackgroundAndAxis (External/Sheaf/projects/synth/include/synth/GangedRandomLfoVisualizer.hpp:57-70) is the only
+// AppendBackgroundAndAxis (External/Sheaf/projects/synth/include/synth/GangedRandomLfoVisualizer.hpp) is the only
 // thing that Fill's the whole node in Color::Rgb(12, 14, 16) plus an axis
 // line, and it only runs when drawBackground is true -- lanes 1-5's own
 // RandomShLaneVisualizer (FroggersRandomShVisualizer.hpp) never had a
 // background to begin with, so this brings lane 6 in line with the other
 // five. The rest of what BuildGangedRandomLfoCommands draws per voice --
 // the trace polyline and the playhead dot -- is unconditional on
-// drawBackground (External/Sheaf/projects/synth/include/synth/GangedRandomLfoVisualizer.hpp:199-243), so lane 6 must
+// drawBackground, in `BuildGangedRandomLfoCommands`
+// (External/Sheaf/projects/synth/include/synth/GangedRandomLfoVisualizer.hpp), so lane 6 must
 // still draw those.
 //
 // Reaches source6Visualizer_/the five lane visualizers through
@@ -2406,7 +2452,8 @@ TEST_CASE(lane_six_visualizer_omits_the_full_node_background_but_still_draws_its
 
     // (a) No full-node background fill -- checked by the exact colour and
     // extent AppendBackgroundAndAxis's Fill uses
-    // (External/Sheaf/projects/synth/include/synth/GangedRandomLfoVisualizer.hpp:62-63), not by command count.
+    // (also in `AppendBackgroundAndAxis`,
+    // External/Sheaf/projects/synth/include/synth/GangedRandomLfoVisualizer.hpp), not by command count.
     bool sawFullNodeBackgroundFill = false;
     for (const synth::ui::DrawCommand& command : lane6Commands) {
         if (command.kind == synth::ui::DrawCommand::Kind::Fill &&

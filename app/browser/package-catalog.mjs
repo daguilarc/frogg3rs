@@ -5,16 +5,17 @@
 //
 // Governing specs:
 //   openspec/specs/froggers-browser-package/spec.md
-//     - identity (:27-49): appId "frogg3rs", publisher identity is this
+//     - "Schema-conformant catalog document"/"Permanent publisher identity":
+//       appId "frogg3rs", publisher identity is this
 //       project's own, never Sheaf's
-//     - no Sheaf-side slot (:75-81): built entirely out-of-tree
-//     - immutable, content-addressed package (build id derived from
+//     - "Registry listing requires no Sheaf source change": built entirely out-of-tree
+//     - "Immutable, content-addressed package" (build id derived from
 //       artifact content)
 //   External/Sheaf/openspec/specs/synth-browser-app-catalog/spec.md
-//     - (:25-39): catalog schema, media types, SHA-256 digests
-//     - (:41-51): global id is "<publisher-id>/<app-id>"
-//     - (:95-106): CORS package sidecar materialization
-//     - (:140-157): first-party catalog + package, local dev source
+//     - sbac-2: catalog schema, media types, SHA-256 digests
+//     - sbac-3: global id is "<publisher-id>/<app-id>"
+//     - sbac-7: CORS package sidecar materialization
+//     - sbac-10: first-party catalog + package, local dev source
 //
 // DOES NOT REIMPLEMENT Sheaf's generic package/catalog tooling. Reused
 // directly (read-only imports, no Sheaf source edited):
@@ -33,8 +34,8 @@
 //     This *is* Sheaf's own catalog validator, preferred here over
 //     reimplementing schema checks; parseCatalog is the same function
 //     Sheaf's own first-party catalog builder
-//     (build-first-party-catalog.mjs:186) and its CatalogClient
-//     (catalog-client.ts:60) call.
+//     (Sheaf's browser/src/build-first-party-catalog.mjs) and its CatalogClient
+//     (Sheaf's browser/src/catalog-client.ts) call.
 //
 // NOT reused: build-first-party-catalog.mjs / publishSite. Both are
 // Sheaf's OWN first-party plumbing: they read Sheaf's own
@@ -54,7 +55,7 @@
 // object validated with parseCatalog before being written.
 //
 // PUBLISHER IDENTITY (permanent once published -- spec "Permanent
-// publisher identity", froggers-browser-package/spec.md:43-49):
+// publisher identity", froggers-browser-package/spec.md):
 // publisher.id = "daguilarc", publisher.name = "daguilarc".
 //
 // This script generates a fresh package and catalog under
@@ -100,8 +101,8 @@ const EMISSIONS_PATH = path.join(BROWSER_ROOT, "dist", "wasm", "apps", "emission
 
 // Used only as the resolution base for local parseCatalog schema
 // validation below; the catalog.json content itself carries no absolute
-// URLs (every file/entry path is catalog-relative, per
-// catalog-schema-v1.md:56 "Paths are normalized catalog-relative paths"),
+// URLs (every file/entry path is catalog-relative, per Sheaf's
+// catalog-schema-v1.md, "Paths are normalized catalog-relative paths"),
 // so this value does not get baked into any published artifact and does
 // not decide, or need to match, the eventual production hosting origin
 // (that origin/base-path is decided at cutover time, not fixed by this
@@ -118,8 +119,8 @@ const CATALOG_VALIDATION_BASE_URL = "https://daguilarc.github.io/placeholder/cat
 // directory (dist/wasm/apps/frogg3rs/) so it can assert "unexpected emitted
 // artifacts not named by a required role" over exactly that directory's
 // contents. Strip the "apps/<appId>/" prefix to get paths relative to
-// sourceDirectory -- the same normalization
-// build-first-party-catalog.mjs:85-98 performs for the identical reason.
+// sourceDirectory -- the same normalization Sheaf's
+// build-first-party-catalog.mjs performs for the identical reason.
 async function readArtifactRoles(appId) {
   const raw = JSON.parse(await readFile(EMISSIONS_PATH, "utf8"));
   if (!Array.isArray(raw.apps)) throw new Error(`emissions.json at ${EMISSIONS_PATH} has no apps array`);

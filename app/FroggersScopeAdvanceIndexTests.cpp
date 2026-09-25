@@ -5,12 +5,13 @@
 // value (called by FroggersAppCore::RouteAudioSample(), once per VCO, on
 // the post-gate signal) and
 // AdvanceIndex() to move the ring-buffer cursor (`index_ += amount`,
-// External/Sheaf/projects/synth/include/synth/DspScope.hpp:126-128). Once,
+// External/Sheaf/projects/synth/include/synth/DspScope.hpp). Once,
 // Froggers called Write() and Publish() but never AdvanceIndex(). index_
 // stayed 0, so every Write()
 // overwrote slot 0 and Publish() always republished index 0; ScopeReader's
 // no-marker fallback then computed endIndex_ == startIndex_ == 0
-// (External/Sheaf/projects/synth/include/synth/DspScope.hpp:266-267), making Empty() permanently true (:270,298), so
+// (`ScopeReader::ScopeReader`'s no-marker fallback,
+// External/Sheaf/projects/synth/include/synth/DspScope.hpp), making Empty() permanently true, so
 // BuildScopePolylines returned early and the scope panel drew only
 // background fill + midline.
 //

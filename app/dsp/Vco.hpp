@@ -23,11 +23,12 @@
 // way: nothing here *could* reach another VCO's state.
 //
 // ============================================================================
-// Sheaf's own `WavetableVco<Bits>` (include/synth/DspOscillators.hpp) is the
+// Sheaf's own `WavetableVco<Bits>`
+// (External/Sheaf/projects/synth/include/synth/DspOscillators.hpp) is the
 // cited shape this struct must conform to: `UIState{connected, scope,
-// scopeChannel, scopeColor}` (:119-124) + `SetScopeWriterHolder()` (:133-135)
-// + `SetScopeColor()` (:137-139) + `PopulateUIState()` (:165-171) -- `:141-163`
-// is `Process`, not part of the cited UIState surface. Sheaf's own reference
+// scopeChannel, scopeColor}`, `SetScopeWriterHolder()`, `SetScopeColor()`
+// and `PopulateUIState()` -- `Process` is not part of the cited UIState
+// surface. Sheaf's own reference
 // struct embeds this directly alongside its DSP `Process()`, in the SAME
 // file/class, rather than through a separate wrapper -- this port mirrors
 // that placement exactly (same reasoning as FilterFx.hpp's ResonantBump/Comb
@@ -40,8 +41,9 @@
 // accordingly (no link-time dependency: everything reached here is
 // header-only inline).
 //
-// Deliberately NOT ported: WavetableVco::Process's cycle-boundary
-// RecordStart/marker bookkeeping (External/Sheaf/projects/synth/include/synth/DspOscillators.hpp:158-163). This struct
+// Deliberately NOT ported: `WavetableVco::Process`'s cycle-boundary
+// RecordStart/marker bookkeeping, inside `WavetableVco::Process`
+// (External/Sheaf/projects/synth/include/synth/DspOscillators.hpp). This struct
 // does not write to the scope at all -- FroggersAppCore.hpp writes the
 // gated sample to scopeWriterHolder_ after MixOscVoices runs (see
 // SetScopeWriterHolder() below and RouteAudioSample() in
@@ -87,8 +89,9 @@ inline float EvalWaveMorph(float phaseWrapped01, float morph)
 // the ported topology with zero cross-VCO terms.
 struct Vco
 {
-    // Verbatim member names and types, matching Sheaf's own UIState shape
-    // (External/Sheaf/projects/synth/include/synth/DspOscillators.hpp:119-124).
+    // Verbatim member names and types, matching Sheaf's own `UIState` shape
+    // (External/Sheaf/projects/synth/include/synth/DspOscillators.hpp).
+
     struct UIState
     {
         std::atomic<bool> connected{false};
@@ -238,7 +241,7 @@ struct Vco
                   float sampleRate)
     {
         const float phaseIncrement = PitchToPhaseIncrement(pitchKnob01, sampleRate);
-        // :741-743 -- the depth multiply is at the caller of
+        // 08b5fd3:src/core/FroggersEngine.hpp:741-743 -- the depth multiply is at the caller of
         // StepIndependentPmLfo, not inside it; ported the same way.
         const float pmOffset = kPmLfoDepth * PmDepthScale(pmKnob01) * StepPmLfo(pmRateKnob01, sampleRate);
         const float modulatedPhase = WrapPhase(carrierPhase + pmOffset);
@@ -277,8 +280,8 @@ struct Vco
         return output;
     }
 
-    // SetScopeWriterHolder/SetScopeColor/PopulateUIState,
-    // same shape as WavetableVco's (External/Sheaf/projects/synth/include/synth/DspOscillators.hpp:133-135,137-139,165-171).
+    // `SetScopeWriterHolder`/`SetScopeColor`/`PopulateUIState`,
+    // same shape as WavetableVco's (External/Sheaf/projects/synth/include/synth/DspOscillators.hpp).
     void SetScopeWriterHolder(synth::ScopeWriterHolder* holder)
     {
         scopeWriterHolder_ = holder;

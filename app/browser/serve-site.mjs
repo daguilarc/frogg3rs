@@ -2,7 +2,7 @@
 // Local serving path. Serves one or
 // more directories on loopback HTTP with permissive CORS and correct
 // media types (wasm -> application/wasm, js -> text/javascript), matching
-// (External/Sheaf/openspec/specs/synth-browser-app-catalog/spec.md:95-106)
+// (External/Sheaf/openspec/specs/synth-browser-app-catalog/spec.md, sbac-7)
 // and the froggers-browser-package spec's "Public hosting
 // suitable for cross-origin loading" requirement.
 //
@@ -104,8 +104,7 @@ export function createSiteServer(config) {
   return createServer(async (request, response) => {
     // Permissive CORS PLUS the cross-origin-isolated launcher's
     // COOP/COEP/Permissions-Policy trio (mirroring Sheaf's own
-    // static-server.mjs `isolated: true` default, static-server.mjs
-    // :134-138). The comment this replaced argued this server must NOT
+    // static-server.mjs `isolated: true` default). The comment this replaced argued this server must NOT
     // claim isolation headers because "this repo is a catalog/package
     // origin, not the launcher" -- true when this script's only
     // job was local catalog+package validation, but the site

@@ -312,7 +312,7 @@ TEST_CASE(default_patch_has_audible_band_energy_above_150hz) {
     // FroggersApp::Config() (app/FroggersAppCore.hpp) sets
     // preferredSampleRate = 48000.0, and this Rig() ctor call above passes
     // no override AudioSettings, so SynthRig negotiates that same rate
-    // (External/Sheaf/projects/synth/tests/support/SynthRig.hpp:68-70).
+    // (`SynthRig::SynthRig`, External/Sheaf/projects/synth/tests/support/SynthRig.hpp).
     constexpr double kSampleRateHz = 48000.0;
 
     // The prior version summed Goertzel power over a
@@ -532,7 +532,7 @@ TEST_CASE(limiter_passes_below_threshold_signal_bit_identical) {
 // This test's own name says
 // "reduces gain smoothly, not squared off" -- it does NOT say "never
 // exceeds 1.0". That ceiling claim belongs to
-// output_clamp_bounds_overdriven_patch_to_full_scale (:391 above), which
+// output_clamp_bounds_overdriven_patch_to_full_scale (above), which
 // exercises the real SanitizeOutputSample hard bound through the whole
 // synth and already passes. This test instead exercises OutputLimiter
 // directly via TestOutputLimiter(), bypassing that hard bound entirely, so
@@ -615,8 +615,8 @@ TEST_CASE(limiter_reduces_gain_smoothly_not_squared_off) {
 // and was struck from the
 // chain-level test. This property is independent of gain staging, so it
 // moves here, driven directly via TestOutputLimiter() -- same convention as
-// limiter_passes_below_threshold_signal_bit_identical (:448 above) and
-// limiter_reduces_gain_smoothly_not_squared_off (:498 above).
+// limiter_passes_below_threshold_signal_bit_identical (above) and
+// limiter_reduces_gain_smoothly_not_squared_off (above).
 // -----------------------------------------------------------------------
 TEST_CASE(limiter_engages_and_envelope_drops_below_unity) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("limiter_engages_direct"));
@@ -757,7 +757,7 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
 // (1.002x, not the 50.5x figure), not a null result: that 50.5x figure is
 // specifically from "periodic phase/content coincidence", and a
 // per-sample-random noise source (NoiseModulatorProcessor::Process() ->
-// random_.UniformOpen01(), External/Sheaf/projects/synth/include/synth/DspNoise.hpp:69-71) structurally cannot produce
+// random_.UniformOpen01(), External/Sheaf/projects/synth/include/synth/DspNoise.hpp) structurally cannot produce
 // periodic coincidence. kModSlotVco1Audio (vco1AudioSource_ =
 // NormalizeBipolarToUnit(vco1Raw), FroggersModulation.hpp's
 // `FroggersModulationSlate::Step`, registered at
@@ -768,7 +768,7 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
 // modulated parameters below; kModSlotNoise is not used anywhere in this
 // test.
 //
-// Route verified against synth::Parameter (External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:499):
+// Route verified against synth::Parameter (External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp):
 // `Parameter* EnsureModulationDepth(std::size_t modIx)` is public, returns
 // nullptr at storage capacity (checked below, not dereferenced blindly), and
 // PageParameter() returns synth::Parameter& (confirmed at
@@ -778,7 +778,7 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
 // synth_froggers namespace) is registered `connected = true` unconditionally
 // in FroggersModulation.hpp's `FroggersModulationSlate::RegisterSources`, so it
 // needs no extra wiring here. Depth centers are confirmed BIPOLAR by
-// ModulationDepthTargetFromKnob (External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:115-122): knob 0.5
+// ModulationDepthTargetFromKnob (External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp): knob 0.5
 // maps to bipolar 0 (zero depth), knob 1.0 maps to bipolar +1 (full
 // positive) -- matching kNeutralModulationDepthCenter = 0.5f
 // (FroggersModulation.hpp's `kNeutralModulationDepthCenter`). SceneCenter(0) = 1.0f below is therefore
@@ -1296,7 +1296,7 @@ TEST_CASE(silent_while_transport_is_stopped) {
 
     // Deliberately no rig.StartAt(...) -- the rig's transport starts
     // Stopped (MasterClock::Prepare() resets transportState_ to Stopped,
-    // External/Sheaf/projects/synth/src/MasterClock.cpp:929) and stays there absent an explicit Start.
+    // External/Sheaf/projects/synth/src/MasterClock.cpp) and stays there absent an explicit Start.
     rig.RunBlocks(12);
 
     REQUIRE_TRUE(!rig.SawNaN());
@@ -1494,18 +1494,18 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb) {
     REQUIRE_TRUE(ringingPeak > kRingingFloorLinear);
 
     // Stop the transport mid-ring. SynthRig::StopAt pushes a MessageIn::Stop
-    // carrying this timestamp onto the UI bus (External/Sheaf/projects/synth/tests/support/SynthRig.hpp:176-178);
+    // carrying this timestamp onto the UI bus (External/Sheaf/projects/synth/tests/support/SynthRig.hpp);
     // Engine::ProcessBlock drains that bus using each block's own sequential
-    // timestamp (External/Sheaf/projects/synth/include/synth/Engine.hpp:396, MessageInBus::Pop's `queue_[head].timestamp
-    // > timestamp` gate, External/Sheaf/projects/synth/src/ParameterModulation.cpp:4013, which is inclusive of
-    // equality) BEFORE committing that block's clock plan (External/Sheaf/projects/synth/include/synth/Engine.hpp:402),
+    // timestamp (External/Sheaf/projects/synth/include/synth/Engine.hpp, MessageInBus::Pop's `queue_[head].timestamp
+    // > timestamp` gate, External/Sheaf/projects/synth/src/ParameterModulation.cpp, which is inclusive of
+    // equality) BEFORE committing that block's clock plan (also in External/Sheaf/projects/synth/include/synth/Engine.hpp),
     // so passing exactly the running tally of blocks already executed via
     // RunBlocks (SynthRig::NextTimestamp() is a private monotonically
     // increasing counter RunBlocks draws from once per block, starting at 0,
     // and StartAt(0) above never drew from it) lines this Stop message up
     // with the very next block RunBlocks executes -- the same shape
     // miniapp_system_tests.cpp's own `rig.StopAt(3); rig.RunBlockAt(3);`
-    // (External/Sheaf/projects/synth/tests/miniapp_system_tests.cpp:1197-1198) relies on.
+    // (External/Sheaf/projects/synth/tests/miniapp_system_tests.cpp) relies on.
     rig.StopAt(timestamp);
 
     // "Falls below -60 dBFS within ~250 ms" means the output has REACHED
@@ -3301,10 +3301,11 @@ TEST_CASE(pristine_and_reset_arms_compared_over_many_draws_with_a_silence_capabl
 // What "New" actually restores, and why it is not the default patch.
 //
 // New goes PatchManager::NewPatch() -> PatchMessageIn::RevertAllToDefault()
-// -> ParameterManager::RevertAllToDefaults() (External/Sheaf/projects/synth/src/PatchPersistence.cpp:546) ->
+// -> ParameterManager::RevertAllToDefaults() (External/Sheaf/projects/synth/src/PatchPersistence.cpp) ->
 // Parameter::RevertAllToDefault() per parameter, which sets each center to
 // its REGISTERED config_.defaultValue and zeroes every modulation depth
-// (External/Sheaf/projects/synth/src/ParameterModulation.cpp:1772 onward: currentDepths_/targetDepths_ filled
+// (start of `Parameter::RevertAllToDefault()`,
+// External/Sheaf/projects/synth/src/ParameterModulation.cpp: currentDepths_/targetDepths_ filled
 // with 0, activeRouteCount_ = 0, recursing into modulationDepths_).
 //
 // The centers survive that unchanged, because ApplyBankDefaultPatch writes

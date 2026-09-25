@@ -565,7 +565,7 @@ TEST_CASE(plugin_mode_transport_row_thins_to_freeze_and_label_only) {
     const synth::ui::Node* label = FindNodeById(tree, synth_froggers::FroggersNodeIds::kFreezeLabel);
     REQUIRE_TRUE(label != nullptr);
     // Builder::Label() stores its text in Node::text, not Node::label
-    // (External/Sheaf/projects/synth/include/synth/PortableUIBuilders.hpp:184-190) -- Node::label is per-kind CAPTION
+    // (External/Sheaf/projects/synth/include/synth/PortableUIBuilders.hpp) -- Node::label is per-kind CAPTION
     // text for controls that render their own (buttons/sliders/etc, see
     // that struct's own comment); a Label node's displayed text is `text`.
     REQUIRE_TRUE(label->text == "FREEZE");
@@ -1130,7 +1130,7 @@ TEST_CASE(open_modulation_drilldown_survives_a_cross_bank_host_write) {
 // SAME physical encoder maps to while drilled in --------------------------
 // The operator's own bank (0) is drilled into slot 5's modulation view;
 // that view remaps EVERY physical encoder (Bank::OpenModulationView,
-// External/Sheaf/projects/synth/src/ParameterModulation.cpp:2833-2879) to a
+// External/Sheaf/projects/synth/src/ParameterModulation.cpp) to a
 // modulation-depth cell, including slot 0 -- the position this test then
 // automates. Removing the MessageIn::SelectParamBank push -- it
 // used to force the bank's visible page back to top level as a side effect

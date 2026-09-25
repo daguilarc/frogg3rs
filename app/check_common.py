@@ -15,8 +15,13 @@ import os
 
 # Build outputs, vendored trees and git's own storage. `.git` matters: a walk
 # without it can match a filename inside .git/objects and report a citation as
-# resolving to something no reader can open.
-EXCLUDED_DIRS = ("build", "build-launcher", "node_modules", ".git", ".venv-pages")
+# resolving to something no reader can open. `dist` is app/browser/dist/, the
+# browser bundle's own gitignored build output (.gitignore): minified,
+# third-party (emscripten) JS in there carries colon-digit sequences that read
+# as bare citations once a scan reads trailing comments, not just whole-line
+# ones, but nothing under it is source this project wrote or a citation
+# convention applies to.
+EXCLUDED_DIRS = ("build", "build-launcher", "node_modules", ".git", ".venv-pages", "dist")
 
 
 def walk_sources(root, extensions):

@@ -14,9 +14,10 @@
 // ApplyFuegoSeam() below is called from
 // ProcessSample() between ParameterGroup::ProcessSamplePhase1() and
 // ProcessSamplePhase2() -- the exact seam Braid uses for its own per-sample
-// filtering (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:457-459 ProcessParameterPhase1 ->
+// filtering (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:
+// ProcessParameterPhase1 ->
 // FilterParameterCaches -> ProcessParameterPhase2, filtering implementation
-// :569-627). This is the ONE fuego application point: see ApplyFuegoSeam()'s
+// inside FilterParameterCaches). This is the ONE fuego application point: see ApplyFuegoSeam()'s
 // own comment.
 //
 // Scope:
@@ -27,7 +28,7 @@
 //     ModulatorMetadata stays default {connected=false} until that class
 //     runs, and Modulators::UpdateModValues() / Parameter's route-processing
 //     are documented no-ops for unconnected slots
-//     (External/Sheaf/projects/synth/src/ParameterModulation.cpp:576-577),
+//     (`Modulators::UpdateModValues`, External/Sheaf/projects/synth/src/ParameterModulation.cpp),
 //     so driving the sample loop below is safe regardless of registration
 //     order.
 //   * This file does not build UI layout. FroggersUiSurface.hpp does that;
@@ -113,9 +114,9 @@ struct FroggersBankLayout {
 // (:148-155, gridPage = hostPage-1 for hostPage in [1,4]), rows 7-9 from
 // kExpansionTailRowLabels[gridPage][row-7] (:156-159). kHostRowGrid's row
 // arrays are 8 wide with a trailing index-7 "Crispy" that forHostPageRow
-// never reads (documented dead data at V2DesktopPageDisplayNames.hpp's
-// comment above kAudioRowLabels, :95-103) -- NOT copied wholesale here.
-// Audio (hostPage 0) instead comes from kAudioRowLabels (:101-103, 7
+// never reads (documented dead data in the same file's
+// comment above kAudioRowLabels) -- NOT copied wholesale here.
+// Audio (hostPage 0) instead comes from kAudioRowLabels (7
 // entries: rows 0-5 used, row 6 is Audio's own dead local Crispy) with the
 // three Shape (VCO morph) controls added as ordinary on-grid slots
 // (they are a separate global axis in v2,
@@ -344,10 +345,11 @@ inline synth::Color FroggersGestureColor(std::size_t gestureIx) {
 class FroggersParameterModel {
 public:
     // ParameterGroupConfig{numVoices=1, numModulators=15,
-    // numScenes=..., maxParameters=...} (External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:195-198).
+    // numScenes=..., maxParameters=...} (External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp).
     static constexpr std::size_t kNumVoices = 1;
     static constexpr std::size_t kNumModulators = 15;  // The slate's source count (FroggersModulationSlate registers all 15).
-    // Two scenes, matching apps/braid-4's convention (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:125,137)
+    // Two scenes, matching apps/braid-4's convention (`Braid4Core::Init`,
+    // External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp)
     // and the single scene-blend slider the surface uses for
     // the chrome band -- one scene *pair*.
     //
@@ -365,8 +367,9 @@ public:
     static constexpr std::size_t kNumScenes = 2;
     // Gesture faders the engine allocates. Each parameter stores a value and
     // an active flag per scene per gesture, and modulation-depth children
-    // store the same, so this multiplies patch JSON: at 8 the default patch
-    // is 182KB, and the plugin's constructor-time state seed
+    // store the same, so this multiplies patch JSON: at 8, `BuildPatchJSON`
+    // uses 198,216 arena bytes for the default patch, and the plugin's
+    // constructor-time state seed
     // (app/vst/FroggersPluginProcessor.cpp) builds the whole patch into one
     // non-growing 256KB arena. Twelve gestures overruns that seed, which
     // fails silently and leaves the host with empty state, so this is the
@@ -429,8 +432,8 @@ public:
         // matching Braid4Core's wiring order (create slot -> add physical
         // encoders before any Bank::RegisterParameters call, since that call
         // requires an associated slot with a full physical layout already
-        // present -- External/Sheaf/projects/synth/src/ParameterModulation.cpp:2559-2566 in
-        // External/Sheaf).
+        // present -- `Bank::RegisterParameters`,
+        // External/Sheaf/projects/synth/src/ParameterModulation.cpp).
         slot_ = &manager.CreateBankSlot();
         for (synth::PhysicalEncoderId encoderId = 0; encoderId < kFroggersSlotsPerBank; ++encoderId) {
             slot_->AddPhysicalEncoder(encoderId);
@@ -445,7 +448,7 @@ public:
             // BankSlot::SelectBank associates a bank with this slot the
             // first time it is selected (Bank::AssociateSlot, idempotent for
             // repeated association with the same slot -- it throws only on
-            // a *different* slot, External/Sheaf/projects/synth/src/ParameterModulation.cpp:2776-2781)
+            // a *different* slot, External/Sheaf/projects/synth/src/ParameterModulation.cpp)
             // without permanently making it the *active* bank -- the final
             // SelectBank call after this loop sets the real default.
             slot_->SelectBank(&bank);
@@ -457,10 +460,10 @@ public:
             //
             // STRUCTURAL FACT: ParameterManager::RegisterParameter
             // enforces GLOBAL name uniqueness across the whole manager
-            // (`parameterNames_`, External/Sheaf/projects/synth/src/ParameterModulation.cpp:3069-3071 in
-            // External/Sheaf) -- a stricter check than Bank::RegisterParameters's
+            // (`parameterNames_`, External/Sheaf/projects/synth/src/ParameterModulation.cpp) --
+            // a stricter check than Bank::RegisterParameters's
             // own per-call-only duplicate check
-            // (:2572-2578). The per-page labels are page-LOCAL in the
+            // (also in External/Sheaf/projects/synth/src/ParameterModulation.cpp). The per-page labels are page-LOCAL in the
             // original product and genuinely repeat across pages ("Stereo
             // width" is both a Reverb and a Delay row; "Wet/dry" is both a
             // Reverb and a Delay row) -- confirmed by the independent
@@ -470,7 +473,8 @@ public:
             // "Wet/dry". Resolution: qualify the internal, global-namespace
             // Name() with the bank name ("Reverb Stereo width" / "Delay
             // Stereo width"), while leaving ShortName() -- the field the
-            // encoder grid actually renders (External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp:322) -- as the
+            // encoder grid actually renders (`EncoderDrawStateFromParameter`,
+            // External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp) -- as the
             // authentic, page-local, possibly-repeated label the original
             // product uses. This changes no on-screen text and no
             // parameter's identity/semantics; it only disambiguates the
@@ -526,7 +530,7 @@ public:
             // The SAME Crunchy Parameter* at slot 15 in every
             // bank. Bank::RegisterParameters's duplicate-visible-name check
             // only looks within the span passed to a single call
-            // (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2572-2578 in External/Sheaf), so
+            // (`Bank::RegisterParameters`, External/Sheaf/projects/synth/src/ParameterModulation.cpp), so
             // one call per bank registering this shared pointer never
             // collides with itself, and there is no Parameter->Bank
             // back-pointer anywhere to object to the same Parameter
@@ -548,7 +552,8 @@ public:
 
         // Scenes wired, two endpoints matching kNumScenes above.
         // Blend defaults to 0.0 (pure left/scene-0), matching
-        // ParameterManager::UIState's own default (External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:769).
+        // this class's own `SceneState::blend` default
+        // (External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp).
         manager.SetSceneEndpoints(0, 1);
     }
 
@@ -557,7 +562,7 @@ public:
     // published ring state), plus the fuego seam
     // between the two group-wide phases -- mirroring Braid's
     // ProcessParameterPhase1() -> FilterParameterCaches() ->
-    // ProcessParameterPhase2() (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:457-459). Safe to call every
+    // ProcessParameterPhase2() (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp). Safe to call every
     // sample regardless of how many of the 15 modulation sources are
     // connected,
     // because UpdateModValues()/route processing are no-ops for unconnected
@@ -591,7 +596,7 @@ private:
     // modulated value into its cached-knob slot via ProcessLitePhase1's
     // `currentKnobValues_[v] = GetRaw(v)`) and group_->ProcessSamplePhase2()
     // (which slews UIDisplayCenter toward whatever the cache holds now).
-    // Mirrors Braid's FilterParameterCaches() (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:569-627): read
+    // Mirrors Braid's FilterParameterCaches() (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp): read
     // Parameter::CachedKnobValue(), transform, write back with
     // Parameter::ReplaceCachedKnobValue() -- so the fuegoized value is what
     // both a future DSP consumer and the UI-display slew inherit, with

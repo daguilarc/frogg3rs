@@ -48,20 +48,23 @@ const NARROW_MAX_WIDTH = 720;
 // block.
 const STACK_GAP_PX = 12;
 
-const MOUNT_SELECTOR = "#synth-root"; // index.html:60, this shell's own id
+const MOUNT_SELECTOR = "#synth-root"; // this shell's own <main id="synth-root"> in app/browser/site/index.html
 // FroggersNodeIds::kLeftBlock / kRightBlock -- the outer split Row's two
-// Weight(2)/Weight(4) siblings (FroggersUiSurface.hpp:113-114,464-467): the
+// `kLeftBlockWeight`/`kRightBlockWeight` siblings (app/FroggersUiSurface.hpp): the
 // chrome block (scope/transport/scenes/blend/bpm) and the block holding the
 // page chrome + 16-slot encoder grid.
 const CHROME_BLOCK_SELECTOR = '[data-synth-node-id="froggers.layout.left"]';
 const GRID_BLOCK_SELECTOR = '[data-synth-node-id="froggers.layout.right"]';
-// RuntimePages.hpp:34 `NodeIds::kSidebarRoot = "runtime.sidebar.root"` --
+// `NodeIds::kSidebarRoot = "runtime.sidebar.root"`, in Sheaf's
+// External/Sheaf/projects/synth/include/synth/RuntimePages.hpp --
 // Sheaf's OWN generic runtime-chrome sidebar (the "Audio/Controllers/Sync/
 // File" toolbar + CPU meter), a SIBLING of `froggers.root` under the
-// composite `runtime.main.root` fitSurface actually scales
-// (RuntimeMainComponent.hpp:197-214,212: `root.bounds = {..., appRootWidth
-// + Layout::kSidebarWidth, appRootHeight}`, `root.children = {contentTree
-// ...front().id, sidebarTree...front().id}`). It is "everything else" for
+// composite `runtime.main.root` fitSurface actually scales, inside
+// `RuntimeMainComponent::BuildTree`
+// (External/Sheaf/projects/synth/include/synth/RuntimeMainComponent.hpp:
+// `root.bounds = {..., appRootWidth + Layout::kSidebarWidth, appRootHeight}`,
+// `root.children = {contentTree...front().id, sidebarTree...front().id}`).
+// It is "everything else" for
 // the "chrome above, grid full-width, everything else above or
 // below" rule. It is not a Froggers node and never can be, so the surface
 // cannot place it -- placing it is this shell's job, and where it goes is

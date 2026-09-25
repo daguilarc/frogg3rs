@@ -37,7 +37,7 @@
 //   - Encoder press MUST go through `FroggersModulationDrillIn::PressEncoder`
 //     (FroggersModulation.hpp) rather than a generic
 //     `MessageIn::ParamPush`, because that class is the ONLY thing enforcing
-//     this app's 2-level drill-in cap -- Sheaf's own `Bank` has no level
+//     this app's 3-level drill-in cap -- Sheaf's own `Bank` has no level
 //     concept at all (FroggersModulation.hpp's own header comment) and would
 //     happily let a generic press descend to a third, fourth, ... level.
 //   - Randomize All/Page (`FroggersModulation.hpp`'s `RandomizeAll`/
@@ -425,7 +425,7 @@ public:
 
     // Sample-rate-dependent modulation-slate setup: detected and called
     // automatically by synth::Engine via the optional HasPrepareToPlay hook
-    // (External/Sheaf/projects/synth/include/synth/AppConcepts.hpp:28-32) once the host negotiates a real sample rate.
+    // (External/Sheaf/projects/synth/include/synth/AppConcepts.hpp) once the host negotiates a real sample rate.
     // Everything else in this class is sample-rate-independent at Init()
     // time.
     // The fallback used when the host hands this hook a non-positive sample
@@ -436,7 +436,7 @@ public:
 
     void PrepareToPlay(double sampleRate, int /*blockSize*/) {
         // `synth::Engine::Prepare()`
-        // (External/Sheaf/projects/synth/include/synth/Engine.hpp:289-311) guards
+        // (External/Sheaf/projects/synth/include/synth/Engine.hpp) guards
         // `sampleRate > 0.0 && blockSize > 0` before its OWN two uses
         // (MasterClock::Prepare, the uiPublishInterval_ computation) but
         // forwards this hook's `sampleRate`/`blockSize` UNCONDITIONALLY --
@@ -444,7 +444,7 @@ public:
         // guard twice, then hands the raw value to the app hook regardless.
         // The real host origin is `synth_runtime::Runtime<App>::
         // audioDeviceAboutToStart`
-        // (External/Sheaf/projects/synth/runtime/Runtime.hpp:580-593): `double sampleRate =
+        // (External/Sheaf/projects/synth/runtime/Runtime.hpp): `double sampleRate =
         // device->getCurrentSampleRate();` straight into `engine_.Prepare(
         // sampleRate, blockSize)`, no validation of its own -- a live
         // `juce::AudioIODevice` query, not a compile-time constant. A
@@ -477,14 +477,14 @@ public:
         // Sheaf's parameter-smoothing constants
         // (kDefaultProcessLiteAlpha/kDefaultTargetComputeIntervalSamples/
         // kDefaultUiDisplayCenterAlpha/kDefaultUiDisplaySpreadAlpha,
-        // External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:170-174) are defined at a 48 kHz
+        // External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp) are defined at a 48 kHz
         // reference and ParameterGroupConfig starts out holding exactly
-        // those raw values (External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:199-203) until
+        // those raw values (also in External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp) until
         // ConfigureProcessingTiming replaces them
-        // (External/Sheaf/projects/synth/src/ParameterModulation.cpp:859-865) -- otherwise knob glide,
+        // (External/Sheaf/projects/synth/src/ParameterModulation.cpp) -- otherwise knob glide,
         // modulation-depth smoothing, and UI-display slew all run at the
         // wrong real-time rate at any host rate other than 48 kHz. Mirrors
-        // Braid 4's own PrepareToPlay (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:205-219), which
+        // Braid 4's own `Braid4Core::PrepareToPlay` (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp), which
         // converts against internalSampleRate_ (its oversampled internal
         // parameter-tier rate); this app has no such oversampling at the
         // parameter tier (parameters_/modulation_ share the single mono
@@ -524,7 +524,7 @@ public:
         // `masterClock_.Prepare(sampleRate, blockSize)` first, then this
         // method) -- and `MasterClock::Prepare()` unconditionally resets
         // `transportState_` to `Stopped`
-        // (External/Sheaf/projects/synth/src/MasterClock.cpp:929), with no
+        // (External/Sheaf/projects/synth/src/MasterClock.cpp), with no
         // regard for whether the transport was already `Running`.
         // `synth::Engine::Prepare()` is not a one-time startup call: JUCE's
         // `synth_runtime::Runtime<App>::audioDeviceAboutToStart` (Runtime.hpp)
@@ -823,7 +823,7 @@ public:
     // A negative sentinel means "no
     // pending request." `MasterClock::SetTempoBpm` itself already no-ops
     // (returns false) while slaved to external MIDI clock
-    // (External/Sheaf/projects/synth/src/MasterClock.cpp:963-965) -- ProcessFrame() below still calls it
+    // (External/Sheaf/projects/synth/src/MasterClock.cpp) -- ProcessFrame() below still calls it
     // unconditionally when a request is pending; the surface's own
     // DispatchAction additionally never enqueues a request while slaved (see
     // FroggersUiSurface.hpp), so this is a belt-and-suspenders no-op, not the
@@ -859,7 +859,7 @@ public:
     // True when
     // the MOST RECENT Randomize All/Page operation left
     // `FroggersRandomizeResult.partial` true -- i.e. `EnsureModulationDepth`
-    // hit `!group_.CanAllocate()` (Sheaf, External/Sheaf/projects/synth/src/ParameterModulation.cpp:1825-1827)
+    // hit `!group_.CanAllocate()` (Sheaf, External/Sheaf/projects/synth/src/ParameterModulation.cpp)
     // and stopped that operation short of drawing its full chosen set.
     // Published from ProcessFrame() (audio thread) alongside the
     // ComputeAllParameters() reseed below, same cross-thread contract as
@@ -870,11 +870,6 @@ public:
     // the audio thread can allocate/lock/block, which is a dropout risk).
     bool LastRandomizePartial() const { return lastRandomizePartial_.load(std::memory_order_acquire); }
 
-    // Detected via AppConcepts.hpp's
-    // HasProcessFrame concept; synth::Engine invokes this once per block,
-    // after message drains and before ProcessBlock() (AppConcepts.hpp's own
-    // comment on the hook's placement) -- exactly the audio-thread window
-    // the pending-request atomics above need to be applied in.
     // Sheaf's optional revert hook (AppConcepts.hpp's HasRestoreStartupState),
     // invoked right after a patch revert has rebuilt every parameter from its
     // REGISTERED default.
@@ -902,6 +897,11 @@ public:
         }
     }
 
+    // Detected via AppConcepts.hpp's
+    // HasProcessFrame concept; synth::Engine invokes this once per block,
+    // after message drains and before ProcessBlock() (AppConcepts.hpp's own
+    // comment on the hook's placement) -- exactly the audio-thread window
+    // the pending-request atomics above need to be applied in.
     void ProcessFrame() {
         // Applies the most recent routed-input transition queued by Init()'s
         // callback (message thread), if any -- at most once per block, never
@@ -917,7 +917,7 @@ public:
                 activePageIx_ = static_cast<std::size_t>(pageRequest);
                 parameters_.Slot().SelectBank(&parameters_.BankAt(activePageIx_));
                 // `BankSlot::SelectBank` Deselect()s the OUTGOING page
-                // (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2944-2951 in External/Sheaf), so
+                // (External/Sheaf/projects/synth/src/ParameterModulation.cpp), so
                 // a freshly-constructed drillIn_ (level_ starts at 0) for the
                 // INCOMING page is always consistent with that page's real
                 // state: either it was never drilled into, or it was
@@ -1043,7 +1043,7 @@ public:
                 // the first storm and the vector doubles once, after which it
                 // has headroom (measured high-water 154 over a hundred
                 // presses and 156 over fifty, both under the doubled 192).
-                // The same vector already takes ~999 pushes from this same
+                // The same vector already takes pushes from this same
                 // thread whenever the operator drills out, which is the wider
                 // exposure and is not created here; sizing that reservation
                 // is a Sheaf-side question this file leaves open.
@@ -1080,9 +1080,9 @@ public:
             // thread: ProcessFrame() only ever runs on the audio thread (this
             // method's own header comment; `synth::Engine` invokes it once per
             // block, after message drains and before ProcessBlock()), and
-            // `ComputeAllParameters()` (public, External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:809)
+            // `ComputeAllParameters()` (public, External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp)
             // is a full, non-lock-free graph traversal that `ParameterManager`
-            // requires to run there (External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp:484-485). It
+            // requires to run there (also in External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp). It
             // reseeds every parameter including depth children -- ComputeAtDepth's
             // recursionDepth_>0 branch takes the instant snap-and-seed path,
             // not the smoothed one.
@@ -1132,7 +1132,7 @@ public:
         modulation_.PrepareBlockClock(quarterNotesPerSample);
 
         // `block.outputs` is `AudioBlock`'s own field
-        // (External/Sheaf/projects/synth/include/synth/AppContext.hpp:183-211)
+        // (External/Sheaf/projects/synth/include/synth/AppContext.hpp)
         // -- set once for the whole callback, never reassigned inside this
         // function -- so re-testing it every frame below was re-evaluating a
         // loop-invariant up to 48,000x/second. Hoisted here, once per block.
@@ -1503,13 +1503,13 @@ public:
                 // above, an individual `block.outputs[channelIx]` is NOT
                 // provably non-null by contract. `AudioBlock::outputs` is
                 // `float* const*` -- "Channel counts are the device's actual
-                // counts" (External/Sheaf/projects/synth/include/synth/AppContext.hpp:92-93) says nothing about every
+                // counts" (External/Sheaf/projects/synth/include/synth/AppContext.hpp) says nothing about every
                 // slot in that count being populated, and Sheaf's own two
                 // reference apps that consume this exact contract both guard
-                // the identical way: `External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:678-689`
+                // the identical way: `External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp`
                 // checks `block.outputs[0]`/`[1]`/`[channel] != nullptr`
                 // individually even after already checking `block.outputs ==
-                // nullptr`, and `External/Sheaf/projects/synth/apps/miniapp/MiniAppCore.hpp:358-363` does
+                // nullptr`, and `External/Sheaf/projects/synth/apps/miniapp/MiniAppCore.hpp` does
                 // `if (out == nullptr) { continue; }` per channel in the same
                 // shape as here. Two independent call sites in Sheaf's own
                 // codebase treating per-channel null as real is affirmative
@@ -1539,11 +1539,11 @@ public:
             // per-sample inside RouteAudioSample(), above, on the POST-gate
             // values -- moved off
             // dsp::Vco::Process() itself, see that struct's own comment) and
-            // AdvanceIndex() (index_ += amount, External/Sheaf/projects/synth/include/synth/DspScope.hpp:126-128).
+            // AdvanceIndex() (index_ += amount, External/Sheaf/projects/synth/include/synth/DspScope.hpp).
             // Mirrors Braid 4's own placement: AdvanceIndex() runs at the
             // end of its per-sample work, after that sample's audio/matrix
             // outputs are computed and published but before the per-sample
-            // function returns (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:487, immediately preceding
+            // function returns (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp, immediately preceding
             // RecordInternalIndex()+return). Here the equivalent slot is
             // the end of this per-frame loop's body, after this sample's
             // output has been computed and written.
@@ -1596,7 +1596,7 @@ public:
         // block after the per-sample loop -- the same end-of-ProcessBlock
         // placement apps/braid-4's own ProcessBlock uses for its
         // scopeWriter_.Publish()/PopulateUIState()/PublishUiState() sequence
-        // (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp:253-263).
+        // (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp).
         vcoScopeWriter_.Publish();
         audioVcos_[0].PopulateUIState(vco1ScopeUiState_);
         audioVcos_[1].PopulateUIState(vco2ScopeUiState_);
@@ -1759,13 +1759,13 @@ private:
     // site for this class. Returns the transport quarter-note position at
     // `absoluteOutputSample`, or nullopt when the transport isn't running or
     // the committed plan doesn't contain the sample. Null-checking
-    // `block.clockPlan` (`External/Sheaf/projects/synth/include/synth/AppContext.hpp:197`) is necessary but not
+    // `block.clockPlan` (`External/Sheaf/projects/synth/include/synth/AppContext.hpp`) is necessary but not
     // sufficient for containment, so this calls the containment-safe
-    // `TryTransportQuarterNotesAt` (`External/Sheaf/projects/synth/include/synth/MasterClock.hpp:200`) rather than the
-    // precondition-carrying `TransportQuarterNotesAt` (`:198`, precondition
-    // `Contains(...)`, `:192-198`) -- the same shape
-    // `apps/miniapp/MiniAppCore.hpp`'s own ADSR-gate idiom follows (guard
-    // `:323-324`, phase derivation `:325-327`, duty-cycle assignment `:328`),
+    // `TryTransportQuarterNotesAt` (`External/Sheaf/projects/synth/include/synth/MasterClock.hpp`) rather than the
+    // precondition-carrying `TransportQuarterNotesAt` (same file, precondition
+    // `Contains(...)`) -- the same shape
+    // `External/Sheaf/projects/synth/apps/miniapp/MiniAppCore.hpp`'s own `MiniAppCore::ProcessBlock`
+    // ADSR-gate idiom follows (guard, phase derivation, duty-cycle assignment),
     // substituting the Try accessor for miniapp's unchecked one. Factored
     // into its own method (rather than inlined at the gate's one call site in
     // ProcessBlock) so the master-clock-driven Marbles advance
@@ -2296,17 +2296,17 @@ private:
     //
     // Ordering proof (verified by reading the cited source, not assumed):
     // `Parameter::GetRaw()` (External/Sheaf's
-    // External/Sheaf/projects/synth/src/ParameterModulation.cpp:1207-1215) sums the
+    // External/Sheaf/projects/synth/src/ParameterModulation.cpp) sums the
     // scene-blended center with `Modulators::ApplyActive()` -- i.e.
     // modulation-depth routing is already baked in there. `Parameter::
-    // ProcessLitePhase1()` (:1459-1461) writes `currentKnobValues_[v] =
+    // ProcessLitePhase1()` writes `currentKnobValues_[v] =
     // GetRaw(v)`, and `ParameterGroup::ProcessSamplePhase1()` calls that for
-    // every parameter (:867-870) -- so by the time `FroggersParameterModel::
+    // every parameter -- so by the time `FroggersParameterModel::
     // ApplyFuegoSeam()` runs (between Phase1 and Phase2, FroggersParameters.
     // hpp), `Parameter::CachedKnobValue()` already reflects modulation, and
     // ApplyFuegoSeam() then overwrites it with the fuegoized value via
     // `ReplaceCachedKnobValue()`. `ProcessSamplePhase2()` ->
-    // `ProcessLitePhase2()` (:1471-1479) only slews `uiDisplayCenters_` from
+    // `ProcessLitePhase2()` only slews `uiDisplayCenters_` from
     // `currentKnobValues_` and never rewrites the latter, so the cache is
     // unaffected by Phase2. Every `CachedKnobValue()` read below -- taken
     // after `parameters_.ProcessSample()` has returned for this sample -- is
@@ -2728,7 +2728,7 @@ private:
 
     // A capture that hits its cap disarms itself on the audio thread the
     // instant it happens (recordArmed_.store(false) inside ProcessBlock's
-    // per-sample loop above, :1186-1194) -- no Stop/Record press ever
+    // per-sample loop above) -- no Stop/Record press ever
     // follows it, so nothing else would ever call QueueRecordingExport()
     // for that capture. TakePendingFileExport() and ArmRecording() both
     // call this first instead: the engine polls TakePendingFileExport()

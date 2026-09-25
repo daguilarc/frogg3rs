@@ -551,9 +551,10 @@ struct DigitalReorganizer
         return Mangle(input, flip, hashBits) - Mangle(0.0f, flip, hashBits);
     }
 
-    void SetFlip(float flipKnob01) { flip = static_cast<uint8_t>(flipKnob01 * 255.0f); }  // :154-157, truncates
+    // src/core/PolynomialDrive.hpp DigitalReorganizer::SetFlip, truncates.
+    void SetFlip(float flipKnob01) { flip = static_cast<uint8_t>(flipKnob01 * 255.0f); }
 
-    // AUTHORED remap, not the ported :159-162 formula (kept only in this
+    // AUTHORED remap, not the ported src/core/PolynomialDrive.hpp:159-162 formula (kept only in this
     // comment for the record: `round(hashKnob01 * 8)`, nine positions
     // 0..8). That formula wasted its own first fifth: hashBits == 1 masks
     // exactly one bit, and Mangle's three shift-XOR steps

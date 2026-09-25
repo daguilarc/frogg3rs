@@ -3,7 +3,7 @@
 // synth_froggers::dsp::VcoEnvelopeFollowers -- a **copy** of the cited
 // Froggers formula.
 //
-// Ported from the retired simulator's V2EnvelopeFollowerBank.hpp:
+// Ported from the retired simulator's f236915^:sim/V2EnvelopeFollowerBank.hpp:
 //   - attack 0.01 s / release 0.05 s, coeff = 1 - exp(-1/(t*sr))  (:22-25)
 //   - the five per-block targets                                  (:30-35)
 //

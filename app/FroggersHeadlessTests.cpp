@@ -321,8 +321,9 @@ TEST_CASE(randomize_all_request_through_process_frame_updates_the_display) {
 
 // LastRandomizePartial() defaults false and stays false across an
 // ordinary Randomize All request with ample storage headroom (the default
-// FroggersModulationSlate::kDepthParameterStorageCapacity, 1200, is well
-// above the 793-915 ceiling a full randomize can reach), proving the accessor is
+// FroggersModulationSlate::kDepthParameterStorageCapacity is 1440; the
+// 793-915 figure this comment once cited was the retired 61-parameter
+// design's ceiling, not this app's), proving the accessor is
 // wired and does not false-positive on a healthy randomize.
 TEST_CASE(randomize_all_with_ample_capacity_reports_not_partial) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(

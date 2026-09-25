@@ -507,13 +507,13 @@ struct Reverb
     // -- Ported formula helpers, exposed statically for direct pinning
     // (mirrors dsp::Vco's PitchToPhaseIncrement/PmDepthScale precedent) --
 
-    // :456 Room size.
+    // 08b5fd3:src/core/FroggersEngine.hpp:456 Room size.
     static float RoomSizeFromKnob(float knob01) { return ExpMapCompute(0.05f, 1.0f, knob01); }
 
-    // :457 Decay.
+    // 08b5fd3:src/core/FroggersEngine.hpp:457 Decay.
     static float DecayFeedbackFromKnob(float knob01) { return ExpMapCompute(0.1f, 0.98f, knob01); }
 
-    // :458 Pre-delay (see file-header note on the /sr, *sr round trip that
+    // 08b5fd3:src/core/FroggersEngine.hpp:458 Pre-delay (see file-header note on the /sr, *sr round trip that
     // used to leave this a samples range dressed up as a time computation).
     // Floor is 1ms -- the port's own "1.0" literal, freed of the erroneous
     // /sr that turned it into one sample. Ceiling is derived from what the
@@ -531,7 +531,7 @@ struct Reverb
         return ExpMapCompute(kPreDelayFloorMs / 1000.0f, ceilingMs / 1000.0f, knob01);
     }
 
-    // :459, :574 Damping -- the ExpMap output IS the damping filter's alpha.
+    // 08b5fd3:src/core/FroggersEngine.hpp:459, 08b5fd3:src/core/FroggersEngine.hpp:574 Damping -- the ExpMap output IS the damping filter's alpha.
     // The floor is 0.02, not the 0.001 this was ported with. Alpha IS the
     // one-pole's coefficient and a smaller alpha is a darker tail, so 0.001
     // is a damping cutoff near 8 Hz at 48kHz -- a tail with nothing audible
@@ -607,7 +607,7 @@ struct Reverb
                    // site in this file's own tests, which never pass it.
                    float sendKnob01 = 1.0f)
     {
-        // :458, :497-504 -- pre-delay tap.
+        // 08b5fd3:src/core/FroggersEngine.hpp:458, 08b5fd3:src/core/FroggersEngine.hpp:497-504 -- pre-delay tap.
         const float preNorm = PreDelayNormFromKnob(preKnob01, sampleRate);
         size_t preDelay = static_cast<size_t>(std::round(preNorm * sampleRate));
         if (preDelay >= kSize)
@@ -628,7 +628,7 @@ struct Reverb
         const float preOut = preLine[preRead];
         preIndex = (preIndex + 1) % kSize;
 
-        // :456, :506-512 -- room size sets both tank delay lengths.
+        // 08b5fd3:src/core/FroggersEngine.hpp:456, 08b5fd3:src/core/FroggersEngine.hpp:506-512 -- room size sets both tank delay lengths.
         const float sizeNorm = RoomSizeFromKnob(sizeKnob01);
         size_t baseA = static_cast<size_t>(180.0f + sizeNorm * 1300.0f);
         size_t baseB = static_cast<size_t>(260.0f + sizeNorm * 1800.0f);
@@ -685,7 +685,7 @@ struct Reverb
         const float valA = lineA[readA];
         const float valB = lineB[readB];
 
-        // :457, :514-515 -- decay/feedback, folded with authored Hold.
+        // 08b5fd3:src/core/FroggersEngine.hpp:457, 08b5fd3:src/core/FroggersEngine.hpp:514-515 -- decay/feedback, folded with authored Hold.
         // holdKnob01 == 0 -> fb == decayFb exactly (parity default). Hold
         // is clamped strictly below 1.0 so the tail lengthens without ever
         // reaching true self-oscillation (bounded/finite requirement).
@@ -789,7 +789,7 @@ struct Reverb
         const float aIn = tankFeed + fb * PadeSaturator::Saturate(tankDrive * aFbGrit);
         const float bIn = tankFeed + fb * PadeSaturator::Saturate(tankDrive * bFbGrit);
 
-        // :459, :574 Damping -- both filters take the same alpha (one
+        // 08b5fd3:src/core/FroggersEngine.hpp:459, 08b5fd3:src/core/FroggersEngine.hpp:574 Damping -- both filters take the same alpha (one
         // knob, two independent lines; see dampFilterA/dampFilterB's own
         // field comment for why they no longer share state).
         const float dampAlpha = DampAlphaFromKnob(dampKnob01);
@@ -804,7 +804,7 @@ struct Reverb
         indexB = (indexB + 1) % kSize;
 
         const float mid = 0.5f * (aOut + bOut);
-        const float width = widthKnob01;  // :460, direct passthrough
+        const float width = widthKnob01;  // 08b5fd3:src/core/FroggersEngine.hpp:460, direct passthrough
         wetL = mid + width * (aOut - mid);
         wetR = mid + width * (bOut - mid);
         // wetL/wetR used to be summed here, which made the Width control above
@@ -822,8 +822,8 @@ struct Reverb
         // travel does not get it.
         const float wetAuthorityTarget = (send <= 0.0001f) ? 0.0f : std::fabs(0.5f * (wetL + wetR));
         wetAuthority.Advance(wetAuthorityTarget);
-        const float mix = mixKnob01 * wetAuthority.Authority();  // :455, direct passthrough
-        // Equal-power crossfade, not linear: :846's `(1-mix)*dry + mix*wet`
+        const float mix = mixKnob01 * wetAuthority.Authority();  // 08b5fd3:src/core/FroggersEngine.hpp:455, direct passthrough
+        // Equal-power crossfade, not linear: 08b5fd3:src/core/FroggersEngine.hpp:846's `(1-mix)*dry + mix*wet`
         // only holds level when the two legs are correlated, and the tank's
         // tail is largely uncorrelated with the dry input. MEASURED worst
         // dip across the control's whole travel under the old linear law:

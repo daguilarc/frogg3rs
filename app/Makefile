@@ -218,11 +218,14 @@ check-spec-checks-resolve:
 	@python3 $(APP_DIR)/check_spec_checks_resolve.py "$(APP_DIR)"
 
 # A comment that cites a path and line is making a claim about where something
-# lives. This fails when the path exists nowhere, and when a citation into this
-# tree still carries a line number -- line numbers into a tree under edit are
-# wrong by the next commit, and one change left 14 of 24 stale. Citations into
-# External/Sheaf and src/, and any citation carrying a commit pin, are out of
-# scope by construction; the script's header records why.
+# lives. This fails when the path exists nowhere, when a citation into this
+# tree still carries a line number, when a citation into External/Sheaf still
+# carries a line number with no commit pin, and when a bare line number has no
+# path cited earlier in its comment block -- a submodule pin moves with every
+# library change and a line under active edit moves with the next commit, in
+# both cases out from under the number. Only a commit-pinned citation, or one
+# into the frozen src/ tree, keeps a line number. The script's header records
+# why in full.
 check-citations-resolve:
 	@python3 $(APP_DIR)/check_citations_resolve.py "$(APP_DIR)"
 

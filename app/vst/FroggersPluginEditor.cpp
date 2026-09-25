@@ -49,8 +49,8 @@ FroggersPluginEditor::FroggersPluginEditor(FroggersPluginProcessor& processor)
     // Build the control tree once, immediately -- resized() (fired
     // synchronously by setSize() below) sizes/transforms portableSurface_,
     // but populating its CHILDREN the first time still needs an explicit
-    // RefreshFromSurface() call, the same one-shot MainPane's own
-    // constructor makes (Sheaf External/Sheaf/projects/synth/runtime/MainPane.hpp:47) rather than waiting
+    // RefreshFromSurface() call, the same one-shot `MainPane::MainPane`
+    // constructor makes (Sheaf External/Sheaf/projects/synth/runtime/MainPane.hpp) rather than waiting
     // for this editor's first repaint-hook tick (up to ~33ms away at 30Hz,
     // and never arriving at all if the processor's own timer never started
     // -- see FroggersPluginProcessor's constructor's own MessageManager
@@ -60,8 +60,9 @@ FroggersPluginEditor::FroggersPluginEditor(FroggersPluginProcessor& processor)
 
     // Mirrors synth_runtime::RuntimeShellSession's constructor
     // wiring a repaint hook into the SAME message-thread timer that already
-    // drives Runtime<App>'s own per-tick work (Sheaf External/Sheaf/projects/synth/runtime/Shell.hpp:88,
-    // External/Sheaf/projects/synth/runtime/Runtime.hpp:974-981) -- see
+    // drives Runtime<App>'s own per-tick work, inside
+    // `RuntimeShellSession::RuntimeShellSession` (Sheaf External/Sheaf/projects/synth/runtime/Shell.hpp) and
+    // `Runtime`'s own `timerCallback()` (External/Sheaf/projects/synth/runtime/Runtime.hpp) -- see
     // FroggersPluginProcessor::SetEditorRepaintHook's own comment for the
     // full precedent trace and the single-editor-at-a-time reasoning.
     processor_.SetEditorRepaintHook([this] { portableSurface_.RefreshFromSurface(); });
@@ -102,7 +103,7 @@ FroggersPluginEditor::~FroggersPluginEditor() {
     // destructor started" and "the hooks are cleared" would otherwise call
     // back into a half-destroyed portableSurface_. Same ordering contract
     // synth_runtime::RuntimeShellSession::~RuntimeShellSession documents
-    // (Sheaf External/Sheaf/projects/synth/runtime/Shell.hpp:91-95) for clearing
+    // (Sheaf External/Sheaf/projects/synth/runtime/Shell.hpp) for clearing
     // Runtime<App>::SetRepaintHook before its own ShellComponent member is
     // destroyed, applied here to both hooks this class registers. No race
     // to guard against beyond ordering, though: JUCE constructs/destroys
@@ -133,7 +134,7 @@ void FroggersPluginEditor::ScheduleDeferredRefresh() {
             }
         })) {
         // Same guard MainPane::RefreshRendererAfterAction uses
-        // (External/Sheaf/projects/synth/runtime/MainPane.hpp:148-157): the message queue is shutting down: do
+        // (External/Sheaf/projects/synth/runtime/MainPane.hpp): the message queue is shutting down: do
         // not synchronously rebuild controls inside the active JUCE
         // callback, just drop the pending flag so a later action (if any)
         // can try again.

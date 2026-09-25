@@ -388,7 +388,7 @@ struct StereoDelay
         return fbk + (1.0f - fbk) * freeze;
     }
 
-    // :33-40 (clearBuffers).
+    // f236915^:sim/StereoDelay.hpp:33-40 (clearBuffers).
     void ClearBuffers()
     {
         std::fill(lineL.begin(), lineL.end(), 0.0f);
@@ -537,7 +537,7 @@ struct StereoDelay
         return magnitude;
     }
 
-    // :42-56 (setSampleRate). This
+    // f236915^:sim/StereoDelay.hpp:42-56 (setSampleRate). This
     // struct's
     // only production caller is FroggersAppCore::PrepareToPlay()
     // (delay_.SetSampleRate(sampleRate_)), which validates the host's
@@ -659,7 +659,7 @@ struct StereoDelay
         crushR.SetFreq(freq);
     }
 
-    // :58-101 (process).
+    // f236915^:sim/StereoDelay.hpp:58-101 (process).
     DelayWetPair Process(float bumpIn, const DelayParams& p)
     {
         if (p.dsnd <= 0.0001f || capacity == 0)
@@ -912,7 +912,7 @@ struct StereoDelay
 
     DelayWetPair GetLastWet() const { return lastWet; }
 
-    // :108-113 (toReverbMono).
+    // f236915^:sim/StereoDelay.hpp:108-113 (toReverbMono).
     // Crossfades the dry signal against the wet PAIR and keeps the pair. This
     // used to fold to mono here, which spent the whole stereo delay -- two
     // lines, a cross-feed, per-channel limiters -- and threw the result away
@@ -961,7 +961,7 @@ struct StereoDelay
     }
 
 private:
-    // :116-124 (readAt). NOTE: before `writePos` has advanced past
+    // f236915^:sim/StereoDelay.hpp:116-124 (readAt). NOTE: before `writePos` has advanced past
     // `delaySamples` (i.e. during the first ~delaySamples calls after
     // construction/clear), `readPos` is negative, and casting a negative
     // float straight to `size_t` is a negative-float-to-unsigned
@@ -1012,7 +1012,7 @@ private:
         return line[idx0] * (1.0f - frac) + line[idx1] * frac;
     }
 
-    // :126-129 (writeSample).
+    // f236915^:sim/StereoDelay.hpp:126-129 (writeSample).
     void WriteSample(float sample, std::vector<float>& line)
     {
 #if defined(FROGGERS_DSP_CHECKS)
@@ -1021,7 +1021,7 @@ private:
         line[writePos] = sample;
     }
 
-    // :131-138 (wrapIndex).
+    // f236915^:sim/StereoDelay.hpp:131-138 (wrapIndex).
     size_t WrapIndex(size_t idx) const
     {
         while (idx >= capacity)
@@ -1031,7 +1031,7 @@ private:
         return idx;
     }
 
-    // :140-147 (advanceWrite).
+    // f236915^:sim/StereoDelay.hpp:140-147 (advanceWrite).
     void AdvanceWrite()
     {
         writePos++;
@@ -1168,13 +1168,13 @@ inline DelayParams MapRowsToDelayParams(float timeKnob01,
                                         float diffusionKnob01)
 {
     DelayParams params;
-    params.dtim = timeKnob01;   // :180
-    params.dsnd = sendKnob01;   // :181
-    params.dfbk = feedbackKnob01;  // :182
-    params.dwid = widthKnob01;  // :183
-    params.dfrz = freezeKnob01;  // was :184 (Detune/ddet) -- Delay page slot 5 is now Freeze; see DelayParams::dfrz.
-    params.dmod = modKnob01;    // :185
-    params.dmix = mixKnob01;    // :186
+    params.dtim = timeKnob01;   // row 0 of the file header's DelayState.hpp mapping
+    params.dsnd = sendKnob01;   // row 1
+    params.dfbk = feedbackKnob01;  // row 2
+    params.dwid = widthKnob01;  // row 3
+    params.dfrz = freezeKnob01;  // row 4, was Detune/ddet -- Delay page slot 5 is now Freeze; see DelayParams::dfrz.
+    params.dmod = modKnob01;    // row 5
+    params.dmix = mixKnob01;    // row 6
     params.drev = reverseKnob01;    // Delay page slot 7 is Reverse blend (was Color, previously folded into ddet).
     params.ddif = diffusionKnob01;  // Delay page slot 8 is Diffusion (was Halo, previously folded into dmod).
     return params;

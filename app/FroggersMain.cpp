@@ -148,9 +148,10 @@ private:
             window_->setName(juce::String(config.appName));
             // Size the window from the SHELL COMPONENT, not from
             // `config.uiWidth/uiHeight`. The session sizes its component to
-            // `MainPane::IntrinsicBounds()` (`External/Sheaf/projects/synth/runtime/Shell.hpp:86-87`), which
+            // `MainPane::IntrinsicBounds()` (`External/Sheaf/projects/synth/runtime/Shell.hpp`), which
             // is `config.uiWidth + RuntimePages::Layout::kSidebarWidth` (96)
-            // by `config.uiHeight` (`External/Sheaf/projects/synth/include/synth/RuntimeMainComponent.hpp:212-218`) --
+            // by `config.uiHeight`, computed in `RuntimeMainComponent::BuildTree`
+            // (`External/Sheaf/projects/synth/include/synth/RuntimeMainComponent.hpp`) --
             // the app surface PLUS the runtime sidebar that carries Audio /
             // Controllers / Sync / File.
             //
@@ -158,11 +159,9 @@ private:
             // narrow and clips that sidebar off the right edge, where it stays
             // invisible until the user drags the window wider (a real
             // reported symptom: "i still had to resize the window to see the buttons
-            // on the right hand side"). Sheaf ships two window paths and this
-            // file was modelled on the wrong one: `apps/sheaf-patch/Main.cpp`
-            // :87-99 sizes from `config` and has the same defect, while
-            // `External/Sheaf/projects/synth/runtime/Shell.hpp:193-197` reads the intrinsic bounds and is
-            // correct. Read the component's own size and both stay right even
+            // on the right hand side"). `External/Sheaf/projects/synth/runtime/Shell.hpp`'s
+            // own `RuntimeShellSession::MainWindow` constructor reads the intrinsic
+            // bounds the same way and is correct. Read the component's own size and both stay right even
             // if the sidebar width changes upstream.
             juce::Component& content = session->Component();
             window_->ShowContent(content, content.getWidth(), content.getHeight());

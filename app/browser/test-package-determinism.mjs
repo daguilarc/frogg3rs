@@ -11,7 +11,8 @@
 // (External/Sheaf/projects/synth/browser/src/package-contract.mjs)
 // directly against copies of the ALREADY-BUILT app/browser/dist artifacts
 // -- no wasm rebuild needed. buildId is a pure function of artifact bytes
-// (package-contract.mjs:92-112, `contentBuildId`), so this is a complete
+// (External/Sheaf/projects/synth/browser/src/package-contract.mjs,
+// `contentBuildId`), so this is a complete
 // proof of the packaging step's determinism without re-running emcc
 // (machine constraint: reuse app/browser/dist, don't rebuild unless the
 // packaging step itself requires it -- it doesn't).

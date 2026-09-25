@@ -2282,7 +2282,8 @@ TEST_CASE(envelope_followers_coeffs_match_exp_formula) {
 
 TEST_CASE(envelope_followers_only_three_taps_no_pair_sums) {
     // The frozen bank has 5 taps (3 solo + 2 pair-sum); this port keeps
-    // only the 3 solo taps the modulation slate reads (:9-11).
+    // only the 3 solo taps the modulation slate reads
+    // (f236915^:sim/V2EnvelopeFollowerBank.hpp's `kNumTaps`/`kFirstModIndex`).
     REQUIRE_TRUE(dsp::VcoEnvelopeFollowers::kNumTaps == 3);
 }
 
@@ -2610,8 +2611,8 @@ TEST_CASE(random_sh_reseed_redraws_the_bag_and_the_same_seed_reproduces_it) {
 // =========================================================================
 
 namespace {
-// Reference re-derivation of the FIRMWARE's sh formula only (Parameter.hpp
-// :143), isolated from the rest of the scramble, so the regression test
+// Reference re-derivation of the FIRMWARE's sh formula only
+// (08b5fd3:src/core/Parameter.hpp's `Parameter::Get`), isolated from the rest of the scramble, so the regression test
 // pins exactly the bit that matters: sh = 1 + (row % 256) at
 // mask == 255 (knob >= 0.9375), with NO row % 0 anywhere.
 uint8_t ReferenceShAt256(uint8_t row) {
@@ -4779,7 +4780,8 @@ TEST_CASE(filter_fx_chain_limits_neither_branch_ahead_of_the_blend_on_a_pinned_c
 // =========================================================================
 
 TEST_CASE(reverb_room_size_decay_predelay_damp_match_expmap_formulas) {
-    // Pin the four ExpMap-derived formulas (:456,457,458,459) independently
+    // Pin the four ExpMap-derived formulas
+    // (08b5fd3:src/core/FroggersEngine.hpp:455-461, param wiring) independently
     // of the stateful Process() path.
     REQUIRE_NEAR(dsp::Reverb::RoomSizeFromKnob(0.0f), 0.05f, 1e-6);
     REQUIRE_NEAR(dsp::Reverb::RoomSizeFromKnob(1.0f), 1.0f, 1e-6);
@@ -6086,7 +6088,8 @@ TEST_CASE(sample_rate_reducer_passthrough_hold_and_sample_and_hold_regions) {
 TEST_CASE(digital_reorganizer_set_flip_truncates_set_hash_rounds) {
     dsp::DigitalReorganizer reorg;
     reorg.SetFlip(0.5f);
-    REQUIRE_TRUE(reorg.flip == static_cast<uint8_t>(0.5f * 255.0f));  // truncation, :156
+    // Matches src/core/PolynomialDrive.hpp DigitalReorganizer::SetFlip's truncation.
+    REQUIRE_TRUE(reorg.flip == static_cast<uint8_t>(0.5f * 255.0f));
 
     // Re-derived against SetHash's own remap (dsp/Drive.hpp):
     // knob 0.5f is past the 0.01f off-floor, so it lands on

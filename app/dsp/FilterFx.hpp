@@ -24,12 +24,12 @@
 //
 // ============================================================================
 // ResonantBump and Comb each gain a
-// `struct UIState : synth::TransferFunction` (the interface TYPE; the
-// header is named DspTransferFunction.hpp,
-// External/Sheaf/projects/synth/include/synth/DspTransferFunction.hpp:7,9,10), mirroring the exact
+// `struct UIState : synth::TransferFunction` (the interface TYPE; `TransferFunction`,
+// with its `FrequencyResponse`/`TransferFunctionValue` methods, is declared in
+// External/Sheaf/projects/synth/include/synth/DspTransferFunction.hpp), mirroring the exact
 // in-struct placement Sheaf's own filters use (`OnePoleLowPass::UIState`,
-// External/Sheaf/projects/synth/include/synth/DspFilters.hpp:22; `OnePoleHighPass::UIState`, :85;
-// `ClassicStateVariableFilter::UIState`, :143) rather than a separate
+// `OnePoleHighPass::UIState` and `ClassicStateVariableFilter::UIState`, all in
+// External/Sheaf/projects/synth/include/synth/DspFilters.hpp) rather than a separate
 // wrapper. As with app/dsp/Vco.hpp's own scope UIState, this is a
 // deliberate, minimal widening of this file's "no Sheaf dependency"
 // convention: `synth/DspTransferFunction.hpp` is a two-method abstract
@@ -376,9 +376,9 @@ struct Comb
     //   Y(z) = X(z) + feedback * z^-N * Hlp(z) * Y(z)
     //   H(z) = Y(z)/X(z) = 1 / (1 - feedback * z^-N * Hlp(z))
     // -- captured state is exactly what that closed form needs: the
-    // feedback coefficient, the lowpass's alpha (OnePoleLowPass::alpha, the
-    // same state Sheaf's own OnePoleLowPass::UIState captures,
-    // External/Sheaf/projects/synth/include/synth/DspFilters.hpp:22-23), and the integer delay length.
+    // feedback coefficient, the lowpass's alpha (`OnePoleLowPass::alpha`, the
+    // same state Sheaf's own `OnePoleLowPass::UIState` captures,
+    // External/Sheaf/projects/synth/include/synth/DspFilters.hpp), and the integer delay length.
     struct UIState : synth::TransferFunction
     {
         std::atomic<float> feedback{0.0f};
@@ -808,8 +808,8 @@ struct FilterFxChain
     // wiring either way (only peak/comb UIStates populate).
     //
     // `topology` (Filter slot 13, "Topology"/"Topo") replaces the old
-    // `bool useParallel`. The old `useParallel == false` branch (:834-839,
-    // `pureDelay -> comb -> peak` with no trims/limiter/blend, ignoring
+    // `bool useParallel`. The old `useParallel == false` branch
+    // (`pureDelay -> comb -> peak` with no trims/limiter/blend, ignoring
     // combPeakBlend and scoopMix entirely) was DEAD CODE -- the only
     // production call site always passed `true` -- and has been deleted
     // rather than kept beside a morph. The
