@@ -17,7 +17,7 @@ The app SHALL deliver every press that changes audio-thread state (Randomize All
 - **THEN** page 3 is shown after the next block
 - **WHEN** Reset All then Randomize All are dispatched inside one message tick
 - **THEN** the state after the next block is randomized; reversed, it is the launch state
-- Check: not yet delivered; the change's task 3.1 adds the case to FroggersModulationTests.cpp
+- Check: `app/FroggersModulationTests.cpp: app_commands_apply_every_press_in_bus_order_within_one_tick`
 
 #### Scenario: The plugin's page restore is a dispatched press
 - **WHEN** a host restores a session that names a visible page
@@ -36,7 +36,7 @@ The BPM slider SHALL push `MessageIn::SetTempoBpmNormalized` with its value plac
 #### Scenario: A slider drag reaches the master clock in one block
 - **WHEN** the slider is dragged to 300 on the rig
 - **THEN** the engine's clock diagnostics read 300 after one block
-- Check: not yet delivered; the change's task 3.2 adds the case to FroggersSurfaceTests.cpp
+- Check: `app/FroggersSurfaceTests.cpp: bpm_slider_push_reaches_the_clock_diagnostics_publication_and_is_gated_by_the_context_sync_config`
 
 #### Scenario: Slaved, the slider is a read-only line and pushes nothing
 - **WHEN** receive-clock is requested and a BPM action is dispatched
@@ -90,7 +90,7 @@ a Launchpad row shows a "Variant" selector on that first line
   header
 - **AND** a Launchpad row shows a "Model" selector on that first line,
   holding the model its profile records
-- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, `TestControllerLifecycleActionsUseTheNormalCommitAndSavePath` (no rename control in a collapsed row's header) and `TestLaunchpadRowOffersVariantAndRetargetsItsPads` (the model selector on a Launchpad row's first line; that its caption reads "Model" is not yet delivered, and task 3.3 of the Sheaf change `app-o1-audit` adds the case); the per-row status-dot-precedes-its-combo and MIDI-in/MIDI-out caption assertions this scenario also names are exercised only inline in this file's own `main()`, which this repository's case index does not resolve by name. Operator, task 7.1.
+- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, `TestControllerLifecycleActionsUseTheNormalCommitAndSavePath` (no rename control in a collapsed row's header), `TestLaunchpadRowOffersVariantAndRetargetsItsPads` (the model selector on a Launchpad row's first line), and `TestLaunchpadRowModelSelectorIsCaptionedModel` (its caption reads "Model"); the per-row status-dot-precedes-its-combo and MIDI-in/MIDI-out caption assertions this scenario also names are exercised only inline in this file's own `main()`, which this repository's case index does not resolve by name.
 
 #### Scenario: Renaming keeps the editor open
 

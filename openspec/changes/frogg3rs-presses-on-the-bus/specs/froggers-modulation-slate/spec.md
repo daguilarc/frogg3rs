@@ -63,19 +63,19 @@ to randomize exactly what is displayed and a floor is not part of that.
 #### Scenario: A page press after a long drill session draws whole
 - **WHEN** the player drills into each parameter, presses Randomize All at level 1, opens each level-2 view and presses Randomize All there, and returns, until live depths exceed the launch storage, and then presses Randomize All on a parameter page
 - **THEN** no parameter gets fewer routes than it drew
-- Check: not yet delivered; the change's task 4.1 adds the case to FroggersAudioRoutingTests.cpp; red at the framework's default watermark
+- Check: `app/FroggersAudioRoutingTests.cpp: page_randomize_reports_no_partial_draw_after_a_drill_session_grows_depths_past_launch_storage`; red at the framework's default watermark
 
 #### Scenario: A relaunch opens a patch saved from that session whole
 - **WHEN** a fresh instance starts on data paths whose last-opened patch was saved from the session above
 - **THEN** every depth the patch carries is live before the first audio block
-- Check: not yet delivered; the change's task 4.1 adds the case to FroggersAudioRoutingTests.cpp
+- Check: `app/FroggersAudioRoutingTests.cpp: a_relaunch_on_the_same_data_paths_opens_a_grown_patch_whole_before_the_first_block`
 
 #### Scenario: A Load of that patch while running is whole after the retry
 - **WHEN** a running instance loads, or a host restores, the same patch
 - **THEN** the running patch is unchanged until the provisioning tick and every depth the patch carries is live after the retry
-- Check: not yet delivered; the change's task 4.1 adds the case to FroggersAudioRoutingTests.cpp
+- Check: `app/FroggersAudioRoutingTests.cpp: a_running_load_of_a_grown_patch_stays_whole_after_the_storage_tick_provisions_it`
 
 #### Scenario: A press in the same tick as a patch that fits draws whole
 - **WHEN** a patch that fits on its own is loaded in the same message tick as a Randomize All is pressed
 - **THEN** the press draws whole and the patch applies
-- Check: not yet delivered; the change's task 4.1 adds the case to FroggersAudioRoutingTests.cpp
+- Check: `app/FroggersAudioRoutingTests.cpp: a_small_patch_loaded_in_the_same_block_as_a_randomize_all_press_leaves_the_press_whole`
