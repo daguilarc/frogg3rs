@@ -21,7 +21,9 @@
 #include "FroggersUiSurface.hpp"
 #include "support/SynthRig.hpp"
 
+#include "synth/ControllerWizard.hpp"
 #include "synth/MidiAppCatalog.hpp"
+#include "synth/MidiConfigViewModel.hpp"
 #include "synth/MidiController.hpp"
 #include "synth/ParameterModulation.hpp"
 
@@ -39,6 +41,7 @@
 #include <iostream>
 #include <optional>
 #include <set>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -81,6 +84,16 @@ struct Register {
 // Same shape as REQUIRE_TRUE, but the failure text names the catalog entry
 // (action and value) under test, so a failing entry reads e.g.
 // "froggers.bank.select 3: ...".
+// A gesture's own CC-driven value smooths toward its target rather than
+// jumping (see the gesture's own analog input smoothing), so a reading
+// taken shortly after moving the Gestures CC can sit a hair off its settled
+// limit; GetRaw comparisons that follow a CC move use this instead of exact
+// equality, while SceneCenter (a plain committed write, never smoothed)
+// keeps exact comparisons throughout.
+bool NearlyEqual(float a, float b, float epsilon = 1e-3f) {
+    return std::fabs(a - b) < epsilon;
+}
+
 void RequireForAction(const synth::MidiAppAction& entry, bool condition, const std::string& what) {
     if (!condition) {
         std::ostringstream oss;
@@ -888,6 +901,545 @@ TEST_CASE(launchpad_defaults_are_registered_with_expected_ids_and_kind) {
     REQUIRE_TRUE(RequireDeviceDefault(catalog, "froggers.launchpad.x").displayName == "Launchpad X");
     REQUIRE_TRUE(RequireDeviceDefault(catalog, "froggers.launchpad.promk3").displayName == "Launchpad Pro MK3");
     REQUIRE_TRUE(RequireDeviceDefault(catalog, "froggers.launchpad.minimk3").displayName == "Launchpad Mini MK3");
+}
+
+// Builds a Custom (Generic-kind) controller with one System row (Hold
+// Gesture Select, gesture 0) and one Analogs Gestures row (gesture 0),
+// through the view model's own AddSingle/ApplyMappingEdit route -- the same
+// production path the Controllers page's own "+" buttons and combo edits
+// dispatch. Returns the two rows' own channel/cc addresses (read back from
+// the built config, not assumed), so a caller can drive them with
+// SynthRig::SendMidi.
+struct HeldGestureButtonFixture {
+    synth::MidiInstrumentConfig instrument;
+    synth::MidiControlAddress systemAddress;   // Hold Gesture Select row
+    synth::MidiControlAddress analogAddress;   // Gestures row (gesture 0)
+};
+
+HeldGestureButtonFixture BuildHeldGestureButtonFixture() {
+    using RowGroup = synth::MidiMappingRowVM::RowGroup;
+    using Field = synth::MidiMappingRowVM::Field;
+
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+    const std::vector<synth::UISystemMessageChoice> messageCatalog = synth::MakeUISystemMessageChoices(catalog);
+    const auto holdGestureSelectIt = std::find_if(
+        messageCatalog.begin(), messageCatalog.end(),
+        [](const synth::UISystemMessageChoice& choice) {
+            return choice.message == synth::UISystemMessage::HoldGestureSelect;
+        });
+    if (holdGestureSelectIt == messageCatalog.end()) {
+        throw std::runtime_error("catalog offers no Hold Gesture Select choice");
+    }
+    const double holdGestureSelectMessageIx =
+        static_cast<double>(std::distance(messageCatalog.begin(), holdGestureSelectIt));
+
+    synth::MidiInstrumentConfig instrument;
+    synth::MidiControllerSlot slot;
+    slot.name = "custom";
+    slot.kind = synth::MidiProfileKind::Generic;
+    if (!instrument.AddController(std::move(slot))) {
+        throw std::runtime_error("could not add a Custom controller");
+    }
+    synth::MidiConnectionState connection;
+    connection.controllers.push_back({});
+
+    synth::MidiConfigViewModel vm;
+    vm.SetMessageCatalog(messageCatalog);
+    vm.Rebuild(instrument, connection);
+
+    // A System row, Hold Gesture Select, gesture 0 (the row's own default
+    // argument -- see a_gesture_row_past_the_app_gestures_is_refused above).
+    synth::MidiInstrumentConfig afterSystemAdd;
+    std::string reason;
+    if (!vm.AddSingle(0, synth::MidiConfigSection::SystemMessages, RowGroup::System, afterSystemAdd, &reason)) {
+        throw std::runtime_error("AddSingle(System) refused: " + reason);
+    }
+    vm.SetMessageCatalog(messageCatalog);
+    vm.Rebuild(afterSystemAdd, connection);
+
+    synth::MidiInstrumentConfig withKind;
+    if (!vm.ApplyMappingEdit(0, synth::MidiConfigSection::SystemMessages, 0, Field::MessageKind,
+                             holdGestureSelectMessageIx, withKind, &reason)) {
+        throw std::runtime_error("ApplyMappingEdit(MessageKind) refused: " + reason);
+    }
+    vm.SetMessageCatalog(messageCatalog);
+    vm.Rebuild(withKind, connection);
+
+    // An Analogs Gestures row, gesture 0, on a different CC. The System and
+    // Analog sections each pick their own row's default address
+    // independently (NextFreeGenericAddress/NextFreeCc, MidiConfigViewModel.cpp),
+    // starting from channel 0 cc 0 in both -- so a fresh Generic controller's
+    // first row of each kind collides on the same wire address; moved to
+    // channel 1 here so SynthRig::SendMidi can address each row on its own.
+    synth::MidiInstrumentConfig withAnalogAdded;
+    if (!vm.AddSingle(0, synth::MidiConfigSection::Analogs, RowGroup::AnalogGesture, withAnalogAdded, &reason)) {
+        throw std::runtime_error("AddSingle(AnalogGesture) refused: " + reason);
+    }
+    vm.SetMessageCatalog(messageCatalog);
+    vm.Rebuild(withAnalogAdded, connection);
+
+    synth::MidiInstrumentConfig withAnalog;
+    if (!vm.ApplyMappingEdit(0, synth::MidiConfigSection::Analogs, 0, Field::Channel, 1.0, withAnalog, &reason)) {
+        throw std::runtime_error("ApplyMappingEdit(Analog Channel) refused: " + reason);
+    }
+
+    const synth::MidiControllerSystemMessageAssociation& systemRow = withAnalog.controllers[0].config.systemMessages[0];
+    if (!systemRow.control.has_value()) {
+        throw std::runtime_error("Hold Gesture Select row has no control address");
+    }
+    const synth::AnalogMidiMapping& analogRow = withAnalog.controllers[0].config.analogInput->gestures[0];
+    if (analogRow.gestureIx != 0) {
+        throw std::runtime_error("Analogs Gestures row did not default to gesture 0");
+    }
+
+    HeldGestureButtonFixture fixture;
+    fixture.instrument = std::move(withAnalog);
+    fixture.systemAddress = *systemRow.control;
+    fixture.analogAddress = analogRow.control;
+    return fixture;
+}
+
+// ---------------------------------------------------------------------------
+// held_gesture_button_collects_knobs_and_the_gesture_control_moves_them
+// ---------------------------------------------------------------------------
+//
+// Through the production route (BuildHeldGestureButtonFixture, above): a
+// System row bound to Hold Gesture Select for gesture 0, and an Analogs
+// Gestures row bound to gesture 0. Knobs A and B (bank Audio, positions 0
+// and 1) are turned twice each through the UI bus while the button is held
+// and the gesture value is at 1.0 (Gestures CC 127) -- the first turn only
+// arms membership (Parameter::HandleIncDec returns after arming, so it
+// moves nothing), the second turn moves the gesture's own target since the
+// gesture's weight is 1.0 there. Knob C (position 2) is never turned and
+// never joins. Fails with the catalog's HoldGestureSelect line removed
+// (BuildHeldGestureButtonFixture then throws, since AddSingle/
+// ApplyMappingEdit can never reach that message kind).
+TEST_CASE(held_gesture_button_collects_knobs_and_the_gesture_control_moves_them) {
+    const HeldGestureButtonFixture fixture = BuildHeldGestureButtonFixture();
+
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("held_gesture_button"));
+    rig.RunBlocks(4);
+    rig.InstallInstrumentForTest(fixture.instrument);
+
+    synth_froggers::FroggersApp& app = rig.Application();
+    // Envelope, not Audio: the Audio bank's default patch carries six
+    // factory cross-VCO pitch-modulation depths (LCH-03), which would make
+    // GetRaw drift on its own and defeat a settled reading; Envelope's page
+    // parameters carry no default depths.
+    constexpr std::size_t kBankIx = 1;  // Envelope
+    constexpr std::size_t kSlotIx = 0;  // SynthRig::Turn's physical slot -- Frogg3rs has one.
+    rig.SelectBank(kSlotIx, kBankIx);
+    rig.RunBlocks(4);
+    synth::Parameter& knobA = app.Parameters().PageParameter(kBankIx, 0);
+    synth::Parameter& knobB = app.Parameters().PageParameter(kBankIx, 1);
+    synth::Parameter& knobC = app.Parameters().PageParameter(kBankIx, 2);
+
+    // Extra settle margin after moving the Gestures CC: the gesture's own
+    // value smooths toward its new target rather than jumping, so a reading
+    // taken right at kSettleBlocks can still be a hair short of the limit.
+    constexpr std::size_t kGestureSettleBlocks = 60;
+
+    // SceneCenter is the unweighted base a turn commands; GetRaw is what the
+    // screen reads -- SceneCenter blended with the gesture target by the
+    // gesture's own weight (Parameter::ComputeRawCenter). At weight 1.0
+    // (Gestures CC 127) a member's GetRaw tracks its gesture target and
+    // SceneCenter never moves; at weight 0.0 (CC 0) GetRaw collapses back to
+    // SceneCenter.
+    const float preA = knobA.GetRaw(0);
+    const float preB = knobB.GetRaw(0);
+    const float preC = knobC.GetRaw(0);
+    REQUIRE_TRUE(knobA.SceneCenter(0) == preA);
+
+    rig.SendMidi(0, synth::BasicMidi::CC(0, fixture.analogAddress.channel, fixture.analogAddress.cc, 127));
+    rig.SendMidi(0, synth::BasicMidi::CC(0, fixture.systemAddress.channel, fixture.systemAddress.cc, 127));
+    rig.RunBlocks(kGestureSettleBlocks);
+    REQUIRE_TRUE(rig.Engine().Manager().SelectedGestureMask() == 1u);
+
+    rig.Turn(kSlotIx, 0, 0.1f);  // A: arms, moves nothing
+    rig.RunBlocks(kSettleBlocks);
+    REQUIRE_TRUE(knobA.GestureActive(0, 0));
+    REQUIRE_TRUE(NearlyEqual(knobA.GetRaw(0), preA));
+    rig.Turn(kSlotIx, 0, 0.1f);  // A: second turn, weight 1.0 -> moves the gesture target only
+    rig.RunBlocks(kSettleBlocks);
+
+    rig.Turn(kSlotIx, 1, 0.1f);  // B: arms, moves nothing
+    rig.RunBlocks(kSettleBlocks);
+    rig.Turn(kSlotIx, 1, 0.1f);  // B: second turn
+    rig.RunBlocks(kSettleBlocks);
+
+    rig.SendMidi(0, synth::BasicMidi::CC(0, fixture.systemAddress.channel, fixture.systemAddress.cc, 0));  // release
+    rig.RunBlocks(kSettleBlocks);
+
+    const float aAt127 = knobA.GetRaw(0);
+    const float bAt127 = knobB.GetRaw(0);
+    REQUIRE_TRUE(!NearlyEqual(aAt127, preA));
+    REQUIRE_TRUE(!NearlyEqual(bAt127, preB));
+    REQUIRE_TRUE(NearlyEqual(knobC.GetRaw(0), preC));
+    // Neither member's own base ever moved -- every turn's delta went to
+    // the gesture target instead, since the gesture's weight was 1.0
+    // throughout both members' turns.
+    REQUIRE_TRUE(knobA.SceneCenter(0) == preA);
+    REQUIRE_TRUE(knobB.SceneCenter(0) == preB);
+
+    rig.SendMidi(0, synth::BasicMidi::CC(0, fixture.analogAddress.channel, fixture.analogAddress.cc, 0));
+    rig.RunBlocks(kGestureSettleBlocks);
+    REQUIRE_TRUE(NearlyEqual(knobA.GetRaw(0), preA));
+    REQUIRE_TRUE(NearlyEqual(knobB.GetRaw(0), preB));
+    REQUIRE_TRUE(NearlyEqual(knobC.GetRaw(0), preC));
+
+    // With the button released and the gesture back at full weight, A moves
+    // again -- membership, once joined, is shared by every later turn
+    // whether the button is held or not.
+    rig.SendMidi(0, synth::BasicMidi::CC(0, fixture.analogAddress.channel, fixture.analogAddress.cc, 127));
+    rig.RunBlocks(kGestureSettleBlocks);
+    rig.Turn(kSlotIx, 0, 0.1f);
+    rig.RunBlocks(kSettleBlocks);
+    REQUIRE_TRUE(!NearlyEqual(knobA.GetRaw(0), aAt127));
+    REQUIRE_TRUE(knobA.SceneCenter(0) == preA);
+
+    rig.SendMidi(0, synth::BasicMidi::CC(0, fixture.analogAddress.channel, fixture.analogAddress.cc, 0));
+    rig.RunBlocks(kGestureSettleBlocks);
+    REQUIRE_TRUE(NearlyEqual(knobA.GetRaw(0), preA));
+}
+
+// ---------------------------------------------------------------------------
+// randomize_with_a_gesture_button_held_adds_what_it_writes
+// ---------------------------------------------------------------------------
+//
+// Through the same held-button setup as the case above, then
+// synth_froggers::detail::RandomizeParameterModulationDepths -- the actual
+// production function a modulation view's own Randomize All calls per
+// visible parameter -- on knob A directly. A depth it materializes is a
+// brand-new Parameter whose first-ever write is this randomize call, so
+// Parameter::HandleIncDec's "first write only arms" rule (exercised above)
+// applies to it identically: the drawn depths join gesture 0 and their own
+// SceneCenter stays neutral (0.0f). This case goes red if the drawn depths
+// are written through SceneCenter (a plain assignment) instead of through
+// RandomizeVisibleValue/HandleIncDec's arm-then-share route.
+TEST_CASE(randomize_with_a_gesture_button_held_adds_what_it_writes) {
+    const HeldGestureButtonFixture fixture = BuildHeldGestureButtonFixture();
+
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("randomize_gesture_held"));
+    rig.RunBlocks(4);
+    rig.InstallInstrumentForTest(fixture.instrument);
+
+    synth_froggers::FroggersApp& app = rig.Application();
+    constexpr std::size_t kBankIx = 1;  // Envelope
+    constexpr std::size_t kSlotIx = 0;
+    rig.SelectBank(kSlotIx, kBankIx);
+    rig.RunBlocks(4);
+    synth::Parameter& knobA = app.Parameters().PageParameter(kBankIx, 0);
+    REQUIRE_TRUE(!knobA.GestureActive(0, 0));
+
+    rig.SendMidi(0, synth::BasicMidi::CC(0, fixture.analogAddress.channel, fixture.analogAddress.cc, 127));
+    rig.SendMidi(0, synth::BasicMidi::CC(0, fixture.systemAddress.channel, fixture.systemAddress.cc, 127));
+    rig.RunBlocks(kSettleBlocks);
+    REQUIRE_TRUE(rig.Engine().Manager().SelectedGestureMask() == 1u);
+
+    const bool partial = synth_froggers::detail::RandomizeParameterModulationDepths(rig.Engine().Manager(), knobA,
+                                                                                   /*minimumSources=*/1);
+    REQUIRE_TRUE(!partial);
+    rig.RunBlocks(kSettleBlocks);
+
+    const std::span<const synth::ModulatorMetadata> metadata = knobA.Group().GetModulators().Metadata();
+    std::size_t materialized = 0;
+    for (std::size_t modIx = 0; modIx < metadata.size(); ++modIx) {
+        synth::Parameter* depth = knobA.ModulationDepthParameter(modIx);
+        if (depth == nullptr) {
+            continue;
+        }
+        ++materialized;
+        // The randomize's own draw is this depth's first-ever write: it
+        // joins gesture 0 and stays neutral
+        // (synth_froggers::detail::kNeutralModulationDepthCenter, a depth's
+        // own "no effect" center) in both scenes -- the arm-only rule, not a
+        // value change.
+        REQUIRE_TRUE(depth->GestureActive(0, 0));
+        REQUIRE_TRUE(depth->GestureActive(1, 0));
+        REQUIRE_TRUE(depth->SceneCenter(0) == synth_froggers::detail::kNeutralModulationDepthCenter);
+        REQUIRE_TRUE(depth->SceneCenter(1) == synth_froggers::detail::kNeutralModulationDepthCenter);
+    }
+    REQUIRE_TRUE(materialized > 0);
+
+    // The gesture as a whole moved nothing on knob A itself: the randomize
+    // targeted the depths, not knob A's own base.
+    REQUIRE_TRUE(!knobA.GestureActive(0, 0));
+}
+
+// ---------------------------------------------------------------------------
+// gesture_is_part_of_the_patch
+// ---------------------------------------------------------------------------
+//
+// Builds gesture 0 with knobs A and B as members (same held-button, double-
+// turn sequence as held_gesture_button_..., above), saves through the File
+// page's own route (SynthRig::SavePatchAs, the same PatchManager call the
+// page's Save dispatches -- SynthRig.hpp's own header comment), and opens
+// it through the File page's Load (SynthRig::LoadPatch) in a second, fresh
+// rig that never saw this instrument. Checked directly against
+// Parameter::GestureActive/GestureValue -- the two fields
+// Parameter::ToValueJSON writes into a patch (gesture-trace.md, "What it
+// stores") -- rather than a live MIDI reading, so the assertion is exactly
+// what the patch file carries, independent of the fresh rig's own (absent)
+// controller mapping.
+TEST_CASE(gesture_is_part_of_the_patch) {
+    const HeldGestureButtonFixture fixture = BuildHeldGestureButtonFixture();
+
+    const std::filesystem::path patchDir =
+        std::filesystem::temp_directory_path() / "froggers-midi-catalog-tests" / "gesture_is_part_of_the_patch";
+    std::filesystem::remove_all(patchDir);  // SavePatchAs requires patchDir to not already exist.
+
+    Rig builder(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("gesture_is_part_of_the_patch_builder"));
+    builder.RunBlocks(4);
+    builder.InstallInstrumentForTest(fixture.instrument);
+
+    constexpr std::size_t kBankIx = 1;  // Envelope
+    constexpr std::size_t kSlotIx = 0;
+    builder.SelectBank(kSlotIx, kBankIx);
+    builder.RunBlocks(4);
+    synth::Parameter& knobA = builder.Application().Parameters().PageParameter(kBankIx, 0);
+    synth::Parameter& knobB = builder.Application().Parameters().PageParameter(kBankIx, 1);
+
+    builder.SendMidi(0, synth::BasicMidi::CC(0, fixture.systemAddress.channel, fixture.systemAddress.cc, 127));
+    builder.RunBlocks(kSettleBlocks);
+    REQUIRE_TRUE(builder.Engine().Manager().SelectedGestureMask() == 1u);
+
+    builder.Turn(kSlotIx, 0, 0.1f);
+    builder.RunBlocks(kSettleBlocks);
+    builder.Turn(kSlotIx, 0, 0.1f);
+    builder.RunBlocks(kSettleBlocks);
+    builder.Turn(kSlotIx, 1, 0.1f);
+    builder.RunBlocks(kSettleBlocks);
+    builder.Turn(kSlotIx, 1, 0.1f);
+    builder.RunBlocks(kSettleBlocks);
+
+    builder.SendMidi(0, synth::BasicMidi::CC(0, fixture.systemAddress.channel, fixture.systemAddress.cc, 0));
+    builder.RunBlocks(kSettleBlocks);
+
+    REQUIRE_TRUE(knobA.GestureActive(0, 0));
+    REQUIRE_TRUE(knobB.GestureActive(0, 0));
+    const float gestureValueA = knobA.GestureValue(0, 0);
+    const float gestureValueB = knobB.GestureValue(0, 0);
+
+    const synth_rig::RigPatchStatus saveStatus = builder.SavePatchAs(patchDir);
+    REQUIRE_TRUE(saveStatus == synth_rig::RigPatchStatus::Written);
+    const std::optional<std::filesystem::path> versionFile = synth::LatestPatchVersion(patchDir);
+    REQUIRE_TRUE(versionFile.has_value());
+
+    Rig opener(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("gesture_is_part_of_the_patch_opener"));
+    opener.RunBlocks(4);
+    const synth_rig::RigPatchStatus loadStatus = opener.LoadPatch(*versionFile);
+    REQUIRE_TRUE(loadStatus == synth_rig::RigPatchStatus::Ok);
+
+    synth::Parameter& openedA = opener.Application().Parameters().PageParameter(kBankIx, 0);
+    synth::Parameter& openedB = opener.Application().Parameters().PageParameter(kBankIx, 1);
+    REQUIRE_TRUE(openedA.GestureActive(0, 0));
+    REQUIRE_TRUE(openedB.GestureActive(0, 0));
+    REQUIRE_TRUE(openedA.GestureValue(0, 0) == gestureValueA);
+    REQUIRE_TRUE(openedB.GestureValue(0, 0) == gestureValueB);
+}
+
+// ---------------------------------------------------------------------------
+// gesture_colours_are_distinct_visible_and_not_modulator_colours
+// ---------------------------------------------------------------------------
+//
+// Reads the eight colours FroggersParameterModel::Init actually installs
+// (through the real ParameterManager::GestureMetadataAt accessor, not the
+// FroggersGestureColor() helper's own return values, so this exercises the
+// wiring, not just the palette table). Fails with the assignment loop in
+// app/FroggersParameters.hpp removed, since every gesture then keeps
+// GestureMetadata::gestureColor's own default, Color::Off, which collapses
+// every "pairwise distinct" and "none is Off" case at once.
+TEST_CASE(gesture_colours_are_distinct_visible_and_not_modulator_colours) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("gesture_colours"));
+    rig.RunBlocks(4);
+
+    synth::ParameterManager& manager = rig.Engine().Manager();
+    std::array<synth::Color, synth_froggers::FroggersParameterModel::kNumGestures> colors{};
+    for (std::size_t gestureIx = 0; gestureIx < colors.size(); ++gestureIx) {
+        colors[gestureIx] = manager.GestureMetadataAt(gestureIx).gestureColor;
+        REQUIRE_TRUE(colors[gestureIx] != synth::Color::Off);
+        REQUIRE_TRUE(colors[gestureIx] != synth::kSurfaceBackground);
+    }
+    for (std::size_t i = 0; i < colors.size(); ++i) {
+        for (std::size_t j = i + 1; j < colors.size(); ++j) {
+            REQUIRE_TRUE(colors[i] != colors[j]);
+        }
+    }
+
+    // The one group Froggers creates (app.Parameters().Init's own comment);
+    // any parameter reaches the same modulator metadata.
+    synth::Parameter& anyParameter = rig.Application().Parameters().PageParameter(0, 0);
+    const std::span<const synth::ModulatorMetadata> metadata = anyParameter.Group().GetModulators().Metadata();
+    for (const synth::Color& gestureColor : colors) {
+        for (const synth::ModulatorMetadata& source : metadata) {
+            REQUIRE_TRUE(gestureColor != source.sourceColor);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// a_knob_in_a_gesture_draws_its_gesture_dot
+// ---------------------------------------------------------------------------
+//
+// Joins knob A to gesture 0 directly (Parameter::SetGestureActive, the same
+// flag Parameter::HandleIncDec's arm step sets), then builds the parameter
+// page's own draw commands the production route builds
+// (Parameter::UIState -> synth::ui::EncoderDrawStateFromParameter ->
+// synth::ui::BuildEncoderDrawCommands, FroggersUiSurface.hpp's own
+// AppendEncoderCell), and asserts one of them (the gesture badge
+// AppendBadge appends, EncoderDraw.hpp) is filled in gesture 0's own colour
+// (its r/g/b -- AppendBadge scales the badge's own alpha by 0.9, so alpha
+// is not compared). Fails with the colour assignment removed: gesture 0's
+// colour is then Color::Off (0,0,0,255), the same r/g/b as the badge's own
+// black stroke and near-black shell, but never as its OWN FillRoundedRect
+// (see AppendBadge), so no command actually matches Off either -- proving
+// the assertion needs a real, non-default colour, not merely "some colour."
+TEST_CASE(a_knob_in_a_gesture_draws_its_gesture_dot) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("gesture_badge_draw"));
+    rig.RunBlocks(4);
+
+    constexpr std::size_t kBankIx = 1;  // Envelope
+    constexpr std::size_t kSlotIx = 0;
+    rig.SelectBank(kSlotIx, kBankIx);
+    rig.RunBlocks(4);
+
+    synth::Parameter& knobA = rig.Application().Parameters().PageParameter(kBankIx, 0);
+    knobA.SetGestureActive(0, 0, true);
+    knobA.SetGestureActive(1, 0, true);
+    rig.RunBlocks(kSettleBlocks);
+
+    const synth::ParameterManager::UIState& uiState = rig.UIState();
+    const synth::Parameter::UIState& cell = uiState.slots[kSlotIx].cells[0];
+    const synth::ui::EncoderDrawState drawState = synth::ui::EncoderDrawStateFromParameter(cell);
+    REQUIRE_TRUE(drawState.gesturesAffectingMask != 0);
+    REQUIRE_TRUE(!drawState.gestureColors.empty());
+    const synth::Color gesture0Color = drawState.gestureColors[0];
+    REQUIRE_TRUE(gesture0Color != synth::Color::Off);
+
+    const synth::ui::Bounds nodeExtent{0.0f, 0.0f, 120.0f, 120.0f};
+    const std::vector<synth::ui::DrawCommand> commands = synth::ui::BuildEncoderDrawCommands(drawState, nodeExtent);
+    REQUIRE_TRUE(!commands.empty());
+
+    bool foundGestureBadge = false;
+    for (const synth::ui::DrawCommand& command : commands) {
+        if (command.color.r == gesture0Color.r && command.color.g == gesture0Color.g &&
+            command.color.b == gesture0Color.b) {
+            foundGestureBadge = true;
+            break;
+        }
+    }
+    REQUIRE_TRUE(foundGestureBadge);
+}
+
+// ---------------------------------------------------------------------------
+// catalog_offers_hold_gesture_select
+// ---------------------------------------------------------------------------
+//
+// FroggersControllersPageTests.cpp's own convention for a System row's
+// offered targets: SetMessageCatalog(MakeUISystemMessageChoices(catalog))
+// against a real synth::MidiConfigViewModel, then read the choices back.
+// Fails with the FroggersMidiCatalog.hpp libraryKinds line above removed,
+// since HoldGestureSelect is then absent from every catalog.libraryKinds
+// entry MakeUISystemMessageChoices draws from.
+TEST_CASE(catalog_offers_hold_gesture_select) {
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+
+    synth::MidiConfigViewModel vm;
+    vm.SetMessageCatalog(synth::MakeUISystemMessageChoices(catalog));
+
+    const std::vector<synth::UISystemMessageChoice>& choices = vm.MessageCatalog();
+    const bool offersHoldGestureSelect =
+        std::find_if(choices.begin(), choices.end(), [](const synth::UISystemMessageChoice& choice) {
+            return choice.message == synth::UISystemMessage::HoldGestureSelect;
+        }) != choices.end();
+    REQUIRE_TRUE(offersHoldGestureSelect);
+}
+
+// ---------------------------------------------------------------------------
+// a_gesture_row_past_the_app_gestures_is_refused
+// ---------------------------------------------------------------------------
+//
+// Sheaf 3.2's cap (viewmodel_tests.cpp's GestureFieldPastTheAppsGesturesIsRefused
+// / GestureCountCapRefusesABlockAnAddAndAHoldGestureSelectArgument), driven
+// through Frogg3rs's own gesture count instead of a hand-picked one: 7.3(b)'s
+// record showed gesture 8 accepted with no count set, so this proves the app
+// actually wires FroggersParameterModel::kNumGestures into the view model
+// that refuses it now that Sheaf 3.2 has landed.
+TEST_CASE(a_gesture_row_past_the_app_gestures_is_refused) {
+    using RowGroup = synth::MidiMappingRowVM::RowGroup;
+    using Field = synth::MidiMappingRowVM::Field;
+
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+    const std::vector<synth::UISystemMessageChoice> messageCatalog = synth::MakeUISystemMessageChoices(catalog);
+    const auto holdGestureSelectIx = std::find_if(
+        messageCatalog.begin(), messageCatalog.end(),
+        [](const synth::UISystemMessageChoice& choice) {
+            return choice.message == synth::UISystemMessage::HoldGestureSelect;
+        });
+    REQUIRE_TRUE(holdGestureSelectIx != messageCatalog.end());
+    const double holdGestureSelectMessageIx =
+        static_cast<double>(std::distance(messageCatalog.begin(), holdGestureSelectIx));
+
+    // (a) A Gestures row's GestureIx field refuses 8.
+    {
+        synth::MidiInstrumentConfig instrument;
+        synth::MidiControllerSlot slot;
+        slot.name = "custom";
+        slot.kind = synth::MidiProfileKind::Generic;
+        synth::AnalogMidiInConfig analog;
+        analog.gestures.push_back(synth::AnalogMidiMapping{
+            .control = synth::MidiControlAddress{.channel = 0, .cc = 0}, .gestureIx = 0});
+        slot.config.analogInput = analog;
+        REQUIRE_TRUE(instrument.AddController(std::move(slot)));
+        synth::MidiConnectionState connection;
+        connection.controllers.push_back({});
+
+        synth::MidiConfigViewModel vm;
+        vm.Rebuild(instrument, connection);
+        vm.SetGestureCount(synth_froggers::FroggersParameterModel::kNumGestures);
+
+        synth::MidiInstrumentConfig out;
+        std::string reason;
+        REQUIRE_TRUE(!vm.ApplyMappingEdit(0, synth::MidiConfigSection::Analogs, 0, Field::GestureIx, 8.0, out,
+                                          &reason));
+        REQUIRE_TRUE(reason == "gesture must be an integer 0-7");
+        REQUIRE_TRUE(out.controllers.empty());
+        REQUIRE_TRUE(instrument.controllers[0].config.analogInput->gestures[0].gestureIx == 0);
+    }
+
+    // (b) A Hold Gesture Select row's argument refuses 8.
+    {
+        synth::MidiInstrumentConfig instrument;
+        synth::MidiControllerSlot slot;
+        slot.name = "custom";
+        slot.kind = synth::MidiProfileKind::Generic;
+        REQUIRE_TRUE(instrument.AddController(std::move(slot)));
+        synth::MidiConnectionState connection;
+        connection.controllers.push_back({});
+
+        synth::MidiConfigViewModel vm;
+        vm.SetMessageCatalog(messageCatalog);
+        vm.Rebuild(instrument, connection);
+
+        synth::MidiInstrumentConfig afterAdd;
+        std::string reason;
+        REQUIRE_TRUE(vm.AddSingle(0, synth::MidiConfigSection::SystemMessages, RowGroup::System, afterAdd, &reason));
+        vm.SetMessageCatalog(messageCatalog);
+        vm.Rebuild(afterAdd, connection);
+
+        synth::MidiInstrumentConfig withKind;
+        REQUIRE_TRUE(vm.ApplyMappingEdit(0, synth::MidiConfigSection::SystemMessages, 0, Field::MessageKind,
+                                         holdGestureSelectMessageIx, withKind, &reason));
+        vm.SetMessageCatalog(messageCatalog);
+        vm.Rebuild(withKind, connection);
+        vm.SetGestureCount(synth_froggers::FroggersParameterModel::kNumGestures);
+
+        synth::MidiInstrumentConfig out;
+        REQUIRE_TRUE(!vm.ApplyMappingEdit(0, synth::MidiConfigSection::SystemMessages, 0, Field::MessageArg, 8.0, out,
+                                          &reason));
+        REQUIRE_TRUE(reason == "gesture must be an integer 0-7");
+        REQUIRE_TRUE(withKind.controllers[0].config.systemMessages[0].press.gestureIx == 0);
+    }
 }
 
 }  // namespace

@@ -307,6 +307,40 @@ inline const std::array<FroggersBankLayout, kFroggersPageCount>& FroggersBankLay
 // baseColor). Distinct from all six bank colours above.
 inline synth::Color FroggersCrunchyColor() { return synth::Color::Yellow; }
 
+// The eight gesture badge colours, one per FroggersParameterModel::kNumGestures
+// slot. Frogg3rs never writes a gesture's colour otherwise, so every gesture
+// would default to GestureMetadata::gestureColor's own default, Color::Off
+// (drawn as a black badge) -- see FroggersParameterModel::Init below.
+//
+// Every one of Frogg3rs's own bank colours except Blue, Delay's pink and
+// Reverb's Cyan is already the exact colour of one of the 15 modulator
+// sources FroggersModulation.hpp registers (Audio bank Red == VCO1 Audio,
+// Drive Orange == VCO2 Audio, Crunchy/no-bank Yellow == VCO3 Audio,
+// Envelope Green == External Audio, and White == Noise), by deliberate
+// construction -- those sources are painted to match their related bank.
+// So only four of Sheaf's ten named Color.hpp constants
+// (Color::Cyan/Blue/Indigo/Grey, excluding Color::Off) are free of a
+// modulator collision, four short of eight. The other four are brightness
+// variants of named colours instead, at 0.75 -- distinct from every
+// existing 0.55 (VCO EF) and 0.7 (comb visualizer) variant already in the
+// codebase, and from every one of FroggersModulation.hpp's own colours
+// (the six generated LaneColor hues included), byte-verified. Each stays
+// well above the near-black encoder body fill (kSurfaceBackground,
+// Rgb(18,20,22)), so it reads against it.
+inline synth::Color FroggersGestureColor(std::size_t gestureIx) {
+    static const std::array<synth::Color, 8> kColors{
+        synth::Color::Cyan,
+        synth::Color::Blue,
+        synth::Color::Indigo,
+        synth::Color::Grey,
+        synth::Color::Red.AdjustBrightness(0.75f),
+        synth::Color::Orange.AdjustBrightness(0.75f),
+        synth::Color::Yellow.AdjustBrightness(0.75f),
+        synth::Color::Green.AdjustBrightness(0.75f),
+    };
+    return kColors.at(gestureIx);
+}
+
 class FroggersParameterModel {
 public:
     // ParameterGroupConfig{numVoices=1, numModulators=15,
@@ -368,6 +402,13 @@ public:
         // Must precede CreateGroup: SetGestureCount refuses once the manager
         // owns a group, and this is the only group Froggers creates.
         manager.SetGestureCount(kNumGestures);
+        // Every gesture gets a colour here -- otherwise each one keeps
+        // GestureMetadata::gestureColor's own default, Color::Off, and a
+        // knob's gesture badge draws black (FroggersGestureColor's own
+        // comment above).
+        for (std::size_t gestureIx = 0; gestureIx < kNumGestures; ++gestureIx) {
+            manager.GestureMetadataAt(gestureIx).gestureColor = FroggersGestureColor(gestureIx);
+        }
         group_ = &manager.CreateGroup({
             .numVoices = kNumVoices,
             .numModulators = kNumModulators,

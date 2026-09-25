@@ -130,8 +130,12 @@ beneath the transport buttons until Play is pressed or a recording arms. A captu
 Click any parameter's encoder — a page parameter, a page's own Crispy, or Crunchy — to open
 a modulation view for that one parameter. It exposes 15 modulation sources, each with its own signed
 depth. A depth of 0 means that source is off for this parameter. Turning a source's depth changes how
-hard that source pushes the target, and depths on the same parameter sum together. Click the
-parameter's encoder again, or the back target in the corner, to leave the modulation view.
+hard that source pushes the target, and depths on the same parameter sum together. Clicking one of
+those depth's own encoder drills further in, to a modulation view for that depth, up to three levels
+deep in all. Click the parameter's encoder again, or the back target in the corner, to go up exactly
+one level — from the deepest level this returns to the level above it, not out of the modulation view
+entirely. Pressing the currently viewed page's own sidebar button leaves every level at once, back to
+that page's top-level parameter grid.
 
 The view fills the same 4×4 grid the parameters use: 15 sources and, in the last slot, the way back
 out.
@@ -178,7 +182,8 @@ depths, and randomizes the Crispy value of zero, one or two of the six pages per
 at once, because scrambling all six together lands where randomizing Crunchy would. It never touches
 Crunchy, and it does not descend into a depth's own sub-depths. Pressed while a modulation view is
 open, it instead randomizes that parameter's depths and materializes and randomizes their second
-level; every such press attaches at least one source, so every press moves something.
+level; every such press attaches at least one source, so every press moves something, except while a
+gesture's Hold Gesture Select button is held, when the depths it draws stay neutral (see Gestures).
 
 **Randomize Page** randomizes exactly what is on screen: on a parameter page, that page's values
 including its own Crispy and no depths; in a modulation view, that view's depths only.
@@ -214,6 +219,17 @@ by everything sounds uniformly busy. Parameters staying still is what gives a ra
 contrast, and the ones that do move keep each source's contribution audible. The tail never closes, so
 an occasional densely modulated parameter still happens.
 
+### Reset
+
+**Reset All** on a parameter page returns the whole patch to its launch state: every page's
+values, every modulation depth, every page's Crispy, and Crunchy. Pressed while a modulation
+view is open, it instead returns that parameter's depths to their launch values and clears the
+depths one level below them, where that level exists. Nothing outside that parameter changes.
+
+**Reset Page** on a parameter page returns that page's values and its own Crispy to their
+launch state and leaves every other page and Crunchy alone. In a modulation view, it returns
+that view's depths to their launch values.
+
 ---
 
 ## Audio configuration
@@ -223,13 +239,16 @@ an occasional densely modulated parameter still happens.
 An **Audio I/O** page (reached from the app's sidebar) offers **Output device** and **Input device**
 selectors listing the machine's own audio devices, plus a **Retry Input** button if capture fails. It is
 named Audio I/O rather than Audio so it is not read as the Audio parameter page. A
-**Controllers** page maps an external MIDI controller to this app's own controls; see MIDI controllers, below. A **Sync** page lets the transport slave to incoming MIDI clock (**Receive
-clock**, **Receive transport** toggles, a **PPQN** field 1–960); while slaved, the BPM control (Global
-controls, above) becomes a read-only status display instead of an editable slider.
+**Controllers** page maps an external MIDI controller to this app's own controls; see MIDI controllers, below. A **Sync** page offers **Send clock**, **Receive clock**, **Send transport** and
+**Receive transport** toggles and a **PPQN** field 1–960; Receive clock and Receive transport slave
+the transport to incoming MIDI clock, and while slaved, the BPM control (Global controls, above)
+becomes a read-only status display instead of an editable slider.
 
 ### Plugin (VST3 / AU)
 
-The DAW owns audio devices, transport and tempo.
+The DAW owns audio devices, transport and tempo. The plugin editor renders only the parameter/
+modulation surface the standalone and browser builds also show; it has no Audio I/O, Controllers,
+Sync or File sidebar page.
 
 **Transport and tempo** follow the host. The plugin's own surface shows only Freeze (labeled "FREEZE")
 where the standalone shows Play, Stop, Freeze, and Record. Whenever the host reports a tempo, the BPM
@@ -266,20 +285,18 @@ The Controllers page exists in the standalone and browser builds (the plugin tak
 automation, as the Plugin subsection says). "Available controllers" lists each connected device that no row uses and that a preset recognizes
 by its port names, together with every preset that matches it — an Akai APC40 mkII reads as one
 device offering both **Akai APC40 mkII (Generic)** and **Akai APC40 mkII (Ableton)**. Every other
-connected port that no row uses is listed as "Other inputs" or "Other outputs": a port no preset recognizes, a
-recognized device missing its other port, or a WRLD.Bldr, whose preset recognizes no port name at
-all. When nothing is connected the block reads "No connected controller is waiting to be set up".
+connected port that no row uses is listed as "Other inputs" or "Other outputs": a port no preset recognizes, or a
+recognized device missing its other port. When nothing is connected the block reads "No connected controller is
+waiting to be set up".
 
 Below it, the add row offers a **Preset** selector — **MIDI Fighter Twister**, **Akai APC40 mkII
 (Generic)**, **Akai APC40 mkII (Ableton)**, **Launchpad X**, **Launchpad Pro MK3**, **Launchpad
-Mini MK3**, **WRLD.Bldr**, or **Custom** — and an **Add** button. The selector starts on the first
+Mini MK3**, or **Custom** — and an **Add** button. The selector starts on the first
 waiting device's first preset, so pressing Add without touching it sets that device up in one
 press. For a device more than one preset matches, such as the APC40 mkII, the player picks the
 preset first, and Add binds the device to whichever preset is picked. Choosing a named preset and
 pressing Add installs a new row carrying that preset's complete mapping, with its ports bound to
-the matching connected device. The WRLD.Bldr preset recognizes no port name, so a WRLD.Bldr always
-appears under "Other inputs" and "Other outputs" rather than as a waiting device; after adding its
-preset, the player picks its ports on the row. Choosing Custom and pressing Add installs a row
+the matching connected device. Choosing Custom and pressing Add installs a row
 named **Custom** (with a number appended when that name is taken); it carries no mappings and no
 bound MIDI in/out ports, so its device reads "(none)" until a MIDI in device is bound. Rename it
 from the **Name** field in the row's expanded editor, the same as any row (see Renaming, below). An
@@ -293,7 +310,7 @@ reinstalls the preset's mappings without renaming the row or changing its ports.
 
 Each row is two lines, or three while its stored mappings differ from the preset that created it.
 The first line shows the disclosure arrow, the controller's name, its device label and, on a
-Launchpad row, a **Variant** selector holding the Launchpad model its profile records. The device
+Launchpad row, a **Model** selector holding the Launchpad model its profile records. The device
 label is the preset that created the row (for example **MIDI Fighter Twister** or **Launchpad X**)
 for as long as that preset still resolves; otherwise it is the MIDI input the row is bound to, or
 "(none)" until one is bound. A Custom row has no preset, so it always shows this way. The second
@@ -301,6 +318,11 @@ line holds a status dot before each of the **MIDI in** and **MIDI out** port sel
 **Delete**. Once the row's mappings diverge from its preset, a third line appears with a sentence
 saying so and **Restore**, which reinstalls the preset and discards the row's edits. A legend above
 the first row names the dot colours: online, offline, not set.
+
+While a row's device is unplugged, its **MIDI in** or **MIDI out** selector lists **(none)**,
+every connected device, and the stored port's name, which stays selected. Leaving that entry
+selected keeps the port, and the row reconnects when the device returns. Choosing a connected
+device binds the row to it, and choosing **(none)** clears the port.
 
 A released row, which a configuration saved by an earlier version can hold, shows its name, device
 label, and a **Released** badge on the first line, and its stored MIDI in/out ports and **Delete**
@@ -324,9 +346,10 @@ device its ports read "(none)".
 
 Every front-screen control. Encoder turns (relative or absolute), encoder pushes (which drill into a
 knob's modulation exactly like an on-screen press), Play, Stop, Freeze, Record, Randomize All,
-Randomize Page, Reset All, Reset Page, Page 1 to 6, Page Previous, Page Next, Scene 1, Scene 2, the
-scene blend (an analog control), BPM (an analog control, or a shifted encoder turn, 30 to 300),
-**Hold Drill**, and **Shift**.
+Randomize Page, Reset All, Reset Page, Page 1 to 6, Page Previous, Page Next, Scene 1 and Scene 2
+(which set the scene blend to 0 and 1), the scene blend itself (an analog control), BPM (an analog
+control, or a shifted encoder turn, 30 to 300), **Hold Drill**, **Shift**, and gestures (see Gestures,
+below).
 Buttons can be addressed by CC or by note number; analog controls by CC.
 
 ### Editing a field
@@ -348,6 +371,17 @@ Either way, the reason names the field, not the row it came from. With more than
 open, the status line does not say which open row the message belongs to — check each open field to
 find the one holding the reported value.
 
+### Connect messages
+
+Every row's editor, Custom included, has a **Connect messages** section. Each entry is one SysEx
+message the row sends to its MIDI out when that output connects. A preset that switches its
+device into a mode installs its switch message here: **Akai APC40 mkII (Ableton)** carries
+`F0 47 7F 29 60 00 04 41 09 07 01 F7`, and each Launchpad preset carries its programmer-mode
+message. **Add** appends an empty message, `F0 F7`. Type a message into its **Message** field
+as hex byte pairs, for example `F0 00 7F F7`. A message must be one SysEx message: `F0` first,
+`F7` last, and data bytes `00` to `7F` between them. Any other entry is refused, and the stored
+message stays. The **x** beside a message deletes it.
+
 ### Hold Drill
 
 While a button mapped to Hold Drill is held, turning a knob drills into that knob's modulation
@@ -362,6 +396,31 @@ one. If Hold Drill is also held on that controller, a knob drills instead. The s
 page, editable per row and saved with the patch like every other mapping. If the controller is
 unplugged while Shift is still held, its buttons and knobs stay shifted until Shift is pressed and
 released again.
+
+### Gestures
+
+A gesture is a set of actions the player chooses, grouped into one MIDI control. Operating that
+control does every action in the set.
+
+To build one, map a button to **Hold Gesture Select** with a gesture number from 0 to 7, and map
+one control to the same gesture number on an Analogs **Gestures** row. While the button is held,
+turning a knob, on the controller or on screen, adds that knob to the gesture, in the scene the
+blend is on (both scenes while the blend sits between them). The first turn of an endless knob, or
+the first drag of an on-screen knob, only adds it and moves nothing; a control that sends absolute
+positions adds the knob and sets it in the same move. From then on, every endless turn or drag of a
+knob in the gesture, with the button held or not, is shared between the knob's own value and the
+setting the gesture takes it to, by the gesture control's position: at the top it moves only that
+setting, at the bottom only the knob. Moving the gesture's control takes every knob in the gesture
+from its own value toward its setting. A Randomize pressed while the button is held adds every knob
+it re-sets to the gesture, and the depths it draws on that press stay neutral, since the first
+write to a depth only adds it to the gesture.
+
+The gesture's mappings are saved with the row's other mappings. Which knobs belong to the gesture,
+and the setting it takes each one to, are part of the patch: saving a patch keeps them, opening a
+patch brings back the ones it was saved with, and quitting without saving loses any change to them,
+like any other unsaved edit. Reset Page takes that page's knobs out of every gesture, and Reset All
+on a parameter page takes every knob out. In a modulation view, the depths Reset returns to their
+launch values leave their gestures too.
 
 ### MIDI Fighter Twister
 
@@ -462,7 +521,9 @@ output is a source (Modulation assignment, above).
 
 **VCO1 / VCO2 / VCO3** (slots 0–2) — each VCO's pitch, mapped exponentially from
 20 Hz to 5 kHz. Default values land on 110 Hz, 220 Hz, and 330 Hz respectively, so a freshly launched app
-already makes an audible chord with no knobs touched.
+already makes an audible chord with no knobs touched. Each VCO's pitch also launches with a small
+modulation depth from each of the other two VCOs' audio-rate output — six depths in all, each ±0.01 —
+so the chord already carries a light cross-VCO drift before any knob is touched.
 
 **Shape 1 / Shape 2 / Shape 3** (slots 3–5) — each VCO's own waveform morph: sine at the
 bottom, through saw at the middle, to square at the top, blending continuously rather than switching.
@@ -475,10 +536,11 @@ size of the wobble is set here and does not change with the rate. All three VCOs
 (see PM rate, slot 12).
 
 **Ringmod 1 / Ringmod 2 / Ringmod 3** (slots 9–11) — each VCO ring-modulates against its *own*
-internal carrier oscillator (20 Hz–5 kHz), never another VCO's signal. Has a genuine zero at the very
-bottom of its travel — below a small floor, ring mod is completely off, not just quiet — then blends in
-more of the metallic ring-modulated product as it's raised, fully replacing the dry tone at maximum.
-Defaults to 0, so ring mod is off on a fresh app.
+internal carrier oscillator, never another VCO's signal. One knob sets the carrier and the amount
+together: as it is raised, the carrier's own frequency sweeps 20 Hz–5 kHz and, at the same time, more
+of the metallic ring-modulated product blends in, fully replacing the dry tone at maximum. Has a
+genuine zero at the very bottom of its travel — below a small floor, ring mod is completely off, not
+just quiet. Defaults to 0, so ring mod is off on a fresh app.
 
 **PM rate** (slot 12) — one shared knob (2 Hz–20 Hz) setting how fast the phase-mod wobble runs
 for all three VCOs at once. Depth and rate are independent: this sets the speed for all three, and each

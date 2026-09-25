@@ -344,10 +344,20 @@ inline synth::MidiAppCatalog FroggersMidiCatalog() {
         synth::UISystemMessage::SetSceneBlend,
         synth::UISystemMessage::HoldDrill,
         synth::UISystemMessage::Shift,
+        // Lets a System row hold a button that selects a gesture while
+        // held, so a Gestures row bound to the same gesture number can be
+        // grouped by that button (Sheaf's own gesture-membership
+        // mechanism -- see FroggersMidiCatalogTests.cpp). No
+        // ToggleGestureSelect: Frogg3rs offers only the hold form.
+        synth::UISystemMessage::HoldGestureSelect,
     };
     catalog.encoderPressAction = FroggersActions::kEncoderPress;
     catalog.tempoAction = FroggersActions::kBpm;
     catalog.patchCarriesMappings = true;
+    // Frogg3rs offers only its own presets: no library device (MF Twister,
+    // Launchpad, WRLD.Bldr) is appended for a kind its own device defaults
+    // below do not cover.
+    catalog.libraryDeviceKinds = {};
     catalog.deviceDefaults = {
         TwisterDeviceDefault(),
         Apc40GenericDeviceDefault(),
