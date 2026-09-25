@@ -111,8 +111,8 @@ synth::AppMidiOutSettings OffSetting(std::uint8_t channel) {
 // log(factor)/log(max/min) -- the exact inverse of
 // FroggersAudioRoutingTests.cpp's own SetSelfSustainingRingPatch knob
 // formula, generalized from an absolute target to a relative multiply. This
-// is measure-q/QLatencyRange.cpp's own step: the three VCO pitch knobs
-// raised by a factor of 1.5.
+// is the step used to raise the three VCO pitch knobs by a factor of 1.5
+// for the latency measurement below.
 float PitchKnobRaiseDelta(float factor) {
     return std::log(factor) / std::log(synth_froggers::dsp::Vco::kPitchMaxHz /
                                         synth_froggers::dsp::Vco::kPitchMinHz);
@@ -483,11 +483,10 @@ TEST_CASE(pitch_detector_constructions_count_once_per_prepare) {
 // A real render (below) shows the output briefly reports note 48 for
 // ~43 ms around the 55.5 s mark (a release-tail transient, not an octave
 // jump) before returning to 45, producing two note-offs and three note-ons
-// in total -- an exact match to measure-q/report-shipped-rule.md Table 1's
-// own recorded figure for this patch (3 note-ons, 0 octave jumps). This
-// test asserts the first note-on, the octave-jump count, and the note
-// sounding at the end (45); it does not assert zero note-offs, since a real
-// render produces two.
+// in total, matching this patch's recorded figure (3 note-ons, 0 octave
+// jumps). This test asserts the first note-on, the octave-jump count, and
+// the note sounding at the end (45); it does not assert zero note-offs,
+// since a real render produces two.
 TEST_CASE(pitch_default_patch_sends_note_45_and_stays_sounding) {
     Rig::AudioSettings settings48k128;
     settings48k128.sampleRate = 48000.0;
@@ -625,7 +624,7 @@ TEST_CASE(pitch_tracks_the_ruled_range_edges) {
 }
 
 // The Pitch note the 20-step schedule below raises the default patch's
-// three VCOs to, measure-q/QShippedRule.cpp's own worst-latency target.
+// three VCOs to, the worst-latency target.
 constexpr int kPitchStepTargetNote = 52;
 
 // ---------------------------------------------------------------------------
