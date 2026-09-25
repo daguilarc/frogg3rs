@@ -503,6 +503,20 @@ public:
             recordRefusalReason_ = kRecordRefusalReason;
             return false;
         }
+        // Disarm first, with sequential consistency, before touching
+        // recordBuffer_ below -- see recordWriterInBlock_'s own comment for
+        // why both this store and the wait's load must be seq_cst. Then wait
+        // for a block that might already have read the old armed state to
+        // finish: recordWriterInBlock_ brackets ProcessBlock()'s whole
+        // per-sample loop, so once this read sees it false, that block is
+        // done touching recordBuffer_ (or never armed at all this call) and
+        // resizing it below is safe. At most one block long (5.3 ms at 256
+        // frames/48 kHz); never spins while no block is running, since
+        // recordWriterInBlock_ starts false and only ProcessBlock() sets it
+        // true.
+        recordArmed_.store(false, std::memory_order_seq_cst);
+        while (recordWriterInBlock_.load(std::memory_order_seq_cst)) {
+        }
         // A Record press that beats the engine's own per-tick
         // TakePendingFileExport() poll (see that method's own comment) would
         // otherwise have this call's recordBuffer_.assign() below wipe out a
@@ -924,6 +938,16 @@ public:
         // loop-invariant up to 48,000x/second. Hoisted here, once per block.
         const bool hasOutputs = block.outputs != nullptr;
 
+        // Brackets this whole per-sample loop (cleared again just after it,
+        // below) so ArmRecording() never resizes recordBuffer_ while this
+        // call might still be writing into it or reading its size -- see
+        // recordWriterInBlock_'s own comment for the ordering argument.
+        recordWriterInBlock_.store(true, std::memory_order_seq_cst);
+        // Read once per block, not once per sample, and held for the whole
+        // block -- same reasoning and same std::memory_order_seq_cst as the
+        // store just above; see recordWriterInBlock_'s own comment.
+        const bool recordArmedThisBlock = recordArmed_.load(std::memory_order_seq_cst);
+
         for (std::size_t frame = 0; frame < block.numFrames; ++frame) {
             const std::uint64_t absoluteOutputSample = block.startSample + frame;
 
@@ -1263,7 +1287,7 @@ public:
             // is stereo now, so what is recorded is the same fold a mono
             // device gets rather than one channel of a pair, which would
             // silently drop half the signal from every recording.
-            if (recordArmed_.load(std::memory_order_acquire) && transportRunningNow) {
+            if (recordArmedThisBlock && transportRunningNow) {
                 const std::uint64_t recordedSoFar = recordFrames_.load(std::memory_order_acquire);
                 if (recordedSoFar < recordBuffer_.size()) {
                     recordBuffer_[recordedSoFar] = 0.5f * (sample.l + sample.r);
@@ -1325,6 +1349,11 @@ public:
             // output has been computed and written.
             vcoScopeWriter_.AdvanceIndex();
         }
+
+        // Matches the store just before the loop above -- this call's
+        // audio-thread writes into recordBuffer_ (if any, this block) are
+        // done, so a waiting ArmRecording() may proceed.
+        recordWriterInBlock_.store(false, std::memory_order_seq_cst);
 
         // No once-per-block clearing step here anymore -- the single
         // clear this policy owes (fired either at the running->stopped edge
@@ -2601,15 +2630,36 @@ private:
     // A bounded mono capture buffer of what the
     // operator hears (post-limiter, pre-channel-fanout -- see the capture
     // hook inside ProcessBlock()'s per-sample loop below). recordArmed_ is a
-    // direct UI-thread-write, audio-thread-read (and audio-thread-
-    // clearable, on truncation) flag -- same release/acquire pairing as
-    // desiredTransportRunning_/freezeLatched_ above, not the coalescing
-    // "pending request" two-hop the Request*/pending*_ atomics above use.
+    // UI-thread-write, audio-thread-read (and audio-thread-clearable, on
+    // truncation) flag; the audio thread reads it once at the start of each
+    // block (ProcessBlock(), below) rather than once per sample, and holds
+    // that value for the whole block. recordWriterInBlock_ (below) brackets
+    // the per-sample loop that may write into recordBuffer_, so
+    // ArmRecording() (UI thread) can wait for an in-flight block to finish
+    // before it resizes the buffer that block might still be writing into
+    // or reading the size of -- see recordWriterInBlock_'s own comment for
+    // the ordering argument, and ArmRecording()'s for the wait.
     // All allocation happens once, in ArmRecording() (UI thread, above);
     // the audio thread only ever appends to an already-sized recordBuffer_
     // or clears a flag, never allocates.
     std::vector<float> recordBuffer_;
     std::atomic<bool> recordArmed_{false};
+    // True from just before ProcessBlock()'s per-sample loop starts to just
+    // after it ends, unconditionally on every block -- brackets every block
+    // in which the audio thread might touch recordBuffer_. This store and
+    // ArmRecording()'s read of it are both std::memory_order_seq_cst,
+    // paired with ArmRecording()'s own std::memory_order_seq_cst disarm
+    // store and this flag's std::memory_order_seq_cst read of recordArmed_
+    // at the top of each block: a seq_cst store then a seq_cst load of the
+    // other side's flag, on both threads, guarantees ArmRecording() either
+    // sees this flag set and waits for the block to finish, or the block's
+    // own read of recordArmed_ sees the disarm and never touches the buffer
+    // this call is about to resize. An acquire/release pairing is not
+    // enough here: on arm64 an acquire load compiles to `ldapr`, which may
+    // complete before the other thread's preceding `stlr` (a release store)
+    // is visible, so only seq_cst on both sides of both flags closes the
+    // window.
+    std::atomic<bool> recordWriterInBlock_{false};
     std::atomic<std::uint64_t> recordFrames_{0};
     std::atomic<bool> recordTruncated_{false};
     static constexpr float kMaxRecordSeconds = 30.0f * 60.0f;

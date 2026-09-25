@@ -3547,6 +3547,79 @@ TEST_CASE(arming_after_an_unpolled_truncated_capture_flushes_it_first) {
     rig.RunBlocks(4);
 }
 
+// A re-arm mid-session (Stop, then Record again with the transport still
+// running) starts the new take at recordBuffer_'s own frame 0, not wherever
+// the previous take's frame count left off. Guards ArmRecording()'s
+// recordFrames_.store(0, ...): drop it and this goes red, since the second
+// take's write index would carry the first take's frame count forward
+// instead of restarting at the buffer's own index 0.
+TEST_CASE(rearmed_take_starts_at_its_first_frame) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("record_rearm_first_frame"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    synth_froggers::FroggersApp& app = rig.Application();
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
+    rig.RunBlocks(8);
+
+    // First take: arm, let it accumulate frames, then stop it without
+    // exporting -- what matters here is only that recordFrames_ is left
+    // nonzero, so a dropped reset in the re-arm below is observable.
+    REQUIRE_TRUE(app.ArmRecording());
+    rig.RunBlocks(8);
+    REQUIRE_TRUE(app.RecordedFrameCount() > 0);
+    app.StopRecording();
+
+    // Re-arm with the transport still running (ArmRecording() refuses
+    // outright while stopped) -- this is the re-arm the race and the frame-
+    // count reset both belong to.
+    REQUIRE_TRUE(app.ArmRecording());
+    REQUIRE_TRUE(app.RecordArmed());
+
+    // Process exactly one block directly against the engine (same idiom as
+    // arming_after_an_unpolled_truncated_capture_flushes_it_first above),
+    // so the assertions below are about that one block's own frames, not
+    // whatever RunBlocks()'s internal block count happens to be.
+    const synth::RuntimeConfig config = synth_froggers::FroggersApp::Config();
+    const std::size_t blockFrames = static_cast<std::size_t>(config.preferredBlockSize);
+    std::vector<std::vector<float>> inputBuffers(static_cast<std::size_t>(config.numAudioInputs),
+                                                  std::vector<float>(blockFrames, 0.0f));
+    std::vector<std::vector<float>> outputBuffers(static_cast<std::size_t>(config.numAudioOutputs),
+                                                   std::vector<float>(blockFrames, 0.0f));
+    std::vector<const float*> inputPointers(inputBuffers.size());
+    std::vector<float*> outputPointers(outputBuffers.size());
+    for (std::size_t ch = 0; ch < inputPointers.size(); ++ch) {
+        inputPointers[ch] = inputBuffers[ch].data();
+    }
+    for (std::size_t ch = 0; ch < outputPointers.size(); ++ch) {
+        outputPointers[ch] = outputBuffers[ch].data();
+    }
+
+    synth::AudioBlock block;
+    block.inputs = inputPointers.empty() ? nullptr : inputPointers.data();
+    block.outputs = outputPointers.empty() ? nullptr : outputPointers.data();
+    block.numInputChannels = config.numAudioInputs;
+    block.numOutputChannels = config.numAudioOutputs;
+    block.numFrames = blockFrames;
+    block.numRequestedInputChannels = config.numAudioInputs;
+    rig.Engine().ProcessBlock(block, /*timestamp=*/1);
+
+    REQUIRE_TRUE(app.RecordedFrameCount() == blockFrames);
+    // The record hook (FroggersAppCore.hpp, ProcessBlock()'s per-sample
+    // loop) writes 0.5f * (sample.l + sample.r) into recordBuffer_ from the
+    // same `sample` this call folds into the two output channels just after
+    // -- frame 0 of the recorded take is exactly frame 0 of this block's own
+    // stereo output.
+    REQUIRE_TRUE(config.numAudioOutputs >= 2);
+    const float expectedFirstSample = 0.5f * (outputBuffers[0][0] + outputBuffers[1][0]);
+    REQUIRE_TRUE(app.RecordedAudio()[0] == expectedFirstSample);
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
+    rig.RunBlocks(4);
+}
+
 // A pure function of (bounds, armed) -- no rig needed. Asserts the EXCHANGE,
 // not merely that the two command lists differ, same reasoning as
 // freeze_draw_commands_genuinely_invert_plate_and_glyph_colours above.
