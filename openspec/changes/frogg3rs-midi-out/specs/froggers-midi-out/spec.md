@@ -174,7 +174,7 @@ The standalone and browser builds set the MIDI out on the Controllers page and s
 - **WHEN** the surface is built in plugin mode
 - **THEN** the transport row holds only Freeze, the FREEZE label and the IN button, unchanged, and the new row beneath it holds the MIDI button first, which reads "MIDI: OFF"
 - **AND** Play, Stop and Record are absent
-- Check: `app/vst/FroggersVstHostTests.cpp: plugin_mode_transport_row_thins_to_freeze_and_label_only` (the transport row does not gain the MIDI button)
+- Check: `app/vst/FroggersVstHostTests.cpp: plugin_mode_transport_row_thins_to_freeze_and_label_only` (the transport row does not gain the MIDI button), `app/vst/FroggersVstHostTests.cpp: plugin_transport_row_is_unchanged_midi_button_sits_beneath_it` (the MIDI button and its "MIDI: OFF" label)
 
 #### Scenario: The plugin rows fit the surface
 - **WHEN** the surface is built in plugin mode at its design size
