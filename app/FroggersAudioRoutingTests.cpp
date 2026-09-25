@@ -1313,28 +1313,13 @@ TEST_CASE(a_running_load_of_a_grown_patch_stays_whole_after_the_storage_tick_pro
     REQUIRE_TRUE(reopenedLiveDepths == grownLiveDepths);
 }
 
-// RND-01: a patch that fits on its own, Loaded in the same block as a
-// Randomize All press, never makes that press wait -- both apply in the
-// one block that pops them, and the press is whole. The target starts
-// grown so that its free storage, minus the patch's own need, sits close
-// to one press's worth (kDepthParameterStorageCapacity, the same ceiling
-// ApplyPatchMessageAndNotifyApp treats as the fit/shortfall boundary): a
-// target with the original test's untouched, freshly-launched headroom
-// left this case unable to fail under any of the breaks that motivated
-// it, since the margin was never remotely tight enough for either message
-// to matter.
-//
-// The margin cannot be pushed below one press and still leave this a
-// "fits" case: FroggersModulationSlate::Init sets the group's own
-// StorageLowWatermark() to exactly kDepthParameterStorageCapacity
-// (FroggersModulation.hpp), so ApplyPatchMessageAndNotifyApp's fit check
-// (available >= need + watermark) is available >= need + onePress --
-// margin < onePress is definitionally a shortfall, not this scenario.
-// Verified directly: growing the patch itself (slotsPerPage 6 -> 7, need
-// 502 -> 621) pushes margin from 1468 to 1349 and the Load stashes.
-// Exhausting the target's own drill+randomize headroom instead (the loop
-// below) plateaus at margin ~1446-1450 -- a few presses' worth above
-// onePress(1440), and the closest a "fits" case can come.
+// RND-01: A small patch load and Randomize All press queued in the same
+// block both apply whole in that block -- the load completes without
+// deferral and the press draws complete without partial application. The
+// fixture is sized with available slots after the patch load sitting near
+// one press capacity (kDepthParameterStorageCapacity): the tight boundary
+// where deferral is possible but avoidable, exercised by growing the
+// target's other pages (0-3, 5) with drill and randomize operations.
 TEST_CASE(a_small_patch_loaded_in_the_same_block_as_a_randomize_all_press_leaves_the_press_whole) {
     const synth::RuntimeDataPaths sourcePaths = UseScratchRuntimeDataPaths("watermark_same_tick_source");
     const std::filesystem::path patchDir = sourcePaths.patchesRoot / "small";
