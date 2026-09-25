@@ -423,14 +423,11 @@ private:
     // also the only place that can DETECT a host play-state transition. It
     // may not PUSH the resulting Start/Stop message itself (see this file's
     // header comment) -- so it records at most one pending edge here, a
-    // single-slot atomic exactly like FroggersAppCore's own
-    // pendingPageSelect_/pendingEncoderPress_ idiom
-    // (FroggersAppCore.hpp's own comment on `RequestPageSelect`: "a single-slot pending
-    // request; a later write ... simply coalesces (acceptable: ...
-    // control-rate, human-paced actions, never a data stream)" -- a host
-    // transport toggle is exactly that kind of action). timerCallback()
-    // claims it with exchange() and, if non-empty, pushes the mirrored
-    // Play/Stop-button message sequence.
+    // single-slot, coalescing atomic: a later write before timerCallback()
+    // claims the pending one simply overwrites it, acceptable because a host
+    // transport toggle is a control-rate, human-paced action, never a data
+    // stream. timerCallback() claims it with exchange() and, if non-empty,
+    // pushes the mirrored Play/Stop-button message sequence.
     enum class PendingTransportEdge : int { kNone = 0, kStart = 1, kStop = 2 };
     std::atomic<int> pendingTransportEdge_{static_cast<int>(PendingTransportEdge::kNone)};
     // Audio-thread-owned (processBlock only): the last host play-state this

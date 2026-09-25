@@ -64,15 +64,14 @@
 // difference is data, not branching.
 //
 // Threading note: see FroggersAppCore.hpp's own header comment for the full
-// reasoning. Encoder DRAG, scene select/blend, and transport Start/Stop are
-// pushed straight onto `context_->uiBus` (`Bank::HandleTick`/
-// `HandleSetAbsolute` never touch drill-in state, so the generic message-bus
-// path Braid4 itself uses is safe here too); encoder PRESS, Randomize All/
-// Page, and the BPM slider instead call `FroggersAppCore::Request*` (a
-// pending-atomic bridge the audio thread drains in `ProcessFrame()`),
-// because those three mutate audio-thread-owned state (the app's own
-// drill-in cap or MasterClock) with no existing generic `MessageIn` shape
-// safe for this app's sparse (11-of-16) bank layout.
+// reasoning. Every control this surface dispatches -- encoder drag, scene
+// select/blend, transport Start/Stop, the eight presses (encoder press, page
+// select and its two carousel arrows, Randomize All/Page, Reset All/Page)
+// and the BPM slider -- is pushed onto `context_->uiBus` as a
+// `synth::MessageIn`, applied on the audio thread in the order pushed by the
+// same drain that applies every other message. The eight presses carry the
+// app's own `FroggersCommand` number as `MessageIn::AppCommand`; the BPM
+// slider carries `MessageIn::SetTempoBpmNormalized`.
 
 #include "FroggersAppCore.hpp"
 
@@ -2201,11 +2200,9 @@ private:
             // cleared once a recording arms or Play is pressed); a
             // finished capture with data is queued as a file export
             // (FroggersAppCore::QueueRecordingExport) for the engine's
-            // installed handler to pick up -- see this file's own
-            // HandleAction() header comment: this is still a direct
-            // message-thread call, same as kFreeze above, not the
-            // Request*/pending*_ bridge the encoder/randomize/BPM actions
-            // below use.
+            // installed handler to pick up -- a direct message-thread call,
+            // same as kFreeze above and unlike the presses below, which
+            // travel to the audio thread as a `MessageIn::AppCommand`.
             if (!app_->RecordArmed()) {
                 if (!app_->ArmRecording()) {
                     transportNotice_ = app_->RecordRefusalReason();

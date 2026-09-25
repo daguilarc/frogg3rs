@@ -2294,15 +2294,14 @@ TEST_CASE(reset_all_after_drilled_randomize_equals_a_fresh_launch_including_whic
 }
 
 // ============================================================================
-// Commands on the bus: FIFO order, no coalescing, within one message tick
+// Commands on the bus: FIFO order within one message tick
 // ============================================================================
 // Pushes synth::MessageIn::AppCommand directly onto the rig's uiBus, the
 // same route FroggersUiSurface::HandleAction pushes through, so this
 // exercises FroggersAppCore::ApplyAppCommand alone: every command
 // Engine::DrainMessageBus pops within one tick applies in the order it was
-// pushed, and two presses of the same kind in one tick both land instead of
-// the second silently overwriting the first the way a single-slot request
-// atomic used to.
+// pushed, and two presses of the same kind in one tick both land, neither
+// overwriting the other.
 
 TEST_CASE(app_commands_apply_every_press_in_bus_order_within_one_tick) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(

@@ -603,12 +603,10 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
                 haveHostPlayingBaseline_ = true;
                 lastHostIsPlaying_ = isPlayingNow;
             } else if (isPlayingNow != lastHostIsPlaying_) {
-                // Single-slot, coalescing store -- same "control-rate,
-                // human-paced action" idiom FroggersAppCore::
-                // RequestPageSelect/RequestEncoderPress already use
-                // (FroggersAppCore.hpp's own comment on `RequestPageSelect`), applied here
-                // because pushing directly from this thread is not an
-                // option (see this file's header comment).
+                // Single-slot, coalescing store -- a control-rate,
+                // human-paced action, applied here because pushing directly
+                // from this thread is not an option (see this file's header
+                // comment).
                 pendingTransportEdge_.store(
                     static_cast<int>(isPlayingNow ? PendingTransportEdge::kStart : PendingTransportEdge::kStop),
                     std::memory_order_relaxed);
@@ -792,12 +790,13 @@ void FroggersPluginProcessor::timerCallback() {
     // MessageIn::Clock ticks (recoveredBpm = 60e6 / (ppqn *
     // filteredPeriodMicros), still inside `HandleExternalClock`). So reaching "host tempo changes
     // reach the clock" AND "requests suppressed" through the SAME existing
-    // mechanism requires SYNTHESIZING that tick stream -- calling
-    // RequestTempoBpm(hostBpm) instead would funnel into the very
-    // SetTempoBpm that no-ops while slaved, so it cannot be what updates
-    // the tempo once slaved; the two candidate approaches are not actually
-    // interchangeable once receiveClock is engaged, which is why this class
-    // synthesizes ticks rather than requesting tempo directly.
+    // mechanism requires SYNTHESIZING that tick stream -- pushing
+    // MessageIn::SetTempoBpmNormalized(hostBpm) directly instead would
+    // funnel into the very SetTempoBpm that no-ops while slaved, so it
+    // cannot be what updates the tempo once slaved; the two candidate
+    // approaches are not actually interchangeable once receiveClock is
+    // engaged, which is why this class synthesizes ticks rather than
+    // pushing the tempo message directly.
     //
     // Zero core edits either way: RouteRealtimeBatch already routes any
     // Origin::ExternalMidi MessageIn::Clock to
@@ -917,8 +916,8 @@ void FroggersPluginProcessor::timerCallback() {
         // path alone would never fire. And even when it DOES fire, it only
         // resets `acquisitionState_`/`source_`, never `syncConfig_.
         // receiveClock` itself (`ClearExternalSource`) -- so
-        // TempoExternallyClocked() (FroggersAppCore.hpp's `ProcessBlock`, reads
-        // SyncConfiguration().receiveClock directly) would stay stuck true,
+        // `context_->syncConfiguration().receiveClock` (the surface's own
+        // BPM-slider guard, FroggersUiSurface.hpp) would stay stuck true,
         // permanently suppressing the BPM slider with no live source
         // driving it. There is no existing production disengage call site
         // to mirror (this plugin is the first production caller of
@@ -1151,14 +1150,10 @@ void FroggersPluginProcessor::BuildHostParameterInventory() {
 //   operator is currently looking at, and never moves the visible bank or
 //   disturbs an open drilldown.
 //
-//   This is pushed onto engine_.UiBus() (the message bus) rather than
-//   applied through the audio-thread Request*/pending*_ bridge
-//   (FroggersAppCore::RequestPageSelect() and friends, applied inside
-//   ProcessFrame()) because engine_.ProcessBlock() drains the message bus
-//   BEFORE running ProcessFrame() (Engine.hpp's own binding step order): a
-//   Request* write queued this pump would not apply until the block AFTER
-//   the one a message-bus write applies in, landing one block late relative
-//   to a value meant to take effect immediately.
+//   This is pushed onto engine_.UiBus() (the message bus), the same route
+//   every FroggersCommand and MessageIn::SetTempoBpmNormalized push takes,
+//   applied on the audio thread in the block that pops it -- immediately,
+//   not one block late.
 //
 //   Crunchy's bankIx is arbitrary (HostParamEntry::bankIx's own comment):
 //   the same Parameter object is registered at position 15 in every bank's

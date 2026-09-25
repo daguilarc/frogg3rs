@@ -5,8 +5,8 @@
 // Braid4UI.hpp + Braid4.hpp).
 //
 // This class contains the `FroggersApp` state (Config/Init/PrepareToPlay/
-// ProcessBlock/RouteAudioSample and every existing accessor) plus the
-// UI-thread -> audio-thread request bridge described below. The composed
+// ProcessBlock/RouteAudioSample and every existing accessor) plus
+// `ApplyAppCommand`, the audio-thread hook described below. The composed
 // `synth_froggers::FroggersApp` (still that exact name, so every existing
 // test TU's `#include "Froggers.hpp"` / `synth_froggers::FroggersApp` keeps
 // working unchanged) lives in Froggers.hpp as a thin wrapper: `class
@@ -15,59 +15,41 @@
 // own shape.
 //
 // ============================================================================
-// Why a request bridge exists
+// The command / value / publication rule
 // ============================================================================
-// `synth::AppContext` documents `parameterManager`/`masterClock` as
-// audio-thread-owned once the engine is running (AppContext.hpp's own
-// thread-role comments); the sanctioned way for UI code (message thread) to
-// influence them is the existing `MessageInBus* uiBus` (message thread
-// produces, audio thread consumes inside `Engine::ProcessBlock`'s
-// `DrainMessageBus` call, itself before `app_.ProcessBlock()`).
+// Everything that crosses between the message thread and the audio thread
+// is one of three things:
+//   - A COMMAND is counted and ordered: it travels as a `synth::MessageIn`
+//     on `context_->uiBus` and is applied on the audio thread, in the order
+//     it was pushed, by the same drain (`synth::Engine::DrainMessageBus`,
+//     before `ProcessBlock()`) that applies encoder drags and scene blend.
+//     The eight presses (encoder press, page select and its two carousel
+//     arrows, Randomize All/Page, Reset All/Page) are `FroggersCommand`
+//     values carried on `MessageIn::AppCommand` and applied by
+//     `ApplyAppCommand` below, the hook `AppConcepts.hpp`'s
+//     `synth::HasAppCommands` concept detects and `synth::Engine` calls from
+//     that same drain. The BPM slider is a command too
+//     (`MessageIn::SetTempoBpmNormalized`), applied by `MasterClock` itself.
+//     Start, Continue, Stop and Clock are realtime messages the engine lifts
+//     out of both buses and applies after both have drained, unaffected by
+//     this rule.
+//   - A VALUE is last-writer-wins and unordered against commands: one
+//     atomic one thread writes for another to read. The routed-input
+//     signal, the Freeze latch and the Record arm are values the audio
+//     thread reads; the desired transport state is a value `PrepareToPlay`
+//     reads, on whichever thread calls `Engine::Prepare`.
+//   - An AUDIO-THREAD PUBLICATION is written by the audio thread for the UI
+//     to read once per block: the drill level shown in the header, whether
+//     the last randomize drew short, and the recorded frame count and
+//     truncation flag.
 //
-// That generic bus is exactly right for encoder DRAG (`MessageIn::
-// ParamIncDec`/`ParamSetAbsolute`), scene select/blend, and transport Start/
-// Stop -- `Bank::HandleTick`/`HandleSetAbsolute` only look up the currently
-// visible cell and never touch `selected_`/level state (verified by reading
-// `src/ParameterModulation.cpp`'s `Bank::HandleTick`/`HandleSetAbsolute`),
-// so this surface pushes those four kinds of action straight onto
-// `context_->uiBus`, the same way `apps/braid-4/Braid4UI.hpp` does.
+// One member is outside this rule and says so at its declaration:
+// `recordWriterInBlock_`, the Record writer handshake the audio thread
+// raises around a block.
 //
-// It is NOT right for an encoder PRESS (drill-in), Randomize All/Page, or
-// the BPM slider, for two different reasons:
-//   - Encoder press MUST go through `FroggersModulationDrillIn::PressEncoder`
-//     (FroggersModulation.hpp) rather than a generic
-//     `MessageIn::ParamPush`, because that class is the ONLY thing enforcing
-//     this app's 3-level drill-in cap -- Sheaf's own `Bank` has no level
-//     concept at all (FroggersModulation.hpp's own header comment) and would
-//     happily let a generic press descend to a third, fourth, ... level.
-//   - Randomize All/Page (`FroggersModulation.hpp`'s `RandomizeAll`/
-//     `RandomizePage`) and the BPM slider (`MasterClock::SetTempoBpm`/
-//     `TempoBpm`, both audio-thread-owned per `AppContext.hpp`) mutate
-//     audio-thread-owned state directly, with no existing generic
-//     `MessageIn` shape for either of them.
-//
-// Crunchy no longer routes through this bridge (operator 2026-07-27): the
-// chrome-band Crunchy slider that used to call `RequestCrunchy()` here is
-// removed (it duplicated the real control at bank slot 15 -- see
-// FroggersUiSurface.hpp's own header comment). Crunchy is a
-// `Parameter` shared across all six banks, but at slot 15 it is addressed
+// Crunchy is a `Parameter` shared across all six banks, addressed at slot 15
 // exactly like any other bank parameter (generic encoder press/drag over
-// `context_->uiBus`), so it never needed a pending-atomic request of its
-// own -- the chrome slider was the only thing that did, purely because it
-// bypassed the bank/slot addressing scheme entirely.
-//
-// The fix used throughout this file is the same one already established by
-// this app's clock-driven Marbles source for "audio-thread state written
-// once per block, safely observed cross-thread": small, single-slot
-// pending-request atomics that the UI/message thread WRITES (`Request*`
-// methods below) and
-// that `ProcessFrame()` (detected via `AppConcepts.hpp`'s `HasProcessFrame`
-// concept, invoked by `synth::Engine` once per block, after message drains
-// and before `ProcessBlock()` -- i.e. on the audio thread) DRAINS and
-// applies. Display-direction state (the master clock's active tempo,
-// whether it is externally slaved) is published the same way in reverse,
-// once per block from `ProcessBlock()`'s existing end-of-block publish
-// section.
+// `context_->uiBus`); it carries no command of its own.
 
 #include "FroggersModulation.hpp"
 #include "FroggersParameters.hpp"
@@ -946,9 +928,9 @@ public:
 
     // Detected via AppConcepts.hpp's
     // HasProcessFrame concept; synth::Engine invokes this once per block,
-    // after message drains and before ProcessBlock() (AppConcepts.hpp's own
-    // comment on the hook's placement) -- exactly the audio-thread window
-    // the pending-request atomics above need to be applied in.
+    // after message drains (which already ran every command above, in bus
+    // order) and before ProcessBlock() (AppConcepts.hpp's own comment on the
+    // hook's placement).
     void ProcessFrame() {
         // Applies the most recent routed-input transition queued by Init()'s
         // callback (message thread), if any -- at most once per block, never
@@ -2716,8 +2698,8 @@ private:
 
     // Value: written by the message thread (Init()'s routed-input-changed
     // callback), read and applied once per block by ProcessFrame() (audio
-    // thread), same -1-sentinel/exchange idiom the deleted press bridge
-    // used. -1 = no pending transition, 0 = not routed, 1 = routed.
+    // thread), as a sentinel/exchange atomic. -1 = no pending transition,
+    // 0 = not routed, 1 = routed.
     std::atomic<int> pendingExternalAudioRouted_{-1};
 
     // ApplyAppCommand()/ProcessFrame() state: both run on the audio thread,

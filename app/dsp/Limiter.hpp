@@ -70,7 +70,7 @@ inline constexpr float kSharedCeiling = 1.0f;
 // per-stage limiter shipped `ceiling = kSharedCeiling = 1.0` while the
 // master's own threshold sits at 0.9, so a correctly-clamped stage could
 // still legitimately deliver above the level the master starts working at
-// -- a post-RequestRandomizeAll() + Filter Crispy max repro measured the
+// -- a post-Randomize-All + Filter Crispy max repro measured the
 // master's envelope duty cycle at 1.000 (it NEVER returned to unity across
 // 256 blocks; min 0.9666, mean 0.9784, range 0.0245). Narrowing every
 // per-stage budget to this ceiling is what the make-up gain

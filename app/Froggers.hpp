@@ -6,10 +6,10 @@
 // way apps/braid-4 splits Braid4Core.hpp / Braid4UI.hpp / Braid4.hpp:
 //   - FroggersAppCore.hpp: Config()/Init()/PrepareToPlay()/ProcessBlock()
 //     and every DSP/parameter-model member -- the full
-//     `synth::SynthApplicationCore` contract, plus the
-//     UI-thread -> audio-thread request
-//     bridge (ProcessFrame(), the Request*/Display* API) -- see that file's
-//     header comment for why the bridge exists.
+//     `synth::SynthApplicationCore` contract, plus
+//     `ApplyAppCommand`, the audio-thread hook Sheaf's message bus calls for
+//     each of the app's own commands -- see that file's header comment for
+//     the command/value/publication rule every cross-thread member follows.
 //   - FroggersUiSurface.hpp: the portable `synth::ui::Surface` -- the real
 //     layout (scopes, chrome band, 16-slot grid, in-place mod-detail swap).
 //
