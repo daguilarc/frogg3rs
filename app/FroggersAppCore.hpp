@@ -257,6 +257,24 @@ private:
     std::atomic<std::uint64_t> encodedCount_{0};
 };
 
+// The app's own command numbers for the presses that travel on
+// `synth::AppContext::uiBus` as `synth::MessageIn::AppCommand` (Sheaf never
+// reads this number, it is only ever produced and consumed by this app --
+// see `FroggersAppCore::ApplyAppCommand` below). One number per press this
+// surface dispatches through the command route; the BPM slider and every
+// other control travel their own message kinds instead (Freeze/Record are
+// values, not commands -- see this file's header comment).
+enum class FroggersCommand : std::size_t {
+    kPageSelect,
+    kPagePrevious,
+    kPageNext,
+    kEncoderPress,
+    kRandomizeAll,
+    kRandomizePage,
+    kResetAll,
+    kResetPage,
+};
+
 class FroggersAppCore {
 public:
     // The ONLY hand-written constructor work this class needs -- everything
@@ -897,6 +915,76 @@ public:
         }
     }
 
+    // Detected via AppConcepts.hpp's HasAppCommands concept; synth::Engine's
+    // DrainMessageBus hands every MessageIn::AppCommand here, on the audio
+    // thread, in the order it was pushed, before ProcessFrame() runs (see
+    // AppConcepts.hpp's own comment on the hook). Switches over
+    // FroggersCommand with no default: the surface only ever emits the eight
+    // values that enum declares, and an app-defined command number Sheaf
+    // never interprets has no other producer. context_->parameterManager and
+    // drillIn_ are read unguarded -- Init() above already refuses a null
+    // context or manager, and constructs drillIn_ before returning, so both
+    // are valid for the rest of this instance's life.
+    void ApplyAppCommand(std::size_t command, float value) {
+        switch (static_cast<FroggersCommand>(command)) {
+        case FroggersCommand::kPageSelect: {
+            const std::size_t bankIx = static_cast<std::size_t>(value);
+            if (bankIx < kFroggersPageCount) {
+                SelectPage(bankIx);
+            }
+            break;
+        }
+        case FroggersCommand::kPagePrevious:
+            // The carousel arrows resolve their target from THIS thread's
+            // own activePageIx_, never a published page a message-thread
+            // dispatch would see stale inside a tick -- two presses here
+            // each resolve their own target and both land (SUR-03). Gated
+            // on the drill level the same way the parameter grid's own
+            // header decides whether to show the arrows at all: a synthetic
+            // press while drilled in is a no-op, not a silent exit from the
+            // drill.
+            if (drillIn_->Level() == 0) {
+                SelectPage((activePageIx_ + kFroggersPageCount - 1) % kFroggersPageCount);
+            }
+            break;
+        case FroggersCommand::kPageNext:
+            if (drillIn_->Level() == 0) {
+                SelectPage((activePageIx_ + 1) % kFroggersPageCount);
+            }
+            break;
+        case FroggersCommand::kEncoderPress: {
+            const std::size_t encoderId = static_cast<std::size_t>(value);
+            if (encoderId < kFroggersSlotsPerBank) {
+                drillIn_->PressEncoder(static_cast<synth::PhysicalEncoderId>(encoderId));
+            }
+            break;
+        }
+        case FroggersCommand::kRandomizeAll: {
+            const bool partial =
+                RandomizeAll(*context_->parameterManager, *drillIn_, parameters_, modulation_).partial;
+            randomizePartialThisBlock_ = randomizePartialThisBlock_ || partial;
+            randomizeRanThisBlock_ = true;
+            recomputeNeeded_ = true;
+            break;
+        }
+        case FroggersCommand::kRandomizePage: {
+            const bool partial = RandomizePage(*context_->parameterManager, *drillIn_).partial;
+            randomizePartialThisBlock_ = randomizePartialThisBlock_ || partial;
+            randomizeRanThisBlock_ = true;
+            recomputeNeeded_ = true;
+            break;
+        }
+        case FroggersCommand::kResetAll:
+            ResetAll(*context_->parameterManager, *drillIn_, parameters_);
+            recomputeNeeded_ = true;
+            break;
+        case FroggersCommand::kResetPage:
+            ResetPage(*context_->parameterManager, *drillIn_, parameters_);
+            recomputeNeeded_ = true;
+            break;
+        }
+    }
+
     // Detected via AppConcepts.hpp's
     // HasProcessFrame concept; synth::Engine invokes this once per block,
     // after message drains and before ProcessBlock() (AppConcepts.hpp's own
@@ -911,184 +999,92 @@ public:
             modulation_.SetExternalAudioConnected(routedRequest != 0);
         }
 
+        // Forwards a still-pending request onto the same ApplyAppCommand()
+        // path MessageIn::AppCommand reaches, so the two routes share one
+        // implementation for as long as both exist. Encoder press and page
+        // select carry the pressed id/index as their command value, matching
+        // what AppCommand carries.
         const int pageRequest = pendingPageSelect_.exchange(-1, std::memory_order_acq_rel);
-        if (pageRequest >= 0 && static_cast<std::size_t>(pageRequest) < kFroggersPageCount) {
-            if (static_cast<std::size_t>(pageRequest) != activePageIx_) {
-                activePageIx_ = static_cast<std::size_t>(pageRequest);
-                parameters_.Slot().SelectBank(&parameters_.BankAt(activePageIx_));
-                // `BankSlot::SelectBank` Deselect()s the OUTGOING page
-                // (External/Sheaf/projects/synth/src/ParameterModulation.cpp), so
-                // a freshly-constructed drillIn_ (level_ starts at 0) for the
-                // INCOMING page is always consistent with that page's real
-                // state: either it was never drilled into, or it was
-                // Deselect()ed the last time it was left active -- both are
-                // real level 0. This is why exactly one drillIn_ instance,
-                // reconstructed on every switch, never desyncs from six
-                // persistent per-page instances would risk.
-                drillIn_.emplace(parameters_.BankAt(activePageIx_));
-            } else if (drillIn_->Level() > 0) {
-                // Clicking the page you are ALREADY viewing must still be
-                // able to back a modulation drilldown all the way out to
-                // that page's top-level parameter grid -- "clicking on the
-                // page bank for the page we are on is the way the user
-                // should always be able to get to that page, even when they
-                // are in a modulation drilldown for a parameter on that
-                // page." Back()-until-zero reaches the same "full
-                // Deselect(), level 0" state a genuine page switch produces
-                // above, without reconstructing drillIn_ (same Bank&, no
-                // need) -- bounded to at most 3 iterations (the level cap,
-                // FroggersModulationDrillIn::kMaxDrillLevel).
-                // The `Level() > 0` guard is what keeps the pre-existing
-                // no-op preserved for a same-page click that is ALREADY at
-                // level 0: nothing in this branch runs, so activePageIx_/
-                // drillIn_ are left completely undisturbed, same as before
-                // this fix (rebuilding identical state would be wasted work
-                // for no behavior change).
-                while (drillIn_->Level() > 0) {
-                    drillIn_->Back();
-                }
-            }
+        if (pageRequest >= 0) {
+            ApplyAppCommand(static_cast<std::size_t>(FroggersCommand::kPageSelect),
+                            static_cast<float>(pageRequest));
         }
-
         const int pressRequest = pendingEncoderPress_.exchange(-1, std::memory_order_acq_rel);
-        if (pressRequest >= 0 && pressRequest < static_cast<int>(kFroggersSlotsPerBank)) {
-            drillIn_->PressEncoder(static_cast<synth::PhysicalEncoderId>(pressRequest));
+        if (pressRequest >= 0) {
+            ApplyAppCommand(static_cast<std::size_t>(FroggersCommand::kEncoderPress),
+                            static_cast<float>(pressRequest));
+        }
+        if (pendingRandomizeAll_.exchange(false, std::memory_order_acq_rel)) {
+            ApplyAppCommand(static_cast<std::size_t>(FroggersCommand::kRandomizeAll), 0.0f);
+        }
+        if (pendingRandomizePage_.exchange(false, std::memory_order_acq_rel)) {
+            ApplyAppCommand(static_cast<std::size_t>(FroggersCommand::kRandomizePage), 0.0f);
+        }
+        // Reset drains here, beside Randomize, so the two are serviced on
+        // the same audio-thread edge and in the same order every block.
+        if (pendingResetAll_.exchange(false, std::memory_order_acq_rel)) {
+            ApplyAppCommand(static_cast<std::size_t>(FroggersCommand::kResetAll), 0.0f);
+        }
+        if (pendingResetPage_.exchange(false, std::memory_order_acq_rel)) {
+            ApplyAppCommand(static_cast<std::size_t>(FroggersCommand::kResetPage), 0.0f);
         }
 
-        if (context_ != nullptr && context_->parameterManager != nullptr) {
-            // Both branches below
-            // return a `FroggersRandomizeResult` whose `.partial` flag used
-            // to be discarded entirely -- captured into `anyPartial` and
-            // published below instead.
-            bool randomizeRan = false;
-            bool anyPartial = false;
-            // Each call's result is hoisted into its own named local
-            // BEFORE combining, so both RandomizeAll/RandomizePage always run
-            // when their request is pending -- `anyPartial = a.partial ||
-            // anyPartial` reads fine but is only correct because the call
-            // sits on the left of `||`; swapping the combine order (or a
-            // future edit that does) would short-circuit and skip the second
-            // call whenever the first's `.partial` was already true.
-            if (pendingRandomizeAll_.exchange(false, std::memory_order_acq_rel)) {
-                const bool allPartial = RandomizeAll(*context_->parameterManager, *drillIn_, parameters_, modulation_).partial;
-                anyPartial = anyPartial || allPartial;
-                randomizeRan = true;
-            }
-            if (pendingRandomizePage_.exchange(false, std::memory_order_acq_rel)) {
-                const bool pagePartial = RandomizePage(*context_->parameterManager, *drillIn_).partial;
-                anyPartial = anyPartial || pagePartial;
-                randomizeRan = true;
-            }
-            // Reset drains here, beside Randomize, so the two are serviced on
-            // the same audio-thread edge and in the same order every block.
-            // Reset does not surface a partial/capacity outcome the way
-            // Randomize does: it can materialize a handful of the Audio
-            // bank's own default-patch depths (ResetBankToDefaultPatch ->
-            // ApplyBankDefaultPatch -> EnsureModulationDepth), but never on a
-            // scale where reporting a partial reset to the UI would be
-            // meaningful -- see FroggersModulation.hpp's ResetPage/ResetAll.
-            bool resetRan = false;
-            if (pendingResetAll_.exchange(false, std::memory_order_acq_rel)) {
-                ResetAll(*context_->parameterManager, *drillIn_, parameters_);
-                resetRan = true;
-            }
-            if (pendingResetPage_.exchange(false, std::memory_order_acq_rel)) {
-                ResetPage(*context_->parameterManager, *drillIn_, parameters_);
-                resetRan = true;
-            }
-            if (randomizeRan) {
-                // Surfaces a partial randomize -- observable to tests via
-                // LastRandomizePartial(). Not a per-parameter/per-press
-                // signal (the randomize helper can be called dozens of times
-                // per operation); one publish per Randomize All/Page press
-                // that actually ran short. No log is emitted here --
-                // ProcessFrame() runs on the audio thread (this method's own
-                // header comment), and any operator-visible logging must
-                // instead read this atomic from the UI thread.
-                lastRandomizePartial_.store(anyPartial, std::memory_order_release);
-            }
-            if (randomizeRan || resetRan) {
-                // Second half of the re-roll, and Reset's own release pass.
-                // A randomize redraws every value from a clean slate, and the
-                // sources the new roll did not pick are left neutral -- but
-                // their depth parameters stay materialized, and every live
-                // depth costs a recursive Compute() descent at control rate
-                // from then on. Without this, fifty Randomize All presses
-                // carry 1072 live depths where the current roll uses about
-                // 80, and per-block cost rises with the count until the audio
-                // callback has spent its whole budget. Reset leaves a depth
-                // it clears in the same near-default, zero-route state
-                // `Parameter::RevertAllToDefault`/`detail::
-                // ZeroExistingModulationDepths` (FroggersModulation.hpp) put
-                // it in, which is exactly what `CanRecycleLocal` below
-                // requires, so Reset All and Reset Page need this same
-                // release and now share this call.
-                //
-                // `CollectNeutralLocalParameters` keeps anything the current
-                // roll still uses: `Parameter::CanRecycleLocal` requires a
-                // local id, zero view pins, zero active routes, no non-null
-                // children, and near-default state on both scene endpoints.
-                //
-                // The ordering here is load-bearing: this runs BEFORE the
-                // parameter recompute below, so a depth the press just rolled
-                // holds its new value only in `sceneCenters_`. It survives
-                // because `HasNonZeroState`/`HasNonDefaultState` scan
-                // `sceneCenters_` directly. Moving this after the recompute
-                // would also be safe; removing that scan would silently
-                // discard freshly rolled depths.
-                //
-                // This runs on the audio thread, and it can push more slots
-                // onto `recycledLocalSlots_` than that vector's construction
-                // reserve of 96 holds: the recycled count crosses 96 during
-                // the first storm and the vector doubles once, after which it
-                // has headroom (measured high-water 154 over a hundred
-                // presses and 156 over fifty, both under the doubled 192).
-                // The same vector already takes pushes from this same
-                // thread whenever the operator drills out, which is the wider
-                // exposure and is not created here; sizing that reservation
-                // is a Sheaf-side question this file leaves open.
-                context_->parameterManager->CollectNeutralLocalParameters();
-            }
-            // ONE reseed covering both drains above, for two different reasons.
-            //
-            // Randomize: `Parameter::RandomizeVisibleValue` writes
-            // `sceneCenters_` (the commanded value) directly and immediately,
-            // but the drill-in knob reads `uiDisplayCenters_`, which a depth
-            // parameter only ever gets seeded into via a smoothed, one-shot
-            // nudge inside RandomizeVisibleValue itself (Sheaf, pinned). The
-            // per-sample loop never touches it again, because depth parameters
-            // are not in `topLevelParameters_`.
-            //
-            // Reset: it writes `sceneCenters_` and returns; the per-sample
-            // path then WALKS the computed values there over several blocks
-            // (~81% of the remaining distance per block -- see
-            // FroggersAudioRoutingTests.cpp's own note on that rate). During
-            // that walk the DSP is driven with values partway between what
-            // Randomize drew and what Reset commanded, so a reset landing on a
-            // later block than a randomize left the instrument audibly running
-            // on the outgoing patch after it had been told to stop. Measured at
-            // 84 parameters still differing at the reset block and converging
-            // by 8 blocks. `ComputeAllParameters()` snaps current to target
-            // outright, so the window never exists.
-            //
-            // Depth children make it permanent rather than merely slow: they
-            // are not in `topLevelParameters_`, so the per-sample path never
-            // reaches them at all and only this call ever reseeds them.
-            //
-            // Called ONCE here, after every branch above has made its writes
-            // for this frame, never per-parameter and never from the UI
-            // thread: ProcessFrame() only ever runs on the audio thread (this
-            // method's own header comment; `synth::Engine` invokes it once per
-            // block, after message drains and before ProcessBlock()), and
-            // `ComputeAllParameters()` (public, External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp)
-            // is a full, non-lock-free graph traversal that `ParameterManager`
-            // requires to run there (also in External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp). It
-            // reseeds every parameter including depth children -- ComputeAtDepth's
-            // recursionDepth_>0 branch takes the instant snap-and-seed path,
-            // not the smoothed one.
-            if (randomizeRan || resetRan) {
-                context_->parameterManager->ComputeAllParameters();
-            }
+        // One release-and-recompute per block, however many of the commands
+        // above asked for it (ApplyAppCommand() sets recomputeNeeded_ rather
+        // than calling this pair itself, so two presses in the same block
+        // still cost one pass, not two).
+        //
+        // A randomize redraws every value from a clean slate, and the
+        // sources the new roll did not pick are left neutral -- but their
+        // depth parameters stay materialized, and every live depth costs a
+        // recursive Compute() descent at control rate from then on. Without
+        // this, fifty Randomize All presses carry 1072 live depths where the
+        // current roll uses about 80, and per-block cost rises with the
+        // count until the audio callback has spent its whole budget. Reset
+        // leaves a depth it clears in the same near-default, zero-route
+        // state `Parameter::RevertAllToDefault`/`detail::
+        // ZeroExistingModulationDepths` (FroggersModulation.hpp) put it in,
+        // which is exactly what `CanRecycleLocal` below requires, so Reset
+        // All and Reset Page need this same release and share this call.
+        //
+        // `CollectNeutralLocalParameters` keeps anything the current roll
+        // still uses: `Parameter::CanRecycleLocal` requires a local id, zero
+        // view pins, zero active routes, no non-null children, and
+        // near-default state on both scene endpoints.
+        //
+        // The ordering here is load-bearing: this runs BEFORE the parameter
+        // recompute below, so a depth a command just rolled holds its new
+        // value only in `sceneCenters_`. It survives because
+        // `HasNonZeroState`/`HasNonDefaultState` scan `sceneCenters_`
+        // directly. Moving this after the recompute would also be safe;
+        // removing that scan would silently discard freshly rolled depths.
+        //
+        // `ComputeAllParameters()` (public, External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp)
+        // is a full, non-lock-free graph traversal that `ParameterManager`
+        // requires to run there. It reseeds every parameter including depth
+        // children -- ComputeAtDepth's recursionDepth_>0 branch takes the
+        // instant snap-and-seed path, not the smoothed one -- which is why a
+        // reset landing on a later block than a randomize does not leave the
+        // instrument audibly running on the outgoing patch: the per-sample
+        // path never walks a depth child toward its target the way it walks
+        // a top-level parameter, so only this call ever reseeds them.
+        if (recomputeNeeded_) {
+            context_->parameterManager->CollectNeutralLocalParameters();
+            context_->parameterManager->ComputeAllParameters();
+            recomputeNeeded_ = false;
+        }
+        if (randomizeRanThisBlock_) {
+            // Surfaces a partial randomize -- observable to tests via
+            // LastRandomizePartial(). Not a per-parameter/per-press signal
+            // (the randomize helper can be called dozens of times per
+            // operation); one publish per block covering every Randomize
+            // All/Page command that ran in it. No log is emitted here --
+            // ProcessFrame() runs on the audio thread, and any
+            // operator-visible logging must instead read this atomic from
+            // the UI thread.
+            lastRandomizePartial_.store(randomizePartialThisBlock_, std::memory_order_release);
+            randomizeRanThisBlock_ = false;
+            randomizePartialThisBlock_ = false;
         }
 
         const double tempoRequest = pendingTempoBpmRequest_.exchange(-1.0, std::memory_order_acq_rel);
@@ -2822,6 +2818,18 @@ private:
     // pending transition, 0 = not routed, 1 = routed.
     std::atomic<int> pendingExternalAudioRouted_{-1};
 
+    // ApplyAppCommand()/ProcessFrame() state: both run on the audio thread,
+    // one right after the other within the same block (AppConcepts.hpp's
+    // HasAppCommands/HasProcessFrame ordering), so these are plain members,
+    // not atomics. recomputeNeeded_ batches the release-and-recompute pass
+    // to once per block regardless of how many randomize/reset commands ran
+    // in it; randomizeRanThisBlock_/randomizePartialThisBlock_ do the same
+    // for the partial-draw publish, OR-ing together every Randomize
+    // All/Page command's result before ProcessFrame() publishes it once.
+    bool recomputeNeeded_ = false;
+    bool randomizeRanThisBlock_ = false;
+    bool randomizePartialThisBlock_ = false;
+
     std::atomic<double> tempoDisplayBpm_{synth::MasterClock::kDefaultTempoBpm};
     std::atomic<bool> tempoExternallyClocked_{false};
     // Published once per block, same contract as the
@@ -2943,6 +2951,43 @@ private:
     const bool stopDiagEnabled_ = std::getenv("FROGG3RS_STOP_DIAG") != nullptr;
     int stopDiagBlocks_ = 0;
     float stopDiagPeak_ = 0.0f;
+
+    // Switches the active page to bankIx, or, if bankIx is the page already
+    // showing, backs a modulation drilldown out to that page's top-level
+    // grid one level at a time -- "clicking on the page bank for the page we
+    // are on is the way the user should always be able to get to that page,
+    // even when they are in a modulation drilldown for a parameter on that
+    // page." Called from ApplyAppCommand() above for all three page
+    // commands (a direct select and both arrows, which resolve bankIx from
+    // activePageIx_ before calling this).
+    void SelectPage(std::size_t bankIx) {
+        if (bankIx != activePageIx_) {
+            activePageIx_ = bankIx;
+            parameters_.Slot().SelectBank(&parameters_.BankAt(activePageIx_));
+            // `BankSlot::SelectBank` Deselect()s the OUTGOING page
+            // (External/Sheaf/projects/synth/src/ParameterModulation.cpp),
+            // so a freshly-constructed drillIn_ (level_ starts at 0) for the
+            // INCOMING page is always consistent with that page's real
+            // state: either it was never drilled into, or it was
+            // Deselect()ed the last time it was left active -- both are real
+            // level 0. This is why exactly one drillIn_ instance,
+            // reconstructed on every switch, never desyncs from six
+            // persistent per-page instances would risk.
+            drillIn_.emplace(parameters_.BankAt(activePageIx_));
+        } else if (drillIn_->Level() > 0) {
+            // Back()-until-zero reaches the same "full Deselect(), level 0"
+            // state a genuine page switch produces above, without
+            // reconstructing drillIn_ (same Bank&, no need) -- bounded to at
+            // most 3 iterations (the level cap,
+            // FroggersModulationDrillIn::kMaxDrillLevel). The `Level() > 0`
+            // guard keeps a same-page click that is already at level 0 a
+            // no-op: rebuilding identical state would be wasted work for no
+            // behavior change.
+            while (drillIn_->Level() > 0) {
+                drillIn_->Back();
+            }
+        }
+    }
 
     std::size_t activePageIx_ = 0;
     std::optional<FroggersModulationDrillIn> drillIn_;

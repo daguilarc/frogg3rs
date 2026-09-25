@@ -2294,6 +2294,92 @@ TEST_CASE(reset_all_after_drilled_randomize_equals_a_fresh_launch_including_whic
 }
 
 // ============================================================================
+// Commands on the bus: FIFO order, no coalescing, within one message tick
+// ============================================================================
+// Pushes synth::MessageIn::AppCommand directly onto the rig's uiBus, the
+// same route FroggersUiSurface::HandleAction pushes through, so this
+// exercises FroggersAppCore::ApplyAppCommand alone: every command
+// Engine::DrainMessageBus pops within one tick applies in the order it was
+// pushed, and two presses of the same kind in one tick both land instead of
+// the second silently overwriting the first the way a single-slot request
+// atomic used to.
+
+TEST_CASE(app_commands_apply_every_press_in_bus_order_within_one_tick) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("app_commands_bus_order"));
+    rig.RunBlocks(4);
+
+    synth::AppContext& context = rig.Engine().Context();
+    synth_froggers::FroggersAppCore& app = rig.Application();
+    auto pushCommand = [&](FroggersCommand command, float value) {
+        context.uiBus->Push(
+            synth::MessageIn::AppCommand(context.now(), static_cast<std::size_t>(command), value));
+    };
+
+    // MOD-09: two Back presses in one tick pop two levels, not one.
+    pushCommand(FroggersCommand::kEncoderPress, 0.0f);  // -> level 1
+    rig.RunBlocks(4);
+    pushCommand(FroggersCommand::kEncoderPress, static_cast<float>(kModSlotVco1Audio));  // -> level 2
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(app.ActiveDrillIn().Level() == 2);
+    // Target/Back cell, physical position 15 at every drill level alike
+    // (FroggersModulationDrillIn::PressEncoder's own comment) -- pressed
+    // twice, same tick.
+    pushCommand(FroggersCommand::kEncoderPress, static_cast<float>(kFroggersCrunchySlot));
+    pushCommand(FroggersCommand::kEncoderPress, static_cast<float>(kFroggersCrunchySlot));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(app.ActiveDrillIn().Level() == 0);
+
+    // SUR-03: two Page Next presses in one tick each resolve their own
+    // target from the audio thread's own current page, advancing two pages.
+    const std::size_t startPage = app.ActivePageIndex();
+    pushCommand(FroggersCommand::kPageNext, 0.0f);
+    pushCommand(FroggersCommand::kPageNext, 0.0f);
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(app.ActivePageIndex() == (startPage + 2) % kFroggersPageCount);
+
+    // RND-01/RST-01: a Randomize All and a Reset All dispatched in the same
+    // tick apply in the order they were pushed, not grouped by kind. Drilled
+    // in first so Randomize All's floor is one (a drilled-in press always
+    // materializes at least one depth), making the outcome below
+    // deterministic regardless of the random draw.
+    pushCommand(FroggersCommand::kEncoderPress, 0.0f);  // -> level 1
+    rig.RunBlocks(4);
+    synth::Parameter* drilled = app.ActiveDrillIn().BankRef().SelectedParameter();
+    REQUIRE_TRUE(drilled != nullptr);
+    // Existence alone does not tell the two outcomes apart while still
+    // drilled in and viewing this grid: a materialized depth cell stays
+    // materialized (view-pinned) whether Reset zeroed it or Randomize drew
+    // it. The VALUE does: Reset writes every depth it touches to exactly
+    // detail::kNeutralModulationDepthCenter, and a random draw lands away
+    // from it.
+    auto anyDepthAwayFromNeutral = [&]() {
+        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+            synth::Parameter* depth = drilled->ModulationDepthParameter(modIx);
+            if (depth == nullptr) {
+                continue;
+            }
+            constexpr float kTol = 1e-4f;
+            if (std::fabs(depth->SceneCenter(0) - detail::kNeutralModulationDepthCenter) > kTol ||
+                std::fabs(depth->SceneCenter(1) - detail::kNeutralModulationDepthCenter) > kTol) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    pushCommand(FroggersCommand::kResetAll, 0.0f);
+    pushCommand(FroggersCommand::kRandomizeAll, 0.0f);
+    rig.RunBlocks(8);
+    REQUIRE_TRUE(anyDepthAwayFromNeutral());  // Randomize, pushed second, is what lands.
+
+    pushCommand(FroggersCommand::kRandomizeAll, 0.0f);
+    pushCommand(FroggersCommand::kResetAll, 0.0f);
+    rig.RunBlocks(8);
+    REQUIRE_TRUE(!anyDepthAwayFromNeutral());  // Reset, pushed second, is what lands.
+}
+
+// ============================================================================
 // randomize lands the drawn value even under live modulation
 // ============================================================================
 // Sheaf's own `Parameter::RandomizeVisibleValue`
