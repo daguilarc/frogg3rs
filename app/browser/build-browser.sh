@@ -10,8 +10,8 @@
 # is always resolved from `browserRoot` (Sheaf's own
 # projects/synth/browser/dist/wasm), independent of whatever --output-root
 # value is given, so any path outside that tree is rejected before emcc
-# ever runs. The Makefile's own fixture precedent
-# (External/Sheaf/projects/synth/browser/Makefile:41,
+# ever runs. The Makefile's own fixture precedent (the browser-fixture-app
+# target in External/Sheaf/projects/synth/browser/Makefile,
 # `--output-root dist/wasm/fixture-apps`) confirms this: it uses a path
 # relative to and confined within browserRoot, never an out-of-tree one.
 #
@@ -19,8 +19,9 @@
 # --output-root this app compiles cleanly under emscripten 6.0.7 (verified
 # 2026-08-18 -- the first-ever emscripten compile of this core, the
 # std-only-portability probe, PASSED). So this script builds into an
-# in-tree staging directory inside the Sheaf submodule (gitignored there:
-# External/Sheaf/.gitignore:19) and then copies the two emitted artifacts
+# in-tree staging directory inside the Sheaf submodule (gitignored there
+# by the projects/synth/browser/dist/ entry in External/Sheaf/.gitignore)
+# and then copies the two emitted artifacts
 # plus the emissions report into this repo's
 # app/browser/dist/wasm/apps/frogg3rs/{frogg3rs.js,frogg3rs.wasm}.
 set -euo pipefail

@@ -5,8 +5,9 @@
 // both required to pass: the whole band between header and footer (catches
 // a total blackout of the app surface) and the encoder grid's own region
 // alone (catches a blank restricted to the grid -- Sheaf's own button and
-// slider chrome carries hardcoded CSS fill and border colours distinct
-// from the page background, synth-browser.css lines 61-66 and 100-130, so a
+// toggle chrome carries hardcoded CSS fill and border colours distinct
+// from the page background, in synth-browser.css's `#synth-root button`
+// rules and its `[data-synth-node-kind="toggle"]` rules, so a
 // regression that blanks every encoder canvas while leaving transport/
 // scene controls rendering normally would still find color variety in,
 // and pass, a whole-band-only sample). Desktop project only

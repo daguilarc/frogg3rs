@@ -3,8 +3,8 @@
 # The build-skeleton target ($(APP), built from Main.cpp) proves the include
 # path into Sheaf's synth
 # core resolves and that an empty translation unit links against Sheaf's
-# static core library (build/libsynth.a, built by Sheaf's own Makefile at
-# External/Sheaf/projects/synth/Makefile:89). This Makefile does NOT include Sheaf's
+# static core library (build/libsynth.a, built by the `build` target in
+# Sheaf's own External/Sheaf/projects/synth/Makefile). This Makefile does NOT include Sheaf's
 # runtime/juce_build.mk — that lives with the out-of-tree app-registration
 # hook (FroggersRegistration.hpp) and the launcher build instead
 # (see app/build-launcher.sh); nothing here touches the
