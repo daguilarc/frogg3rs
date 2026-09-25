@@ -38,6 +38,7 @@
 #include <iostream>
 #include <limits>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -1115,9 +1116,10 @@ void RunBlocksWithNoTick(Rig& rig, ProductionCadence& cadence, std::size_t block
     }
 }
 
-// Drills into every one of two pages' 16 top-level parameters, Randomize
-// All at level 1 (the parameter's own 15 depths, cascading automatically
-// into whichever land actually modulating one level deeper), then opens
+// Drills into pageCount pages, starting at firstPageIx, across their first
+// slotsPerPage top-level parameters: Randomize All at level 1 (the
+// parameter's own 15 depths, cascading automatically into whichever land
+// actually modulating one level deeper), then, when descendIntoLanes, opens
 // EVERY one of the 15 modulator lanes' own level-2 view and Randomizes All
 // there too. The manual level-2 visits are what carry the working set past
 // the launch batch: RandomizeAll's own internal cascade skips a lane that
@@ -1125,7 +1127,7 @@ void RunBlocksWithNoTick(Rig& rig, ProductionCadence& cadence, std::size_t block
 // materializes it regardless (Bank::OpenModulationView/
 // CanOpenModulationView). Backs out to level 0 between parameters and
 // leaves the rig there.
-void DrillAndRandomizeTwoPagesDeep(Rig& rig, ProductionCadence& cadence, std::size_t firstPageIx = 0,
+void DrillAndRandomizePages(Rig& rig, ProductionCadence& cadence, std::size_t firstPageIx = 0,
                                    std::size_t pageCount = 2, std::size_t slotsPerPage = synth_froggers::kFroggersSlotsPerBank,
                                    bool descendIntoLanes = true) {
     namespace FroggersActions = synth_froggers::FroggersActions;
@@ -1167,6 +1169,32 @@ void DrillAndRandomizeTwoPagesDeep(Rig& rig, ProductionCadence& cadence, std::si
     }
 }
 
+// Every materialized modulation depth under param, named by the lane chain
+// that reaches it (e.g. "s3.d2.d5"), collected into out.
+void CollectLiveDepthPaths(const synth::Parameter& param, const std::string& path, std::set<std::string>& out) {
+    for (std::size_t modIx = 0; modIx < synth_froggers::FroggersParameterModel::kNumModulators; ++modIx) {
+        const synth::Parameter* depth = param.ModulationDepthParameter(modIx);
+        if (depth != nullptr) {
+            const std::string depthPath = path + ".d" + std::to_string(modIx);
+            out.insert(depthPath);
+            CollectLiveDepthPaths(*depth, depthPath, out);
+        }
+    }
+}
+
+// Every materialized modulation depth on one page (its kFroggersParamsPerBank
+// top-level parameters plus Crispy), named relative to the page so the same
+// path collected on two different rigs' models identifies the same depth.
+std::set<std::string> LiveDepthPathsForPage(synth_froggers::FroggersParameterModel& model, std::size_t pageIx) {
+    std::set<std::string> out;
+    const auto bank = static_cast<synth_froggers::FroggersBankId>(pageIx);
+    for (std::size_t slotIx = 0; slotIx < synth_froggers::kFroggersParamsPerBank; ++slotIx) {
+        CollectLiveDepthPaths(model.PageParameter(bank, slotIx), "s" + std::to_string(slotIx), out);
+    }
+    CollectLiveDepthPaths(model.Crispy(bank), "crispy", out);
+    return out;
+}
+
 }  // namespace storage_watermark
 
 // RND-01/RND-02: after the drill session above has grown the working set
@@ -1175,7 +1203,7 @@ void DrillAndRandomizeTwoPagesDeep(Rig& rig, ProductionCadence& cadence, std::si
 TEST_CASE(page_randomize_reports_no_partial_draw_after_a_drill_session_grows_depths_past_launch_storage) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("watermark_page_randomize"));
     storage_watermark::ProductionCadence cadence;
-    storage_watermark::DrillAndRandomizeTwoPagesDeep(rig, cadence);
+    storage_watermark::DrillAndRandomizePages(rig, cadence);
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
 
     rig.Application().PortableSurface().DispatchAction(
@@ -1202,7 +1230,7 @@ TEST_CASE(a_relaunch_on_the_same_data_paths_opens_a_grown_patch_whole_before_the
     {
         Rig rig(/*patchPumpBudgetBlocks=*/64, paths);
         storage_watermark::ProductionCadence cadence;
-        storage_watermark::DrillAndRandomizeTwoPagesDeep(rig, cadence);
+        storage_watermark::DrillAndRandomizePages(rig, cadence);
         grownLiveDepths = rig.Application().Parameters().Group().LiveLocalParameterCount();
         REQUIRE_TRUE(rig.SavePatchAs(patchDir) == synth_rig::RigPatchStatus::Written);
     }
@@ -1237,7 +1265,7 @@ TEST_CASE(a_running_load_of_a_grown_patch_stays_whole_after_the_storage_tick_pro
     {
         Rig builder(/*patchPumpBudgetBlocks=*/64, growPaths);
         storage_watermark::ProductionCadence cadence;
-        storage_watermark::DrillAndRandomizeTwoPagesDeep(builder, cadence, /*firstPageIx=*/0);
+        storage_watermark::DrillAndRandomizePages(builder, cadence, /*firstPageIx=*/0);
         grownLiveDepths = builder.Application().Parameters().Group().LiveLocalParameterCount();
         REQUIRE_TRUE(builder.SavePatchAs(patchDir) == synth_rig::RigPatchStatus::Written);
     }
@@ -1247,7 +1275,7 @@ TEST_CASE(a_running_load_of_a_grown_patch_stays_whole_after_the_storage_tick_pro
 
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("watermark_running_load_target"));
     storage_watermark::ProductionCadence cadence;
-    storage_watermark::DrillAndRandomizeTwoPagesDeep(rig, cadence, /*firstPageIx=*/2);
+    storage_watermark::DrillAndRandomizePages(rig, cadence, /*firstPageIx=*/2);
     const std::size_t baselineLiveDepths = rig.Application().Parameters().Group().LiveLocalParameterCount();
     std::cout << "  [watermark] running rig's own working set before the Load: " << baselineLiveDepths
               << " live, " << rig.Application().Parameters().Group().AvailableParameterSlots()
@@ -1295,36 +1323,68 @@ TEST_CASE(a_running_load_of_a_grown_patch_stays_whole_after_the_storage_tick_pro
 // left this case unable to fail under any of the breaks that motivated
 // it, since the margin was never remotely tight enough for either message
 // to matter.
+//
+// The margin cannot be pushed below one press and still leave this a
+// "fits" case: FroggersModulationSlate::Init sets the group's own
+// StorageLowWatermark() to exactly kDepthParameterStorageCapacity
+// (FroggersModulation.hpp), so ApplyPatchMessageAndNotifyApp's fit check
+// (available >= need + watermark) is available >= need + onePress --
+// margin < onePress is definitionally a shortfall, not this scenario.
+// Verified directly: growing the patch itself (slotsPerPage 6 -> 7, need
+// 502 -> 621) pushes margin from 1468 to 1349 and the Load stashes.
+// Exhausting the target's own drill+randomize headroom instead (the loop
+// below) plateaus at margin ~1446-1450 -- a few presses' worth above
+// onePress(1440), and the closest a "fits" case can come.
 TEST_CASE(a_small_patch_loaded_in_the_same_block_as_a_randomize_all_press_leaves_the_press_whole) {
     const synth::RuntimeDataPaths sourcePaths = UseScratchRuntimeDataPaths("watermark_same_tick_source");
     const std::filesystem::path patchDir = sourcePaths.patchesRoot / "small";
     std::size_t patchLiveDepths = 0;
+    std::set<std::string> patchDepthPaths;
+    // The patch's own other-page depth count -- whatever a fresh launch
+    // materializes on pages 0-3 and 5 before any drilling -- doubles as the
+    // floor a Load alone (with no Randomize sharing its block) would leave
+    // there: a Load replaces the whole state with the patch's own, so
+    // those pages read back exactly what the builder itself never touched.
+    std::size_t patchOtherPageDepthsFloor = 0;
     {
         Rig builder(/*patchPumpBudgetBlocks=*/64, sourcePaths);
         storage_watermark::ProductionCadence builderCadence;
+        for (const std::size_t otherPageIx : {std::size_t{0}, std::size_t{1}, std::size_t{2}, std::size_t{3}, std::size_t{5}}) {
+            patchOtherPageDepthsFloor +=
+                storage_watermark::LiveDepthPathsForPage(builder.Application().Parameters(), otherPageIx).size();
+        }
         // A light, partial-page drill+randomize -- genuinely "small" next
         // to the target's own working set below, on a page (4) the target
         // never touches, so its saved depths are new to the target rather
         // than already live there.
-        storage_watermark::DrillAndRandomizeTwoPagesDeep(builder, builderCadence, /*firstPageIx=*/4, /*pageCount=*/1,
+        storage_watermark::DrillAndRandomizePages(builder, builderCadence, /*firstPageIx=*/4, /*pageCount=*/1,
                                                           /*slotsPerPage=*/6, /*descendIntoLanes=*/true);
         patchLiveDepths = builder.Application().Parameters().Group().LiveLocalParameterCount();
+        patchDepthPaths = storage_watermark::LiveDepthPathsForPage(builder.Application().Parameters(), 4);
         REQUIRE_TRUE(builder.SavePatchAs(patchDir) == synth_rig::RigPatchStatus::Written);
     }
     REQUIRE_TRUE(patchLiveDepths > 0);
+    REQUIRE_TRUE(!patchDepthPaths.empty());
     const std::optional<std::filesystem::path> versionFile = synth::LatestPatchVersion(patchDir);
     REQUIRE_TRUE(versionFile.has_value());
 
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("watermark_same_tick_target"));
     storage_watermark::ProductionCadence cadence;
     // Grown on pages 0-3 and 5 -- every page but 4, the patch's own --
-    // so the patch's depths are never already live on the target, and the
-    // target's working set is large enough that what remains after the
-    // patch's need is subtracted is close to, not many multiples of, one
-    // press's worth.
-    storage_watermark::DrillAndRandomizeTwoPagesDeep(rig, cadence, /*firstPageIx=*/0);
-    storage_watermark::DrillAndRandomizeTwoPagesDeep(rig, cadence, /*firstPageIx=*/2);
-    storage_watermark::DrillAndRandomizeTwoPagesDeep(rig, cadence, /*firstPageIx=*/5, /*pageCount=*/1);
+    // so the patch's depths are never already live on the target. The
+    // extra plain presses past the deep drill exhaust the remaining
+    // headroom those pages can materialize (RandomizeAll's cascade plateaus
+    // once every lane on every drilled page is already live), pulling the
+    // margin down to as close to one press's worth as this "fits" case can
+    // get without becoming a shortfall case instead.
+    storage_watermark::DrillAndRandomizePages(rig, cadence, /*firstPageIx=*/0);
+    storage_watermark::DrillAndRandomizePages(rig, cadence, /*firstPageIx=*/2);
+    storage_watermark::DrillAndRandomizePages(rig, cadence, /*firstPageIx=*/5, /*pageCount=*/1);
+    for (int press = 0; press < 15; ++press) {
+        rig.Application().PortableSurface().DispatchAction(
+            synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
+        storage_watermark::RunProductionBlocks(rig, cadence, 1);
+    }
 
     const std::size_t availableBeforeLoad = rig.Application().Parameters().Group().AvailableParameterSlots();
     const std::size_t onePress = synth_froggers::FroggersModulationSlate::kDepthParameterStorageCapacity;
@@ -1333,9 +1393,10 @@ TEST_CASE(a_small_patch_loaded_in_the_same_block_as_a_randomize_all_press_leaves
               << " against one press's " << onePress << ".\n";
     // The setup this case needs: the patch fits (available comfortably
     // covers its need) but what is left over afterward is close to one
-    // press, not the many thousands of slack the original fixture left.
+    // press -- within its own plateau, not the many thousands of slack
+    // the original fixture left.
     REQUIRE_TRUE(availableBeforeLoad > patchLiveDepths);
-    REQUIRE_TRUE(availableBeforeLoad - patchLiveDepths < onePress * 2);
+    REQUIRE_TRUE(availableBeforeLoad - patchLiveDepths < onePress + onePress / 10);
 
     // Both messages queued before either is popped: one block applies both.
     const synth::PatchCommandResult loadResult = rig.Engine().Patches().LoadPatch(*versionFile);
@@ -1350,6 +1411,33 @@ TEST_CASE(a_small_patch_loaded_in_the_same_block_as_a_randomize_all_press_leaves
     std::cout << "  [watermark] Load and Randomize All in the same block: partial draw = "
               << rig.Application().LastRandomizePartial() << ".\n";
     REQUIRE_TRUE(!rig.Application().LastRandomizePartial());
+
+    // The Load applied whole: every depth the patch carries -- on the page
+    // it alone touches -- is present on the target now, not just some of
+    // them.
+    const std::set<std::string> targetPageDepthPaths =
+        storage_watermark::LiveDepthPathsForPage(rig.Application().Parameters(), 4);
+    std::size_t missingPatchDepths = 0;
+    for (const std::string& path : patchDepthPaths) {
+        if (targetPageDepthPaths.find(path) == targetPageDepthPaths.end()) {
+            ++missingPatchDepths;
+        }
+    }
+    std::cout << "  [watermark] patch depths present on the target's own page: "
+              << (patchDepthPaths.size() - missingPatchDepths) << "/" << patchDepthPaths.size() << ".\n";
+    REQUIRE_TRUE(missingPatchDepths == 0);
+
+    // The press drew: a Load replaces the whole patch, so a bare Load with
+    // no Randomize sharing its block would leave the other pages at
+    // patchOtherPageDepthsFloor (what the builder itself never touched
+    // there); anything beyond that floor is the press's own draw.
+    std::size_t otherPageDepths = 0;
+    for (const std::size_t otherPageIx : {std::size_t{0}, std::size_t{1}, std::size_t{2}, std::size_t{3}, std::size_t{5}}) {
+        otherPageDepths += storage_watermark::LiveDepthPathsForPage(rig.Application().Parameters(), otherPageIx).size();
+    }
+    std::cout << "  [watermark] live depths outside the patch's page: " << patchOtherPageDepthsFloor
+              << " floor -> " << otherPageDepths << " drawn.\n";
+    REQUIRE_TRUE(otherPageDepths > patchOtherPageDepthsFloor);
 }
 
 // The release decides what it may free. This pins that decision by arming two
