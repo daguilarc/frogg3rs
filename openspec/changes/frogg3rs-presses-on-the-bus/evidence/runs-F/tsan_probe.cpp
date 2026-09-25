@@ -1,26 +1,20 @@
-// RUN-01 and RUN-02 (REPORT.md sections 1.4/2.1, BUG-01/BUG-02), plus a
-// deliberately-injected race used as this harness's positive control before
-// either finding is trusted.
+// Two TSan probes, plus a deliberately-injected race used as this harness's
+// positive control before either probe's clean result is trusted.
 //
-// RUN-01 (BUG-01): "a TSan SynthRig test. Setup: FroggersModulationSlate::
-// Init(group, 4). ProcessBlock drills in on one thread while
-// MessageThreadTick runs on another. Confirms: TSan reports a race on
-// extraStorageBatches_. Clears: no report after 10,000 batch requests."
-// Mirrors FroggersModulationTests.cpp's own bare-fixture convention
-// (manager + FroggersParameterModel + FroggersModulationSlate, no Engine/
-// SynthRig): one thread repeatedly steps the slate (the audio-thread analog,
-// which walks ParameterGroup::extraStorageBatches_ inside Compute/
-// ProcessSample), the other repeatedly calls
+// The first probe mirrors FroggersModulationTests.cpp's own bare-fixture
+// convention (manager + FroggersParameterModel + FroggersModulationSlate, no
+// Engine/SynthRig): one thread repeatedly steps the slate (the audio-thread
+// analog, walking ParameterGroup::extraStorageBatches_ inside Compute/
+// ProcessSample) while the other repeatedly calls
 // ParameterGroup::AddParameterStorageBatch (the message-thread analog,
-// ParameterModulation.cpp:705, push_back on that same vector) -- the exact
-// mechanism BUG-01 names.
+// pushing onto that same vector). Clean after 10,000 batch requests with no
+// TSan report.
 //
-// RUN-02 (BUG-02): "a TSan test with a small capacityFramesOverride. Setup:
-// one thread loops StopRecording(); ArmRecording(n) against ProcessBlock
-// with the transport running. Confirms: TSan reports a race. Clears: 10^6
-// iterations with no report." Uses synth_rig::SynthRig<FroggersApp> (the
-// real production ArmRecording/StopRecording/ProcessBlock, FroggersAppCore.
-// hpp:501-532).
+// The second probe uses synth_rig::SynthRig<FroggersApp> (the real
+// production ArmRecording/StopRecording/ProcessBlock): one thread loops
+// StopRecording() then ArmRecording(n) with a small capacityFramesOverride
+// against ProcessBlock running on another, with the transport running.
+// Clean after 10^6 iterations with no TSan report.
 
 #include "Froggers.hpp"
 #include "FroggersModulation.hpp"
