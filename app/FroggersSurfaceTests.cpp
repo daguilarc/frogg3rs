@@ -40,6 +40,7 @@
 #include <filesystem>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <optional>
 #include <regex>
@@ -2277,17 +2278,21 @@ TEST_CASE(bpm_slider_push_reaches_the_clock_diagnostics_publication_and_is_gated
     REQUIRE_TRUE(std::fabs(context.clockDiagnostics->Snapshot().currentBpm - 300.0) < 0.5);
 
     // SYN-03: with receive-clock requested, the slider renders as the
-    // read-only line and a dispatched kBpm pushes nothing -- both read
-    // through AppContext::syncConfiguration, never a mirror this surface
-    // keeps.
+    // read-only line and a dispatched kBpm pushes nothing onto uiBus --
+    // both read through AppContext::syncConfiguration, never a mirror this
+    // surface keeps. Checked on the bus itself, before any block runs: the
+    // audio thread's own MasterClock::SetTempoBpm no-op while slaved would
+    // otherwise leave the tempo unmoved even if this surface's own guard
+    // pushed the message anyway, which would pass a tempo-only check
+    // without actually exercising this surface's gate.
     REQUIRE_TRUE(rig.Engine().RequestSyncConfiguration(synth::SyncConfig{.receiveClock = true}));
     rig.RunBlocks(4);
     REQUIRE_TRUE(context.syncConfiguration().receiveClock);
 
-    const double tempoBeforeAttempt = context.clockDiagnostics->Snapshot().currentBpm;
     surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBpm, "222.0"));
+    synth::MessageIn pushedMessage;
+    REQUIRE_TRUE(!context.uiBus->Pop(pushedMessage, std::numeric_limits<std::uint64_t>::max()));
     rig.RunBlocks(4);
-    REQUIRE_TRUE(std::fabs(context.clockDiagnostics->Snapshot().currentBpm - tempoBeforeAttempt) < 0.5);
 
     const synth::ui::NodeTree tree = surface.BuildTree();
     bool foundStatusText = false;
