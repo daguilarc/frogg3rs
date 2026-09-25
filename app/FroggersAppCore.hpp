@@ -121,6 +121,24 @@ inline std::size_t FroggersVisiblePageIndex(const synth::AppContext& context) {
     return 0;
 }
 
+// Whether the transport is running, read from the engine's own clock
+// diagnostics publication rather than a mirror kept elsewhere. Used by
+// every reader that needs the live transport state: the surface's Play
+// plate draw factory, the Freeze latch's ENGAGE side, and ArmRecording()
+// below.
+inline bool FroggersTransportIsRunning(const synth::AppContext* context) {
+    return context != nullptr && context->clockDiagnostics != nullptr &&
+           context->clockDiagnostics->Snapshot().transportState == synth::ClockTransportState::Running;
+}
+
+// Whether the engine is currently slaved to an external MIDI clock, read
+// from the requested sync configuration rather than a mirror kept
+// elsewhere. Used by the surface's BPM control (to render read-only while
+// slaved) and its kBpm action guard (to refuse a tempo push while slaved).
+inline bool FroggersExternallyClocked(const synth::AppContext* context) {
+    return context != nullptr && context->syncConfiguration && context->syncConfiguration().receiveClock;
+}
+
 // Forward-declared so QueueRecordingExport() (below, inside the class) can
 // call it -- the definition (a pure std:: WAV encoder) sits after the class,
 // beside its own tests' idiom of exercising it standalone; see its own
@@ -129,8 +147,8 @@ inline std::vector<std::uint8_t> EncodeWavPcm16Mono(std::span<const float> sampl
 
 // Encodes a finished take to WAV on its own thread, so a long take's Stop
 // never holds the UI/message thread for the encode
-// (QueueRecordingExport()'s own comment covers the copy OPT-29's other half
-// already removed). EnsureStarted() is called by the first ArmRecording()
+// (QueueRecordingExport()'s own comment covers moving the recorded buffer
+// out instead of copying it). EnsureStarted() is called by the first ArmRecording()
 // only -- an app with no Record (the plugin) never starts a thread here.
 // One mutex, held only to push or pop a job or a finished export, never
 // during an encode; the worker waits on a condition variable between jobs.
@@ -633,9 +651,7 @@ public:
     // take, and MessageThreadTick() (below) prepares the rest across later
     // ticks, well ahead of the audio thread's real-time write position.
     bool ArmRecording(std::size_t capacityFramesOverride = 0) {
-        const bool transportRunning = context_ != nullptr && context_->clockDiagnostics != nullptr &&
-            context_->clockDiagnostics->Snapshot().transportState == synth::ClockTransportState::Running;
-        if (!transportRunning) {
+        if (!FroggersTransportIsRunning(context_)) {
             recordRefusalReason_ = kRecordRefusalReason;
             return false;
         }
@@ -816,9 +832,10 @@ public:
     // from the wrong thread.
     std::size_t DrillLevel() const { return drillLevelDisplay_.load(std::memory_order_acquire); }
 
-    // Audio-thread publication: true when the MOST RECENT Randomize
-    // All/Page command this block left `FroggersRandomizeResult.partial`
-    // true -- i.e. `EnsureModulationDepth` hit `!group_.CanAllocate()`
+    // Audio-thread publication: true when ANY Randomize All/Page command
+    // applied this block left `FroggersRandomizeResult.partial` true (the
+    // OR of every such command in the block, not just the last) -- i.e.
+    // `EnsureModulationDepth` hit `!group_.CanAllocate()`
     // (Sheaf, External/Sheaf/projects/synth/src/ParameterModulation.cpp)
     // and stopped that operation short of drawing its full chosen set.
     // Published from ProcessFrame() alongside the ComputeAllParameters()
@@ -900,16 +917,11 @@ public:
             }
             break;
         }
-        case FroggersCommand::kRandomizeAll: {
-            const bool partial =
-                RandomizeAll(*context_->parameterManager, *drillIn_, parameters_, modulation_).partial;
-            randomizePartialThisBlock_ = randomizePartialThisBlock_ || partial;
-            randomizeRanThisBlock_ = true;
-            recomputeNeeded_ = true;
-            break;
-        }
+        case FroggersCommand::kRandomizeAll:
         case FroggersCommand::kRandomizePage: {
-            const bool partial = RandomizePage(*context_->parameterManager, *drillIn_).partial;
+            const bool partial = static_cast<FroggersCommand>(command) == FroggersCommand::kRandomizeAll
+                ? RandomizeAll(*context_->parameterManager, *drillIn_, parameters_, modulation_).partial
+                : RandomizePage(*context_->parameterManager, *drillIn_).partial;
             randomizePartialThisBlock_ = randomizePartialThisBlock_ || partial;
             randomizeRanThisBlock_ = true;
             recomputeNeeded_ = true;
@@ -972,7 +984,7 @@ public:
         //
         // `ComputeAllParameters()` (public, External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp)
         // is a full, non-lock-free graph traversal that `ParameterManager`
-        // requires to run there. It reseeds every parameter including depth
+        // requires to run on the audio thread. It reseeds every parameter including depth
         // children -- ComputeAtDepth's recursionDepth_>0 branch takes the
         // instant snap-and-seed path, not the smoothed one -- which is why a
         // reset landing on a later block than a randomize does not leave the
@@ -1510,7 +1522,7 @@ public:
         // Publish the current drill-in level for the surface's header --
         // same once-per-block cross-thread publish shape as DrillLevel()'s
         // own comment describes. Tempo, external-clock and transport-running
-        // are no longer mirrored here: the surface and ArmRecording() both
+        // are not mirrored here: the surface and ArmRecording() both
         // read them from AppContext::clockDiagnostics/syncConfiguration, the
         // engine's own publication, instead.
         drillLevelDisplay_.store(drillIn_->Level(), std::memory_order_release);
@@ -2802,8 +2814,7 @@ private:
     // largest multiple of 48,000 frames (one second at the production
     // sample rate) that takes at most a tenth of the 30 Hz UI tick
     // (3,333,333 ns) at the rate the unchanged code's single zeroing pass
-    // measured -- 27,468,750 ns for 86,400,000 frames
-    // (evidence/runs-M3/out/measure_2_12.out's first-arm median), 0.318 ns
+    // measured -- 27,468,750 ns for 86,400,000 frames, 0.318 ns
     // per frame for allocation, first touch and zeroing together.
     static constexpr std::size_t kCapturePrepareFramesPerPart = 10'464'000;
     // UI-thread-only (written/read only from ArmRecording()/

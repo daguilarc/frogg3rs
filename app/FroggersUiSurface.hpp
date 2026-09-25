@@ -739,16 +739,9 @@ inline std::vector<synth::ui::DrawCommand> BuildPageNextArrowDrawCommands(synth:
 // ParseSize/ParseFloat *pattern* -- this ports the pattern, not the
 // implementation: Braid4UiModel.hpp itself lives under the read-only
 // External/Sheaf submodule).
-// Whether the transport is running, read from the engine's own clock
-// diagnostics publication rather than a mirror this surface keeps. Used by
-// every reader in this file that needs the live transport state: the Play
-// plate's draw factory (fresh on every rebuild) and the Freeze latch's
-// ENGAGE side (to know what RELEASE should resume).
-inline bool FroggersTransportIsRunning(const synth::AppContext* context) {
-    return context != nullptr && context->clockDiagnostics != nullptr &&
-           context->clockDiagnostics->Snapshot().transportState == synth::ClockTransportState::Running;
-}
-
+// FroggersTransportIsRunning() and FroggersExternallyClocked() live in
+// FroggersAppCore.hpp (ArmRecording() needs the former too); this file
+// reads the transport state and clock-slaving state through them only.
 inline std::size_t FroggersParseSize(const std::string& value, std::size_t fallback) {
     if (value.empty()) {
         return fallback;
@@ -1479,8 +1472,7 @@ private:
         const double tempoBpm = context_ != nullptr && context_->clockDiagnostics != nullptr
                                      ? context_->clockDiagnostics->Snapshot().currentBpm
                                      : synth::MasterClock::kDefaultTempoBpm;
-        const bool externallyClocked =
-            context_ != nullptr && context_->syncConfiguration && context_->syncConfiguration().receiveClock;
+        const bool externallyClocked = FroggersExternallyClocked(context_);
         if (externallyClocked) {
             // Takes the same declared width as the interactive slider it
             // replaces, so the row does not change shape when the clock is
@@ -2325,7 +2317,7 @@ private:
             // out-of-date rendered tree. Reads the same requested sync
             // configuration the audio thread reads (AppContext::
             // syncConfiguration), never a mirror this surface keeps.
-            if (context_ != nullptr && context_->syncConfiguration && !context_->syncConfiguration().receiveClock) {
+            if (context_ != nullptr && context_->syncConfiguration && !FroggersExternallyClocked(context_)) {
                 const float bpm = FroggersParseFloat(action.value, 120.0f);
                 const float normalized = (bpm - kFroggersBpmMin) / (kFroggersBpmMax - kFroggersBpmMin);
                 PushMessage(synth::MessageIn::SetTempoBpmNormalized(NowMicros(), normalized));
