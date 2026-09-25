@@ -367,7 +367,7 @@ either pair differs or either path is missing, the run stops and reports
 BLOCKED. Both links are removed after the run, and `git status --short` and
 `git -C External/Sheaf status --short` then print nothing for them.
 
-- [x] 0. Rebase (operator ruling: midi-out is developed and pushed on its
+- [ ] 0. Rebase (operator ruling: midi-out is developed and pushed on its
       own branches, frogg3rs `midi-out` and Sheaf `app-midi-out`, and is
       rebased onto main as main stands when the operator says the other
       sessions' work on main is done; open changes nobody is working on are
