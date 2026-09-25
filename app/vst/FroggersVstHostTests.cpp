@@ -2109,18 +2109,38 @@ TEST_CASE(state_information_round_trips_the_visible_bank_when_non_default) {
     REQUIRE_TRUE(fresh.ApplicationForTest().ActivePageIndex() == 0);
 
     fresh.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
-    PumpAndSettle(fresh, freshBuffer, midi);
 
-    const std::size_t restoredPageIx = fresh.ApplicationForTest().ActivePageIndex();
-    REQUIRE_TRUE(restoredPageIx != 0);  // positive control -- see this test's own header comment.
-    REQUIRE_TRUE(restoredPageIx == kOperatorPage);
+    // One restore tick -- PumpStatePersistence() (FroggersPluginProcessor.cpp)
+    // pushes the patch load and dispatches the page-select action in the
+    // same pump -- then just enough blocks for the FIRST uiState publish
+    // (Engine::ProcessBlock throttles ParameterManager::PopulateUIState to
+    // once every uiPublishInterval_ blocks, at most 7 at this sample
+    // rate/block size), read from the published state the operator's own
+    // view renders (FroggersUiSurface::CurrentPageIndex(), never
+    // ActivePageIndex()) rather than the full pump-and-settle budget the
+    // parameter/freeze-latch round-trip tests use, since this checks the
+    // restored page reaches that view promptly, not merely eventually.
+    fresh.PumpMessageThreadForTest();
+    for (int b = 0; b < 7; ++b) {
+        freshBuffer.clear();
+        fresh.processBlock(freshBuffer, midi);
+    }
+
+    const synth::ui::NodeTree restoredTree = fresh.ApplicationForTest().PortableSurface().BuildTree();
+    const synth::ui::Node* defaultPageTab =
+        FindNodeById(restoredTree, synth_froggers::FroggersNodeIds::PageButton(0));
+    REQUIRE_TRUE(defaultPageTab != nullptr);
+    REQUIRE_TRUE(!defaultPageTab->selected);  // positive control -- see this test's own header comment.
+    const synth::ui::Node* restoredPageTab =
+        FindNodeById(restoredTree, synth_froggers::FroggersNodeIds::PageButton(kOperatorPage));
+    REQUIRE_TRUE(restoredPageTab != nullptr);
+    REQUIRE_TRUE(restoredPageTab->selected);
 
     fresh.releaseResources();
 
     std::cout << "  [state] visible page round trip: operator selected page " << kOperatorPage
               << " -> survived getStateInformation() -> setStateInformation() on a fresh processor, "
-                 "ActivePageIndex()="
-              << restoredPageIx << ".\n";
+                 "published page tab selected within one publish of the restore tick.\n";
 }
 
 TEST_CASE(state_information_restore_clamps_an_out_of_range_saved_bank_to_the_default_page) {
