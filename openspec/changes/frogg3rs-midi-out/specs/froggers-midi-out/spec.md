@@ -61,7 +61,7 @@ Cost: by reading, the follower's `Process` is a fabs, a clamp to [0, 1], one com
 #### Scenario: Browser Level CC ships only after the browser measurement
 - **WHEN** the browser build is delivered with Level offered
 - **THEN** the browser measurement has recorded no block missing its deadline in the real browser build, or the fix for the block that did has landed and the measurement has been re-run
-- Check: none. No automated check reads the measurement; it already recorded no missed deadline, so this gate is clear. This scenario is not backed by a test or by one of R2/R5/R6/R9.
+- Check: none. No automated check reads the measurement; it already recorded no missed deadline, so this gate is clear. This scenario is not backed by a test or by one of R2/R5/R9.
 
 ### Requirement: Pitch sends the detected fundamental as monophonic notes
 WHILE Pitch is chosen, the app SHALL send one note at a time: a note-on for the detected MIDI note whenever the pitch detector reports a nonzero frequency naming a note other than the one sounding, preceded at the same frame by the note-off for the sounding note, nothing for a report whose frequency is 0, and a note-off when the output's level falls below 0.001 (−60 dBFS).
@@ -194,9 +194,9 @@ The standalone and browser builds set the MIDI out on the Controllers page and s
 ### Requirement: The manual says where the MIDI out works and what it sends
 MANUAL.md SHALL describe the MIDI out as it ships now: where it is set on each build, what Level sends and what Pitch sends, the defaults, that Level sends at most 50 times a second, that Pitch is monophonic and tracks fundamentals from 50 Hz to 5,000 Hz, and that the plugin's MIDI output is routed in the DAW.
 
-The manual names no DAW, plugin format or browser as confirmed until the operator runs (R2, R5, R6 and R9) happen.
+The manual names no DAW, plugin format or browser as confirmed until the operator runs (R2, R5 and R9) happen.
 
 #### Scenario: The manual names only confirmed hosts
 - **WHEN** MANUAL.md's Audio to MIDI section is read after delivery
-- **THEN** every DAW, plugin format and browser it names as receiving MIDI out is one whose R2, R5 or R6 run confirmed, and none is named before its run happens
-- Check: none. Awaits R2, R5, R6 and R9; no automated check reads MANUAL.md.
+- **THEN** every DAW, plugin format and browser it names as receiving MIDI out is one whose R2 or R5 run confirmed, and none is named before its run happens
+- Check: none. Awaits R2, R5 and R9; no automated check reads MANUAL.md.

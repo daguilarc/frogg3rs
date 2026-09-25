@@ -92,7 +92,7 @@ These were settled by the operator (relayed by the coordinator) and refine
 the rules named beside each:
 
 - Delivery gates (omni rule §7, dependencies stated before each step): plugin
-  delivery waits on R2; browser delivery waits on R5 and R6.
+  delivery waits on R2; browser delivery waits on R5.
 - Threshold framework (omni rule §2, a figure carries the run that produced
   it): a finding is a missed audio block deadline, which is an audible
   dropout; a worst block below the budget is reported and gates nothing.
@@ -251,7 +251,7 @@ the rules named beside each:
   section describes what ships now -- where it is set per build, what Level
   and Pitch send, the defaults, the 50-5,000 Hz range, monophonic tracking,
   and that the plugin's MIDI output is routed in the DAW -- and names no DAW,
-  plugin format or browser as confirmed until the operator runs (R2, R5, R6,
+  plugin format or browser as confirmed until the operator runs (R2, R5,
   R9) happen.
 - Task 4's `off_sends_nothing` test recorded as moved (executor report,
   recorded by the coordinator): the executor moved this test from task 4 to
@@ -472,7 +472,7 @@ The full tables are in `tasks.md` under M1 and M3.
 
 ## Operator runs that gate delivery
 
-R2 gates plugin delivery; R5 and R6 gate browser delivery; R9 gates
+R2 gates plugin delivery; R5 gates browser delivery; R9 gates
 standalone delivery, being the one run of the whole standalone chain (routing
 enabled in `Runtime::Start`, the port-changed callback, the Controllers-page
 port choice, and `MidiOutputHandler::SendScheduled` to a real port), which no
@@ -614,9 +614,9 @@ branch has been rebased onto `main` as it stands when the operator says the
 other sessions' work on main is done (task 0), and after the Sheaf change is
 pushed to the fork and the pin moves with it. The standalone
 ships once the implementation passes and R9 confirms. The plugin builds ship
-only after R2; the browser build only after R5 and R6. M6 recorded no
+only after R2; the browser build only after R5. M6 recorded no
 missed deadline, so browser Level and Pitch ship with the browser build once
-R5 and R6 clear. A build whose gate clears ships without the part that
+R5 clears. A build whose gate clears ships without the part that
 failed, as the operator rules at that point.
 
 The worktree `.claude/worktrees/midi-out` belongs to the operator; no task

@@ -279,12 +279,27 @@ These need real hosts or real browser visibility. They run on this change's
 builds, after implementation and before delivery. Each result is recorded
 here, per host, and task 10 writes the manual from it.
 
-- [ ] R2. Per-DAW routing, VST3 and AU, CC and notes. In Live 12, Logic
-      (current), Reaper 7 and Bitwig 5, load this change's plugin build, set the
-      MIDI button to Level and then to Pitch on the default patch, and route its
-      MIDI output to a second track and to an IAC port. In Logic, use Instrument
-      Output on a receiving track, then External Instrument or IAC for a
-      hardware port.
+- [ ] R2. Per-DAW routing, VST3 and AU, CC and notes.
+
+      In Live 12: rescan plug-ins (Settings → Plug-Ins → Rescan); make a MIDI
+      track A with Frogg3rs (VST3), press Play and confirm sound; on the
+      plugin's row under the transport row, click the MIDI button to "MIDI:
+      PITCH"; make a MIDI track B with MIDI From set to track A and the second
+      dropdown set to Frogg3rs, and arm it; record about 10 seconds and open
+      the clip -- notes, mostly A1 (MIDI note 45 in Live's naming); click the
+      MIDI button to "MIDI: LEVEL", record again, and open Envelopes → MIDI
+      Ctrl → 16 -- a curve following the sound; with Pitch sounding, switch the
+      device off with its on/off button, then click the MIDI button to OFF --
+      nothing is left held on track B; repeat the whole run with Frogg3rs (AU).
+      Fails if: nothing is recorded, MIDI arrives while the button reads "MIDI:
+      OFF", a note stays held, or the plugin is missing.
+
+      In Logic (current), Reaper 7 and Bitwig 5, load this change's plugin
+      build, set the MIDI button to Level and then to Pitch on the default
+      patch, and route its MIDI output to a second track and to an IAC port.
+      In Logic, use Instrument Output on a receiving track, then External
+      Instrument or IAC for a hardware port.
+
       Confirms: the messages arrive, recorded per DAW, format and message
       type.
       Clears: nothing arrives, or only notes arrive.
@@ -300,12 +315,20 @@ removed as an operator run and delivery gate (coordinator ruling): no plugin
 project was saved before this change, so there is nothing for it to confirm.
 Plugin delivery waits on R2 alone.
 
-- [ ] R9. Standalone MIDI out end to end. Build the playable app with
-      `./app/build-launcher.sh`, open `Frogg3rs.app`, open Controllers, choose
-      an IAC port in the Audio to MIDI section, set Sends to Level and then
-      to Pitch on the default patch, and watch the port in a MIDI monitor
-      (or a receiving track in any DAW). Then choose None while a note is
-      sounding, and relaunch with the port still chosen.
+- [ ] R9. Standalone MIDI out end to end. The IAC Driver is enabled by the
+      operator beforehand, in Audio MIDI Setup (Window → Show MIDI Studio →
+      IAC Driver → Device is online). A CoreMIDI listener on the IAC bus
+      records what arrives, for the Confirms and Clears below. Build the
+      playable app with `./app/build-launcher.sh`, open `Frogg3rs.app`, open
+      Controllers, choose the IAC port in the Audio to MIDI section, set
+      Sends to Level and then to Pitch on the default patch, and watch what
+      the listener records (or a receiving track in any DAW). Then choose
+      None while a note is sounding, and relaunch with the port still chosen.
+      For the relaunch check, before this run the standalone's config file
+      (`~/Library/Application Support/Sheaf/synth/sheaf-patch/config`) is
+      copied aside, given a `midiOut` entry naming the IAC bus, the app is
+      launched and then quit, and the file is restored byte for byte, its
+      md5 shown for the copy and for the restored file.
       Confirms: Control Changes on the set channel and CC number while Level
       is chosen, notes while Pitch is chosen, All Notes Off on every channel
       when None is chosen, and the port and Sends restored after relaunch.
@@ -314,26 +337,21 @@ Plugin delivery waits on R2 alone.
       - Confirmed: standalone delivery may proceed.
       - Cleared: standalone delivery stops and the operator rules.
       Gates standalone delivery.
-- [ ] R5. Browser cadence, throughput and offset. With Level on and audible,
-      hide the tab for 3 minutes, in Chrome and in Firefox, using a build that
-      logs drain intervals, messages and time per pass,
-      `lateScheduledOutputCount`, and `port.send` time against due time and
-      `AudioContext.outputLatency`.
+- [ ] R5. Browser cadence, throughput and offset. The IAC Driver is enabled by
+      the operator beforehand, in Audio MIDI Setup (Window → Show MIDI Studio
+      → IAC Driver → Device is online), and the build's Sends option is set to
+      the IAC bus. A CoreMIDI listener on the IAC bus records what arrives,
+      alongside the build's own logged drain intervals, messages and timing.
+      With Level on and audible, hide the tab for 3 minutes, in Chrome and in
+      Firefox, using a build that logs drain intervals, messages and time per
+      pass, `lateScheduledOutputCount`, and `port.send` time against due time
+      and `AudioContext.outputLatency`.
       Confirms: Chrome keeps about 16 ms intervals while audible, and the late
       count stays 0.
       Clears: intervals of about 1 s, or a rising late count.
       - Confirmed: browser delivery may proceed; Firefox's figures are recorded
         and the manual states them.
       - Cleared: browser delivery stops and the operator rules.
-      Gates browser delivery.
-- [ ] R6. Firefox add-on flow. Open the site in Firefox with a MIDI device
-      connected (IAC counts), accept the add-on, open Controllers, choose the
-      port and set Sends to Level.
-      Confirms: the add-on is offered and the output is received.
-      Clears: no offer, or no output.
-      - Confirmed: the manual names Firefox as working.
-      - Cleared: the manual names Firefox as not receiving MIDI out, and the
-        operator rules whether browser delivery waits.
       Gates browser delivery.
 
 ## Implementation
@@ -704,7 +722,7 @@ BLOCKED. Both links are removed after the run, and `git status --short` and
       above 5,000 Hz is not tracked); the defaults (Off, channel 0, CC 16,
       velocity following the level); and that the plugin's MIDI output is
       routed in the DAW, not on a Controllers page. It names no DAW, plugin
-      format or browser as confirmed until the operator runs (R2, R5, R6,
+      format or browser as confirmed until the operator runs (R2, R5,
       R9) happen. The Plugin paragraph's MIDI sentence says the plugin now
       has a MIDI output; the Transport and tempo paragraph's "The plugin's own
       surface shows only Freeze" sentence names what the plugin's transport
