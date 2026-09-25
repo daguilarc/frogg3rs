@@ -42,16 +42,29 @@ the row space the suppressed controls free (operator instruction
   and a "FREEZE" text label sits beside it
 
 ### Requirement: Tempo is external via the DAW
-WHEN hosted as a plugin, THE master clock SHALL follow the host tempo
+WHEN hosted as a plugin and the host reports a usable tempo, THE master clock SHALL follow the host tempo
 through the core's existing external-clock slaving, and the BPM control
 SHALL behave exactly as it does when slaved to external MIDI clock:
-display-direction only, with user tempo requests suppressed.
+display-direction only, with user tempo requests suppressed. WHEN hosted as
+a plugin and the host reports no usable tempo, THE BPM control SHALL stay
+editable, the same as standalone with no external clock.
+
+<!-- RESTATES-EXCEPT
+the DAW tempo changes while the plugin runs
+  keeps: the DAW tempo changes while the plugin runs
+-->
 
 #### Scenario: Host tempo drives the clock
-- **WHEN** the DAW tempo changes while the plugin runs
+- **WHEN** the DAW tempo changes while the plugin runs and the host reports a usable tempo
 - **THEN** the instrument's clock follows the host tempo
 - **THEN** the BPM control displays the host tempo and does not accept a
   user tempo change
+
+#### Scenario: No usable host tempo leaves BPM editable
+- **WHEN** the plugin runs and the host reports no usable tempo (no valid playhead tempo, or the host has
+  stopped calling `processBlock`)
+- **THEN** the instrument's clock is not slaved to the host
+- **THEN** the BPM control accepts a user tempo change, the same as standalone with no external clock
 
 ### Requirement: Bus and MIDI posture match the core's real I/O
 THE plugin SHALL present a stereo output bus and one optional audio

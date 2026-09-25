@@ -302,7 +302,14 @@ A controller row SHALL retain the identity of the preset that created it for as 
 
 ### Requirement: The MIDI configuration page fits this application's window in every state
 
-The MIDI configuration page SHALL lay every control inside this application's content width on every host in every reachable state: controller rows collapsed and expanded, each configuration section open, and a mapping row in each group that accepts an added row (Turn, Push, System, Gesture, App action) beside the rows a preset installs. The controller header SHALL be two lines — identity (name, device label, and Variant for a Launchpad) and ports (MIDI in and MIDI out, each preceded by its own status dot, then Delete) — and, while the row differs from its preset, a third line carrying the sentence that says so and the Restore action, which sits there and nowhere else. The page SHALL show a controller's device by its display name: the descriptor the row's wizard id resolves against, or the bound MIDI input's stored endpoint label when none resolves, SHALL caption the add row's preset selector "Preset" and a Launchpad row's model selector "Variant", SHALL let a Launchpad row choose which Launchpad model it addresses and no other row choose anything of the sort, SHALL offer on the add row this application's presets followed by exactly one Custom entry, SHALL add the preset its add row displays when the operator has chosen none, which is the preset of the first connected device waiting to be set up when one is waiting, SHALL name an added controller after its preset (with a numeric suffix when the name is taken), SHALL bind an added controller's ports to a connected device whose port names match the preset, for every preset that matches the device, and otherwise leave them "(none)", SHALL open an added controller's row with every section open, SHALL keep the rename field inside the expanded editor under the caption "Name", SHALL keep a renamed controller's row expanded and its open sections open, SHALL caption the ports "MIDI in" and "MIDI out" with a legend for the status dots above the first controller, and SHALL show a controller's full name. A combo box or text field SHALL never draw past its own box.
+The MIDI configuration page SHALL lay every control inside this application's content width on every host in every reachable state: controller rows collapsed and expanded, each configuration section open, and a mapping row in each group that accepts an added row (Turn, Push, System, Gesture, App action) beside the rows a preset installs. The controller header SHALL be two lines — identity (name, device label, and Model for a Launchpad) and ports (MIDI in and MIDI out, each preceded by its own status dot, then Delete) — and, while the row differs from its preset, a third line carrying the sentence that says so and the Restore action, which sits there and nowhere else. The page SHALL show a controller's device by its display name: the descriptor the row's wizard id resolves against, or the bound MIDI input's stored endpoint label when none resolves, SHALL caption the add row's preset selector "Preset" and a Launchpad row's model selector "Model", SHALL let a Launchpad row choose which Launchpad model it addresses and no other row choose anything of the sort, SHALL offer on the add row this application's presets followed by exactly one Custom entry, SHALL add the preset its add row displays when the operator has chosen none, which is the preset of the first connected device waiting to be set up when one is waiting, SHALL name an added controller after its preset (with a numeric suffix when the name is taken), SHALL bind an added controller's ports to a connected device whose port names match the preset, for every preset that matches the device, and otherwise leave them "(none)", SHALL open an added controller's row with every section open, SHALL keep the rename field inside the expanded editor under the caption "Name", SHALL keep a renamed controller's row expanded and its open sections open, SHALL caption the ports "MIDI in" and "MIDI out" with a legend for the status dots above the first controller, and SHALL show a controller's full name. A combo box or text field SHALL never draw past its own box.
+
+<!-- RESTATES-EXCEPT
+a Launchpad row shows a "Variant" selector on that first line
+  keeps: selector on that first line, holding the model its profile records
+`TestLaunchpadRowOffersVariantAndRetargetsItsPads` (the Variant selector on a Launchpad row's first line)
+  keeps: on a Launchpad row's first line
+-->
 
 #### Scenario: Every state fits
 
@@ -323,9 +330,9 @@ The MIDI configuration page SHALL lay every control inside this application's co
   the add row; a status dot before the "MIDI in" selector, a status dot before
   the "MIDI out" selector, and Delete on the second; no rename control in the
   header
-- **AND** a Launchpad row shows a "Variant" selector on that first line,
+- **AND** a Launchpad row shows a "Model" selector on that first line,
   holding the model its profile records
-- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, `TestControllerLifecycleActionsUseTheNormalCommitAndSavePath` (no rename control in a collapsed row's header) and `TestLaunchpadRowOffersVariantAndRetargetsItsPads` (the Variant selector on a Launchpad row's first line); the per-row status-dot-precedes-its-combo and MIDI-in/MIDI-out caption assertions this scenario also names are exercised only inline in this file's own `main()`, which this repository's case index does not resolve by name. Operator, task 7.1.
+- Check: `External/Sheaf/projects/synth/tests/controllers_page_ui_tests.cpp`, `TestControllerLifecycleActionsUseTheNormalCommitAndSavePath` (no rename control in a collapsed row's header), `TestLaunchpadRowOffersVariantAndRetargetsItsPads` (the model selector on a Launchpad row's first line), and `TestLaunchpadRowModelSelectorIsCaptionedModel` (its caption reads "Model"); the per-row status-dot-precedes-its-combo and MIDI-in/MIDI-out caption assertions this scenario also names are exercised only inline in this file's own `main()`, which this repository's case index does not resolve by name.
 
 #### Scenario: Renaming keeps the editor open
 
@@ -418,4 +425,53 @@ Each device preset this application offers SHALL carry its input aliases and its
   rows of its table were read by calling `getAvailableDevices()` through this
   application's own JUCE with the unit connected, the other two models' rows
   are the same construction and are unconfirmed.
+
+### Requirement: A press travels on the engine's UI bus
+The app SHALL deliver every press that changes audio-thread state (Randomize All, Randomize Page, Reset All, Reset Page, page select, page previous, page next, encoder press) as a `MessageIn::AppCommand` on `AppContext::uiBus`, applied on the audio thread by `FroggersAppCore::ApplyAppCommand` in the block that pops it, in the order pushed, by the same drain that applies encoder turns and scene blend; Start, Continue, Stop and Clock remain the engine's realtime messages, lifted out of both buses and applied after both have drained. The app SHALL NOT hold such a press in an atomic, a flag or a queue of its own, and SHALL NOT hold the bus behind one. A press whose target depends on the current page (page previous, page next) SHALL resolve that target on the audio thread from the audio thread's own current page, never from the page the surface last displayed. A press that originates on a MIDI controller SHALL join the bus at the surface's action handler, the same point a click does.
+
+#### Scenario: Presses keep their count and order inside one message tick
+- **WHEN** two Back presses are dispatched inside one message tick from drill level 2
+- **THEN** the drill is at level 0 after the next block
+- **WHEN** two Page Next presses are dispatched inside one message tick from page 1
+- **THEN** page 3 is shown after the next block
+- **WHEN** Reset All then Randomize All are dispatched inside one message tick
+- **THEN** the state after the next block is randomized; reversed, it is the launch state
+- Check: `app/FroggersModulationTests.cpp: app_commands_apply_every_press_in_bus_order_within_one_tick`
+
+#### Scenario: The plugin's page restore is a dispatched press
+- **WHEN** a host restores a session that names a visible page
+- **THEN** the page is selected through the surface's action handler and shows after one block
+
+### Requirement: Every cross-thread member is a command, a value or a publication
+A cross-thread input that crosses as its latest value (the host's routed-input signal; the Freeze latch; the Record arm; the desired transport state) SHALL be one atomic written by the message thread for another thread to read, and its declaration SHALL say it is a value and which thread reads it; a press whose effect the message thread computes and that crosses as the resulting value is such a value. State the audio thread publishes for the UI to read (the drill level shown in the header; whether the last randomize drew short; the recorded frame count and truncation flag) SHALL be one atomic written by the audio thread, declared a publication. The app SHALL NOT route a value or a publication through the press bus, and SHALL NOT route a command through an atomic. A member outside these classes (the Record writer handshake the audio thread raises around a block) SHALL say so at its declaration.
+
+#### Scenario: The classification is visible at the declaration
+- **WHEN** the app core's cross-thread members are read
+- **THEN** each is declared a command (on the bus), a value (an atomic the message thread writes), a publication (an atomic the audio thread writes), or the one named exception, and no member is two of these
+
+### Requirement: The BPM slider is the catalog's tempo action
+The BPM slider SHALL push `MessageIn::SetTempoBpmNormalized` with its value placed in the catalog's tempo range (`kFroggersBpmMin` to `kFroggersBpmMax`), the same route a controller's mapped tempo control and a shifted Twister turn already take, and SHALL read its displayed tempo, its external-clock state and the transport's running state from what the engine publishes through `AppContext`. The app SHALL NOT mirror those values in atomics of its own.
+
+#### Scenario: A slider drag reaches the master clock in one block
+- **WHEN** the slider is dragged to 300 on the rig
+- **THEN** the engine's clock diagnostics read 300 after one block
+- Check: `app/FroggersSurfaceTests.cpp: bpm_slider_push_reaches_the_clock_diagnostics_publication_and_is_gated_by_the_context_sync_config`
+
+#### Scenario: Slaved, the slider is a read-only line and pushes nothing
+- **WHEN** receive-clock is requested and a BPM action is dispatched
+- **THEN** the surface renders the read-only tempo line and pushes no tempo message
+
+### Requirement: The add row offers this app's presets and Custom, and nothing else
+The Controllers page's add row SHALL offer, in this order, MIDI Fighter Twister, Akai APC40 mkII (Generic), Akai APC40 mkII (Ableton), Launchpad X, Launchpad Pro MK3, Launchpad Mini MK3 and Custom, and SHALL offer no preset for a device this app ships no preset for. The app's MIDI catalog SHALL tell the library to add no library device of its own to that list.
+
+#### Scenario: The Preset selector lists six presets and Custom
+- **WHEN** the Controllers page is opened with nothing connected
+- **THEN** the add row's Preset selector lists the six device presets above, in that order, then Custom
+- **AND** it lists no WRLD.Bldr entry
+- Check: `app/FroggersControllersPageTests.cpp`, `real_catalog_registers_exactly_one_descriptor_per_device_default`
+
+#### Scenario: A WRLD.Bldr port is an unrecognised port
+- **WHEN** a WRLD.Bldr is connected
+- **THEN** its ports are listed under "Other inputs" and "Other outputs", like any port no preset recognizes
+- Check: operator step: connect a WRLD.Bldr and open the Controllers page
 

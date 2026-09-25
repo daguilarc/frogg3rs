@@ -24,6 +24,13 @@ The Drive and Reverb scenarios carry edits beyond the slots this change moves, a
 
 Every promoted clause this requirement does not carry forward word for word is named below. The list is checked mechanically: a clause dropped without appearing here fails the build, and an entry here that matches no dropped clause fails it too, so neither the omission nor the stale declaration can sit reading as deliberate.
 
+<!-- RESTATES-EXCEPT
+the ratio between the Width knob's time-offset spread and its cross-feed blend
+  keeps: slot 12 is Width Balance (short name `WBal`)
+not yet delivered for the slot-12 ratio clause
+  keeps: DELIVERED for the capacity clause, that the time-offset spread this balance produces never lengthens a read tap beyond the delay buffer's own capacity
+-->
+
 #### Scenario: Page identity is preserved
 - **WHEN** the banks are enumerated
 - **THEN** there is one bank per original Froggers page
@@ -127,14 +134,14 @@ Every promoted clause this requirement does not carry forward word for word is n
 - **THEN** slot 10 is Feedback Tone (short name `FbTn`), a one-pole lowpass damping the feedback tap
   ahead of the same in-loop saturator
 - **THEN** slot 11 is Mod Rate (short name `MdRt`), the delay's own modulation LFO rate
-- **THEN** slot 12 is Width Balance (short name `WBal`), the ratio between the Width knob's time-offset
-  spread and its cross-feed blend, independent of the Width knob's own value
+- **THEN** slot 12 is Width Balance (short name `WBal`), which scales only the Width knob's own
+  time-offset spread term; the cross-feed weight is a fixed 0 and does not read Width Balance at all
 - **THEN** the cross-feed weight this balance produces stays within 0 to 1 inclusive at every knob position,
   so the left/right feedback pair stays a convex combination of the two delay-line reads
 - **THEN** the time-offset spread this balance produces never lengthens a read tap beyond the delay
   buffer's own capacity
 - **THEN** slot 13 is Crush (short name `Crsh`), a bitcrush stage applied to the feedback tap's repeats
-- Check: not yet delivered for the slot-12 ratio clause -- Width Balance today scales only the time-offset spread the Width knob produces, and the cross-feed weight is fixed at zero (see the stereo-image scenario above), so no ratio between the two exists anywhere in the code, and no change yet delivers one. DELIVERED for the capacity clause, that the time-offset spread this balance produces never lengthens a read tap beyond the delay buffer's own capacity, backed by `app/FroggersDspParityTests.cpp`, `stereo_delay_width_spread_never_reads_past_the_line_capacity`, `stereo_delay_width_spread_bound_holds_across_the_reachable_grid` and `stereo_delay_read_lag_stays_inside_the_line_across_random_knob_walks`. The cross-feed convexity clause holds vacuously: at a weight fixed at zero, the left/right feedback pair is trivially a convex combination of the two delay-line reads (weight 0 and weight 1 are both endpoints of the 0-to-1 range), so the clause is satisfied by construction rather than by any ratio Width Balance computes.
+- Check: DELIVERED for the slot-12 scaling clause: `dsp::StereoDelay`'s `widthBalance` field (Delay.hpp) scales only the width-spread term's 0.35f weight, and the cross-feed weight is a fixed 0.0f that does not read it. DELIVERED for the capacity clause, that the time-offset spread this balance produces never lengthens a read tap beyond the delay buffer's own capacity, backed by `app/FroggersDspParityTests.cpp`, `stereo_delay_width_spread_never_reads_past_the_line_capacity`, `stereo_delay_width_spread_bound_holds_across_the_reachable_grid` and `stereo_delay_read_lag_stays_inside_the_line_across_random_knob_walks`. The cross-feed convexity clause holds vacuously: at a weight fixed at zero, the left/right feedback pair is trivially a convex combination of the two delay-line reads (weight 0 and weight 1 are both endpoints of the 0-to-1 range), so the clause is satisfied by construction rather than by any ratio Width Balance computes.
 
 #### Scenario: The Reverb bank holds fourteen parameters, complete
 
