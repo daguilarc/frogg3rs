@@ -4,11 +4,11 @@
 // The first probe mirrors FroggersModulationTests.cpp's own bare-fixture
 // convention (manager + FroggersParameterModel + FroggersModulationSlate, no
 // Engine/SynthRig): one thread repeatedly steps the slate (the audio-thread
-// analog, walking ParameterGroup::extraStorageBatches_ inside Compute/
-// ProcessSample) while the other repeatedly calls
-// ParameterGroup::AddParameterStorageBatch (the message-thread analog,
-// pushing onto that same vector). Clean after 10,000 batch requests with no
-// TSan report.
+// analog, walking the batch chain through ParameterGroup::firstStorageBatch_
+// and each batch's own next pointer inside Compute/ProcessSample) while the
+// other repeatedly calls ParameterGroup::AddParameterStorageBatch (the
+// message-thread analog, appending a new batch onto that same chain).
+// Clean after 10,000 batch requests with no TSan report.
 //
 // The second probe uses synth_rig::SynthRig<FroggersApp> (the real
 // production ArmRecording/StopRecording/ProcessBlock): one thread loops
