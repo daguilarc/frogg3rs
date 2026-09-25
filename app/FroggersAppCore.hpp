@@ -729,10 +729,7 @@ public:
     std::uint8_t MidiOutCcNumber() const { return midiOutCcNumber_; }
     std::optional<std::uint8_t> MidiOutVelocity() const { return midiOutVelocity_; }
 
-    // The pitch detector's one reset() call site: guards the has_value()
-    // check once instead of each caller repeating it, and counts every call
-    // so PitchDetectorResetCount() below can prove which of the detector's
-    // reset triggers actually ran.
+    // The one place the detector's reset() is called; counts each call.
     void ResetPitchDetector() {
         if (pitchDetector_.has_value()) {
             pitchDetector_->reset();
@@ -761,9 +758,7 @@ public:
     // its own test is its only reader.
     std::size_t PitchDetectorConstructions() const { return pitchDetectorConstructions_; }
 
-    // How many times the Pitch detector has actually been reset, counted at
-    // ResetPitchDetector() above (the detector's one reset() call site) --
-    // this member owns that seam and its own test is its only reader.
+    // Returns the count of reset calls.
     std::size_t PitchDetectorResetCount() const { return pitchDetectorResetCount_; }
 
     // See pitchNoteChangesThisBlockForTest_'s own comment.
