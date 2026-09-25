@@ -1029,7 +1029,7 @@ TEST_CASE(randomize_storm_holds_its_depth_working_set) {
 // above what one press needs even after a long drill session, and a saved
 // or loaded patch that needs more than the launch batch gets its storage
 // before it applies (Sheaf's own provisioning, App-agnostic). The four
-// cases below are the audit's reproduced player paths: RND-01/RND-02 (a
+// cases below are reproduced player paths: RND-01/RND-02 (a
 // page press after the working set has grown), QR-01/QR-04 (a relaunch on
 // the same data paths), FILE-07/PLG-10 (a running Load) and RND-01 again
 // (a small patch loaded the same block as a press).
@@ -1261,7 +1261,8 @@ TEST_CASE(a_running_load_of_a_grown_patch_stays_whole_after_the_storage_tick_pro
     REQUIRE_TRUE(loadResult.status == synth::PatchCommandStatus::Ok);
 
     // Six blocks with no tick between them: the shortfall is detected and
-    // (re-)stashed on each one, the running patch untouched throughout.
+    // stashed on the first one; the barrier holds the stash and skips every
+    // block after that, the running patch untouched throughout.
     for (int block = 0; block < 6; ++block) {
         storage_watermark::RunBlocksWithNoTick(rig, cadence, 1);
         REQUIRE_TRUE(rig.Application().Parameters().Group().LiveLocalParameterCount() == baselineLiveDepths);

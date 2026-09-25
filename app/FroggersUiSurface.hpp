@@ -2279,8 +2279,7 @@ private:
         // encoder press (drill-in cap), page select and its two carousel
         // arrows, Randomize All/Page, Reset All/Page -- mapped from their
         // action name to the app's own command number through one table.
-        // (Crunchy removed operator 2026-07-27 -- see this file's header
-        // comment.) The arrows no longer resolve their own target or gate on
+        // The arrows do not resolve their own target or gate on
         // DrillLevel() here: FroggersAppCore::ApplyAppCommand does both, from
         // its own current page, on the audio thread. FroggersParseSize on an
         // action with no value (every command but encoder press and page

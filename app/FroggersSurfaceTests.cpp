@@ -1040,9 +1040,8 @@ TEST_CASE(page_carousel_arrows_are_centered_in_the_modulation_header_band_at_top
 // modulation_header_shown_only_while_drilled_in_and_matches_the_level /
 // modulation_header_sits_below_page_row_and_above_parameter_cells tests
 // above, which check their own draw content against kModulationHeaderTitle
-// (see that constant's own comment, FroggersUiSurface.hpp) since
-// kModulationHeader is no longer the leaf that carries the title's draw
-// commands.
+// (see that constant's own comment, FroggersUiSurface.hpp): that child
+// leaf carries the title's draw commands, not kModulationHeader itself.
 TEST_CASE(modulation_header_band_bounds_are_identical_across_drill_states_and_arrows_vanish_while_drilled) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
         /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("page_carousel_arrows_drilled"));
@@ -1221,9 +1220,9 @@ TEST_CASE(page_carousel_arrow_actions_are_rejected_while_drilled_in) {
     // The gate itself: a SYNTHETIC dispatch (surface.DispatchAction called
     // directly, not routed through any node/hit-test) of kPageNext must
     // change neither the active bank nor the drill level --
-    // an ungated branch would accept this and, via the ProcessFrame drain's
+    // an ungated branch would accept this and, via SelectPage()'s own
     // reconstruct-drillIn_-on-bank-change behaviour
-    // (FroggersAppCore.hpp's `ProcessFrame`), silently exit the drill.
+    // (FroggersAppCore.hpp's `ApplyAppCommand` calls it), silently exit the drill.
     surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPageNext));
     rig.RunBlocks(4);
     REQUIRE_TRUE(rig.Application().ActivePageIndex() == activePageBeforeDrill);
