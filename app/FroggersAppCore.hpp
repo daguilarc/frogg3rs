@@ -804,25 +804,23 @@ public:
                 // header comment), and any operator-visible logging must
                 // instead read this atomic from the UI thread.
                 lastRandomizePartial_.store(anyPartial, std::memory_order_release);
-
-                // Second half of the re-roll. A randomize redraws every value
-                // from a clean slate, and the sources the new roll did not
-                // pick are left neutral -- but their depth parameters stay
-                // materialized, and every live depth costs a recursive
-                // Compute() descent at control rate from then on. Without
-                // this, fifty presses carry 1072 live depths where the
-                // current roll uses about 80, and per-block cost rises with
-                // the count until the audio callback has spent its whole
-                // budget.
-                //
-                // This sits inside the randomize branch, so it runs after
-                // Randomize All AND after Randomize Page; the reset drains do
-                // not reach it. Only Randomize All accumulates -- Randomize
-                // Page, Reset All and Reset Page leave the live depth count at
-                // its baseline of six over fifty presses each, measured with
-                // and without this call -- so the Page case is a neutrality
-                // scan that finds nothing, except after an All storm, where it
-                // legitimately releases.
+            }
+            if (randomizeRan || resetRan) {
+                // Second half of the re-roll, and Reset's own release pass.
+                // A randomize redraws every value from a clean slate, and the
+                // sources the new roll did not pick are left neutral -- but
+                // their depth parameters stay materialized, and every live
+                // depth costs a recursive Compute() descent at control rate
+                // from then on. Without this, fifty Randomize All presses
+                // carry 1072 live depths where the current roll uses about
+                // 80, and per-block cost rises with the count until the audio
+                // callback has spent its whole budget. Reset leaves a depth
+                // it clears in the same near-default, zero-route state
+                // `Parameter::RevertAllToDefault`/`detail::
+                // ZeroExistingModulationDepths` (FroggersModulation.hpp) put
+                // it in, which is exactly what `CanRecycleLocal` below
+                // requires, so Reset All and Reset Page need this same
+                // release and now share this call.
                 //
                 // `CollectNeutralLocalParameters` keeps anything the current
                 // roll still uses: `Parameter::CanRecycleLocal` requires a

@@ -3667,8 +3667,16 @@ TEST_CASE(reseeded_and_unreseeded_reset_are_compared_field_by_field) {
     const std::vector<ParamSnapshot> reseeded = runArm(/*sameBlock=*/true, "arm_reseeded");
     const std::vector<ParamSnapshot> unreseeded = runArm(/*sameBlock=*/false, "arm_unreseeded");
 
+    // What a fresh launch itself materializes, walked the same way -- the
+    // floor the walk above must reach, derived from the code rather than a
+    // guessed constant.
+    Rig freshRig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("arm_fresh_baseline"));
+    freshRig.StartAt(0);
+    freshRig.RunBlocks(8);
+    const std::size_t freshLaunchCount = SnapshotWholeModel(freshRig.Application().Parameters()).size();
+
     std::cout << "  [reset arms] parameters walked: reseeded=" << reseeded.size()
-              << "  unreseeded=" << unreseeded.size() << "\n";
+              << "  unreseeded=" << unreseeded.size() << "  fresh launch=" << freshLaunchCount << "\n";
 
     std::size_t differing = 0;
     const std::size_t common = std::min(reseeded.size(), unreseeded.size());
@@ -3710,8 +3718,9 @@ TEST_CASE(reseeded_and_unreseeded_reset_are_compared_field_by_field) {
     std::cout << "  [reset arms] fields differing (reseeded/unreseeded): " << differing
               << (differing > 12 ? "  (first 12 shown)" : "") << "\n";
 
-    // Positive control: the walk actually reached parameters in both arms.
-    REQUIRE_TRUE(reseeded.size() > 100 && unreseeded.size() > 100);
+    // Positive control: the walk actually reached every parameter a fresh
+    // launch materializes, in both arms.
+    REQUIRE_TRUE(reseeded.size() >= freshLaunchCount && unreseeded.size() >= freshLaunchCount);
     // Reported, not asserted. Which fields differ is the finding; asserting a
     // count would fix an answer before the mechanism is named.
 }
@@ -3756,6 +3765,14 @@ TEST_CASE(the_two_reset_arms_are_compared_while_the_smoothed_path_is_still_walki
         return SnapshotWholeModel(rig.Application().Parameters());
     };
 
+    // What a fresh launch itself materializes, walked the same way -- the
+    // floor the walk below must reach, derived from the code rather than a
+    // guessed constant.
+    Rig freshRig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("transient_fresh_baseline"));
+    freshRig.StartAt(0);
+    freshRig.RunBlocks(8);
+    const std::size_t freshLaunchCount = SnapshotWholeModel(freshRig.Application().Parameters()).size();
+
     std::size_t atResetBlock = 0;
     std::size_t walkedPerArm = 0;
     std::cout << "  [reset transient] blocks-after-reset -> fields differing between arms\n";
@@ -3785,10 +3802,11 @@ TEST_CASE(the_two_reset_arms_are_compared_while_the_smoothed_path_is_still_walki
         }
     }
 
-    // Positive control: the walk actually reached the model in both arms. Without
-    // it, `atResetBlock == 0` is also what an empty walk returns, and the check
-    // would pass by measuring nothing. Its sibling above carries the same guard.
-    REQUIRE_TRUE(walkedPerArm > 100);
+    // Positive control: the walk actually reached every parameter a fresh
+    // launch materializes. Without it, `atResetBlock == 0` is also what an
+    // empty walk returns, and the check would pass by measuring nothing.
+    // Its sibling above carries the same guard.
+    REQUIRE_TRUE(walkedPerArm >= freshLaunchCount);
     // The reset block itself is the whole defect: a reset that has not reseeded
     // leaves the computed values walking toward what it commanded while the DSP
     // is still driven by the outgoing patch. Asserted at +0 rather than at a

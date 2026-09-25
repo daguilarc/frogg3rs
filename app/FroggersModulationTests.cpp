@@ -3,17 +3,28 @@
 // external-audio inertness, disconnected sources never being randomized,
 // randomize semantics, and the default patch.
 //
-// Uses a bare synth::ParameterManager + FroggersParameterModel +
-// FroggersModulationSlate directly (matching FroggersParameterModelTests.cpp's
-// structural-check convention) -- no Engine/SynthRig needed: every check here
-// is queryable through Bank/Parameter/ParameterGroup's own public API without
+// Most checks here use a bare synth::ParameterManager + FroggersParameterModel
+// + FroggersModulationSlate directly (matching FroggersParameterModelTests.cpp's
+// structural-check convention) -- no Engine/SynthRig needed: they are
+// queryable through Bank/Parameter/ParameterGroup's own public API without
 // real audio-thread block pumping. FroggersHeadlessTests.cpp already covers
-// the FroggersApp::ProcessBlock/PrepareToPlay wiring end-to-end.
+// the FroggersApp::ProcessBlock/PrepareToPlay wiring end-to-end. Reset All's
+// "matches a fresh launch after a real operator session" checks are the
+// exception: those drive a real synth_froggers::FroggersApp through
+// synth_rig::SynthRig and its actual FroggersUiSurface action routing (the
+// same convention FroggersSurfaceTests.cpp uses throughout), since what they
+// assert is the end-to-end result of presses, not one helper call in
+// isolation.
 
+#include "Froggers.hpp"
 #include "FroggersModulation.hpp"
 #include "FroggersParameters.hpp"
+#include "FroggersUiSurface.hpp"
+#include "support/SynthRig.hpp"
 
+#include "synth/Json.hpp"
 #include "synth/ParameterModulation.hpp"
+#include "synth/PortableUI.hpp"
 
 #ifdef JUCE_MAJOR_VERSION
 #error "Froggers modulation tests must not see JUCE headers"
@@ -23,11 +34,14 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
+#include <filesystem>
 #include <functional>
 #include <iostream>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -115,6 +129,18 @@ struct Fixture {
         slate.Step(drive, drive, drive, std::nullopt, externalAudioSample);
     }
 };
+
+// Fresh scratch runtime data paths per test, mirroring
+// FroggersSurfaceTests.cpp's own UseScratchRuntimeDataPaths -- only used by
+// this file's SynthRig-based Reset All checks, below.
+synth::RuntimeDataPaths UseScratchRuntimeDataPaths(const char* testName) {
+    const std::filesystem::path dataRoot =
+        std::filesystem::temp_directory_path() / "froggers-modulation-tests" / testName;
+    std::filesystem::remove_all(dataRoot);
+    synth::RuntimeDataPaths paths = synth::RuntimeDataPaths::FromDataRoot(dataRoot);
+    std::filesystem::create_directories(paths.patchesRoot);
+    return paths;
+}
 
 void ForEachTopLevelParameter(FroggersParameterModel& model, const std::function<void(synth::Parameter&)>& fn) {
     for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
@@ -2037,6 +2063,189 @@ TEST_CASE(reset_all_drilled_into_audio_pitch_restores_its_default_patch_detent_n
     ResetAll(fx.manager, drillIn, fx.model);  // Level()==1
 
     RequireParameterMatchesDefaultPatch(vco2Pitch, referenceVco2Pitch);
+}
+
+// ============================================================================
+// A held gesture button does not change what Reset does.
+// ============================================================================
+
+TEST_CASE(reset_with_a_gesture_button_held_matches_a_fresh_launch) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+
+    // Dirty the whole instrument first, same setup
+    // reset_all_matches_a_freshly_constructed_default_patch_instance_field_for_field
+    // above uses, so the post-reset match below is a real check, not a
+    // both-sides-untouched tautology.
+    RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
+    for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
+        FroggersModulationDrillIn pageDrill(fx.model.BankAt(static_cast<FroggersBankId>(bankIx)));
+        RandomizePage(fx.manager, pageDrill);
+    }
+    constexpr float kPerturbedCrunchy = 0.73f;
+    fx.model.Crunchy().SceneCenter(0) = kPerturbedCrunchy;
+    fx.model.Crunchy().SceneCenter(1) = kPerturbedCrunchy;
+    // Positive control: Crunchy is genuinely away from its own default
+    // (0.0f) before Reset All runs below.
+    REQUIRE_TRUE(std::fabs(fx.model.Crunchy().SceneCenter(0)) > 0.05f);
+
+    // Join a knob to gesture 0, exactly as the operator would while holding
+    // Hold Gesture Select and turning a knob.
+    constexpr std::size_t kHeldGesture = 0;
+    synth::Parameter& knob = fx.model.PageParameter(FroggersBankId::Audio, 0);
+    knob.SetGestureActive(0, kHeldGesture, true);
+    knob.SetGestureActive(1, kHeldGesture, true);
+    REQUIRE_TRUE(knob.GestureActive(0, kHeldGesture));
+
+    // Hold gesture 0 selected through the reset -- a held Hold Gesture
+    // Select button leaves the gesture selected exactly this way.
+    fx.manager.SelectGesture(kHeldGesture);
+    const synth::GestureMask kHeldMask = synth::GestureMask{1} << kHeldGesture;
+    REQUIRE_TRUE((fx.manager.SelectedGestureMask() & kHeldMask) != 0);
+
+    ResetAll(fx.manager, drillIn, fx.model);  // Level()==0, global, gesture 0 held throughout
+
+    // No knob -- any page parameter, any Crispy, or Crunchy -- is in any
+    // gesture afterward.
+    ForEachTopLevelParameter(fx.model, [&](synth::Parameter& param) {
+        REQUIRE_TRUE(!param.GestureActive(0, kHeldGesture));
+        REQUIRE_TRUE(!param.GestureActive(1, kHeldGesture));
+    });
+
+    // Gesture 0 is still selected afterward: Reset All never reads the
+    // selected gestures, and the deselect/reselect bracket around its own
+    // work restores the selection before returning.
+    REQUIRE_TRUE((fx.manager.SelectedGestureMask() & kHeldMask) != 0);
+
+    // The six cross-VCO detents (LCH-03) match their launch values exactly.
+    Fixture reference;
+    ApplyFroggersDefaultPatch(reference.model);
+    for (const detail::AudioPitchDetentSpec& spec : detail::kAudioPitchDetents) {
+        synth::Parameter& actualTarget = fx.model.PageParameter(FroggersBankId::Audio, spec.targetParamIx);
+        synth::Parameter& referenceTarget = reference.model.PageParameter(FroggersBankId::Audio, spec.targetParamIx);
+        synth::Parameter* actualDetent = actualTarget.ModulationDepthParameter(spec.modIx);
+        synth::Parameter* referenceDetent = referenceTarget.ModulationDepthParameter(spec.modIx);
+        REQUIRE_TRUE(actualDetent != nullptr);
+        REQUIRE_TRUE(referenceDetent != nullptr);
+        constexpr float kTol = 1e-6f;
+        REQUIRE_NEAR(actualDetent->SceneCenter(0), referenceDetent->SceneCenter(0), kTol);
+        REQUIRE_NEAR(actualDetent->SceneCenter(1), referenceDetent->SceneCenter(1), kTol);
+    }
+
+    // The whole patch matches a fresh launch's own ParameterValuesToJSON
+    // output, byte for byte.
+    synth::JsonArena actualArena(synth::JsonArena::kDefaultCapacity);
+    synth::JsonArena referenceArena(synth::JsonArena::kDefaultCapacity);
+    const synth::JSON actualJson = fx.manager.ParameterValuesToJSON(actualArena);
+    const synth::JSON referenceJson = reference.manager.ParameterValuesToJSON(referenceArena);
+    char* actualDumped = actualJson.Dumps(0);
+    char* referenceDumped = referenceJson.Dumps(0);
+    REQUIRE_TRUE(actualDumped != nullptr);
+    REQUIRE_TRUE(referenceDumped != nullptr);
+    const std::string actualText(actualDumped);
+    const std::string referenceText(referenceDumped);
+    free(actualDumped);
+    free(referenceDumped);
+    REQUIRE_TRUE(actualText == referenceText);
+}
+
+// ============================================================================
+// Reset All after a real, drilled-in operator session matches a fresh
+// launch -- driven end to end through the app's own press route.
+// ============================================================================
+
+TEST_CASE(reset_all_after_drilled_randomize_equals_a_fresh_launch_including_which_depths_exist) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("reset_all_after_drilled_randomize"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    synth::ParameterManager& manager = rig.Engine().Manager();
+
+    // Randomize All on the parameter page (Level()==0 -- the top-level grid
+    // the app opens on).
+    surface.DispatchAction(synth::ui::Action::Named(FroggersActions::kRandomizeAll));
+    rig.RunBlocks(8);
+
+    // Open a knob's modulation view (-> Level()==1), and Randomize All
+    // there -- this also auto-descends one level into whichever of that
+    // knob's own depths came up modulating (RandomizeAll's own recursive
+    // descent, FroggersModulation.hpp), materializing some Level()==2
+    // depths too.
+    constexpr std::size_t kPageParamPosition = 0;  // Audio bank, VCO1 pitch
+    surface.DispatchAction(
+        synth::ui::Action::WithValue(FroggersActions::kEncoderPress, std::to_string(kPageParamPosition)));
+    rig.RunBlocks(4);
+    surface.DispatchAction(synth::ui::Action::Named(FroggersActions::kRandomizeAll));
+    rig.RunBlocks(8);
+
+    // Turn a known depth (VCO1 Audio, always connected -- no external cable
+    // needed) to a large value, so it is genuinely materialized and
+    // modulating regardless of what the random draw above touched, then
+    // open ITS modulation view (-> Level()==2) and Randomize All again
+    // there -- descending one further level still (-> some Level()==3
+    // depths), the deepest the drill-in cap allows.
+    constexpr std::size_t kDepthPosition = kModSlotVco1Audio;
+    surface.DispatchAction(synth::ui::Action::WithValue(FroggersActions::kEncoderDrag,
+                                                          FormatFroggersEncoderDrag(kDepthPosition, 5.0f)));
+    rig.RunBlocks(4);
+    surface.DispatchAction(
+        synth::ui::Action::WithValue(FroggersActions::kEncoderPress, std::to_string(kDepthPosition)));
+    rig.RunBlocks(4);
+    surface.DispatchAction(synth::ui::Action::Named(FroggersActions::kRandomizeAll));
+    rig.RunBlocks(8);
+
+    // Turn a depth, at the current (deepest reached) drilled-in level.
+    surface.DispatchAction(
+        synth::ui::Action::WithValue(FroggersActions::kEncoderDrag, FormatFroggersEncoderDrag(0, 3.0f)));
+    rig.RunBlocks(4);
+
+    // Return to the parameter page: Target/Back cell (physical position 15)
+    // pops exactly one level per press (FroggersModulationDrillIn::Back, via
+    // PressEncoder) -- press it enough times to reach Level()==0 regardless
+    // of exactly how deep the descents above landed.
+    for (int i = 0; i < 4; ++i) {
+        surface.DispatchAction(
+            synth::ui::Action::WithValue(FroggersActions::kEncoderPress, std::to_string(kFroggersCrunchySlot)));
+        rig.RunBlocks(4);
+    }
+
+    // Turn a Crispy and the shared Crunchy -- both live cells at Level()==0.
+    surface.DispatchAction(synth::ui::Action::WithValue(FroggersActions::kEncoderDrag,
+                                                          FormatFroggersEncoderDrag(kFroggersCrispySlot, 5.0f)));
+    rig.RunBlocks(4);
+    surface.DispatchAction(synth::ui::Action::WithValue(FroggersActions::kEncoderDrag,
+                                                          FormatFroggersEncoderDrag(kFroggersCrunchySlot, 5.0f)));
+    rig.RunBlocks(4);
+
+    surface.DispatchAction(synth::ui::Action::Named(FroggersActions::kResetAll));
+    rig.RunBlocks(8);
+
+    // A freshly launched rig, run to the same settled block count, is the
+    // reference: its own ParameterValuesToJSON output and live local
+    // parameter count are what a launch actually shows.
+    synth_rig::SynthRig<synth_froggers::FroggersApp> referenceRig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("reset_all_after_drilled_randomize_reference"));
+    referenceRig.RunBlocks(4);
+    synth::ParameterManager& referenceManager = referenceRig.Engine().Manager();
+
+    synth::JsonArena actualArena(synth::JsonArena::kDefaultCapacity);
+    synth::JsonArena referenceArena(synth::JsonArena::kDefaultCapacity);
+    const synth::JSON actualJson = manager.ParameterValuesToJSON(actualArena);
+    const synth::JSON referenceJson = referenceManager.ParameterValuesToJSON(referenceArena);
+    char* actualDumped = actualJson.Dumps(0);
+    char* referenceDumped = referenceJson.Dumps(0);
+    REQUIRE_TRUE(actualDumped != nullptr);
+    REQUIRE_TRUE(referenceDumped != nullptr);
+    const std::string actualText(actualDumped);
+    const std::string referenceText(referenceDumped);
+    free(actualDumped);
+    free(referenceDumped);
+    REQUIRE_TRUE(actualText == referenceText);
+
+    REQUIRE_TRUE(rig.Application().Parameters().Group().LiveLocalParameterCount() ==
+                 referenceRig.Application().Parameters().Group().LiveLocalParameterCount());
 }
 
 // ============================================================================

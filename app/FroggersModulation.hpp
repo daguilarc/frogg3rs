@@ -1074,7 +1074,17 @@ inline bool DepthIsModulating(const synth::Parameter& depth) {
     return false;
 }
 
-inline void ZeroExistingModulationDepths(synth::Parameter& parameter) {
+// `clearGestures` is Reset's own addition to Randomize's plain zero: Sheaf's
+// own reset of a parameter (`Parameter::RevertAllToDefault`, which
+// ResetBankToDefaultPatch/ResetGlobalCrunchyToDefaultPatch below call) clears
+// gesture membership along with the value, and Reset's modulation-view
+// branches (ResetPage/ResetAll further down) need the same for the depths
+// they clear directly here, since those depths are written through
+// `SceneCenter` rather than through a Sheaf reset call of their own.
+// RandomizeParameterModulationDepths and RandomizeAll's own neutral-depth
+// clear leave it at its default: Sheaf's randomize leaves gesture membership
+// alone.
+inline void ZeroExistingModulationDepths(synth::Parameter& parameter, bool clearGestures = false) {
     for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
         synth::Parameter* depth = parameter.ModulationDepthParameter(modIx);
         if (depth == nullptr) {
@@ -1082,6 +1092,11 @@ inline void ZeroExistingModulationDepths(synth::Parameter& parameter) {
         }
         for (const synth::SceneState& pole : kScenePoles) {
             depth->SceneCenter(pole.leftScene) = kNeutralModulationDepthCenter;
+            if (clearGestures) {
+                for (std::size_t gestureIx = 0; gestureIx < parameter.Group().GestureCount(); ++gestureIx) {
+                    depth->SetGestureActive(pole.leftScene, gestureIx, false);
+                }
+            }
         }
     }
 }
@@ -1501,27 +1516,58 @@ inline void ApplyCrunchyDefaultPatch(FroggersParameterModel& model) {
     }
 }
 
-// Reset counterpart to ApplyBankDefaultPatch: clears whatever pre-existing
-// (possibly Randomize-dirtied) depths this bank's page parameters and
-// Crispy carry, THEN applies ApplyBankDefaultPatch on top -- so any depth
-// ApplyBankDefaultPatch's own overlay materializes (the Audio bank's cross-
-// VCO detents) is the last write and survives, while every other depth lands
-// on neutral exactly as ApplyBankDefaultPatch already leaves a freshly
-// constructed instance.
+// Reset counterpart to ApplyBankDefaultPatch: reverts this bank's page
+// parameters and Crispy to their launch state, THEN applies
+// ApplyBankDefaultPatch on top -- so any depth ApplyBankDefaultPatch's own
+// overlay materializes (the Audio bank's cross-VCO detents) is the last
+// write and survives, while every other depth lands on neutral exactly as
+// ApplyBankDefaultPatch already leaves a freshly constructed instance.
+// `Parameter::RevertAllToDefault` is Sheaf's whole reset of one parameter:
+// every depth at every level, in every scene, back to its default, with
+// gesture membership and gesture-held values cleared along with it -- so
+// this, unlike ZeroExistingModulationDepths, also reaches the level-2 and
+// deeper depths underneath each depth this bank carries and takes every one
+// of them out of every gesture.
 inline void ResetBankToDefaultPatch(FroggersParameterModel& model, FroggersBankId bankId) {
     for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
-        ZeroExistingModulationDepths(model.PageParameter(bankId, paramIx));
+        model.PageParameter(bankId, paramIx).RevertAllToDefault();
     }
-    ZeroExistingModulationDepths(model.Crispy(bankId));
+    model.Crispy(bankId).RevertAllToDefault();
     ApplyBankDefaultPatch(model, bankId);
 }
 
 // Reset counterpart to ApplyCrunchyDefaultPatch, mirroring
-// ResetBankToDefaultPatch's own clear-then-apply shape for the one global
+// ResetBankToDefaultPatch's own revert-then-apply shape for the one global
 // the default patch also needs.
 inline void ResetGlobalCrunchyToDefaultPatch(FroggersParameterModel& model) {
-    ZeroExistingModulationDepths(model.Crunchy());
+    model.Crunchy().RevertAllToDefault();
     ApplyCrunchyDefaultPatch(model);
+}
+
+// ResetPage/ResetAll below both write the default patch (through
+// `HandleSetAbsolute`, which adds each knob it touches to any selected
+// gesture) and, on the Audio bank, cross-VCO pitch detents (through
+// `ApplyAudioPitchDetent`'s `HandleIncDec`, whose first write to a
+// materialized depth only adds it to a selected gesture and returns without
+// applying the detent, leaving it neutral instead of the six-detent launch
+// state). Neither caller wants a held gesture button to change what Reset
+// does, so both bracket their own work with these: deselect every gesture
+// `mask` marks before doing the reset, reselect the same ones after. Both
+// `ParameterManager::DeselectGesture`/`SelectGesture` are plain mask writes
+// (`Gestures::Select`), so nothing else observes the gap in between.
+inline void DeselectGesturesInMask(synth::ParameterManager& manager, synth::GestureMask mask) {
+    for (std::size_t gestureIx = 0; gestureIx < FroggersParameterModel::kNumGestures; ++gestureIx) {
+        if ((mask & (synth::GestureMask{1} << gestureIx)) != 0) {
+            manager.DeselectGesture(gestureIx);
+        }
+    }
+}
+inline void ReselectGesturesInMask(synth::ParameterManager& manager, synth::GestureMask mask) {
+    for (std::size_t gestureIx = 0; gestureIx < FroggersParameterModel::kNumGestures; ++gestureIx) {
+        if ((mask & (synth::GestureMask{1} << gestureIx)) != 0) {
+            manager.SelectGesture(gestureIx);
+        }
+    }
 }
 
 }  // namespace detail
@@ -1733,8 +1779,12 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
 //     level 2, where `selected` IS itself a depth parameter -- forcing it to
 //     a value directly here would reintroduce the "0.0 is not off" trap
 //     through a different call site.
-inline void ResetPage(synth::ParameterManager& /*manager*/, FroggersModulationDrillIn& drillIn,
+//   - A held gesture button does not change any of the above: see
+//     DeselectGesturesInMask's own comment.
+inline void ResetPage(synth::ParameterManager& manager, FroggersModulationDrillIn& drillIn,
                        FroggersParameterModel& model) {
+    const synth::GestureMask selectedGestures = manager.SelectedGestureMask();
+    detail::DeselectGesturesInMask(manager, selectedGestures);
     if (drillIn.Level() == 0) {
         for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
             if (&model.BankAt(bankIx) == &drillIn.BankRef()) {
@@ -1742,14 +1792,21 @@ inline void ResetPage(synth::ParameterManager& /*manager*/, FroggersModulationDr
                 break;
             }
         }
-        return;
+    } else {
+        synth::Parameter& selected = *drillIn.BankRef().SelectedParameter();
+        detail::ZeroExistingModulationDepths(selected, /*clearGestures=*/true);
+        detail::RestoreAudioPitchDetentsFor(model, selected);
     }
-    synth::Parameter& selected = *drillIn.BankRef().SelectedParameter();
-    detail::ZeroExistingModulationDepths(selected);
-    detail::RestoreAudioPitchDetentsFor(model, selected);
+    detail::ReselectGesturesInMask(manager, selectedGestures);
 }
 
-// Reset All -- global, at every level.
+// On a parameter page, Reset All returns every page -- every parameter,
+// every depth at every level, every bank's Crispy, and the shared Crunchy --
+// to the launch state, and takes every knob those pages carry out of every
+// gesture. In a modulation view, it resets the selected parameter's own
+// depths, zeroes the depths one level below each of those, and takes every
+// depth it touches out of every gesture too. A held gesture button changes
+// none of this: see DeselectGesturesInMask's own comment.
 //   - parameter page (Level()==0): every bank's own slice of the default
 //     patch (ResetBankToDefaultPatch, the same helper Reset Page uses for
 //     its one bank), PLUS the single shared global Crunchy
@@ -1758,30 +1815,39 @@ inline void ResetPage(synth::ParameterManager& /*manager*/, FroggersModulationDr
 //     itself carries over to Reset: Reset All reverts the WHOLE patch, and
 //     Crunchy is part of it. Each bank is reached directly via
 //     `model.BankAt(bankId)` (RandomizeAll's own idiom), independent of
-//     which bank the BankSlot currently displays.
+//     which bank the BankSlot currently displays. ResetBankToDefaultPatch and
+//     ResetGlobalCrunchyToDefaultPatch revert through `Parameter::
+//     RevertAllToDefault`, which reaches every depth at every level below
+//     each parameter it touches and clears that depth's gesture membership
+//     along with its value.
 //   - ANY drilled-in grid (Level() >= 1): the selected parameter's own depth
-//     children reset to their default-patch value (RestoreAudioPitchDetentsFor,
+//     children reset to their default-patch value and taken out of every
+//     gesture (ZeroExistingModulationDepths, RestoreAudioPitchDetentsFor,
 //     as above), PLUS -- mirroring RandomizeAll's own recursive one-level
 //     descent, gated the same way by kMaxDrillLevel -- each of THOSE depths'
-//     own depth children reset to neutral too (no default-patch override
-//     ever reaches a second level deep, so grandchildren are always plain
-//     neutral). Unlike RandomizeAll, this does NOT gate the descent on
-//     detail::DepthIsModulating first: that gate exists to skip meaningless
-//     RANDOM draws on a depth that modulates nothing, which does not apply
-//     to a deterministic clear -- ZeroExistingModulationDepths is already a
-//     safe no-op on a depth that has no materialized children of its own.
-inline void ResetAll(synth::ParameterManager& /*manager*/, FroggersModulationDrillIn& drillIn,
+//     own depth children reset to neutral too and taken out of every gesture
+//     too (no default-patch override ever reaches a second level deep, so
+//     grandchildren are always plain neutral). Unlike RandomizeAll, this does
+//     NOT gate the descent on detail::DepthIsModulating first: that gate
+//     exists to skip meaningless RANDOM draws on a depth that modulates
+//     nothing, which does not apply to a deterministic clear --
+//     ZeroExistingModulationDepths is already a safe no-op on a depth that
+//     has no materialized children of its own.
+inline void ResetAll(synth::ParameterManager& manager, FroggersModulationDrillIn& drillIn,
                       FroggersParameterModel& model) {
+    const synth::GestureMask selectedGestures = manager.SelectedGestureMask();
+    detail::DeselectGesturesInMask(manager, selectedGestures);
     if (drillIn.Level() == 0) {
         for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
             detail::ResetBankToDefaultPatch(model, static_cast<FroggersBankId>(bankIx));
         }
         detail::ResetGlobalCrunchyToDefaultPatch(model);
+        detail::ReselectGesturesInMask(manager, selectedGestures);
         return;
     }
 
     synth::Parameter& selectedParam = *drillIn.BankRef().SelectedParameter();
-    detail::ZeroExistingModulationDepths(selectedParam);
+    detail::ZeroExistingModulationDepths(selectedParam, /*clearGestures=*/true);
     detail::RestoreAudioPitchDetentsFor(model, selectedParam);
     if (drillIn.Level() < FroggersModulationDrillIn::kMaxDrillLevel) {
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
@@ -1789,9 +1855,10 @@ inline void ResetAll(synth::ParameterManager& /*manager*/, FroggersModulationDri
             if (depthParam == nullptr) {
                 continue;  // not connected, or never materialized.
             }
-            detail::ZeroExistingModulationDepths(*depthParam);
+            detail::ZeroExistingModulationDepths(*depthParam, /*clearGestures=*/true);
         }
     }
+    detail::ReselectGesturesInMask(manager, selectedGestures);
 }
 
 // ============================================================================
