@@ -274,25 +274,26 @@ TEST_CASE(external_audio_stays_disconnected_when_the_routed_signal_is_never_publ
 }
 
 // End-to-end proof that the
-// ComputeAllParameters() reseed inside FroggersAppCore::ProcessFrame()
+// ComputeAllParameters() reseed inside FroggersAppCore::ApplyAppCommand()
 // (FroggersAppCore.hpp) actually reaches the display through the REAL
-// production path: RequestRandomizeAll() (UI/message thread) ->
-// ProcessFrame() (audio thread, drained by synth::Engine once per block,
-// before ProcessBlock() -- this class's own header comment) -> the reseed.
-// FroggersModulationTests.cpp's own randomize tests call
+// production path: a dispatched Randomize All (message thread) -> a pushed
+// MessageIn::AppCommand -> ApplyAppCommand() (audio thread, applied by
+// synth::Engine's drain, before ProcessFrame()'s own recompute) -> the
+// reseed. FroggersModulationTests.cpp's own randomize tests call
 // FroggersModulation.hpp's RandomizeAll()/RandomizePage() directly against a
 // bare ParameterManager, which never exercises FroggersAppCore::
-// ProcessFrame() at all -- this is the one place in the suite that proves
-// the fix is wired into the real request-bridge path, not just correct in
+// ApplyAppCommand() at all -- this is the one place in the suite that proves
+// the fix is wired into the real press-command path, not just correct in
 // isolation.
-TEST_CASE(randomize_all_request_through_process_frame_updates_the_display) {
+TEST_CASE(randomize_all_command_through_apply_app_command_updates_the_display) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
         /*patchPumpBudgetBlocks=*/64,
         UseScratchRuntimeDataPaths("randomize_all_updates_display"));
     rig.RunBlocks(2);  // let Init()'s default patch / first ProcessFrame settle.
 
-    rig.Application().RequestRandomizeAll();
-    rig.RunBlocks(1);  // ProcessFrame() drains the request and reseeds, same block.
+    rig.Application().PortableSurface().DispatchAction(
+        synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
+    rig.RunBlocks(1);  // ApplyAppCommand() applies the press and reseeds, same block.
 
     // Randomize All (drill-in level 0) touches every top-level parameter
     // across all six banks -- find any depth it materialized
@@ -320,7 +321,7 @@ TEST_CASE(randomize_all_request_through_process_frame_updates_the_display) {
 }
 
 // LastRandomizePartial() defaults false and stays false across an
-// ordinary Randomize All request with ample storage headroom (the default
+// ordinary Randomize All press with ample storage headroom (the default
 // FroggersModulationSlate::kDepthParameterStorageCapacity is 1440; the
 // 793-915 figure this comment once cited was the retired 61-parameter
 // design's ceiling, not this app's), proving the accessor is
@@ -332,7 +333,8 @@ TEST_CASE(randomize_all_with_ample_capacity_reports_not_partial) {
     rig.RunBlocks(2);
 
     REQUIRE_TRUE(!rig.Application().LastRandomizePartial());
-    rig.Application().RequestRandomizeAll();
+    rig.Application().PortableSurface().DispatchAction(
+        synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
     rig.RunBlocks(1);
     REQUIRE_TRUE(!rig.Application().LastRandomizePartial());
 }

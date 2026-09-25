@@ -87,6 +87,11 @@
 #include "synth/AppContext.hpp"
 #include "synth/Color.hpp"
 #include "synth/DspScope.hpp"
+// ClockDiagnosticsPublication's full definition (AppContext.hpp only
+// forward-declares it): ArmRecording() below reads
+// context_->clockDiagnostics->Snapshot() to know whether the transport is
+// running, the same publication AppContext::clockDiagnostics documents.
+#include "synth/Engine.hpp"
 #include "synth/MasterClock.hpp"
 #include "synth/PortableScopeVisualizer.hpp"
 #include "synth/PortableUI.hpp"
@@ -646,7 +651,9 @@ public:
     // take, and MessageThreadTick() (below) prepares the rest across later
     // ticks, well ahead of the audio thread's real-time write position.
     bool ArmRecording(std::size_t capacityFramesOverride = 0) {
-        if (!TransportRunning()) {
+        const bool transportRunning = context_ != nullptr && context_->clockDiagnostics != nullptr &&
+            context_->clockDiagnostics->Snapshot().transportState == synth::ClockTransportState::Running;
+        if (!transportRunning) {
             recordRefusalReason_ = kRecordRefusalReason;
             return false;
         }
@@ -819,73 +826,25 @@ public:
     // real encode to have run rather than racing the worker thread.
     std::uint64_t TestExportEncoderCount() const { return exportEncoder_.EncodedCount(); }
 
-    // The surface's request API
-    // -- called from FroggersUiSurface::DispatchAction (UI/message thread).
-    // Each is a single-slot pending request; a later write before the audio
-    // thread drains the previous one simply coalesces (acceptable: these are
-    // all control-rate, human-paced actions, never a data stream). See this
-    // file's header comment for why each one needs to be a request rather
-    // than a direct call.
-    void RequestPageSelect(std::size_t bankIx) {
-        pendingPageSelect_.store(static_cast<int>(bankIx), std::memory_order_release);
-    }
-    void RequestEncoderPress(std::size_t encoderId) {
-        pendingEncoderPress_.store(static_cast<int>(encoderId), std::memory_order_release);
-    }
-    void RequestRandomizeAll() { pendingRandomizeAll_.store(true, std::memory_order_release); }
-    void RequestRandomizePage() { pendingRandomizePage_.store(true, std::memory_order_release); }
-    // Reset Page / Reset All: same UI-thread -> audio-thread request
-    // idiom as the two Randomize flags above, deliberately not a new one.
-    void RequestResetAll() { pendingResetAll_.store(true, std::memory_order_release); }
-    void RequestResetPage() { pendingResetPage_.store(true, std::memory_order_release); }
-    // A negative sentinel means "no
-    // pending request." `MasterClock::SetTempoBpm` itself already no-ops
-    // (returns false) while slaved to external MIDI clock
-    // (External/Sheaf/projects/synth/src/MasterClock.cpp) -- ProcessFrame() below still calls it
-    // unconditionally when a request is pending; the surface's own
-    // DispatchAction additionally never enqueues a request while slaved (see
-    // FroggersUiSurface.hpp), so this is a belt-and-suspenders no-op, not the
-    // sole guard.
-    void RequestTempoBpm(double bpm) { pendingTempoBpmRequest_.store(bpm, std::memory_order_release); }
-
-    // Display-direction reads for the surface (UI/message
-    // thread), published once per block from ProcessBlock()'s existing
-    // end-of-block section below.
-    double DisplayTempoBpm() const { return tempoDisplayBpm_.load(std::memory_order_acquire); }
-    bool TempoExternallyClocked() const { return tempoExternallyClocked_.load(std::memory_order_acquire); }
-    // Published alongside tempoDisplayBpm_/
-    // tempoExternallyClocked_ below, same cross-thread contract -- lets the
-    // surface (message thread) know whether the transport is currently
-    // running without reading `context_->masterClock` directly (audio-
-    // thread-owned per AppContext.hpp). Three readers: ArmRecording()
-    // above, which refuses to arm while stopped; and, in
-    // FroggersUiSurface.hpp, the Play plate's Draw node, which reads this
-    // fresh on every rebuild to swap to its held colours while the
-    // transport runs, and the kFreeze branch's ENGAGE side, which records
-    // it so the matching RELEASE knows whether to resume the transport or
-    // only clear the latch.
-    bool TransportRunning() const { return transportRunningDisplay_.load(std::memory_order_acquire); }
-
-    // Published once per block alongside
-    // transportRunningDisplay_ above, same cross-thread contract -- lets the
-    // surface (message thread) read the current modulation drill-in level
+    // Audio-thread publication, once per block from ProcessBlock()'s
+    // existing end-of-block section below -- lets the surface (message
+    // thread) read the current modulation drill-in level
     // (FroggersModulationDrillIn::Level(), audio-thread-owned via drillIn_)
     // for its "Modulation Level N" header without touching drillIn_ directly
     // from the wrong thread.
     std::size_t DrillLevel() const { return drillLevelDisplay_.load(std::memory_order_acquire); }
 
-    // True when
-    // the MOST RECENT Randomize All/Page operation left
-    // `FroggersRandomizeResult.partial` true -- i.e. `EnsureModulationDepth`
-    // hit `!group_.CanAllocate()` (Sheaf, External/Sheaf/projects/synth/src/ParameterModulation.cpp)
+    // Audio-thread publication: true when the MOST RECENT Randomize
+    // All/Page command this block left `FroggersRandomizeResult.partial`
+    // true -- i.e. `EnsureModulationDepth` hit `!group_.CanAllocate()`
+    // (Sheaf, External/Sheaf/projects/synth/src/ParameterModulation.cpp)
     // and stopped that operation short of drawing its full chosen set.
-    // Published from ProcessFrame() (audio thread) alongside the
-    // ComputeAllParameters() reseed below, same cross-thread contract as
-    // TransportRunning() above -- makes a silent partial randomize
-    // observable to tests, without inventing any new UI element the operator
-    // did not ask for. Any operator-visible logging must read this atomic
-    // from the UI thread -- ProcessFrame() itself never logs (fprintf on
-    // the audio thread can allocate/lock/block, which is a dropout risk).
+    // Published from ProcessFrame() alongside the ComputeAllParameters()
+    // reseed below -- makes a silent partial randomize observable to tests,
+    // without inventing any new UI element the operator did not ask for.
+    // Any operator-visible logging must read this atomic from the UI
+    // thread -- ProcessFrame() itself never logs (fprintf on the audio
+    // thread can allocate/lock/block, which is a dropout risk).
     bool LastRandomizePartial() const { return lastRandomizePartial_.load(std::memory_order_acquire); }
 
     // Sheaf's optional revert hook (AppConcepts.hpp's HasRestoreStartupState),
@@ -999,36 +958,6 @@ public:
             modulation_.SetExternalAudioConnected(routedRequest != 0);
         }
 
-        // Forwards a still-pending request onto the same ApplyAppCommand()
-        // path MessageIn::AppCommand reaches, so the two routes share one
-        // implementation for as long as both exist. Encoder press and page
-        // select carry the pressed id/index as their command value, matching
-        // what AppCommand carries.
-        const int pageRequest = pendingPageSelect_.exchange(-1, std::memory_order_acq_rel);
-        if (pageRequest >= 0) {
-            ApplyAppCommand(static_cast<std::size_t>(FroggersCommand::kPageSelect),
-                            static_cast<float>(pageRequest));
-        }
-        const int pressRequest = pendingEncoderPress_.exchange(-1, std::memory_order_acq_rel);
-        if (pressRequest >= 0) {
-            ApplyAppCommand(static_cast<std::size_t>(FroggersCommand::kEncoderPress),
-                            static_cast<float>(pressRequest));
-        }
-        if (pendingRandomizeAll_.exchange(false, std::memory_order_acq_rel)) {
-            ApplyAppCommand(static_cast<std::size_t>(FroggersCommand::kRandomizeAll), 0.0f);
-        }
-        if (pendingRandomizePage_.exchange(false, std::memory_order_acq_rel)) {
-            ApplyAppCommand(static_cast<std::size_t>(FroggersCommand::kRandomizePage), 0.0f);
-        }
-        // Reset drains here, beside Randomize, so the two are serviced on
-        // the same audio-thread edge and in the same order every block.
-        if (pendingResetAll_.exchange(false, std::memory_order_acq_rel)) {
-            ApplyAppCommand(static_cast<std::size_t>(FroggersCommand::kResetAll), 0.0f);
-        }
-        if (pendingResetPage_.exchange(false, std::memory_order_acq_rel)) {
-            ApplyAppCommand(static_cast<std::size_t>(FroggersCommand::kResetPage), 0.0f);
-        }
-
         // One release-and-recompute per block, however many of the commands
         // above asked for it (ApplyAppCommand() sets recomputeNeeded_ rather
         // than calling this pair itself, so two presses in the same block
@@ -1085,11 +1014,6 @@ public:
             lastRandomizePartial_.store(randomizePartialThisBlock_, std::memory_order_release);
             randomizeRanThisBlock_ = false;
             randomizePartialThisBlock_ = false;
-        }
-
-        const double tempoRequest = pendingTempoBpmRequest_.exchange(-1.0, std::memory_order_acq_rel);
-        if (tempoRequest >= 0.0 && context_ != nullptr && context_->masterClock != nullptr) {
-            context_->masterClock->SetTempoBpm(tempoRequest);
         }
     }
 
@@ -1602,23 +1526,12 @@ public:
         modulation_.PublishUiState();
 
         // Publish the current drill-in level for the surface's header --
-        // same once-per-block cross-thread publish shape as every other
-        // display atomic in this section (see DrillLevel()'s own comment).
+        // same once-per-block cross-thread publish shape as DrillLevel()'s
+        // own comment describes. Tempo, external-clock and transport-running
+        // are no longer mirrored here: the surface and ArmRecording() both
+        // read them from AppContext::clockDiagnostics/syncConfiguration, the
+        // engine's own publication, instead.
         drillLevelDisplay_.store(drillIn_->Level(), std::memory_order_release);
-
-        // Publishes the master clock's active tempo/external-slave
-        // state for the surface to read cross-thread (see this file's
-        // header comment).
-        if (context_ != nullptr && context_->masterClock != nullptr) {
-            tempoDisplayBpm_.store(context_->masterClock->TempoBpm(), std::memory_order_release);
-            tempoExternallyClocked_.store(context_->masterClock->SyncConfiguration().receiveClock,
-                                          std::memory_order_release);
-            // Same publish-once-per-block pattern as
-            // the two stores above, for TransportRunning()'s cross-thread read.
-            transportRunningDisplay_.store(
-                context_->masterClock->TransportState() == synth::ClockTransportState::Running,
-                std::memory_order_release);
-        }
     }
 
     // Test/inspection access to the VCO scope plumbing.
@@ -2801,21 +2714,10 @@ private:
     TransferFunctionVisualizer peakVisualizer_;
     TransferFunctionVisualizer combVisualizer_;
 
-    // The UI-thread -> audio-thread request
-    // bridge (see this file's header comment) plus the audio-thread-only
-    // active-bank/drill-in bookkeeping it drives.
-    std::atomic<int> pendingPageSelect_{-1};
-    std::atomic<int> pendingEncoderPress_{-1};
-    std::atomic<bool> pendingRandomizeAll_{false};
-    std::atomic<bool> pendingRandomizePage_{false};
-    // Reset's own request flags, beside the Randomize pair they mirror.
-    std::atomic<bool> pendingResetAll_{false};
-    std::atomic<bool> pendingResetPage_{false};
-    std::atomic<double> pendingTempoBpmRequest_{-1.0};
-    // Queued by Init()'s routed-input-changed callback (message thread);
-    // drained by ProcessFrame() (audio thread), same -1-sentinel/exchange
-    // idiom as pendingPageSelect_/pendingEncoderPress_ above. -1 = no
-    // pending transition, 0 = not routed, 1 = routed.
+    // Value: written by the message thread (Init()'s routed-input-changed
+    // callback), read and applied once per block by ProcessFrame() (audio
+    // thread), same -1-sentinel/exchange idiom the deleted press bridge
+    // used. -1 = no pending transition, 0 = not routed, 1 = routed.
     std::atomic<int> pendingExternalAudioRouted_{-1};
 
     // ApplyAppCommand()/ProcessFrame() state: both run on the audio thread,
@@ -2830,28 +2732,26 @@ private:
     bool randomizeRanThisBlock_ = false;
     bool randomizePartialThisBlock_ = false;
 
-    std::atomic<double> tempoDisplayBpm_{synth::MasterClock::kDefaultTempoBpm};
-    std::atomic<bool> tempoExternallyClocked_{false};
-    // Published once per block, same contract as the
-    // two atomics above -- see TransportRunning()'s own comment.
-    std::atomic<bool> transportRunningDisplay_{false};
-    // Published once per block from ProcessBlock() -- see DrillLevel()'s
-    // own comment.
+    // Audio-thread publication, once per block from ProcessBlock() -- see
+    // DrillLevel()'s own comment.
     std::atomic<std::size_t> drillLevelDisplay_{0};
-    // Published once per Randomize All/Page press from ProcessFrame() --
-    // see LastRandomizePartial()'s own comment.
+    // Audio-thread publication, once per block from ProcessFrame() -- see
+    // LastRandomizePartial()'s own comment.
     std::atomic<bool> lastRandomizePartial_{false};
 
-    // Robustness measure (see PrepareToPlay()'s own comment): the surface's
-    // last explicit Play(true)/Stop(false) request, independent of
-    // `MasterClock::TransportState()` -- defaults false so a fresh app (or a
-    // headless rig that never presses Play) stays silent exactly as before.
+    // Value: written by the message thread (see PrepareToPlay()'s own
+    // comment), read by PrepareToPlay() on whichever thread calls
+    // Engine::Prepare -- the surface's last explicit Play(true)/Stop(false)
+    // request, independent of `MasterClock::TransportState()`. Defaults
+    // false so a fresh app (or a headless rig that never presses Play)
+    // stays silent exactly as before.
     std::atomic<bool> desiredTransportRunning_{false};
 
-    // The Freeze transport button's latch (see SetFreezeLatched()/
-    // FreezeLatched() above) -- defaults false so a fresh app's Delay stays
-    // on the ordinary clamped-encoder path until the operator
-    // latches it.
+    // Value: written by the message thread (SetFreezeLatched(), called from
+    // FroggersUiSurface::HandleAction's kFreeze branch), read every sample
+    // by RouteAudioSample() (audio thread, below) -- the Freeze transport
+    // button's latch. Defaults false so a fresh app's Delay stays on the
+    // ordinary clamped-encoder path until the operator latches it.
     std::atomic<bool> freezeLatched_{false};
 
     // A bounded mono capture buffer of what the
@@ -2886,6 +2786,12 @@ private:
     // PrepareNextCaptureBufferPart() advances it; ArmRecording() resets it
     // to 0 whenever it allocates a new buffer.
     std::size_t recordPreparedFrames_ = 0;
+    // Value: written by the message thread (ArmRecording()/StopRecording()),
+    // and also cleared by the audio thread's own length-cap stop
+    // (ProcessBlock()'s capture hook, below) once a take reaches
+    // kMaxRecordSeconds -- the one member this rule's value class allows a
+    // second, audio-thread writer for, since that write only ever turns the
+    // flag off, the same direction ArmRecording()'s own disarm does.
     std::atomic<bool> recordArmed_{false};
     // True from just before ProcessBlock()'s per-sample loop starts to just
     // after it ends, unconditionally on every block -- brackets every block
@@ -2901,8 +2807,12 @@ private:
     // enough here: on arm64 an acquire load compiles to `ldapr`, which may
     // complete before the other thread's preceding `stlr` (a release store)
     // is visible, so only seq_cst on both sides of both flags closes the
-    // window.
+    // window. Outside the command/value/publication rule this class states:
+    // it is a writer handshake the audio thread raises around a block, not
+    // a value one thread writes for another to read, and not a result the
+    // audio thread publishes for the UI.
     std::atomic<bool> recordWriterInBlock_{false};
+    // Audio-thread publications (ProcessBlock()'s capture hook, below).
     std::atomic<std::uint64_t> recordFrames_{0};
     std::atomic<bool> recordTruncated_{false};
     static constexpr float kMaxRecordSeconds = 30.0f * 60.0f;

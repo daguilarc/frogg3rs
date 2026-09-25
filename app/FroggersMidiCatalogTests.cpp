@@ -139,10 +139,9 @@ synth::RuntimeDataPaths UseScratchRuntimeDataPaths(const char* testName) {
 // Generous margin for the two-hop settle a dispatched action needs: the
 // message-thread tick that runs the app's HandleAction branch (immediate for
 // a direct atomic write, e.g. FreezeLatched), then the following block's own
-// ProcessFrame()/ProcessBlock() for anything HandleAction only queued (a
-// pushed MessageIn::Start/Stop on the UI bus, or a pending Request* the
-// audio thread drains), plus the display atomics ProcessBlock() publishes at
-// the end of that block.
+// bus drain for anything HandleAction only queued (a pushed MessageIn::
+// Start/Stop/AppCommand the audio thread applies), plus the display atomics
+// ProcessBlock() publishes at the end of that block.
 constexpr std::size_t kSettleBlocks = 6;
 
 using Rig = synth_rig::SynthRig<synth_froggers::FroggersApp>;
@@ -169,8 +168,9 @@ std::vector<float> SnapshotAllParams(synth_froggers::FroggersApp& app) {
 //
 // Observables used per action (the same state HandleAction's own branch
 // moves, read straight off the app/engine rather than re-deriving it):
-//   Play              -- TransportRunning() true, FreezeLatched() false
-//   Stop              -- TransportRunning() false
+//   Play              -- the engine's clock diagnostics read Running,
+//                        FreezeLatched() false
+//   Stop              -- the engine's clock diagnostics read Stopped
 //   Freeze            -- FreezeLatched() toggles true (Stop, just before it
 //                        in catalog order, always clears the latch first)
 //   Record            -- after an inline Play push, RecordArmed() true, then
@@ -182,8 +182,9 @@ std::vector<float> SnapshotAllParams(synth_froggers::FroggersApp& app) {
 //   Page Previous/Next -- ActivePageIndex() moves by -1/+1 mod page count
 //   Page N              -- ActivePageIndex() == N
 //   Scene 1/2           -- Manager().Scene().blend reads 0.0/1.0
-//   BPM                 -- DisplayTempoBpm() reads the midpoint of
-//                          [kFroggersBpmMin, kFroggersBpmMax] for value 0.5
+//   BPM                 -- the engine's clock diagnostics read the midpoint
+//                          of [kFroggersBpmMin, kFroggersBpmMax] for value
+//                          0.5
 TEST_CASE(midi_app_action_walk_moves_the_state_the_screen_moves) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("app_action_walk"));
     rig.RunBlocks(4);
@@ -200,11 +201,13 @@ TEST_CASE(midi_app_action_walk_moves_the_state_the_screen_moves) {
 
         if (entry.action == synth_froggers::FroggersActions::kPlay) {
             PushAppAction(rig, ix, 0.0f);
-            RequireForAction(entry, app.TransportRunning(), "must start the transport");
+            RequireForAction(entry, synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()),
+                              "must start the transport");
             RequireForAction(entry, !app.FreezeLatched(), "must clear the Freeze latch");
         } else if (entry.action == synth_froggers::FroggersActions::kStop) {
             PushAppAction(rig, ix, 0.0f);
-            RequireForAction(entry, !app.TransportRunning(), "must stop the transport");
+            RequireForAction(entry, !synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()),
+                              "must stop the transport");
         } else if (entry.action == synth_froggers::FroggersActions::kFreeze) {
             PushAppAction(rig, ix, 0.0f);
             RequireForAction(entry, app.FreezeLatched(), "must toggle the Freeze latch on");
@@ -213,7 +216,8 @@ TEST_CASE(midi_app_action_walk_moves_the_state_the_screen_moves) {
                 synth::FindMidiAppAction(catalog, synth_froggers::FroggersActions::kPlay, "");
             REQUIRE_TRUE(playIx.has_value());
             PushAppAction(rig, *playIx, 0.0f);
-            RequireForAction(entry, app.TransportRunning(), "Play must be running before Record is tested");
+            RequireForAction(entry, synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()),
+                              "Play must be running before Record is tested");
 
             PushAppAction(rig, ix, 0.0f);
             RequireForAction(entry, app.RecordArmed(), "first Record must arm recording");
@@ -303,7 +307,9 @@ TEST_CASE(midi_app_action_walk_moves_the_state_the_screen_moves) {
             const double expected = static_cast<double>(synth_froggers::kFroggersBpmMin) +
                                     0.5 * static_cast<double>(synth_froggers::kFroggersBpmMax -
                                                               synth_froggers::kFroggersBpmMin);
-            RequireForAction(entry, std::fabs(app.DisplayTempoBpm() - expected) < 0.5,
+            RequireForAction(entry,
+                              std::fabs(rig.Engine().Context().clockDiagnostics->Snapshot().currentBpm - expected) <
+                                  0.5,
                               "must set the displayed tempo to the midpoint of its range");
         } else {
             PushAppAction(rig, ix, 0.0f);
@@ -349,7 +355,8 @@ TEST_CASE(midi_encoder_push_drills_like_the_screen_press) {
         synth_froggers::FroggersApp& app = rig.Application();
 
         for (std::size_t i = 0; i < expectedLevels.size(); ++i) {
-            app.RequestEncoderPress(3);
+            app.PortableSurface().DispatchAction(
+                synth::ui::Action::WithValue(synth_froggers::FroggersActions::kEncoderPress, "3"));
             rig.RunBlocks(kSettleBlocks);
             REQUIRE_TRUE(app.DrillLevel() == expectedLevels[i]);
             screenSteps[i] = {app.DrillLevel(), app.ActiveDrillIn().BankRef().ShowingModulation()};
@@ -359,7 +366,7 @@ TEST_CASE(midi_encoder_push_drills_like_the_screen_press) {
     for (std::size_t i = 0; i < midiSteps.size(); ++i) {
         std::ostringstream oss;
         oss << "step " << i << ": MIDI push gave (" << midiSteps[i].first << ", "
-            << (midiSteps[i].second ? "true" : "false") << ") but the screen's own RequestEncoderPress gave ("
+            << (midiSteps[i].second ? "true" : "false") << ") but the screen's own encoder press gave ("
             << screenSteps[i].first << ", " << (screenSteps[i].second ? "true" : "false") << ")";
         if (midiSteps[i] != screenSteps[i]) {
             throw std::runtime_error(oss.str());

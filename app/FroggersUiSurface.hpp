@@ -740,6 +740,16 @@ inline std::vector<synth::ui::DrawCommand> BuildPageNextArrowDrawCommands(synth:
 // ParseSize/ParseFloat *pattern* -- this ports the pattern, not the
 // implementation: Braid4UiModel.hpp itself lives under the read-only
 // External/Sheaf submodule).
+// Whether the transport is running, read from the engine's own clock
+// diagnostics publication rather than a mirror this surface keeps. Used by
+// every reader in this file that needs the live transport state: the Play
+// plate's draw factory (fresh on every rebuild) and the Freeze latch's
+// ENGAGE side (to know what RELEASE should resume).
+inline bool FroggersTransportIsRunning(const synth::AppContext* context) {
+    return context != nullptr && context->clockDiagnostics != nullptr &&
+           context->clockDiagnostics->Snapshot().transportState == synth::ClockTransportState::Running;
+}
+
 inline std::size_t FroggersParseSize(const std::string& value, std::size_t fallback) {
     if (value.empty()) {
         return fallback;
@@ -1218,6 +1228,9 @@ private:
         // same idiom AppendScopeCell above uses for kVcoScope, so the
         // now-const-context row-builder lambda below can capture it too.
         FroggersAppCore* app = app_;
+        // The Play plate's draw factory reads the live transport state the
+        // same way -- captured for the same reason.
+        const synth::AppContext* context = context_;
         // Captured by value into the row-builder lambda, same reason `app`
         // is -- read fresh every rebuild, but this one never
         // actually changes mid-session (a host does not switch modes after
@@ -1240,9 +1253,9 @@ private:
         const std::string transportNotice = transportNotice_;
 
         builder.Column(FroggersNodeIds::kTransportStack, stackLayout,
-                       [app, pluginHostMode, inputSelectLabel, transportNotice, rowLayout](synth::ui::Builder& col) {
+                       [app, context, pluginHostMode, inputSelectLabel, transportNotice, rowLayout](synth::ui::Builder& col) {
           col.Row(FroggersNodeIds::kTransportRow, rowLayout,
-                    [app, pluginHostMode, inputSelectLabel](synth::ui::Builder& b) {
+                    [app, context, pluginHostMode, inputSelectLabel](synth::ui::Builder& b) {
             // In plugin mode, Play, Stop, and Record are not rendered; the
             // Freeze button stays and gains a "FREEZE" text label beside it
             // in the freed row space. pluginHostMode_ defaults false, so
@@ -1258,14 +1271,14 @@ private:
                 // takes a `running` bool the DrawFactory signature --
                 // Bounds only -- has no room for), same idiom the Freeze
                 // lambda just below uses for its own `latched` bool. Reads
-                // app->TransportRunning() fresh on every call rather than a
-                // value cached at click time, so the plate follows the
-                // transport on the very next rebuild, whichever route
+                // FroggersTransportIsRunning() fresh on every call rather
+                // than a value cached at click time, so the plate follows
+                // the transport on the very next rebuild, whichever route
                 // started or stopped it.
                 b.Draw(
                     FroggersNodeIds::kPlay,
-                    [app](synth::ui::Bounds bounds) {
-                        return BuildPlayDrawCommands(bounds, app != nullptr && app->TransportRunning());
+                    [context](synth::ui::Bounds bounds) {
+                        return BuildPlayDrawCommands(bounds, FroggersTransportIsRunning(context));
                     },
                     playStyle);
 
@@ -1466,8 +1479,11 @@ private:
     // display TempoBpm(); its container is this row's own group
     // (AppendBpmGroup() above).
     void AppendBpmControl(synth::ui::Builder& builder, const synth::ui::ControlStyle& sliderStyle) const {
-        const double tempoBpm = app_ != nullptr ? app_->DisplayTempoBpm() : synth::MasterClock::kDefaultTempoBpm;
-        const bool externallyClocked = app_ != nullptr && app_->TempoExternallyClocked();
+        const double tempoBpm = context_ != nullptr && context_->clockDiagnostics != nullptr
+                                     ? context_->clockDiagnostics->Snapshot().currentBpm
+                                     : synth::MasterClock::kDefaultTempoBpm;
+        const bool externallyClocked =
+            context_ != nullptr && context_->syncConfiguration && context_->syncConfiguration().receiveClock;
         if (externallyClocked) {
             // Takes the same declared width as the interactive slider it
             // replaces, so the row does not change shape when the clock is
@@ -2167,7 +2183,7 @@ private:
             // that silences the held drone.
             const bool engaging = !app_->FreezeLatched();
             if (engaging) {
-                freezeEngagedWhileTransportRunning_ = app_->TransportRunning();
+                freezeEngagedWhileTransportRunning_ = FroggersTransportIsRunning(context_);
                 LatchThenTransport(true, synth::MessageIn::Stop(NowMicros()), false);
             } else if (freezeEngagedWhileTransportRunning_) {
                 StartTransport();

@@ -298,9 +298,11 @@ public:
     // app/vst/FroggersVstHostTests.cpp asserts against, rather than a
     // second, weaker copy of it. ApplicationForTest() is the same
     // FroggersApp& TestStartTransport()/timerCallback() already drive
-    // (DisplayTempoBpm()/TempoExternallyClocked()/FreezeLatched()/
-    // TransportRunning()/RequestTempoBpm() -- all real, existing
-    // FroggersAppCore API, see that file's own comments). UiBusPendingCount
+    // (FreezeLatched(), Parameters(), and every other real, existing
+    // FroggersAppCore API, see that file's own comments); tempo, external
+    // clock and transport-running read through ContextForTest()'s
+    // clockDiagnostics/syncConfiguration instead, the same route the surface
+    // itself reads them from. UiBusPendingCount
     // ForTest() reads engine_.UiBus().Size() (MessageInBus::Size() in
     // External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp) -- the actual SPSC ring buffer the
     // host transport and tempo producers push onto, letting a test count messages AT THE BUS, without draining
@@ -310,6 +312,11 @@ public:
     synth_froggers::FroggersApp& ApplicationForTest() { return engine_.Application(); }
     // Not const: engine_.UiBus() itself has no const overload (Engine.hpp).
     std::size_t UiBusPendingCountForTest() { return engine_.UiBus().Size(); }
+    // The same AppContext the app and its surface read clockDiagnostics/
+    // syncConfiguration from -- lets a test read the engine's published
+    // tempo, external-clock and transport-running state without a mirror of
+    // its own.
+    synth::AppContext& ContextForTest() { return engine_.Context(); }
 
     // Test-only accessor: the canonical input-selection index a
     // test asserts against, rather than reaching into the portable

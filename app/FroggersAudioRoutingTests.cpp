@@ -837,12 +837,12 @@ TEST_CASE(master_limiter_stays_at_unity_under_live_modulation) {
 // The randomize storm test: the predecessor's failure rate was roughly 1
 // in 7 Randomize All draws (permanent silence or a full-scale-exceeding
 // blowout); this must show ZERO across at least 200 draws through the
-// REAL engine path --
-// `rig.Application().RequestRandomizeAll()` is the exact method
-// `FroggersUiSurface::HandleAction` calls for the Randomize All button
-// (FroggersUiSurface.hpp), consumed on the very next audio-thread
-// ProcessFrame() (FroggersAppCore.hpp's `pendingRandomizeAll_`) -- the
-// real call, not a shadow/copy of the DSP chain.
+// REAL engine path -- dispatching the Randomize All action pushes the exact
+// MessageIn::AppCommand `FroggersUiSurface::HandleAction` pushes for the
+// Randomize All button (FroggersUiSurface.hpp), applied on the very next
+// audio-thread block by `Engine::DrainMessageBus` ->
+// `FroggersAppCore::ApplyAppCommand` -- the real call, not a shadow/copy of
+// the DSP chain.
 //
 // Per draw: render a full second of audio (one full quarter-note gate
 // cycle or more at any ordinary tempo, since the attack/release
@@ -876,7 +876,7 @@ TEST_CASE(randomize_all_storm_test_never_blows_out_or_permanently_silences) {
     int permanentSilenceFailures = 0;
 
     for (int draw = 0; draw < kNumDraws; ++draw) {
-        rig.Application().RequestRandomizeAll();
+        rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
         rig.ClearOutput();
         rig.RunBlocks(kBlocksPerSecond);
 
@@ -991,7 +991,7 @@ TEST_CASE(randomize_storm_holds_its_depth_working_set) {
     std::size_t peak = 0;
     std::size_t afterFirst = 0;
     for (int press = 1; press <= kPresses; ++press) {
-        rig.Application().RequestRandomizeAll();
+        rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
         rig.RunBlocks(4);
         const std::size_t live = rig.Application().Parameters().Group().LiveLocalParameterCount();
         if (press == 1) {
@@ -1070,7 +1070,7 @@ TEST_CASE(release_keeps_an_armed_depth_and_takes_a_neutral_one) {
     }
 
     for (int press = 1; press <= kPresses; ++press) {
-        rig.Application().RequestRandomizePage();
+        rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizePage));
         rig.RunBlocks(4);
     }
 
@@ -2254,7 +2254,7 @@ std::uint64_t BuildLatchedRingHeldAcrossStop(Rig& rig) {
 // gate opening alone, with no Play ever pressed.
 std::uint64_t BuildRingHeldByFreezeEngagedWhileStopped(Rig& rig) {
     SetSelfSustainingRingPatch(rig.Application().Parameters());
-    REQUIRE_TRUE(!rig.Application().TransportRunning());  // never started.
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));  // never started.
 
     PressFreeze(rig);  // engage from stopped.
     return ExciteAndConfirmSelfSustainingRing(rig);
@@ -2262,7 +2262,7 @@ std::uint64_t BuildRingHeldByFreezeEngagedWhileStopped(Rig& rig) {
 
 // Freeze pressed while playing, with NO Stop press -- the
 // transport reads
-// stopped (TransportRunning() false) AND output stays above an audible
+// stopped (the engine's clock diagnostics read Stopped) AND output stays above an audible
 // floor PAST the bound an unlatched Stop must meet (stopping_transport_
 // silences_self_sustaining_delay_and_reverb's own 0.25s settle window), the
 // inverse of that test's own silence assertion. Checked twice (settle mark,
@@ -2284,7 +2284,7 @@ TEST_CASE(freeze_alone_holds_the_ring_above_an_audible_floor_and_stops_the_trans
     // BuildLatchedRingHeldAcrossStop,
     // no separate Stop press) must have stopped the transport -- this is
     // the "transport reads stopped" half of this test's two-part claim.
-    REQUIRE_TRUE(!rig.Application().TransportRunning());
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
     rig.ClearOutput();
     rig.RunBlocks(checkWindowBlocks);
     REQUIRE_TRUE(!rig.SawNaN());
@@ -2302,7 +2302,7 @@ TEST_CASE(freeze_alone_holds_the_ring_above_an_audible_floor_and_stops_the_trans
     const auto& stillHeldOutput = rig.Output();
     RequireFiniteStereo(stillHeldOutput);
     REQUIRE_TRUE(PeakAbs(stillHeldOutput) > kFrozenRingFloorLinear);
-    REQUIRE_TRUE(!rig.Application().TransportRunning());  // still stopped -- nothing restarted it.
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));  // still stopped -- nothing restarted it.
 }
 
 // The latch-release-while-stopped scenario is still live under the current
@@ -2331,7 +2331,7 @@ TEST_CASE(freeze_engaged_while_stopped_releases_to_silence_within_the_bound) {
     REQUIRE_TRUE(!rig.SawNaN());
     REQUIRE_TRUE(PeakAbs(rig.Output()) > kFrozenRingFloorLinear);
     REQUIRE_TRUE(rig.Application().FreezeLatched());
-    REQUIRE_TRUE(!rig.Application().TransportRunning());  // engaged from stopped -- still stopped.
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));  // engaged from stopped -- still stopped.
 
     // Release the latch with a second Freeze press -- engaged from stopped,
     // so release does not start the transport.
@@ -2345,7 +2345,7 @@ TEST_CASE(freeze_engaged_while_stopped_releases_to_silence_within_the_bound) {
     RequireFiniteStereo(silencedOutput);
     REQUIRE_TRUE(PeakAbs(silencedOutput) < kBandSilenceFloorLinear);
     REQUIRE_TRUE(!rig.Application().FreezeLatched());
-    REQUIRE_TRUE(!rig.Application().TransportRunning());  // still stopped.
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));  // still stopped.
 }
 
 // This pins the behaviour the earlier handling got backwards -- Stop,
@@ -2383,7 +2383,7 @@ TEST_CASE(stop_disarms_the_latch_and_silences_the_held_drone_within_the_bound) {
     RequireFiniteStereo(silencedOutput);
     REQUIRE_TRUE(PeakAbs(silencedOutput) < kBandSilenceFloorLinear);
     REQUIRE_TRUE(!rig.Application().FreezeLatched());  // Stop disarms the latch.
-    REQUIRE_TRUE(!rig.Application().TransportRunning());
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
 }
 
 // No sequence of Freeze/Stop presses may leave the
@@ -2406,7 +2406,7 @@ void RequireSilentAfter(Rig& rig, const char* label) {
     std::cout << "Freeze/Stop sequence " << label << ": peak after final Stop=" << peak << "\n";
     REQUIRE_TRUE(peak < kBandSilenceFloorLinear);
     REQUIRE_TRUE(!rig.Application().FreezeLatched());
-    REQUIRE_TRUE(!rig.Application().TransportRunning());
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
 }
 
 TEST_CASE(no_freeze_stop_press_sequence_leaves_the_instrument_sounding_after_stop) {
@@ -2492,13 +2492,13 @@ TEST_CASE(play_disarms_the_freeze_latch_and_returns_the_voice_gate_to_the_transp
     // hold before Play is pressed, or "the latch cleared" would be
     // provable by an instrument that was never latched in the first place.
     REQUIRE_TRUE(rig.Application().FreezeLatched());
-    REQUIRE_TRUE(!rig.Application().TransportRunning());
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
 
     PressPlay(rig);
     rig.RunBlocks(4);
 
     REQUIRE_TRUE(!rig.Application().FreezeLatched());   // the fix under test.
-    REQUIRE_TRUE(rig.Application().TransportRunning());  // Play still starts the transport.
+    REQUIRE_TRUE(synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));  // Play still starts the transport.
     REQUIRE_TRUE(!rig.SawNaN());
 }
 
@@ -2514,24 +2514,24 @@ TEST_CASE(releasing_freeze_resumes_the_transport_it_stopped) {
     rig.RunBlocks(4);
     // Positive control: genuinely running before Freeze, or "Freeze stopped
     // it" below would be provable by a transport that was never running.
-    REQUIRE_TRUE(rig.Application().TransportRunning());
+    REQUIRE_TRUE(synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
     REQUIRE_TRUE(!rig.Application().FreezeLatched());
 
     PressFreeze(rig);  // engage.
     rig.RunBlocks(4);
     REQUIRE_TRUE(rig.Application().FreezeLatched());
-    REQUIRE_TRUE(!rig.Application().TransportRunning());  // Freeze stopped it.
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));  // Freeze stopped it.
 
     PressFreeze(rig);  // release.
     rig.RunBlocks(4);
     REQUIRE_TRUE(!rig.Application().FreezeLatched());
-    REQUIRE_TRUE(rig.Application().TransportRunning());  // release resumed it, exactly as Play would.
+    REQUIRE_TRUE(synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));  // release resumed it, exactly as Play would.
     REQUIRE_TRUE(!rig.SawNaN());
 }
 
 // Freeze must record the transport's ACTUAL running state when it engages
-// (app_->TransportRunning()), not the surface's own desired-running record
-// of its presses -- a transport started by rig.StartAt (a raw
+// (the engine's own clock diagnostics), not the surface's own
+// desired-running record of its presses -- a transport started by rig.StartAt (a raw
 // MessageIn::Start, bypassing FroggersUiSurface::StartTransport and its
 // SetDesiredTransportRunning call entirely) never sets desired-running, so a
 // release that resumed based on that flag instead of the clock would leave
@@ -2541,18 +2541,18 @@ TEST_CASE(freeze_release_resumes_a_transport_started_via_rig_start_at) {
 
     rig.StartAt(0);
     rig.RunBlocks(4);
-    REQUIRE_TRUE(rig.Application().TransportRunning());
+    REQUIRE_TRUE(synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
     REQUIRE_TRUE(!rig.Application().FreezeLatched());
 
     PressFreeze(rig);  // engage.
     rig.RunBlocks(4);
     REQUIRE_TRUE(rig.Application().FreezeLatched());
-    REQUIRE_TRUE(!rig.Application().TransportRunning());
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
 
     PressFreeze(rig);  // release.
     rig.RunBlocks(4);
     REQUIRE_TRUE(!rig.Application().FreezeLatched());
-    REQUIRE_TRUE(rig.Application().TransportRunning());
+    REQUIRE_TRUE(synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
     REQUIRE_TRUE(!rig.SawNaN());
 }
 
@@ -2567,27 +2567,27 @@ TEST_CASE(freeze_engaged_a_second_time_while_stopped_does_not_resume_on_release)
 
     PressPlay(rig);
     rig.RunBlocks(4);
-    REQUIRE_TRUE(rig.Application().TransportRunning());
+    REQUIRE_TRUE(synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
 
     PressFreeze(rig);  // engage while running.
     rig.RunBlocks(4);
     REQUIRE_TRUE(rig.Application().FreezeLatched());
-    REQUIRE_TRUE(!rig.Application().TransportRunning());
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
 
     PressStop(rig);  // disarms the latch and silences, same as any other Stop.
     rig.RunBlocks(4);
     REQUIRE_TRUE(!rig.Application().FreezeLatched());
-    REQUIRE_TRUE(!rig.Application().TransportRunning());
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
 
     PressFreeze(rig);  // engage a second time, genuinely from stopped.
     rig.RunBlocks(4);
     REQUIRE_TRUE(rig.Application().FreezeLatched());
-    REQUIRE_TRUE(!rig.Application().TransportRunning());
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
 
     PressFreeze(rig);  // release: must stay stopped, not resume on the first engage's recorded state.
     rig.RunBlocks(4);
     REQUIRE_TRUE(!rig.Application().FreezeLatched());
-    REQUIRE_TRUE(!rig.Application().TransportRunning());
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
     REQUIRE_TRUE(!rig.SawNaN());
 }
 
@@ -2608,20 +2608,20 @@ TEST_CASE(freeze_release_resumes_a_transport_that_survives_a_device_reprepare) {
 
     PressPlay(rig);
     rig.RunBlocks(4);
-    REQUIRE_TRUE(rig.Application().TransportRunning());
+    REQUIRE_TRUE(synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
 
     PressFreeze(rig);  // engage while running.
     rig.RunBlocks(4);
-    REQUIRE_TRUE(!rig.Application().TransportRunning());
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
 
     PressFreeze(rig);  // release: resumes, same as Play.
     rig.RunBlocks(4);
-    REQUIRE_TRUE(rig.Application().TransportRunning());
+    REQUIRE_TRUE(synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
 
     rig.Engine().Prepare(realDeviceSettings.sampleRate, realDeviceSettings.blockSize);
     rig.ClearOutput();
     rig.RunBlocks(8);
-    REQUIRE_TRUE(rig.Application().TransportRunning());
+    REQUIRE_TRUE(synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
     REQUIRE_TRUE(PeakAbs(rig.Output()) > 0.0f);
     REQUIRE_TRUE(!rig.SawNaN());
 }
@@ -3146,22 +3146,22 @@ std::vector<EnvelopeWindow> MeasureEnvelopeArm(EnvelopeArm arm, const char* scra
         case EnvelopeArm::Nothing:
             break;
         case EnvelopeArm::RandomizeOnly:
-            rig.Application().RequestRandomizeAll();
+            rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
             rig.RunBlocks(1);
             break;
         case EnvelopeArm::ResetOnly:
-            rig.Application().RequestResetAll();
+            rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kResetAll));
             rig.RunBlocks(1);
             break;
         case EnvelopeArm::RandomizeThenResetSplit:
-            rig.Application().RequestRandomizeAll();
+            rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
             rig.RunBlocks(1);  // drains randomize alone, so the reset block has randomizeRan false.
-            rig.Application().RequestResetAll();
+            rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kResetAll));
             rig.RunBlocks(1);
             break;
         case EnvelopeArm::RandomizeThenResetSameBlock:
-            rig.Application().RequestRandomizeAll();
-            rig.Application().RequestResetAll();
+            rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
+            rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kResetAll));
             rig.RunBlocks(1);  // both drain here, so ComputeAllParameters() runs after ResetAll.
             break;
     }
@@ -3251,13 +3251,13 @@ TEST_CASE(pristine_and_reset_arms_compared_over_many_draws_with_a_silence_capabl
             rig.RunBlocks(8);
 
             if (arm != ResetDrawArm::Pristine) {
-                rig.Application().RequestRandomizeAll();
+                rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
                 if (arm == ResetDrawArm::Split) {
                     // Drains randomize alone, so the reset block sees
                     // randomizeRan false and ComputeAllParameters() does not run.
                     rig.RunBlocks(1);
                 }
-                rig.Application().RequestResetAll();
+                rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kResetAll));
                 rig.RunBlocks(1);
             }
 
@@ -3379,7 +3379,7 @@ TEST_CASE(new_and_reset_all_both_restore_the_cross_vco_pitch_detents) {
     const std::array<std::optional<float>, 6> afterNew = ReadAudioPitchDetents(model);
     const double afterNewAudible = measureAudible();
 
-    rig.Application().RequestResetAll();
+    rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kResetAll));
     rig.RunBlocks(kDrainBlocks);
     const std::array<std::optional<float>, 6> afterReset = ReadAudioPitchDetents(model);
     const double afterResetAudible = measureAudible();
@@ -3454,7 +3454,7 @@ TEST_CASE(perturbed_reset_detent_fails_the_launch_equality_check) {
     auto& model = rig.Application().Parameters();
     const std::array<std::optional<float>, 6> fresh = ReadAudioPitchDetents(model);
 
-    rig.Application().RequestResetAll();
+    rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kResetAll));
     rig.RunBlocks(kDrainBlocks);
 
     const auto& perturbedSpec = synth_froggers::detail::kAudioPitchDetents[0];
@@ -3524,9 +3524,9 @@ TEST_CASE(reset_reproduction_re_armed_across_the_curve_and_grace_grid) {
         rig.RunBlocks(8);
 
         if (doResetArm) {
-            rig.Application().RequestRandomizeAll();
+            rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
             rig.RunBlocks(1);  // randomize drains alone, so the reset block has randomizeRan false.
-            rig.Application().RequestResetAll();
+            rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kResetAll));
             rig.RunBlocks(1);
         }
 
@@ -3655,11 +3655,11 @@ TEST_CASE(reseeded_and_unreseeded_reset_are_compared_field_by_field) {
         Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths(scratchName));
         rig.StartAt(0);
         rig.RunBlocks(8);
-        rig.Application().RequestRandomizeAll();
+        rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
         if (!sameBlock) {
             rig.RunBlocks(1);
         }
-        rig.Application().RequestResetAll();
+        rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kResetAll));
         rig.RunBlocks(1);
         rig.RunBlocks(kDrainBlocks);
         return SnapshotWholeModel(rig.Application().Parameters());
@@ -3754,11 +3754,11 @@ TEST_CASE(the_two_reset_arms_are_compared_while_the_smoothed_path_is_still_walki
         Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths(scratchName));
         rig.StartAt(0);
         rig.RunBlocks(8);
-        rig.Application().RequestRandomizeAll();
+        rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
         if (!sameBlock) {
             rig.RunBlocks(1);
         }
-        rig.Application().RequestResetAll();
+        rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kResetAll));
         rig.RunBlocks(1);
         if (extraBlocks > 0) {
             rig.RunBlocks(extraBlocks);

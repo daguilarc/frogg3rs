@@ -14,8 +14,9 @@
 // file's runtime tests (FroggersHeadlessTests.cpp, etc.) --
 // dispatching actions through the actual `FroggersUiSurface` rather than
 // reaching into FroggersApp/FroggersParameterModel directly, since the
-// surface's own action routing (including the pending-atomic bridge
-// FroggersAppCore.hpp's ProcessFrame() drains) is what's under test here.
+// surface's own action routing -- including the app commands it pushes onto
+// the bus and FroggersAppCore::ApplyAppCommand applies -- is what's under
+// test here.
 
 #include "Froggers.hpp"
 #include "FroggersParameters.hpp"
@@ -633,9 +634,10 @@ TEST_CASE(drill_in_swaps_grid_in_place_scope_and_chrome_stay_put) {
     REQUIRE_TRUE(!rig.UIState().slots[0].showingModulationView.load());
 
     // Press encoder 0 (Audio bank's VCO1 pitch, a page-level parameter) via
-    // the surface's own action routing -- exercises the pending-atomic
-    // bridge (FroggersAppCore::RequestEncoderPress -> ProcessFrame() ->
-    // FroggersModulationDrillIn::PressEncoder), not a direct Bank call.
+    // the surface's own action routing -- exercises the real press path
+    // (FroggersUiSurface::HandleAction -> a pushed MessageIn::AppCommand ->
+    // FroggersAppCore::ApplyAppCommand -> FroggersModulationDrillIn::
+    // PressEncoder), not a direct Bank call.
     surface.DispatchAction(
         synth::ui::Action::WithValue(synth_froggers::FroggersActions::kEncoderPress, "0"));
     rig.RunBlocks(4);
@@ -670,12 +672,10 @@ TEST_CASE(drill_in_swaps_grid_in_place_scope_and_chrome_stay_put) {
     REQUIRE_TRUE(!rig.UIState().slots[0].showingModulationView.load());
 }
 
-// Operator override 2026-07-29: "clicking on the page bank
-// for the page we are on is the way the user should always be able to get to
-// that page, even when they are in a modulation drilldown for a parameter on
-// that page." `FroggersAppCore::ProcessFrame`'s RequestPageSelect handling
-// used to guard the whole branch on `pageRequest != activePageIx_`, making a
-// same-page click while drilled in a complete no-op. Fixed by resetting the
+// "Clicking on the page bank for the page we are on is the way the user
+// should always be able to get to that page, even when they are in a
+// modulation drilldown for a parameter on that page." `FroggersAppCore::
+// SelectPage` (called from `ApplyAppCommand`'s page-select case) resets the
 // drill-in (Back()-until-zero) when the requested page equals the active
 // page AND the drill-in level is above 0, while still doing nothing at all
 // when the requested page equals the active page and level is ALREADY 0 (the
@@ -690,7 +690,7 @@ TEST_CASE(clicking_the_active_page_while_drilled_in_exits_to_the_top_level_grid)
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
 
     // Drill to level 2 on the active page via the surface's own action
-    // routing -- same bridge (kEncoderPress -> ProcessFrame() ->
+    // routing -- same press path (kEncoderPress -> ApplyAppCommand() ->
     // FroggersModulationDrillIn::PressEncoder) as the drill-in-swap test
     // above.
     surface.DispatchAction(
@@ -1094,9 +1094,9 @@ TEST_CASE(modulation_header_band_bounds_are_identical_across_drill_states_and_ar
     REQUIRE_TRUE(titleNode->drawCommands[1].kind == synth::ui::DrawCommand::Kind::Text);
 }
 
-// Wires the arrow actions through the same single selection authority
-// (RequestPageSelect) the page buttons use, so the highlight must follow
-// an arrow-driven step identically to a button-driven one -- same
+// Wires the arrow actions through the same page-select mechanism
+// (FroggersAppCore::SelectPage) the page buttons use, so the highlight must
+// follow an arrow-driven step identically to a button-driven one -- same
 // checkAllPagesAndReturnSelectedIx idiom as
 // page_buttons_are_button_kind_with_selected_flag_and_no_marker_character
 // above, reused here as a local lambda since that one is scoped
@@ -2203,11 +2203,12 @@ TEST_CASE(bpm_slider_writes_and_displays_tempo_in_normal_state) {
     rig.RunBlocks(4);
 
     synth::ui::Surface& surface = rig.Application().PortableSurface();
+    synth::AppContext& context = rig.Engine().Context();
     surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBpm, "137.0"));
     rig.RunBlocks(4);
 
-    REQUIRE_TRUE(!rig.Application().TempoExternallyClocked());
-    REQUIRE_TRUE(std::fabs(rig.Application().DisplayTempoBpm() - 137.0) < 0.5);
+    REQUIRE_TRUE(!context.syncConfiguration().receiveClock);
+    REQUIRE_TRUE(std::fabs(context.clockDiagnostics->Snapshot().currentBpm - 137.0) < 0.5);
 
     // The rendered tree carries an interactive BPM Slider (not a StatusText)
     // while not slaved.
@@ -2229,22 +2230,23 @@ TEST_CASE(bpm_slider_is_read_only_and_shows_recovered_tempo_while_externally_clo
 
     // Set a known manual tempo first, then slave to external MIDI clock.
     synth::ui::Surface& surface = rig.Application().PortableSurface();
+    synth::AppContext& context = rig.Engine().Context();
     surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBpm, "100.0"));
     rig.RunBlocks(4);
 
-    REQUIRE_TRUE(rig.SetSyncConfig(synth::SyncConfig{.receiveClock = true}));
+    REQUIRE_TRUE(rig.Engine().RequestSyncConfiguration(synth::SyncConfig{.receiveClock = true}));
     rig.RunBlocks(4);
-    REQUIRE_TRUE(rig.Application().TempoExternallyClocked());
+    REQUIRE_TRUE(context.syncConfiguration().receiveClock);
 
     // SetTempoBpm returns false and does nothing while slaved
     // (External/Sheaf/projects/synth/src/MasterClock.cpp) -- attempting to set 222 must not move
     // the active tempo, and the surface must not even forward the request
     // (FroggersUiSurface's own belt-and-suspenders guard).
-    const double tempoBeforeAttempt = rig.Application().DisplayTempoBpm();
+    const double tempoBeforeAttempt = context.clockDiagnostics->Snapshot().currentBpm;
     surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBpm, "222.0"));
     rig.RunBlocks(4);
-    REQUIRE_TRUE(std::fabs(rig.Application().DisplayTempoBpm() - tempoBeforeAttempt) < 0.5);
-    REQUIRE_TRUE(std::fabs(rig.Application().DisplayTempoBpm() - 222.0) > 1.0);
+    REQUIRE_TRUE(std::fabs(context.clockDiagnostics->Snapshot().currentBpm - tempoBeforeAttempt) < 0.5);
+    REQUIRE_TRUE(std::fabs(context.clockDiagnostics->Snapshot().currentBpm - 222.0) > 1.0);
 
     // The rendered tree carries a read-only StatusText, not an interactive
     // Slider, while slaved -- "read-only/inert... no longer accepts input."
@@ -2321,7 +2323,7 @@ TEST_CASE(bpm_label_is_constant_across_transport_state) {
     // the label must already read the plain constant, and the slider must
     // still be interactive (setting a tempo ahead of pressing Play is
     // legitimate).
-    REQUIRE_TRUE(!rig.Application().TransportRunning());
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
     {
         const synth::ui::NodeTree tree = surface.BuildTree();
         const synth::ui::Node* bpmNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kBpm);
@@ -2333,7 +2335,7 @@ TEST_CASE(bpm_label_is_constant_across_transport_state) {
     // Once running, the label must be unchanged.
     surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
     rig.RunBlocks(8);
-    REQUIRE_TRUE(rig.Application().TransportRunning());
+    REQUIRE_TRUE(synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
     {
         const synth::ui::NodeTree tree = surface.BuildTree();
         const synth::ui::Node* bpmNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kBpm);
@@ -2345,7 +2347,7 @@ TEST_CASE(bpm_label_is_constant_across_transport_state) {
     // Stop again -- still unchanged.
     surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
     rig.RunBlocks(4);
-    REQUIRE_TRUE(!rig.Application().TransportRunning());
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
     {
         const synth::ui::NodeTree tree = surface.BuildTree();
         const synth::ui::Node* bpmNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kBpm);
@@ -2420,13 +2422,13 @@ TEST_CASE(bpm_slider_has_an_adjacent_label_node_with_the_constant_bpm_text) {
     };
 
     // Stopped by default -- the Label must already read the plain constant.
-    REQUIRE_TRUE(!rig.Application().TransportRunning());
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
     checkAdjacentLabel("BPM");
 
     // Running -- unchanged.
     surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
     rig.RunBlocks(8);
-    REQUIRE_TRUE(rig.Application().TransportRunning());
+    REQUIRE_TRUE(synth_froggers::FroggersTransportIsRunning(&rig.Engine().Context()));
     checkAdjacentLabel("BPM");
 }
 

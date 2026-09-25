@@ -40,9 +40,9 @@
 //      something ELSE (recirculating energy persists), not to make the gate
 //      stay open, so this simpler setup still exercises the actual property
 //      needed here.
-//   3. Tempo-follow: host bpm -> DisplayTempoBpm()/
-//      TempoExternallyClocked(), RequestTempoBpm() rejected while slaved,
-//      both directions (works before engaging, rejected while slaved, works
+//   3. Tempo-follow: host bpm -> the engine's clock diagnostics/sync
+//      configuration, a BPM slider push rejected while slaved, both
+//      directions (works before engaging, rejected while slaved, works
 //      again after disengaging).
 //   4. Surface row: app/FroggersUiSurface.hpp's own
 //      FroggersUiSurface, attached context-free (mirrors
@@ -202,7 +202,7 @@ TEST_CASE(transport_edges_run_stop_run_produce_exactly_one_message_per_transitio
     REQUIRE_TRUE(processor.UiBusPendingCountForTest() == 1);
     runBlock();  // drains+applies it.
     REQUIRE_TRUE(processor.UiBusPendingCountForTest() == 0);
-    REQUIRE_TRUE(processor.ApplicationForTest().TransportRunning());
+    REQUIRE_TRUE(synth_froggers::FroggersTransportIsRunning(&processor.ContextForTest()));
 
     // Holding "playing" across several more blocks + pumps: no new message.
     runBlock();
@@ -211,7 +211,7 @@ TEST_CASE(transport_edges_run_stop_run_produce_exactly_one_message_per_transitio
     runBlock();
     processor.PumpMessageThreadForTest();
     REQUIRE_TRUE(processor.UiBusPendingCountForTest() == 0);
-    REQUIRE_TRUE(processor.ApplicationForTest().TransportRunning());
+    REQUIRE_TRUE(synth_froggers::FroggersTransportIsRunning(&processor.ContextForTest()));
 
     // -- STOP (Playing -> Stopped transition) --------------------------------
     playHead.SetPlaying(false);
@@ -220,7 +220,7 @@ TEST_CASE(transport_edges_run_stop_run_produce_exactly_one_message_per_transitio
     REQUIRE_TRUE(processor.UiBusPendingCountForTest() == 1);
     runBlock();
     REQUIRE_TRUE(processor.UiBusPendingCountForTest() == 0);
-    REQUIRE_TRUE(!processor.ApplicationForTest().TransportRunning());
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&processor.ContextForTest()));
 
     // -- RUN again (Stopped -> Playing transition #2) ------------------------
     playHead.SetPlaying(true);
@@ -229,7 +229,7 @@ TEST_CASE(transport_edges_run_stop_run_produce_exactly_one_message_per_transitio
     REQUIRE_TRUE(processor.UiBusPendingCountForTest() == 1);  // exactly one, not accumulated from before.
     runBlock();
     REQUIRE_TRUE(processor.UiBusPendingCountForTest() == 0);
-    REQUIRE_TRUE(processor.ApplicationForTest().TransportRunning());
+    REQUIRE_TRUE(synth_froggers::FroggersTransportIsRunning(&processor.ContextForTest()));
 
     processor.releaseResources();
     processor.setPlayHead(nullptr);
@@ -254,7 +254,7 @@ TEST_CASE(transport_absent_playhead_produces_no_messages) {
     }
     processor.PumpMessageThreadForTest();
     REQUIRE_TRUE(processor.UiBusPendingCountForTest() == 0);
-    REQUIRE_TRUE(!processor.ApplicationForTest().TransportRunning());
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&processor.ContextForTest()));
 
     processor.releaseResources();
     std::cout << "  [6.1] absent playhead: no messages across 8 blocks.\n";
@@ -311,7 +311,7 @@ TEST_CASE(freeze_via_production_seam_holds_audio_and_reads_stopped_like_t7_3a) {
     processor.processBlock(buffer, midi);
 
     REQUIRE_TRUE(processor.ApplicationForTest().FreezeLatched());
-    REQUIRE_TRUE(!processor.ApplicationForTest().TransportRunning());  // transport reads stopped.
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&processor.ContextForTest()));  // transport reads stopped.
 
     // Past the settle window a plain (unlatched) Stop would have silenced
     // within: the gate is forced open by FreezeLatched(), so output must
@@ -319,7 +319,7 @@ TEST_CASE(freeze_via_production_seam_holds_audio_and_reads_stopped_like_t7_3a) {
     const float heldPeak = runBlocksMeasuringPeak(94);  // ~0.5s, same window FroggersVstSmokeTest.cpp's own pre-start check uses.
     REQUIRE_TRUE(heldPeak >= kSilenceFloorLinear);
     REQUIRE_TRUE(processor.ApplicationForTest().FreezeLatched());  // still latched -- nothing released it.
-    REQUIRE_TRUE(!processor.ApplicationForTest().TransportRunning());  // still stopped.
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&processor.ContextForTest()));  // still stopped.
 
     std::cout << "  [Freeze] settledPeak=" << settledPeak << " heldPeak(frozen)=" << heldPeak
               << " (>= silence floor " << kSilenceFloorLinear << ")\n";
@@ -348,10 +348,11 @@ TEST_CASE(host_tempo_follows_and_suppresses_user_requests_while_slaved_both_dire
     // No playhead attached yet -- hostTempoValid_ is false by construction,
     // so this is the same "standalone hosting" state as
     // transport_absent_playhead_produces_no_messages above.
-    REQUIRE_TRUE(!processor.ApplicationForTest().TempoExternallyClocked());
-    processor.ApplicationForTest().RequestTempoBpm(90.0);
-    runBlock();  // ProcessFrame() drains the pending request.
-    REQUIRE_TRUE(std::fabs(processor.ApplicationForTest().DisplayTempoBpm() - 90.0) < 0.5);
+    REQUIRE_TRUE(!processor.ContextForTest().syncConfiguration().receiveClock);
+    processor.ApplicationForTest().PortableSurface().DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBpm, "90.0"));
+    runBlock();  // the pushed MessageIn::SetTempoBpmNormalized applies this block.
+    REQUIRE_TRUE(std::fabs(processor.ContextForTest().clockDiagnostics->Snapshot().currentBpm - 90.0) < 0.5);
 
     // -- Engage: host reports a playhead with a tempo -----------------------
     processor.setPlayHead(&playHead);
@@ -360,7 +361,7 @@ TEST_CASE(host_tempo_follows_and_suppresses_user_requests_while_slaved_both_dire
     runBlock();                              // processBlock observes bpm=140, republishes it.
     processor.PumpMessageThreadForTest();    // engages receiveClock, pushes tick #1.
     runBlock();                              // drains+applies tick #1 (establishes hasLastClock only).
-    REQUIRE_TRUE(processor.ApplicationForTest().TempoExternallyClocked());  // receiveClock is now true.
+    REQUIRE_TRUE(processor.ContextForTest().syncConfiguration().receiveClock);  // receiveClock is now true.
 
     // A second, correctly-spaced tick is needed before activeBpm_ actually
     // reflects 140 (MasterClock::HandleExternalClock's own interval
@@ -372,16 +373,17 @@ TEST_CASE(host_tempo_follows_and_suppresses_user_requests_while_slaved_both_dire
     processor.PumpMessageThreadForTest();
     runBlock();
 
-    const double displayedBpm = processor.ApplicationForTest().DisplayTempoBpm();
-    std::cout << "  [6.3] host bpm=140 -> DisplayTempoBpm()=" << displayedBpm << "\n";
+    const double displayedBpm = processor.ContextForTest().clockDiagnostics->Snapshot().currentBpm;
+    std::cout << "  [6.3] host bpm=140 -> currentBpm=" << displayedBpm << "\n";
     REQUIRE_TRUE(std::fabs(displayedBpm - 140.0) < 5.0);
-    REQUIRE_TRUE(processor.ApplicationForTest().TempoExternallyClocked());
+    REQUIRE_TRUE(processor.ContextForTest().syncConfiguration().receiveClock);
 
     // -- User request suppressed while slaved --------------------------------
-    processor.ApplicationForTest().RequestTempoBpm(200.0);
+    processor.ApplicationForTest().PortableSurface().DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBpm, "200.0"));
     runBlock();
-    REQUIRE_TRUE(std::fabs(processor.ApplicationForTest().DisplayTempoBpm() - 200.0) > 1.0);  // NOT accepted.
-    REQUIRE_TRUE(processor.ApplicationForTest().TempoExternallyClocked());
+    REQUIRE_TRUE(std::fabs(processor.ContextForTest().clockDiagnostics->Snapshot().currentBpm - 200.0) > 1.0);  // NOT accepted.
+    REQUIRE_TRUE(processor.ContextForTest().syncConfiguration().receiveClock);
 
     // -- Positive control, direction 2: disengage, user tempo works again ---
     // The teardown concern: the host stops reporting a usable tempo
@@ -390,11 +392,12 @@ TEST_CASE(host_tempo_follows_and_suppresses_user_requests_while_slaved_both_dire
     runBlock();                            // hostTempoValid_ -> false.
     processor.PumpMessageThreadForTest();  // disengage: RequestSyncConfiguration({}).
     runBlock();                            // ApplySyncConfig applies the disengage.
-    REQUIRE_TRUE(!processor.ApplicationForTest().TempoExternallyClocked());
+    REQUIRE_TRUE(!processor.ContextForTest().syncConfiguration().receiveClock);
 
-    processor.ApplicationForTest().RequestTempoBpm(90.0);
+    processor.ApplicationForTest().PortableSurface().DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBpm, "90.0"));
     runBlock();
-    REQUIRE_TRUE(std::fabs(processor.ApplicationForTest().DisplayTempoBpm() - 90.0) < 0.5);  // works again.
+    REQUIRE_TRUE(std::fabs(processor.ContextForTest().clockDiagnostics->Snapshot().currentBpm - 90.0) < 0.5);  // works again.
 
     processor.releaseResources();
     processor.setPlayHead(nullptr);
@@ -431,7 +434,7 @@ struct EngagedClockFixture {
         RunBlock();
         processor.PumpMessageThreadForTest();
         RunBlock();
-        REQUIRE_TRUE(processor.ApplicationForTest().TempoExternallyClocked());
+        REQUIRE_TRUE(processor.ContextForTest().syncConfiguration().receiveClock);
     }
 };
 
@@ -447,13 +450,13 @@ TEST_CASE(release_resources_alone_disengages_the_clock_with_no_further_process_b
     EngagedClockFixture fixture("teardown_release_resources");
 
     fixture.EngageAt(120.0);
-    REQUIRE_TRUE(fixture.processor.ApplicationForTest().TempoExternallyClocked());
+    REQUIRE_TRUE(fixture.processor.ContextForTest().syncConfiguration().receiveClock);
 
     fixture.processor.releaseResources();  // sets releaseResourcesSeen_ only.
     fixture.processor.PumpMessageThreadForTest();  // consumes it, forces disengage on THIS one pump.
     fixture.RunBlock();  // lets ApplySyncConfig() apply the disengage -- verification only.
 
-    REQUIRE_TRUE(!fixture.processor.ApplicationForTest().TempoExternallyClocked());
+    REQUIRE_TRUE(!fixture.processor.ContextForTest().syncConfiguration().receiveClock);
     fixture.processor.setPlayHead(nullptr);
     std::cout << "  [teardown] releaseResources() alone disengaged the clock on the very next pump "
                  "(no staleness streak needed).\n";
@@ -481,7 +484,7 @@ TEST_CASE(clock_disengages_after_the_time_based_staleness_window_when_process_bl
     EngagedClockFixture fixture("teardown_staleness_window");
 
     fixture.EngageAt(120.0);
-    REQUIRE_TRUE(fixture.processor.ApplicationForTest().TempoExternallyClocked());
+    REQUIRE_TRUE(fixture.processor.ContextForTest().syncConfiguration().receiveClock);
     fixture.processor.PumpMessageThreadForTest();  // settle: sync lastActivityMicros_, see comment above.
 
     // -- Positive control: several quick pumps, no processBlock() in
@@ -489,7 +492,7 @@ TEST_CASE(clock_disengages_after_the_time_based_staleness_window_when_process_bl
     for (int i = 0; i < 5; ++i) {
         fixture.processor.PumpMessageThreadForTest();
     }
-    REQUIRE_TRUE(fixture.processor.ApplicationForTest().TempoExternallyClocked());
+    REQUIRE_TRUE(fixture.processor.ContextForTest().syncConfiguration().receiveClock);
 
     // The scenario under test: NO processBlock() call anywhere from here on
     // -- only the message thread's own pump keeps running, exactly like a
@@ -500,7 +503,7 @@ TEST_CASE(clock_disengages_after_the_time_based_staleness_window_when_process_bl
     fixture.processor.PumpMessageThreadForTest();
     fixture.RunBlock();  // lets ApplySyncConfig() apply the disengage -- verification only.
 
-    REQUIRE_TRUE(!fixture.processor.ApplicationForTest().TempoExternallyClocked());
+    REQUIRE_TRUE(!fixture.processor.ContextForTest().syncConfiguration().receiveClock);
     fixture.processor.setPlayHead(nullptr);
     std::cout << "  [teardown] clock disengaged after the ~1s time-based staleness window elapsed with zero "
                  "intervening processBlock() calls (and did NOT disengage on a handful of quick pumps well "
@@ -773,14 +776,15 @@ TEST_CASE(core_side_randomize_is_reflected_to_every_host_parameter) {
         before[static_cast<std::size_t>(i)] = processor.getParameters()[i]->getValue();
     }
 
-    // Real production "the app itself changed the value" seam -- Randomize
-    // All (FroggersAppCore::RequestRandomizeAll(), the SAME Request*/
-    // pending*_ audio-thread bridge the real Randomize button drives via
-    // FroggersUiSurface.hpp's kRandomizeAll branch), not a mock of the
-    // bridge under test. ParameterManager's own random source is
+    // Real production "the app itself changed the value" seam -- dispatching
+    // Randomize All pushes the SAME MessageIn::AppCommand the real
+    // Randomize button drives via FroggersUiSurface.hpp's kRandomizeAll
+    // branch, applied by FroggersAppCore::ApplyAppCommand, not a mock of the
+    // press under test. ParameterManager's own random source is
     // fixed-seeded (`std::mt19937 randomEngine_{0x51EA5EEDu}`,
     // ParameterModulation.hpp), so this is deterministic, not flaky.
-    processor.ApplicationForTest().RequestRandomizeAll();
+    processor.ApplicationForTest().PortableSurface().DispatchAction(
+        synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
     pumpAndSettle();
 
     int changedCount = 0;
@@ -975,17 +979,18 @@ TEST_CASE(host_automation_in_a_non_visible_bank_lands_there_and_leaves_the_opera
     REQUIRE_TRUE(startingPageTab->selected);  // still the operator's own bank.
 
     // -- Page-scoped action (Reset Page) targets the OPERATOR's bank -------
-    // RandomizePage/ResetPage both act on *drillIn_ (FroggersAppCore.hpp:
-    // 692-694/708-709), which only ever moves via RequestPageSelect() -- no
-    // longer called anywhere on the host-automation path -- so it stays
-    // bound to the real active bank (0) regardless of where automation last
-    // wrote. At drill level 0, ResetPage reverts the whole bank via
-    // ResetBankToDefaultPatch -> ApplyBankDefaultPatch (FroggersModulation.hpp),
-    // which sets each page parameter back to its OWN registered
+    // RandomizePage/ResetPage both act on *drillIn_ (FroggersAppCore.hpp),
+    // which only ever moves via FroggersAppCore::SelectPage -- not reached
+    // anywhere on the host-automation path -- so it stays bound to the real
+    // active bank (0) regardless of where automation last wrote. At drill
+    // level 0, ResetPage reverts the whole bank via ResetBankToDefaultPatch
+    // -> ApplyBankDefaultPatch (FroggersModulation.hpp), which sets each
+    // page parameter back to its OWN registered
     // FroggersParamSpec::defaultValue -- read directly from that same
     // in-domain source below, not re-derived or assumed to be 0.0.
     const float kResetPageTarget = synth_froggers::FroggersBankLayouts()[0].params[kOperatorSlot].defaultValue;
-    processor.ApplicationForTest().RequestResetPage();
+    processor.ApplicationForTest().PortableSurface().DispatchAction(
+        synth::ui::Action::Named(synth_froggers::FroggersActions::kResetPage));
     pumpAndSettle();
 
     REQUIRE_TRUE(std::fabs(operatorBankParam.UIDisplayCenter(0) - kResetPageTarget) < kTolerance);  // reset bank 0.
@@ -994,7 +999,7 @@ TEST_CASE(host_automation_in_a_non_visible_bank_lands_there_and_leaves_the_opera
 
     std::cout << "  [host automation] wrote bank " << kTargetBank << " slot " << kTargetSlot
               << " -> ActivePageIndex() stayed " << processor.ApplicationForTest().ActivePageIndex()
-              << ", and RequestResetPage() reset THAT bank's own parameter (-> "
+              << ", and Reset Page reset THAT bank's own parameter (-> "
               << operatorBankParam.UIDisplayCenter(0) << ") while leaving bank " << kTargetBank << " at "
               << targetCoreParam.UIDisplayCenter(0) << ".\n";
 
@@ -1089,11 +1094,12 @@ TEST_CASE(open_modulation_drilldown_survives_a_cross_bank_host_write) {
     REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == 0);
 
     // Drill into bank 0's own slot 5 -- the real operator press seam
-    // (FroggersAppCore::RequestEncoderPress(), drained by ProcessFrame() on
-    // the very next block; see FroggersModulation.hpp's
-    // FroggersModulationDrillIn::PressEncoder()).
+    // (a dispatched kEncoderPress action, applied by
+    // FroggersAppCore::ApplyAppCommand on the very next block; see
+    // FroggersModulation.hpp's FroggersModulationDrillIn::PressEncoder()).
     constexpr std::size_t kDrilledSlot = 5;
-    processor.ApplicationForTest().RequestEncoderPress(kDrilledSlot);
+    processor.ApplicationForTest().PortableSurface().DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kEncoderPress, std::to_string(kDrilledSlot)));
     runBlock();
 
     synth::Bank& bank0 = processor.ApplicationForTest().ActiveDrillIn().BankRef();
@@ -1164,7 +1170,8 @@ TEST_CASE(host_automation_of_the_viewed_banks_own_parameter_lands_on_top_level_n
     // writes below, so top-level and depth-cell targets are unambiguously
     // different parameters.
     constexpr std::size_t kDrilledSlot = 5;
-    processor.ApplicationForTest().RequestEncoderPress(kDrilledSlot);
+    processor.ApplicationForTest().PortableSurface().DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kEncoderPress, std::to_string(kDrilledSlot)));
     runBlock();
 
     synth::Bank& bank0 = processor.ApplicationForTest().ActiveDrillIn().BankRef();
@@ -1232,8 +1239,9 @@ TEST_CASE(operator_selecting_a_page_does_move_the_visible_page) {
     constexpr std::size_t kOperatorTargetPage = 4;
     // The exact same public seam FroggersUiSurface.hpp's own page buttons
     // call (app/FroggersUiSurface.hpp's `HandleAction`).
-    processor.ApplicationForTest().RequestPageSelect(kOperatorTargetPage);
-    runBlock();  // ProcessFrame() drains the pending request -- ActivePageIndex() itself moves this block.
+    processor.ApplicationForTest().PortableSurface().DispatchAction(synth::ui::Action::WithValue(
+        synth_froggers::FroggersActions::kPageSelect, std::to_string(kOperatorTargetPage)));
+    runBlock();  // ApplyAppCommand() applies the press -- ActivePageIndex() itself moves this block.
     REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == kOperatorTargetPage);
 
     // BuildTree() below reads synth::ParameterManager::UIState, which
@@ -1248,7 +1256,7 @@ TEST_CASE(operator_selecting_a_page_does_move_the_visible_page) {
     REQUIRE_TRUE(FindNodeById(tree, synth_froggers::FroggersNodeIds::PageButton(kOperatorTargetPage))->selected);
     REQUIRE_TRUE(!FindNodeById(tree, synth_froggers::FroggersNodeIds::PageButton(0))->selected);
 
-    std::cout << "  [positive control] RequestPageSelect(" << kOperatorTargetPage << ") -> ActivePageIndex()="
+    std::cout << "  [positive control] page select(" << kOperatorTargetPage << ") -> ActivePageIndex()="
               << processor.ApplicationForTest().ActivePageIndex() << ".\n";
 
     processor.releaseResources();
@@ -1269,8 +1277,8 @@ TEST_CASE(operator_selecting_a_page_does_move_the_visible_page) {
 // that gap, and combines it with an ENGAGED host clock (EngagedClockFixture,
 // already defined above for the teardown tests) to additionally prove the
 // BPM control's "display-only while slaved" rendering (governed entirely by
-// TempoExternallyClocked(), AppendBpmControl() in app/FroggersUiSurface.hpp,
-// independent of pluginHostMode_ itself) still works correctly
+// the context's sync configuration, read in AppendBpmControl() in
+// app/FroggersUiSurface.hpp, independent of pluginHostMode_ itself) still works correctly
 // for a plugin-hosted surface. Extends, not duplicates, the branching-logic
 // coverage above.
 TEST_CASE(production_processor_surface_is_plugin_mode_with_bpm_display_only_while_host_tempo_engaged) {
@@ -1299,7 +1307,8 @@ TEST_CASE(production_processor_surface_is_plugin_mode_with_bpm_display_only_whil
 
     // -- BPM display-only while host-tempo-slaved (the governing explicit
     // requirement) -- AppendBpmControl() emits a StatusText (not a Slider)
-    // and no adjacent kBpmLabel while TempoExternallyClocked() is true.
+    // and no adjacent kBpmLabel while the context's sync configuration
+    // reads receiveClock true.
     const synth::ui::Node* bpm = FindNodeById(tree, synth_froggers::FroggersNodeIds::kBpm);
     REQUIRE_TRUE(bpm != nullptr);
     REQUIRE_TRUE(bpm->kind == synth::ui::NodeKind::StatusText);
@@ -2077,7 +2086,8 @@ TEST_CASE(state_information_round_trips_the_visible_bank_when_non_default) {
     // The exact same public seam FroggersUiSurface.hpp's own page buttons
     // call (app/FroggersUiSurface.hpp's `HandleAction`) -- the OPERATOR
     // selecting a page, not a direct MessageIn::SelectParamBank push.
-    source.ApplicationForTest().RequestPageSelect(kOperatorPage);
+    source.ApplicationForTest().PortableSurface().DispatchAction(synth::ui::Action::WithValue(
+        synth_froggers::FroggersActions::kPageSelect, std::to_string(kOperatorPage)));
     PumpAndSettle(source, sourceBuffer, midi);
     REQUIRE_TRUE(source.ApplicationForTest().ActivePageIndex() == kOperatorPage);
 
@@ -2163,7 +2173,8 @@ TEST_CASE(state_information_session_extras_without_bank_key_restores_freeze_latc
     REQUIRE_TRUE(sourceFreeze != nullptr);
     sourceFreeze->setValue(1.0f);
     constexpr std::size_t kSourceBank = 3;
-    source.ApplicationForTest().RequestPageSelect(kSourceBank);
+    source.ApplicationForTest().PortableSurface().DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kPageSelect, std::to_string(kSourceBank)));
     PumpAndSettle(source, sourceBuffer, midi);
     REQUIRE_TRUE(source.ApplicationForTest().FreezeLatched());
     REQUIRE_TRUE(source.ApplicationForTest().ActivePageIndex() == kSourceBank);
