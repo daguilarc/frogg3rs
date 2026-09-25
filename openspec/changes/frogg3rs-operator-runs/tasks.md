@@ -14,7 +14,7 @@ repetitions is dropped; anything between is reported.
 
 ## 1. Operator runs
 
-- [ ] 1.1 BUG-04, RUN-04: log `pthread_self()` in the standalone's
+- [ ] 1.1 BUG-04, RUN-04: log the POSIX call pthread_self() in the standalone's
       `MidiInHandler::handleIncomingMidiMessage` while a MIDI Fighter Twister
       and an APC40 mkII both stream. Confirms: two thread ids. Clears: one.
       Steps SWX-01, CTL-18, CTL-19. Fix if confirmed: Sheaf 1.2.
@@ -91,7 +91,7 @@ repetitions is dropped; anything between is reported.
       in `app/FroggersSurfaceTests.cpp` covers them. NEW
       `FroggersAppCore::SetReassertTransportFromPrepare(bool)`, default true;
       when false, `PrepareToPlay` does not push `MessageIn::Start` onto
-      `uiBus`. NEW `FroggersAppCore::DesiredTransportRunning()` reads
+      `uiBus`. NEW `FroggersAppCore::DesiredTransportRunning`() reads
       `desiredTransportRunning_` with acquire. `FroggersPluginProcessor`'s
       constructor sets it false, and `FroggersPluginProcessor::prepareToPlay`,
       after `engine_.Prepare`, stores `PendingTransportEdge::kStart` in

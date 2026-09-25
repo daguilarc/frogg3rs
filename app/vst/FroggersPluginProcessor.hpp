@@ -428,7 +428,11 @@ private:
     // transport toggle is a control-rate, human-paced action, never a data
     // stream. timerCallback() claims it with exchange() and, if non-empty,
     // pushes the mirrored Play/Stop-button message sequence.
-    enum class PendingTransportEdge : int { kNone = 0, kStart = 1, kStop = 2 };
+    enum class PendingTransportEdge : int {
+        kNone = 0,
+        kStart = 1,
+        kStop = 2,
+    };
     std::atomic<int> pendingTransportEdge_{static_cast<int>(PendingTransportEdge::kNone)};
     // Audio-thread-owned (processBlock only): the last host play-state this
     // object observed, and whether it has observed one yet at all. Not
