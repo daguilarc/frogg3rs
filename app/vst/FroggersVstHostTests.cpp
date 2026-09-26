@@ -4094,6 +4094,89 @@ TEST_CASE(unmarked_state_restores_sound_and_input_and_no_controller_rows) {
                  "Twister row added; the same document marked restores the Twister row (control).\n";
 }
 
+// A juce::AudioProcessorListener test double: counts every audioProcessorChanged
+// call that carries nonParameterStateChanged, ignoring the rest -- the whole
+// property a hosting DAW's "needs saving" flag depends on
+// (FroggersPluginProcessor::NotifyHostOfNonParameterChange's own comment).
+class NonParameterChangeListener final : public juce::AudioProcessorListener {
+public:
+    void audioProcessorParameterChanged(juce::AudioProcessor*, int, float) override {}
+    void audioProcessorChanged(juce::AudioProcessor*, const ChangeDetails& details) override {
+        if (details.nonParameterStateChanged) {
+            ++count;
+        }
+    }
+
+    int count = 0;
+};
+
+TEST_CASE(controller_commit_and_file_actions_mark_non_parameter_state_changed) {
+    const synth::RuntimeDataPaths paths = ScratchDataPaths("notify_non_parameter_state");
+    FakeMidiDeviceAccess access;
+    access.AddPair("Midi Fighter Twister", "twister.in", "twister.out");
+    frogg3rs_vst::FroggersPluginProcessor processor(paths, access.Access());
+    access.sender = processor.ContextForTest().midiSender;
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+
+    frogg3rs_vst::FroggersPluginServices services(processor);
+    synth::runtime_ui::RuntimeMainComponent<synth_froggers::FroggersApp, frogg3rs_vst::FroggersPluginServices>
+        mainComponent(processor.GetEngine().Application(), services, PluginPages());
+
+    NonParameterChangeListener listener;
+    processor.addListener(&listener);
+
+    // Add a controller row: one notification.
+    mainComponent.DispatchAction(synth::ui::Action::Named(synth::runtime_ui::Actions::kSidebarControllers));
+    mainComponent.Refresh();
+    mainComponent.DispatchAction(
+        synth::ui::Action::WithValue(synth::runtime_ui::Actions::kAddPresetDraft, "froggers.twister"));
+    mainComponent.DispatchAction(synth::ui::Action::Named(synth::runtime_ui::Actions::kAddController));
+    REQUIRE_TRUE(listener.count == 1);
+
+    // New answers Ok: one more.
+    mainComponent.DispatchAction(synth::ui::Action::Named(synth::runtime_ui::Actions::kFileNew));
+    REQUIRE_TRUE(listener.count == 2);
+
+    // Save As answers Pending: one more.
+    mainComponent.DispatchAction(synth::ui::Action::WithValue(synth::runtime_ui::Actions::kFileConfirmedSaveAs,
+                                                              (paths.patchesRoot / "p").string()));
+    REQUIRE_TRUE(listener.count == 3);
+    PumpAndSettle(processor, buffer, midi);  // let the write land before Save/Load read it back.
+
+    // A plain Save does not notify.
+    mainComponent.DispatchAction(synth::ui::Action::Named(synth::runtime_ui::Actions::kFileSave));
+    REQUIRE_TRUE(listener.count == 3);
+    PumpAndSettle(processor, buffer, midi);
+
+    // Load answers Ok: one more.
+    std::filesystem::path versionFile;
+    for (const auto& entry : std::filesystem::directory_iterator(paths.patchesRoot / "p")) {
+        if (entry.is_regular_file()) {
+            versionFile = entry.path();
+        }
+    }
+    REQUIRE_TRUE(!versionFile.empty());
+    mainComponent.DispatchAction(
+        synth::ui::Action::WithValue(synth::runtime_ui::Actions::kFileConfirmedLoad, versionFile.string()));
+    REQUIRE_TRUE(listener.count == 4);
+
+    // A state restore does not notify.
+    PumpAndSettle(processor, buffer, midi);
+    juce::MemoryBlock state;
+    processor.getStateInformation(state);
+    processor.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+    PumpAndSettle(processor, buffer, midi);
+    REQUIRE_TRUE(listener.count == 4);
+
+    processor.removeListener(&listener);
+    processor.releaseResources();
+    std::cout << "  [notify] Add/New/SaveAs/Load each marked non-parameter state changed exactly once; Save and a "
+                 "restore marked nothing.\n";
+}
+
 }  // namespace
 
 int main() {
