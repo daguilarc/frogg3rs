@@ -77,6 +77,7 @@
 #include "FroggersPluginProcessor.hpp"
 
 #include "FroggersMidiCatalog.hpp"
+#include "FroggersPluginServices.hpp"
 #include "FroggersRegistration.hpp"
 #include "FroggersUiSurface.hpp"
 #include "synth/AppRegistry.hpp"
@@ -84,6 +85,7 @@
 #include "synth/MidiController.hpp"
 #include "synth/PatchPersistence.hpp"
 #include "synth/PortableUI.hpp"
+#include "synth/RuntimeMainComponent.hpp"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
@@ -3469,6 +3471,254 @@ TEST_CASE(destroying_the_processor_stops_the_sender_before_closing_outputs) {
 
     std::cout << "  [controller ports] destroying the processor: the sender had stopped before Close(), and "
                  "nothing sent afterward.\n";
+}
+
+// -- 9. Controllers and File pages, through the plugin's own services -----
+// Drives a real synth::runtime_ui::RuntimeMainComponent over
+// frogg3rs_vst::FroggersPluginServices directly, with no editor and no
+// juce::Component beyond what RuntimeMainComponent itself needs (none --
+// see FroggersVstEditorTest.cpp's own header comment for why a real editor
+// needs its own isolated binary; this one does not, because
+// RuntimeMainComponent is JUCE-free). Proves the services glue
+// (FroggersPluginServices.hpp) actually reaches the engine end to end: the
+// Controllers page's real Add flow binds a row to the same fake device
+// access every controller-port test above uses, and the File page's real
+// New/Save As/Load actions round-trip through the standalone's own patch
+// format onto a scratch patches root.
+
+// One definition, matching FroggersPluginEditor.cpp's own PluginSidebarPages()
+// (that file's own comment: Controllers and File, nothing else) --
+// reproduced here rather than shared, this file's own per-file-self-contained
+// convention (see e.g. ScratchDataPaths()/FindNodeById() above, duplicated
+// again in FroggersVstEditorTest.cpp for the same reason).
+synth::runtime_ui::RuntimeSidebarPages PluginPages() {
+    synth::runtime_ui::RuntimeSidebarPages pages;
+    pages.audio = false;
+    pages.controllers = true;
+    pages.sync = false;
+    pages.file = true;
+    pages.loadReadout = false;
+    return pages;
+}
+
+TEST_CASE(controllers_page_add_twister_binds_the_fake_device) {
+    FakeMidiDeviceAccess access;
+    access.AddPair("Midi Fighter Twister", "twister.in", "twister.out");
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("controllers_add_twister"), access.Access());
+    access.sender = processor.ContextForTest().midiSender;
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+
+    frogg3rs_vst::FroggersPluginServices services(processor);
+    synth::runtime_ui::RuntimeMainComponent<synth_froggers::FroggersApp, frogg3rs_vst::FroggersPluginServices>
+        mainComponent(processor.GetEngine().Application(), services, PluginPages());
+
+    mainComponent.DispatchAction(synth::ui::Action::Named(synth::runtime_ui::Actions::kSidebarControllers));
+    // Seeds the discovery cache from the fake Twister pair -- the real Add
+    // flow resolves its device candidate from THIS cache
+    // (ControllersLayout::HandleAddController's own DiscoverControllerWizards
+    // call), never from the fake access directly.
+    mainComponent.Refresh();
+
+    mainComponent.DispatchAction(
+        synth::ui::Action::WithValue(synth::runtime_ui::Actions::kAddPresetDraft, "froggers.twister"));
+    mainComponent.DispatchAction(synth::ui::Action::Named(synth::runtime_ui::Actions::kAddController));
+
+    REQUIRE_TRUE(processor.MidiControllerCountForTest() == 1);
+    REQUIRE_TRUE(access.inputs.size() == 1);
+    REQUIRE_TRUE(access.outputs.size() == 1);
+    REQUIRE_TRUE(access.inputs[0].isOpen);
+    REQUIRE_TRUE(access.outputs[0].isOpen);
+
+    processor.releaseResources();
+    std::cout << "  [controllers page] Add installed one row, bound to the fake Twister's own input and output.\n";
+}
+
+TEST_CASE(file_page_save_as_writes_a_version_under_the_patches_root) {
+    const synth::RuntimeDataPaths paths = ScratchDataPaths("file_page_save_as");
+    frogg3rs_vst::FroggersPluginProcessor processor(paths);
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+
+    frogg3rs_vst::FroggersPluginServices services(processor);
+    synth::runtime_ui::RuntimeMainComponent<synth_froggers::FroggersApp, frogg3rs_vst::FroggersPluginServices>
+        mainComponent(processor.GetEngine().Application(), services, PluginPages());
+
+    // kFileConfirmedSaveAs carries the FULL target directory
+    // (PatchBrowserViewModel::Confirm's own dispatch, RuntimePages.hpp:
+    // "newPath->string()"), not the bare patch name -- the same value a
+    // real Save As confirm dispatches once the browser has resolved it.
+    mainComponent.DispatchAction(synth::ui::Action::WithValue(synth::runtime_ui::Actions::kFileConfirmedSaveAs,
+                                                              (paths.patchesRoot / "p").string()));
+    PumpAndSettle(processor, buffer, midi);
+
+    bool wroteAVersion = false;
+    const std::filesystem::path patchDir = paths.patchesRoot / "p";
+    if (std::filesystem::is_directory(patchDir)) {
+        for (const auto& entry : std::filesystem::directory_iterator(patchDir)) {
+            if (entry.is_regular_file()) {
+                wroteAVersion = true;
+                break;
+            }
+        }
+    }
+    REQUIRE_TRUE(wroteAVersion);
+
+    synth::runtime_ui::FilePageSnapshot snapshot;
+    services.RefreshFile(snapshot);
+    REQUIRE_TRUE(snapshot.patchNameText == "p");
+
+    processor.releaseResources();
+    std::cout << "  [file page] Save As \"p\" wrote a version under the patches root, and the header reads \"p\".\n";
+}
+
+TEST_CASE(file_page_load_applies_sound_and_rows_and_writes_no_configuration) {
+    const std::filesystem::path dataRoot =
+        std::filesystem::temp_directory_path() / "froggers-vst-host-tests" / "file_page_load";
+    std::filesystem::remove_all(dataRoot);
+    const synth::RuntimeDataPaths paths = frogg3rs_vst::FroggersPluginProcessor::PluginDataPaths(dataRoot);
+    std::filesystem::create_directories(paths.patchesRoot);
+
+    constexpr float kAudioSlot0Value = 0.9f;
+    std::filesystem::path versionFile;
+    {
+        // Build the on-disk patch through a REAL source processor's own
+        // Save As -- the standalone's own write path, never a hand-built
+        // JSON document -- so its host-parameter value is the SAME
+        // production round trip host_write_round_trips_through_the_core_parameter_authority
+        // already proves, not a second, independent notion of what "0.9"
+        // means.
+        FakeMidiDeviceAccess sourceAccess;
+        const std::size_t apcPair = sourceAccess.AddPair("APC40", "apc40.in", "apc40.out");
+        frogg3rs_vst::FroggersPluginProcessor source(paths, sourceAccess.Access());
+        sourceAccess.sender = source.ContextForTest().midiSender;
+        AddControllerRow(source, sourceAccess, apcPair, "froggers.apc40.generic", "APC40");
+        source.setRateAndBufferSizeDetails(48000.0, 256);
+        source.prepareToPlay(48000.0, 256);
+        juce::AudioBuffer<float> sourceBuffer(2, 256);
+        juce::MidiBuffer sourceMidi;
+
+        juce::AudioProcessorParameter* sourceAudioSlot0 = FindHostParamById(source, "bank0.slot0");
+        REQUIRE_TRUE(sourceAudioSlot0 != nullptr);
+        sourceAudioSlot0->setValueNotifyingHost(kAudioSlot0Value);
+        PumpAndSettle(source, sourceBuffer, sourceMidi);
+
+        REQUIRE_TRUE(source.GetEngine().Patches().SavePatchAs(paths.patchesRoot / "p").status ==
+                     synth::PatchCommandStatus::Pending);
+        PumpAndSettle(source, sourceBuffer, sourceMidi);
+        source.releaseResources();
+    }
+
+    const std::filesystem::path patchDir = paths.patchesRoot / "p";
+    REQUIRE_TRUE(std::filesystem::is_directory(patchDir));
+    for (const auto& entry : std::filesystem::directory_iterator(patchDir)) {
+        if (entry.is_regular_file()) {
+            versionFile = entry.path();
+            break;
+        }
+    }
+    REQUIRE_TRUE(!versionFile.empty());
+
+    // The target instance under test -- no fake pair of its own; Load
+    // applies the row and value regardless of whether its own ports are
+    // ever found (an absent device stays offline, never a startup failure).
+    frogg3rs_vst::FroggersPluginProcessor processor(paths);
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+
+    frogg3rs_vst::FroggersPluginServices services(processor);
+    synth::runtime_ui::RuntimeMainComponent<synth_froggers::FroggersApp, frogg3rs_vst::FroggersPluginServices>
+        mainComponent(processor.GetEngine().Application(), services, PluginPages());
+
+    const std::string treeBeforeLoad = SnapshotDirectoryTree(dataRoot);
+
+    mainComponent.DispatchAction(
+        synth::ui::Action::WithValue(synth::runtime_ui::Actions::kFileConfirmedLoad, versionFile.string()));
+    PumpAndSettle(processor, buffer, midi);
+
+    juce::AudioProcessorParameter* audioSlot0 = FindHostParamById(processor, "bank0.slot0");
+    REQUIRE_TRUE(audioSlot0 != nullptr);
+    // Same tolerance state_information_round_trips_through_a_fresh_processor
+    // and its siblings use for a value that crossed the patch JSON's own
+    // text serialization, not the tighter host-write-only bound
+    // host_write_round_trips_through_the_core_parameter_authority uses.
+    constexpr float kTolerance = 0.01f;
+    REQUIRE_TRUE(std::fabs(audioSlot0->getValue() - kAudioSlot0Value) < kTolerance);
+    REQUIRE_TRUE(processor.MidiControllerCountForTest() == 1);
+
+    // No configuration was written, and nothing outside patches/ changed --
+    // the patch this Load just read is the ONLY thing on disk either
+    // snapshot can see moving, and it did not move.
+    const std::string treeAfterLoad = SnapshotDirectoryTree(dataRoot);
+    REQUIRE_TRUE(treeAfterLoad == treeBeforeLoad);
+
+    processor.releaseResources();
+    std::cout << "  [file page] Load applied the APC40 row and Audio slot0=" << audioSlot0->getValue()
+              << " to this instance, writing nothing outside patches/.\n";
+}
+
+TEST_CASE(file_page_new_returns_every_parameter_to_default) {
+    // Baseline: a fresh processor's own default values, one per host
+    // parameter, in construction order.
+    std::vector<float> defaults;
+    {
+        frogg3rs_vst::FroggersPluginProcessor baseline(ScratchDataPaths("file_page_new_baseline"));
+        baseline.setRateAndBufferSizeDetails(48000.0, 256);
+        baseline.prepareToPlay(48000.0, 256);
+        juce::AudioBuffer<float> buffer(2, 256);
+        juce::MidiBuffer midi;
+        PumpAndSettle(baseline, buffer, midi);
+        defaults.resize(static_cast<std::size_t>(baseline.getParameters().size()));
+        for (int i = 0; i < baseline.getParameters().size(); ++i) {
+            defaults[static_cast<std::size_t>(i)] = baseline.getParameters()[i]->getValue();
+        }
+        baseline.releaseResources();
+    }
+
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("file_page_new"));
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    PumpAndSettle(processor, buffer, midi);
+
+    // Move every parameter this Randomize All actually reaches off its
+    // default, the same real production seam
+    // core_side_randomize_is_reflected_to_every_host_parameter uses above.
+    processor.ApplicationForTest().PortableSurface().DispatchAction(
+        synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
+    PumpAndSettle(processor, buffer, midi);
+
+    int changedCount = 0;
+    for (int i = 0; i < processor.getParameters().size(); ++i) {
+        if (std::fabs(processor.getParameters()[i]->getValue() - defaults[static_cast<std::size_t>(i)]) > 0.01f) {
+            ++changedCount;
+        }
+    }
+    REQUIRE_TRUE(changedCount > 0);  // Randomize actually moved something, so New has something to undo.
+
+    frogg3rs_vst::FroggersPluginServices services(processor);
+    synth::runtime_ui::RuntimeMainComponent<synth_froggers::FroggersApp, frogg3rs_vst::FroggersPluginServices>
+        mainComponent(processor.GetEngine().Application(), services, PluginPages());
+
+    mainComponent.DispatchAction(synth::ui::Action::Named(synth::runtime_ui::Actions::kFileNew));
+    PumpAndSettle(processor, buffer, midi);
+
+    int stillOffDefault = 0;
+    for (int i = 0; i < processor.getParameters().size(); ++i) {
+        if (std::fabs(processor.getParameters()[i]->getValue() - defaults[static_cast<std::size_t>(i)]) > 0.01f) {
+            ++stillOffDefault;
+        }
+    }
+    REQUIRE_TRUE(stillOffDefault == 0);
+
+    processor.releaseResources();
+    std::cout << "  [file page] New returned all " << processor.getParameters().size()
+              << " host parameters to default (" << changedCount << " had moved after Randomize All).\n";
 }
 
 }  // namespace

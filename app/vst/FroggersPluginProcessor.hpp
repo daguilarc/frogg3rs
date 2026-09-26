@@ -302,10 +302,12 @@ public:
     // Play/Stop buttons dispatch -- see this file's header comment and
     // timerCallback()'s own comment for why this goes through
     // DispatchAction rather than hand-mirroring HandleAction's message
-    // sequence. Not reachable from any host UI (no editor); exists solely
-    // so FroggersVstSmokeTest.cpp can drive the core with no host/playhead
-    // at all, the same way SynthRig::StartAt/StopAt do for the app core's
-    // own test suite. Safe to call from any single thread that is not
+    // sequence. Not reachable from any host UI: the editor draws no Play,
+    // Stop or Record (design decision 2), so a plugin instance's transport
+    // moves only from the host's own playhead or a controller row; exists
+    // solely so FroggersVstSmokeTest.cpp can drive the core with no
+    // host/playhead at all, the same way SynthRig::StartAt/StopAt do for
+    // the app core's own test suite. Safe to call from any single thread that is not
     // concurrently calling processBlock() -- like every other UiBus
     // producer, it is not safe to call from two threads at once (see this
     // file's header comment on the SPSC contract); the smoke test drives it
@@ -455,6 +457,15 @@ public:
     // MIDI-processor rebuild, not just the page's own edits, mirroring
     // Runtime<App>::SetMidiProcessorsRebuiltHook's own doc comment.
     void SetMidiProcessorsRebuiltHook(std::function<void()> hook) { midiProcessorsRebuiltHook_ = std::move(hook); }
+
+    // Tells the host this instance changed something other than a
+    // juce::AudioProcessorParameter's own value -- a controller row commit,
+    // or a File page New/Save As/Load -- so a host that honours the flag
+    // (JUCE's VST3 wrapper turns it into setDirty(true); the AU wrapper
+    // never forwards it) marks its project as needing a save. The plugin
+    // services (FroggersPluginServices.hpp) call this after each of those
+    // changes; it is otherwise unused by this class itself.
+    void NotifyHostOfNonParameterChange() { updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true)); }
 
     // -- Editor render-host seam ---------------------------------------------
     // The exact synth::ui::Surface& FroggersPluginEditor renders through

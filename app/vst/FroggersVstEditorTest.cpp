@@ -28,7 +28,7 @@
 // juce::Component use in this exact headless environment, so it is used
 // here rather than re-discovered by trial and error.
 //
-// Three things this file proves, each its own TEST_CASE below:
+// Four things this file proves, each its own TEST_CASE below:
 //   1. Lifecycle: FroggersPluginEditor's constructor and
 //      destructor both run to completion, twice in a row on the SAME
 //      processor, including a resized() call at a NON-design size (the
@@ -74,6 +74,15 @@
 //      host-resized editor would land on the wrong control. Needs no
 //      window/peer: two plain juce::Components in a parent/child
 //      relationship, resolved purely as geometry.
+//   4. Sidebar composition: the renderer holds exactly the Controllers and
+//      File sidebar entries (RuntimeSidebarPages) and no
+//      others, the wrapped app surface still resolves at its own 900x712
+//      root, the editor's own design width is the app's width plus the
+//      sidebar's column, the ? button never overlaps the sidebar at two
+//      different host sizes, and opening Controllers and pressing Back
+//      leaves the app's own visible page and drill level untouched --
+//      Controllers is a runtime page, not an app-surface action, so it has
+//      no way to reach either.
 
 #include "FroggersPluginEditor.hpp"
 #include "FroggersPluginProcessor.hpp"
@@ -445,6 +454,86 @@ TEST_CASE(component_get_local_point_and_area_invert_a_non_unit_affine_scale_head
 
     std::cout << "  [transform] getLocalPoint/getLocalArea invert a 0.6x-scaled, offset AffineTransform "
                  "exactly, headlessly.\n";
+}
+
+// -- 4. Sidebar composition -----------------------------------------------
+// See this file's own header comment's "Sidebar composition" section for the
+// full list of what this proves.
+TEST_CASE(editor_sidebar_holds_controllers_and_file_only) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("sidebar_composition"));
+    frogg3rs_vst::FroggersPluginEditor editor(processor);
+
+    synth_juce::PortableComponent& renderer = editor.RendererForTest();
+    REQUIRE_TRUE(renderer.FindByNodeId(synth::runtime_ui::NodeIds::kSidebarControllers) != nullptr);
+    REQUIRE_TRUE(renderer.FindByNodeId(synth::runtime_ui::NodeIds::kSidebarFile) != nullptr);
+    REQUIRE_TRUE(renderer.FindByNodeId(synth::runtime_ui::NodeIds::kSidebarAudio) == nullptr);
+    REQUIRE_TRUE(renderer.FindByNodeId(synth::runtime_ui::NodeIds::kSidebarSync) == nullptr);
+    REQUIRE_TRUE(renderer.FindByNodeId(synth::runtime_ui::NodeIds::kSidebarDeadline) == nullptr);
+
+    // The wrapped app surface still resolves at its own fixed root, entirely
+    // independent of the sidebar composed around it.
+    const synth::ui::NodeTree appTree = processor.EditorSurface().BuildTree();
+    REQUIRE_TRUE(!appTree.nodes.empty());
+    const synth::ui::Bounds& appRootBounds = appTree.nodes.front().bounds;
+    REQUIRE_TRUE(appRootBounds.x == 0.0f && appRootBounds.y == 0.0f);
+    REQUIRE_TRUE(appRootBounds.width == 900.0f && appRootBounds.height == 712.0f);
+
+    // The editor's own design width is the app's width (900) plus the
+    // sidebar's column (96, Layout::kSidebarWidth) -- RuntimeMainComponent::
+    // IntrinsicBounds(), the size this editor calls setSize() with once, at
+    // construction.
+    REQUIRE_TRUE(editor.getWidth() == 996);
+
+    const auto helpButtonOverlapsSidebar = [&]() {
+        // SurfaceBoundsForNode() reads the sidebar's resolved bounds in the
+        // SAME coordinate frame portableSurface_'s own local (0,0) origin
+        // sits in -- a "runtime.sidebar.root" node is a Root kind
+        // (synth::ui::NodeKind::Root), which PortableComponent never gives
+        // its own child Component (IsRenderableKind() excludes Root), so
+        // FindByNodeId() would return null for it; the resolved-bounds
+        // lookup has no such gap. getLocalArea() then maps it through
+        // portableSurface_'s own transform into the editor's real pixels,
+        // exactly as the renderer paints it.
+        const juce::Rectangle<int> sidebarLocal = renderer.SurfaceBoundsForNode(synth::runtime_ui::NodeIds::kSidebarRoot);
+        const juce::Rectangle<int> sidebarInEditor = editor.getLocalArea(&renderer, sidebarLocal);
+        return sidebarInEditor.intersects(editor.HelpButtonBoundsForTest());
+    };
+    REQUIRE_TRUE(!helpButtonOverlapsSidebar());
+    editor.setSize(1200, 900);
+    REQUIRE_TRUE(!helpButtonOverlapsSidebar());
+    editor.setSize(996, 712);
+
+    // Opening Controllers and pressing Back leaves the app's own visible
+    // page and drill level exactly where they were: Controllers is a
+    // runtime page RuntimeMainComponent composes beside the app surface, not
+    // an action the app surface itself ever sees.
+    const std::size_t pageBefore = processor.ApplicationForTest().ActivePageIndex();
+    const std::size_t drillBefore = processor.ApplicationForTest().DrillLevel();
+
+    // juce::Button::onClick() directly, not triggerClick(): triggerClick()
+    // only posts a command message (Button::triggerClick(), JUCE's own
+    // juce_Button.cpp), delivered by a real message loop this headless
+    // binary never pumps -- calling the same public std::function the
+    // renderer wired (PortableJuceBackend.hpp's own `button->onClick =
+    // [this, id] { DispatchCurrentNodeAction(id); }`) reaches the identical
+    // dispatch synchronously.
+    auto* controllersButton =
+        dynamic_cast<juce::Button*>(renderer.FindByNodeId(synth::runtime_ui::NodeIds::kSidebarControllers));
+    REQUIRE_TRUE(controllersButton != nullptr && static_cast<bool>(controllersButton->onClick));
+    controllersButton->onClick();
+    renderer.RefreshFromSurface();
+
+    auto* controllersBack = dynamic_cast<juce::Button*>(renderer.FindByNodeId(synth::runtime_ui::NodeIds::kBack));
+    REQUIRE_TRUE(controllersBack != nullptr && static_cast<bool>(controllersBack->onClick));
+    controllersBack->onClick();
+    renderer.RefreshFromSurface();
+
+    REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == pageBefore);
+    REQUIRE_TRUE(processor.ApplicationForTest().DrillLevel() == drillBefore);
+
+    processor.releaseResources();
+    std::cout << "  [sidebar] holds Controllers and File only; the ? button clears the sidebar at two sizes; "
+                 "Controllers Back leaves the app's page and drill level unchanged.\n";
 }
 
 }  // namespace
