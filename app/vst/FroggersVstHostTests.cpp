@@ -1565,6 +1565,45 @@ std::string BuildPatchTextWithoutSessionExtras(const std::string& patchJsonText)
     return text;
 }
 
+// Parses `patchJsonText` (a real save, carrying a midiInstrument section and
+// a full sessionExtras object) and returns a document identical to it except
+// that its sessionExtras carries no "controllerRows" key -- standing in for
+// a plugin version that read the standalone's own controller rows into its
+// own snapshot rather than setting them up itself (the defect
+// unmarked_state_restores_sound_and_input_and_no_controller_rows proves a
+// restore no longer falls for). freezeLatched/visibleBankIndex/
+// inputSelection are kept, matching that earlier plugin's own snapshot
+// shape; schema/schemaVersion/patchName/parameterValues/midiInstrument are
+// copied by reference from `original`, the same "fresh top-level object,
+// each field set exactly once" construction BuildPatchTextWithoutSessionExtras
+// above uses.
+std::string BuildPatchTextWithoutControllerRowsMark(const std::string& patchJsonText) {
+    synth::JsonArena arena(256 * 1024);
+    synth::JSON original = arena.Loads(patchJsonText.c_str());
+    REQUIRE_TRUE(!original.IsNull());
+    synth::JSON originalExtras = original.Get("sessionExtras");
+    REQUIRE_TRUE(!originalExtras.IsNull());
+
+    synth::JSON trimmedExtras = arena.Object();
+    trimmedExtras.SetNew("freezeLatched", originalExtras.Get("freezeLatched"));
+    trimmedExtras.SetNew("visibleBankIndex", originalExtras.Get("visibleBankIndex"));
+    trimmedExtras.SetNew("inputSelection", originalExtras.Get("inputSelection"));
+
+    synth::JSON result = arena.Object();
+    result.SetNew("schema", original.Get("schema"));
+    result.SetNew("schemaVersion", original.Get("schemaVersion"));
+    result.SetNew("patchName", original.Get("patchName"));
+    result.SetNew("parameterValues", original.Get("parameterValues"));
+    result.SetNew("midiInstrument", original.Get("midiInstrument"));
+    result.SetNew("sessionExtras", trimmedExtras);
+
+    char* dumped = result.Dumps(JSON_ENCODE_ANY);
+    REQUIRE_TRUE(dumped != nullptr);
+    std::string text(dumped);
+    std::free(dumped);
+    return text;
+}
+
 // Builds a source processor on its own scratch root, moves one host
 // parameter to `target`, settles, saves, and returns the saved state with
 // "sessionExtras" stripped out -- shared setup for the two legacy-blob tests
@@ -3791,6 +3830,268 @@ TEST_CASE(controller_play_stop_record_do_nothing_and_freeze_latches) {
     processor.releaseResources();
     processor.setPlayHead(nullptr);
     std::cout << "  [transport gate] controller Play/Stop/Record do nothing while hosted; Freeze still latches.\n";
+}
+
+// -- DAW session-state persistence: controller rows and the current patch ---
+// Three properties, each its own TEST_CASE below:
+//   1. A saved project's controller rows and current patch return through a
+//      restore, and Save afterwards adds a version to the SAME patch.
+//   2. A Save requested while the state snapshot is outstanding is held and
+//      still lands, and the next snapshot reflects the value set just
+//      before it.
+//   3. State whose sessionExtras carries no controllerRows mark restores
+//      sound, input and page but no controller rows -- with a control
+//      proving the same document, marked, DOES restore the row.
+
+TEST_CASE(project_restores_controller_rows_and_the_current_patch) {
+    // A and B are two instances of the SAME plugin sharing the standalone's
+    // own data root (PluginDataPaths(), the same layout production uses,
+    // mirrors file_page_load_applies_sound_and_rows_and_writes_no_configuration's
+    // own setup above) -- Save on either one reaches the SAME patches root,
+    // exactly as two DAW tracks running Frogg3rs would.
+    const std::filesystem::path dataRoot =
+        std::filesystem::temp_directory_path() / "froggers-vst-host-tests" / "project_restore";
+    std::filesystem::remove_all(dataRoot);
+    const synth::RuntimeDataPaths paths = frogg3rs_vst::FroggersPluginProcessor::PluginDataPaths(dataRoot);
+    std::filesystem::create_directories(paths.patchesRoot);
+
+    FakeMidiDeviceAccess sourceAccess;
+    const std::size_t twisterPair = sourceAccess.AddPair("Midi Fighter Twister", "twister.in", "twister.out");
+    frogg3rs_vst::FroggersPluginProcessor source(paths, sourceAccess.Access());
+    sourceAccess.sender = source.ContextForTest().midiSender;
+    AddControllerRow(source, sourceAccess, twisterPair, "froggers.twister", "Twister");
+    source.setRateAndBufferSizeDetails(48000.0, 256);
+    source.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> sourceBuffer(2, 256);
+    juce::MidiBuffer midi;
+
+    REQUIRE_TRUE(source.GetEngine().Patches().SavePatchAs(paths.patchesRoot / "p").status ==
+                 synth::PatchCommandStatus::Pending);
+    PumpAndSettle(source, sourceBuffer, midi);
+    REQUIRE_TRUE(source.CurrentPatchRelativePathForTest().has_value());
+    REQUIRE_TRUE(*source.CurrentPatchRelativePathForTest() == "p");
+
+    juce::AudioProcessorParameter* sourceAudioSlot0 = FindHostParamById(source, "bank0.slot0");
+    REQUIRE_TRUE(sourceAudioSlot0 != nullptr);
+    constexpr float kTarget = 0.77f;
+    sourceAudioSlot0->setValueNotifyingHost(kTarget);
+    PumpAndSettle(source, sourceBuffer, midi);
+
+    juce::MemoryBlock state;
+    source.getStateInformation(state);
+    REQUIRE_TRUE(state.getSize() > 0);
+    source.releaseResources();
+
+    // Instance B: the SAME shared paths, its own fake pair for the SAME
+    // Twister identifiers -- the restore reopens the row's ports by
+    // identifier, not by object identity.
+    FakeMidiDeviceAccess targetAccess;
+    targetAccess.AddPair("Midi Fighter Twister", "twister.in", "twister.out");
+    frogg3rs_vst::FroggersPluginProcessor target(paths, targetAccess.Access());
+    targetAccess.sender = target.ContextForTest().midiSender;
+    target.setRateAndBufferSizeDetails(48000.0, 256);
+    target.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> targetBuffer(2, 256);
+
+    target.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+    PumpAndSettle(target, targetBuffer, midi);
+
+    REQUIRE_TRUE(target.MidiControllerCountForTest() == 1);
+    REQUIRE_TRUE(targetAccess.outputs.size() == 1);
+    REQUIRE_TRUE(targetAccess.outputs[0].isOpen);
+    REQUIRE_TRUE(target.CurrentPatchRelativePathForTest().has_value());
+    REQUIRE_TRUE(*target.CurrentPatchRelativePathForTest() == "p");
+    juce::AudioProcessorParameter* targetAudioSlot0 = FindHostParamById(target, "bank0.slot0");
+    REQUIRE_TRUE(targetAudioSlot0 != nullptr);
+    constexpr float kTolerance = 0.01f;
+    REQUIRE_TRUE(std::fabs(targetAudioSlot0->getValue() - kTarget) < kTolerance);
+
+    // Save on B adds a SECOND version into the same shared patch directory.
+    REQUIRE_TRUE(target.GetEngine().Patches().SavePatch().status == synth::PatchCommandStatus::Pending);
+    PumpAndSettle(target, targetBuffer, midi);
+    std::size_t versionCount = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(paths.patchesRoot / "p")) {
+        if (entry.is_regular_file()) {
+            ++versionCount;
+        }
+    }
+    REQUIRE_TRUE(versionCount == 2);
+    target.releaseResources();
+
+    // State whose sessionExtras has no currentPatch restores with no current
+    // patch -- a fresh instance's own construction-time seed never names one.
+    frogg3rs_vst::FroggersPluginProcessor noPatchSource(ScratchDataPaths("project_restore_no_patch_source"));
+    noPatchSource.setRateAndBufferSizeDetails(48000.0, 256);
+    noPatchSource.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> noPatchBuffer(2, 256);
+    PumpAndSettle(noPatchSource, noPatchBuffer, midi);
+    juce::MemoryBlock noPatchState;
+    noPatchSource.getStateInformation(noPatchState);
+    noPatchSource.releaseResources();
+
+    frogg3rs_vst::FroggersPluginProcessor noPatchTarget(ScratchDataPaths("project_restore_no_patch_target"));
+    noPatchTarget.setRateAndBufferSizeDetails(48000.0, 256);
+    noPatchTarget.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> noPatchTargetBuffer(2, 256);
+    noPatchTarget.setStateInformation(noPatchState.getData(), static_cast<int>(noPatchState.getSize()));
+    PumpAndSettle(noPatchTarget, noPatchTargetBuffer, midi);
+    REQUIRE_TRUE(!noPatchTarget.CurrentPatchRelativePathForTest().has_value());
+    noPatchTarget.releaseResources();
+
+    std::cout << "  [state] B got the Twister row (open), current patch \"p\", the parameter, and its own Save "
+                 "added a second version; a document naming no patch restores with none.\n";
+}
+
+TEST_CASE(save_during_a_snapshot_writes_a_version_and_refreshes_the_state) {
+    const synth::RuntimeDataPaths paths = ScratchDataPaths("save_during_snapshot");
+    frogg3rs_vst::FroggersPluginProcessor processor(paths);
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+
+    REQUIRE_TRUE(processor.GetEngine().Patches().SavePatchAs(paths.patchesRoot / "p").status ==
+                 synth::PatchCommandStatus::Pending);
+    PumpAndSettle(processor, buffer, midi);
+    REQUIRE_TRUE(processor.CurrentPatchRelativePathForTest().has_value());
+
+    juce::AudioProcessorParameter* audioSlot0 = FindHostParamById(processor, "bank0.slot0");
+    REQUIRE_TRUE(audioSlot0 != nullptr);
+    constexpr float kTarget = 0.63f;
+    audioSlot0->setValueNotifyingHost(kTarget);
+    PumpAndSettle(processor, buffer, midi);  // settle the host write onto the authority first.
+
+    // One pump requests a fresh snapshot; nothing has drained it onto
+    // patchOutputBus yet, so a snapshot is outstanding and unanswered.
+    processor.PumpMessageThreadForTest();
+
+    REQUIRE_TRUE(processor.GetEngine().Patches().SavePatch().status == synth::PatchCommandStatus::Pending);
+
+    // Settle: the outstanding snapshot's response reaches the consumer,
+    // PatchManager dispatches the held save right after, and the save's own
+    // response reaches ProcessResponses on a later pump.
+    PumpAndSettle(processor, buffer, midi);
+
+    std::size_t versionCount = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(paths.patchesRoot / "p")) {
+        if (entry.is_regular_file()) {
+            ++versionCount;
+        }
+    }
+    REQUIRE_TRUE(versionCount == 2);
+
+    // The state the host reads afterwards carries the value set just before
+    // Save -- read back through a fresh processor's own restore, the same
+    // round-trip idiom every other state test in this file uses, rather than
+    // reaching into the JSON by an assumed key name.
+    juce::MemoryBlock state;
+    processor.getStateInformation(state);
+    frogg3rs_vst::FroggersPluginProcessor verify(ScratchDataPaths("save_during_snapshot_verify"));
+    verify.setRateAndBufferSizeDetails(48000.0, 256);
+    verify.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> verifyBuffer(2, 256);
+    verify.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+    PumpAndSettle(verify, verifyBuffer, midi);
+    juce::AudioProcessorParameter* verifySlot0 = FindHostParamById(verify, "bank0.slot0");
+    REQUIRE_TRUE(verifySlot0 != nullptr);
+    constexpr float kTolerance = 0.01f;
+    REQUIRE_TRUE(std::fabs(verifySlot0->getValue() - kTarget) < kTolerance);
+    verify.releaseResources();
+
+    processor.releaseResources();
+    std::cout << "  [state] Save requested during an outstanding snapshot still wrote a second version, and the "
+                 "next snapshot carried the value set just before it.\n";
+}
+
+TEST_CASE(unmarked_state_restores_sound_and_input_and_no_controller_rows) {
+    // A document laid out as an earlier plugin (one that copied the
+    // standalone's controller rows into its own snapshot) would have
+    // written: a real save carrying a Twister row and sessionExtras with no
+    // controllerRows mark.
+    FakeMidiDeviceAccess sourceAccess;
+    const std::size_t twisterPair = sourceAccess.AddPair("Midi Fighter Twister", "twister.in", "twister.out");
+    frogg3rs_vst::FroggersPluginProcessor source(ScratchDataPaths("unmarked_restore_source"), sourceAccess.Access());
+    sourceAccess.sender = source.ContextForTest().midiSender;
+    AddControllerRow(source, sourceAccess, twisterPair, "froggers.twister", "Twister");
+    source.setRateAndBufferSizeDetails(48000.0, 256);
+    source.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> sourceBuffer(2, 256);
+    juce::MidiBuffer midi;
+
+    juce::AudioProcessorParameter* sourceAudioSlot0 = FindHostParamById(source, "bank0.slot0");
+    REQUIRE_TRUE(sourceAudioSlot0 != nullptr);
+    constexpr float kTarget = 0.42f;
+    sourceAudioSlot0->setValueNotifyingHost(kTarget);
+    source.ApplicationForTest().PortableSurface().DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kPageSelect, "2"));
+    PumpAndSettle(source, sourceBuffer, midi);
+
+    juce::MemoryBlock state;
+    source.getStateInformation(state);
+    REQUIRE_TRUE(state.getSize() > 0);
+    source.releaseResources();
+    const std::string fullText(static_cast<const char*>(state.getData()), state.getSize());
+    const std::string markedText = fullText;  // the control: same document, mark intact.
+    const std::string unmarkedText = BuildPatchTextWithoutControllerRowsMark(fullText);
+
+    // Target: input bus enabled (stereo, the bus's own default layout),
+    // holding an APC40 mkII (Generic) row on its own fake pair, PLUS a
+    // Twister pair the restored document's row could reach if the mark were
+    // ignored -- both must be reset/left alone by the unmarked restore
+    // below.
+    FakeMidiDeviceAccess targetAccess;
+    const std::size_t apcPair = targetAccess.AddPair("APC40 Generic", "apc40g.in", "apc40g.out");
+    targetAccess.AddPair("Midi Fighter Twister", "twister.in", "twister.out");
+    frogg3rs_vst::FroggersPluginProcessor target(ScratchDataPaths("unmarked_restore_target"), targetAccess.Access());
+    targetAccess.sender = target.ContextForTest().midiSender;
+    AddControllerRow(target, targetAccess, apcPair, "froggers.apc40.generic", "APC40 Generic");
+    juce::AudioProcessor::Bus* targetInputBus = target.getBus(true, 0);
+    REQUIRE_TRUE(targetInputBus != nullptr);
+    REQUIRE_TRUE(targetInputBus->enable(true));
+    target.setRateAndBufferSizeDetails(48000.0, 256);
+    target.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> targetBuffer(2, 256);
+    PumpAndSettle(target, targetBuffer, midi);
+    REQUIRE_TRUE(target.MidiControllerCountForTest() == 1);  // the APC40 row, before the restore.
+    REQUIRE_TRUE(targetAccess.inputs.size() == 1);  // only the APC40 row has ever opened an endpoint.
+
+    target.setStateInformation(unmarkedText.data(), static_cast<int>(unmarkedText.size()));
+    PumpAndSettle(target, targetBuffer, midi);
+
+    juce::AudioProcessorParameter* targetAudioSlot0 = FindHostParamById(target, "bank0.slot0");
+    REQUIRE_TRUE(targetAudioSlot0 != nullptr);
+    constexpr float kTolerance = 0.01f;
+    REQUIRE_TRUE(std::fabs(targetAudioSlot0->getValue() - kTarget) < kTolerance);
+    REQUIRE_TRUE(target.ApplicationForTest().ActivePageIndex() == 2);
+    REQUIRE_TRUE(target.MidiControllerCountForTest() == 0);
+    // No new endpoint was ever built for the document's own Twister row
+    // (still exactly one log, the APC40's), and that one is now closed --
+    // the fake Twister pair, though present and reachable, never recorded
+    // an Open.
+    REQUIRE_TRUE(targetAccess.inputs.size() == 1);
+    REQUIRE_TRUE(!targetAccess.inputs[0].isOpen);
+
+    target.releaseResources();
+
+    // Control: the SAME document, but with the controllerRows mark intact,
+    // DOES bring the Twister row back -- proving the rows were there to
+    // apply, not simply unreachable in this document shape.
+    FakeMidiDeviceAccess controlAccess;
+    controlAccess.AddPair("Midi Fighter Twister", "twister.in", "twister.out");
+    frogg3rs_vst::FroggersPluginProcessor control(ScratchDataPaths("unmarked_restore_control"),
+                                                  controlAccess.Access());
+    controlAccess.sender = control.ContextForTest().midiSender;
+    control.setRateAndBufferSizeDetails(48000.0, 256);
+    control.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> controlBuffer(2, 256);
+    control.setStateInformation(markedText.data(), static_cast<int>(markedText.size()));
+    PumpAndSettle(control, controlBuffer, midi);
+    REQUIRE_TRUE(control.MidiControllerCountForTest() == 1);
+    REQUIRE_TRUE(controlAccess.outputs.size() == 1 && controlAccess.outputs[0].isOpen);
+    control.releaseResources();
+
+    std::cout << "  [state] an unmarked document restored sound/page and closed the pre-existing APC40 row with no "
+                 "Twister row added; the same document marked restores the Twister row (control).\n";
 }
 
 }  // namespace

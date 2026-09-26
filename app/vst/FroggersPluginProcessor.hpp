@@ -690,6 +690,19 @@ private:
     // .cpp) for the full trace.
     void PumpStatePersistence();
 
+    // Attaches the "sessionExtras" sibling object (freezeLatched,
+    // visibleBankIndex, inputSelection, controllerRows and, when one is
+    // current, currentPatch) to `root`, in `arena`. The one place every
+    // sessionExtras object is built -- the constructor's own synchronous
+    // seed and the host-snapshot consumer it installs on engine_.Patches()
+    // (both in the .cpp) call it, so the two can never carry different keys.
+    // controllerRows is always written true: every snapshot this build
+    // writes marks that it carries this instance's own controller rows, the
+    // mark PumpStatePersistence()'s restore reads to decide whether an
+    // incoming document's rows are this plugin's own setup or something an
+    // earlier version copied from the standalone's configuration.
+    void AttachSessionExtras(synth::JsonArena& arena, synth::JSON& root);
+
     std::vector<HostParamEntry> hostParams_;
 
     // See SetEditorRepaintHook()'s own comment above for the full
@@ -716,26 +729,22 @@ private:
     // getStateInformation() copies this out and returns immediately; it
     // never blocks waiting for a fresh one. Seeded synchronously in the
     // constructor (safe pre-audio, mirroring engine_.Initialize()'s own
-    // synchronous startup patch drain) and refreshed roughly once per
-    // PumpStatePersistence() pump thereafter, so it is never more than
-    // about one pump interval stale -- the same consistency bound
-    // PumpHostParameterBridge() already accepts for host-parameter
-    // readback.
+    // synchronous startup patch drain) and refreshed whenever the
+    // host-snapshot consumer PumpStatePersistence() installs on
+    // engine_.Patches() runs -- PumpStatePersistence() asks for a fresh one
+    // every pump it is not already busy with a snapshot or a save, so this
+    // is never more than about one pump interval stale, the same
+    // consistency bound PumpHostParameterBridge() already accepts for
+    // host-parameter readback.
     std::string cachedStateJsonText_;
 
     // Guarded by stateBlockMutex_. A restore setStateInformation() deposited
-    // but PumpStatePersistence() -- the sole legitimate
-    // engine_.Context().patchInputBus producer, see that method's own
-    // comment -- has not yet claimed. Cleared once claimed.
+    // but PumpStatePersistence() has not yet claimed. Cleared once claimed.
+    // The message thread is engine_.Context().patchInputBus's only producer:
+    // this restore push and PatchManager's own commands (Save, Save As,
+    // Load, a host snapshot request) both run there, never concurrently with
+    // each other.
     std::optional<std::string> pendingRestoreJsonText_;
-
-    // Message-thread-owned (PumpStatePersistence() only): tracks a
-    // SerializeToJSON request this class itself issued but has not yet
-    // consumed the response for, so a second one is never issued while one
-    // is outstanding. nextStateRequestId_ is this class's own monotonically
-    // increasing request-ID source for these requests.
-    std::optional<std::uint64_t> pendingStateSnapshotRequestId_;
-    std::uint64_t nextStateRequestId_ = 1;
 
     std::uint64_t NowMicros() const;
 
