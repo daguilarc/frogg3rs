@@ -296,13 +296,11 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     // --- Test seam (retained) ---------------------------------------------
-    // Dispatches the exact same kPlay/kStop actions
-    // (FroggersUiSurface.hpp's `HandleAction`, via
-    // engine_.Application().PortableSurface().DispatchAction()) the real
-    // Play/Stop buttons dispatch -- see this file's header comment and
-    // timerCallback()'s own comment for why this goes through
-    // DispatchAction rather than hand-mirroring HandleAction's message
-    // sequence. Not reachable from any host UI: the editor draws no Play,
+    // Calls the exact same FroggersUiSurface::StartTransport()/
+    // StopTransport() (app/FroggersUiSurface.hpp) the host playhead's own
+    // edge trigger calls (timerCallback(), below) -- see that method's own
+    // comment for why this bypasses DispatchAction/HandleAction rather than
+    // hand-mirroring HandleAction's message sequence. Not reachable from any host UI: the editor draws no Play,
     // Stop or Record (design decision 2), so a plugin instance's transport
     // moves only from the host's own playhead or a controller row; exists
     // solely so FroggersVstSmokeTest.cpp can drive the core with no

@@ -3721,6 +3721,78 @@ TEST_CASE(file_page_new_returns_every_parameter_to_default) {
               << " host parameters to default (" << changedCount << " had moved after Randomize All).\n";
 }
 
+// -- 10. A controller cannot run the plugin's transport ---------------------
+// FroggersUiSurface::HandleAction gates kPlay/kStop/kRecord on
+// pluginHostMode_ (this class's own surface is always in plugin host mode,
+// FroggersPluginProcessor's constructor); Freeze is not gated. Drives a real
+// Twister row (channel 4 CC 9 Play/shifted Stop, CC 10 Freeze, CC 13 Shift)
+// and a real APC40 mkII (Generic) row (note 93 Record) through the same fake
+// device harness the controller-port tests above use, with a fake playhead
+// standing in for the DAW's own transport.
+TEST_CASE(controller_play_stop_record_do_nothing_and_freeze_latches) {
+    FakeMidiDeviceAccess access;
+    const std::size_t twisterPair = access.AddPair("Midi Fighter Twister", "twister.in", "twister.out");
+    const std::size_t apcPair = access.AddPair("APC40 Generic", "apc40g.in", "apc40g.out");
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("controller_transport_gate"), access.Access());
+    access.sender = processor.ContextForTest().midiSender;
+    AddControllerRow(processor, access, twisterPair, "froggers.twister", "Twister");
+    AddControllerRow(processor, access, apcPair, "froggers.apc40.generic", "APC40 Generic");
+
+    FakePlayHead playHead;
+    processor.setPlayHead(&playHead);
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+
+    // Baseline: the fake playhead reports stopped, established before any
+    // edge is measured (mirrors transport_edges_run_stop_run_produce_exactly_one_message_per_transition's
+    // own first observation).
+    playHead.SetPlaying(false);
+    buffer.clear();
+    processor.processBlock(buffer, midi);
+    PumpAndSettle(processor, buffer, midi);
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&processor.ContextForTest()));
+
+    // Channel 4 CC 9 (Play) on the Twister does nothing while hosted.
+    access.inputEndpoints[0]->Deliver(synth::BasicMidi::CC(0, 3, 9, 127));
+    PumpAndSettle(processor, buffer, midi);
+    REQUIRE_TRUE(!synth_froggers::FroggersTransportIsRunning(&processor.ContextForTest()));
+
+    // The host's own playhead still runs it.
+    playHead.SetPlaying(true);
+    buffer.clear();
+    processor.processBlock(buffer, midi);
+    PumpAndSettle(processor, buffer, midi);
+    REQUIRE_TRUE(synth_froggers::FroggersTransportIsRunning(&processor.ContextForTest()));
+
+    // With Shift held, the same button's shifted job (Stop) also does
+    // nothing: the transport stays running.
+    access.inputEndpoints[0]->Deliver(synth::BasicMidi::CC(0, 3, 13, 127));  // Shift press.
+    access.inputEndpoints[0]->Deliver(synth::BasicMidi::CC(0, 3, 9, 127));   // Shifted -> Stop.
+    access.inputEndpoints[0]->Deliver(synth::BasicMidi::CC(0, 3, 13, 0));    // Shift release.
+    PumpAndSettle(processor, buffer, midi);
+    REQUIRE_TRUE(synth_froggers::FroggersTransportIsRunning(&processor.ContextForTest()));
+
+    // An APC40 mkII (Generic) RECORD press arms no recording while hosted,
+    // with the transport running -- the one condition ArmRecording() would
+    // otherwise accept.
+    REQUIRE_TRUE(!processor.ApplicationForTest().RecordArmed());
+    access.inputEndpoints[1]->Deliver(synth::BasicMidi::Note(0, 0, 93, 127));
+    PumpAndSettle(processor, buffer, midi);
+    REQUIRE_TRUE(!processor.ApplicationForTest().RecordArmed());
+
+    // Freeze is not gated: the Twister's Freeze button still latches.
+    REQUIRE_TRUE(!processor.ApplicationForTest().FreezeLatched());
+    access.inputEndpoints[0]->Deliver(synth::BasicMidi::CC(0, 3, 10, 127));
+    PumpAndSettle(processor, buffer, midi);
+    REQUIRE_TRUE(processor.ApplicationForTest().FreezeLatched());
+
+    processor.releaseResources();
+    processor.setPlayHead(nullptr);
+    std::cout << "  [transport gate] controller Play/Stop/Record do nothing while hosted; Freeze still latches.\n";
+}
+
 }  // namespace
 
 int main() {

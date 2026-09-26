@@ -899,9 +899,13 @@ public:
     // it. The plugin host (the VST editor) calls SetPluginHostMode(true)
     // before/at attach time so
     // AppendTransportRow() below thins Play | Stop | Freeze | Record down to
-    // Freeze | "FREEZE" label -- the plugin spec's binding requirement
-    // (Play/Stop/Record are meaningless when the DAW is transport authority;
-    // only Freeze survives as a plugin-reachable control).
+    // Freeze | "FREEZE" label, and so HandleAction's kPlay, kStop and
+    // kRecord branches below do nothing -- the plugin spec's binding
+    // requirement (Play/Stop/Record are meaningless when the DAW is
+    // transport authority; only Freeze survives as a plugin-reachable
+    // control). With this flag set, only the host's own playhead starts and
+    // stops the transport, through the public StartTransport()/
+    // StopTransport() below, never through a controller's Play/Stop.
     //
     // Deliberately a plain runtime setter on the surface instance, NOT a
     // new FroggersCellMap::LeftKind row-table entry (contrast the CELL
@@ -919,6 +923,28 @@ public:
     // belong on FroggersAppCore either).
     void SetPluginHostMode(bool pluginHostMode) { pluginHostMode_ = pluginHostMode; }
     bool PluginHostMode() const { return pluginHostMode_; }
+
+    // Starts the transport: disarms the Freeze latch, pushes the same
+    // MessageIn::Start every Play press pushes, and records the
+    // desired-running intent -- the one definition of "start the transport"
+    // HandleAction's kPlay branch and the Freeze release branch below both
+    // call, so the two can never drift apart in what starting means. Public
+    // so a plugin host's own transport-edge trigger
+    // (FroggersPluginProcessor::timerCallback()) and its smoke-test seam
+    // (TestStartTransport()) can start the transport directly, bypassing
+    // HandleAction's kPlay gate below -- the host's own playhead is not a
+    // controller row, and pluginHostMode_ must never block it.
+    void StartTransport() {
+        LatchThenTransport(false, synth::MessageIn::Start(NowMicros()), true);
+        transportNotice_.clear();
+    }
+
+    // Stops the transport: the same LatchThenTransport call HandleAction's
+    // kStop branch below makes -- the one definition of "stop the
+    // transport" for that branch, a plugin host's own transport-edge
+    // trigger, and its smoke-test seam (TestStopTransport()), for the same
+    // bypass reason StartTransport() above documents.
+    void StopTransport() { LatchThenTransport(false, synth::MessageIn::Stop(NowMicros()), false); }
 
     // The plugin's own input-channel selection control -- another
     // host-only fact owned directly by the
@@ -2129,6 +2155,13 @@ private:
         // Generic, safe over the existing uiBus (see this file's header
         // comment): transport, scene select/blend, encoder drag.
         if (action.name == FroggersActions::kPlay) {
+            // In plugin mode only the host's own playhead starts the
+            // transport (SetPluginHostMode()'s own comment); a controller's
+            // Play does nothing there, the same as the editor drawing no
+            // Play button of its own.
+            if (pluginHostMode_) {
+                return;
+            }
             // Play disarms the Freeze latch: a
             // latched Freeze holds the voice gate OPEN unconditionally
             // (FroggersAppCore's `setGate(gateOpen || FreezeLatched())`),
@@ -2142,10 +2175,15 @@ private:
             return;
         }
         if (action.name == FroggersActions::kStop) {
+            // See kPlay's own comment: in plugin mode only the host's own
+            // playhead stops the transport.
+            if (pluginHostMode_) {
+                return;
+            }
             // A later Stop always means stop, regardless of latch state.
             // See LatchThenTransport's own comment for the happens-before
             // ordering this relies on.
-            LatchThenTransport(false, synth::MessageIn::Stop(NowMicros()), false);
+            StopTransport();
             return;
         }
         if (action.name == FroggersActions::kFreeze) {
@@ -2183,6 +2221,12 @@ private:
             return;
         }
         if (action.name == FroggersActions::kRecord) {
+            // See kPlay's own comment: in plugin mode a controller's Record
+            // does nothing -- there is no capture to arm or export, and the
+            // editor draws no Record button of its own either.
+            if (pluginHostMode_) {
+                return;
+            }
             // Unlike Freeze's plain latch flip, Record can REFUSE (transport
             // stopped -- FroggersAppCore::
             // ArmRecording's own comment) and produces a result the host
@@ -2356,17 +2400,6 @@ private:
         app_->SetFreezeLatched(latched);
         PushMessage(message);
         app_->SetDesiredTransportRunning(running);
-    }
-
-    // Starts the transport: disarms the Freeze latch, pushes the same
-    // MessageIn::Start every Play press pushes, records the desired-running
-    // intent, and clears the transport notice -- the one definition of
-    // "start the transport" the kPlay branch above and the Freeze release
-    // branch above both call, so the two can never drift apart in what
-    // starting means.
-    void StartTransport() {
-        LatchThenTransport(false, synth::MessageIn::Start(NowMicros()), true);
-        transportNotice_.clear();
     }
 
     std::uint64_t NowMicros() const {

@@ -832,25 +832,26 @@ void FroggersPluginProcessor::timerCallback() {
     midiConnections_->OnTimerTick();
 
     // -- drain the pending host transport edge, if any -----------------
-    // Routed through the SAME production seam the Play/Stop buttons use --
-    // FroggersApp::PortableSurface() (Froggers.hpp's `PortableSurface`) returns the exact
-    // FroggersUiSurface instance already Attach()-ed to this engine
-    // (Froggers.hpp's `FroggersApp::Init`, run once during engine_.Initialize() above), so
-    // DispatchAction() here runs the literal HandleAction kPlay/kStop
-    // branches (FroggersUiSurface.hpp's `HandleAction`) -- including their
-    // LatchThenTransport call, which disarms the latch and pushes the
-    // transport message in happens-before order -- rather than a
-    // hand-mirrored copy of that logic that could drift from it. No editor
-    // is required for this: DispatchAction() does not touch anything
-    // editor-owned.
+    // Calls the surface's own public StartTransport()/StopTransport()
+    // directly (FroggersUiSurface.hpp) -- the one definition of
+    // starting/stopping the transport, including the LatchThenTransport call
+    // that disarms the Freeze latch and pushes the transport message in
+    // happens-before order -- rather than DispatchAction(kPlay/kStop): this
+    // instance is always in plugin host mode (the constructor's own
+    // SetPluginHostMode(true) call, above), so HandleAction's kPlay/kStop
+    // branches gate out a controller's own Play/Stop and would gate out the
+    // host's playhead edge too if this went through DispatchAction. The
+    // downcast mirrors the SetPluginHostMode()/SetInputSelectionChangedCallback()
+    // one above: engine_.Application() is concretely FroggersApp&, whose
+    // PortableSurface() is concretely a FroggersUiSurface (that method's own
+    // comment). No editor is required for this: neither method touches
+    // anything editor-owned.
     const int pendingEdge = pendingTransportEdge_.exchange(
         static_cast<int>(PendingTransportEdge::kNone), std::memory_order_relaxed);
     if (pendingEdge == static_cast<int>(PendingTransportEdge::kStart)) {
-        engine_.Application().PortableSurface().DispatchAction(
-            synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
+        static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface()).StartTransport();
     } else if (pendingEdge == static_cast<int>(PendingTransportEdge::kStop)) {
-        engine_.Application().PortableSurface().DispatchAction(
-            synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
+        static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface()).StopTransport();
     }
 
     // -- host tempo via the existing external-clock slave path ---------
@@ -1039,23 +1040,22 @@ void FroggersPluginProcessor::timerCallback() {
 }
 
 void FroggersPluginProcessor::TestStartTransport() {
-    // Routed through DispatchAction (the production seam, see
-    // timerCallback()'s own comment) rather than pushing
+    // Calls the surface's own public StartTransport() (the production seam,
+    // see timerCallback()'s own comment) rather than pushing
     // MessageIn::Start/SetDesiredTransportRunning directly: a direct push
     // would miss the Freeze-latch disarm the real Play button's
-    // LatchThenTransport call performs (FroggersUiSurface.hpp's `HandleAction`),
-    // and hand-mirroring that fix a
-    // second time would let this seam and the real transport-edge-trigger
-    // producer independently drift from HandleAction's actual kPlay
-    // branch.
-    engine_.Application().PortableSurface().DispatchAction(
-        synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
+    // LatchThenTransport call performs, and hand-mirroring that fix a second
+    // time would let this seam and the real transport-edge-trigger producer
+    // independently drift from it. Not DispatchAction(kPlay): this instance
+    // is always in plugin host mode, so HandleAction's kPlay branch would
+    // gate this out (see timerCallback()'s own comment on the same
+    // downcast).
+    static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface()).StartTransport();
 }
 
 void FroggersPluginProcessor::TestStopTransport() {
     // See TestStartTransport()'s own comment.
-    engine_.Application().PortableSurface().DispatchAction(
-        synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
+    static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface()).StopTransport();
 }
 
 // -- stable-ID host parameter surface -----------------------------------
