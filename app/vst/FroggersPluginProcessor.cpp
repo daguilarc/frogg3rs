@@ -141,9 +141,15 @@ synth::RuntimeDataPaths FroggersPluginProcessor::PluginDataPaths(const std::file
 }
 
 FroggersPluginProcessor::FroggersPluginProcessor()
-    : FroggersPluginProcessor(PluginDataPaths(synth_runtime::SheafUserApplicationDataRoot())) {}
+    // Production always wires the real JUCE MIDI handlers (MidiDeviceAccess's
+    // own member defaults, synth_runtime::MidiConnectionManager.hpp) --
+    // NoDeviceAccess() below is the test constructor's own default, never
+    // production's.
+    : FroggersPluginProcessor(PluginDataPaths(synth_runtime::SheafUserApplicationDataRoot()),
+                              synth_runtime::MidiDeviceAccess{}) {}
 
-FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPathsForTest)
+FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPathsForTest,
+                                                 synth_runtime::MidiDeviceAccess deviceAccess)
     // One OPTIONAL stereo input bus alongside the existing stereo output.
     // The third `withInput` argument (`isActivatedByDefault =
     // false`) declares the bus present but disabled until a host
@@ -157,7 +163,14 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
                                .withInput("Input", juce::AudioChannelSet::stereo(), false)
                                .withOutput("Output", juce::AudioChannelSet::stereo(), true))
     , startTime_(std::chrono::steady_clock::now())
-    , engine_([this] { return NowMicros(); }) {
+    , engine_([this] { return NowMicros(); })
+    // Built here, in the member-init list, the same place Runtime<App>'s own
+    // constructor builds its midiConnections_ -- engine_ and startTime_ are
+    // already constructed by this point (both declared earlier in this
+    // class), so the manager's engine reference and captured epoch are both
+    // valid immediately.
+    , midiConnections_(std::make_unique<synth_runtime::MidiConnectionManager<synth_froggers::FroggersApp>>(
+          engine_, synth_juce::RuntimeMidiEpoch::Capture(startTime_), std::move(deviceAccess))) {
     // `Runtime::Start()`'s order (External/Sheaf/projects/synth/runtime/Runtime.hpp,
     // this file's header comment):
     // SetRuntimeDataPaths() BEFORE Initialize() -- startup patch/config
@@ -179,6 +192,25 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     // through teardown, including FroggersAppCore::~FroggersAppCore()'s
     // own unregistration through this same pointer.
     engine_.Context().inputRoutingSignal = &inputRoutingSignal_;
+
+    // Wires midiConnections_ into the engine's MIDI-processor rebuild
+    // callbacks BEFORE engine_.Initialize() below ever runs the first
+    // (silent) RebuildMidiProcessors() pass -- the exact ordering
+    // Runtime<App>'s own constructor uses (Runtime.hpp), and required by
+    // MidiConnectionManager's own forwarding-processor-swap contract
+    // (MidiConnectionManager.hpp's class comment): the will-rebuild callback
+    // detaches every row's forwarding processor before the engine destroys
+    // midiProcessors_, and the rebuilt callback resizes/reinstalls it
+    // afterward, then notifies the Controllers-page binding a host installs
+    // through SetMidiProcessorsRebuiltHook().
+    engine_.SetMidiProcessorsWillRebuildCallback([this] { midiConnections_->OnMidiProcessorsWillRebuild(); });
+    engine_.SetMidiProcessorsRebuiltCallback([this] {
+        midiConnections_->OnInstrumentRebuilt();
+        if (midiProcessorsRebuiltHook_) {
+            midiProcessorsRebuiltHook_();
+        }
+    });
+
     // Called ONCE, in the constructor -- not in prepareToPlay(), which JUCE
     // may call repeatedly (sample-rate/block-size renegotiation). Mirrors
     // Runtime::Start() calling engine_.Initialize() once, before any audio
@@ -186,6 +218,19 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     // in `Runtime::audioDeviceAboutToStart`
     // (External/Sheaf/projects/synth/runtime/Runtime.hpp).
     engine_.Initialize();
+
+    // Startup order (binding, mirrors Runtime::Start()): the MIDI sender
+    // starts before any row's output port opens, so every producer
+    // StartupReconcile() below is about to create already has a live
+    // consumer; StartupReconcile() then resizes midiConnections_ to the
+    // current controller count and runs one synchronous reconcile against
+    // the actually-enumerated device list, opening each row's configured
+    // ports (absent -> offline, never a startup failure), before starting
+    // its background poller.
+    if (synth::MidiSender* sender = engine_.Context().midiSender; sender != nullptr) {
+        sender->Start();
+    }
+    midiConnections_->StartupReconcile();
 
     // This is SetPluginHostMode()'s first PRODUCTION
     // call site (app/FroggersUiSurface.hpp's own comment on that method
@@ -336,9 +381,18 @@ FroggersPluginProcessor::~FroggersPluginProcessor() {
     // when called from the message thread (the expected case for plugin
     // teardown, and the same thread every timerCallback() runs on, so there
     // is no concurrent in-flight call to race here). Called explicitly,
-    // before any member (in particular engine_, which timerCallback()
-    // touches) begins tearing down.
+    // before any member (in particular engine_ and midiConnections_, which
+    // timerCallback() touches) begins tearing down.
     stopTimer();
+    // Shutdown ordering (binding, mirrors Runtime<App>'s own destructor,
+    // Runtime.hpp): stop the MIDI sender before closing any row's output --
+    // so no in-flight enqueued MIDI is delivered to a sink about to be torn
+    // down -- THEN reset midiConnections_, whose own destructor stops/joins
+    // its poller before closing any device handler.
+    if (synth::MidiSender* sender = engine_.Context().midiSender; sender != nullptr) {
+        sender->Stop();
+    }
+    midiConnections_.reset();
 }
 
 // One FroggersPluginEditor per call, exactly the
@@ -769,6 +823,14 @@ void FroggersPluginProcessor::timerCallback() {
     // (External/Sheaf/projects/synth/runtime/Runtime.hpp): the engine's message-thread tick runs first.
     engine_.MessageThreadTick();
 
+    // The self-healing poll-driven reconcile path (Runtime.hpp's own
+    // timerCallback() runs this right after MessageThreadTick() too, for the
+    // same reason: MessageThreadTick() already drained any pending
+    // instrument-rebuild and run OnInstrumentRebuilt()'s own reconcile pass
+    // synchronously by the time this runs, so a device-list change is what
+    // OnTimerTick() alone can still catch this pump).
+    midiConnections_->OnTimerTick();
+
     // -- drain the pending host transport edge, if any -----------------
     // Routed through the SAME production seam the Play/Stop buttons use --
     // FroggersApp::PortableSurface() (Froggers.hpp's `PortableSurface`) returns the exact
@@ -1122,11 +1184,13 @@ void FroggersPluginProcessor::BuildHostParameterInventory() {
     // PortableSurface().DispatchAction(kFreeze), the EXACT seam the
     // transport edge-trigger and this file's own TestStartTransport()
     // already use, and the exact seam the real Freeze button itself uses
-    // (FroggersUiSurface.hpp's kFreeze branch). No plugin-side MIDI
-    // mapping/learn is introduced anywhere by this -- Freeze becomes
-    // automatable/host-MIDI-mappable purely by being an ordinary
+    // (FroggersUiSurface.hpp's kFreeze branch). This host-parameter exposure
+    // adds no MIDI mapping of its own -- Freeze becomes automatable/
+    // host-MIDI-mappable purely by being an ordinary
     // juce::AudioProcessorParameter, exactly like every other parameter
-    // above.
+    // above. A controller row can still map Freeze itself, the same way it
+    // maps any other button, through midiConnections_ below, not through
+    // this bridge.
     {
         HostParamEntry entry;
         entry.kind = HostParamEntry::Kind::kFreeze;

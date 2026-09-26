@@ -35,11 +35,17 @@
 // This class mirrors Runtime.hpp's call order exactly (constructor:
 // SetRuntimeDataPaths + Initialize(), once; prepareToPlay(): Prepare(),
 // every call; processBlock(): ProcessBlock(), every callback) without any
-// of Runtime.hpp's device-manager/MIDI-connection/window machinery -- none
-// of that is needed to drive the core, so none of it is duplicated: the core
-// is not blocked on launcher-session machinery to run headlessly --
-// synth::Engine<App> is the seam, and it is already JUCE-free and driven
-// exactly this way by SynthRig.hpp's own JUCE-free tests.
+// of Runtime.hpp's device-manager/window machinery -- none of that is
+// needed to drive the core, so none of it is duplicated: the core is not
+// blocked on launcher-session machinery to run headlessly -- synth::Engine
+// <App> is the seam, and it is already JUCE-free and driven exactly this
+// way by SynthRig.hpp's own JUCE-free tests. One piece of Runtime.hpp's
+// machinery IS duplicated, deliberately: MIDI-connection ownership. A
+// controller row needs its own MIDI ports open in the plugin exactly as in
+// the standalone (midiConnections_ below), so this class wires a
+// synth_runtime::MidiConnectionManager the same way Runtime<App>'s
+// constructor does, reconciled once at construction and polled from this
+// class's own message-thread timer.
 //
 // Data path: reuses the SAME "frogg3rs" stable app id and shared
 // ~/Library/Sheaf data root FroggersMain.cpp's direct-launch app uses
@@ -105,11 +111,14 @@
 // ONLY thing that pushes a host-driven write into the core (via the SAME
 // engine_.UiBus().Push()/DispatchAction() seams the host transport, host
 // tempo, and Freeze producers already use)
-// -- processBlock() still never touches UiBus or DispatchAction itself. No
-// plugin-side MIDI mapping or MIDI learn exists anywhere in this class (per
-// the governing spec): DAW-side MIDI mapping reaches this instrument
-// entirely through the ordinary host-parameter-automation surface below,
-// the same way it would for any other automatable plugin parameter.
+// -- processBlock() still never touches UiBus or DispatchAction itself. This
+// bridge itself introduces no MIDI mapping or MIDI learn (per the governing
+// spec, which forbids MIDI learn but not controller-row mapping): DAW-side
+// MIDI mapping reaches this instrument through the ordinary
+// host-parameter-automation surface below, the same way it would for any
+// other automatable plugin parameter. The plugin's controller rows
+// (midiConnections_ below) map their own MIDI input separately, the same
+// rows and presets the standalone offers, with no learn UI of their own.
 
 #include "Froggers.hpp"
 #include "synth/AppContext.hpp"
@@ -119,6 +128,7 @@
 #include "synth/ParameterModulation.hpp"
 
 #include "HostDataPaths.hpp"
+#include "MidiConnectionManager.hpp"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -136,6 +146,40 @@
 #include <vector>
 
 namespace frogg3rs_vst {
+
+namespace detail {
+
+// A MidiDeviceAccess whose endpoints never open and whose enumeration
+// always reports no devices: the test constructor's own default, so no host
+// test sees or drives a plugged-in controller unless it supplies its own
+// access (production always supplies a real one -- see the .cpp).
+class NoOpMidiInputEndpoint final : public synth_runtime::MidiInputEndpoint {
+public:
+    bool Open(const juce::String&) override { return false; }
+    void Close() override {}
+    void SetProcessor(std::unique_ptr<synth::MidiInProcessor>) override {}
+};
+
+class NoOpMidiOutputEndpoint final : public synth_runtime::MidiOutputEndpoint {
+public:
+    bool Open(const juce::String&) override { return false; }
+    void Close() override {}
+    void Send(const synth::BasicMidi&) override {}
+};
+
+inline synth_runtime::MidiDeviceAccess NoDeviceAccess() {
+    synth_runtime::MidiDeviceAccess access;
+    access.enumerate = [] { return synth::MidiDeviceList{}; };
+    access.makeInput = [](synth_juce::RuntimeMidiEpoch) -> std::unique_ptr<synth_runtime::MidiInputEndpoint> {
+        return std::make_unique<NoOpMidiInputEndpoint>();
+    };
+    access.makeOutput = [](synth_juce::RuntimeMidiEpoch) -> std::unique_ptr<synth_runtime::MidiOutputEndpoint> {
+        return std::make_unique<NoOpMidiOutputEndpoint>();
+    };
+    return access;
+}
+
+}  // namespace detail
 
 class FroggersPluginProcessor final : public juce::AudioProcessor, private juce::Timer {
 public:
@@ -157,17 +201,22 @@ public:
     // "frogg3rs" data root through PluginDataPaths() above.
     FroggersPluginProcessor();
 
-    // Test-only entry point (5.2): lets the smoke test point the engine at a
-    // scratch data root instead of the shared production one, the same
-    // reason FroggersHeadlessTests.cpp's UseScratchRuntimeDataPaths() exists
-    // -- a headless test must never read or write the operator's real
-    // ~/Library/Sheaf state.
-    explicit FroggersPluginProcessor(synth::RuntimeDataPaths dataPathsForTest);
+    // Test-only entry point (5.2): lets a test point the engine at a scratch
+    // data root instead of the shared production one, the same reason
+    // FroggersHeadlessTests.cpp's UseScratchRuntimeDataPaths() exists -- a
+    // headless test must never read or write the operator's real
+    // ~/Library/Sheaf state. `deviceAccess` defaults to one that lists no
+    // devices and whose endpoints never open, so no host test sees or
+    // drives a plugged-in controller unless it supplies its own access (a
+    // test exercising a row's ports passes a fake one -- see
+    // FroggersVstHostTests.cpp).
+    explicit FroggersPluginProcessor(synth::RuntimeDataPaths dataPathsForTest,
+                                     synth_runtime::MidiDeviceAccess deviceAccess = detail::NoDeviceAccess());
 
     // Not defaulted: must stopTimer() before the rest of this object (in
-    // particular engine_) tears down -- a juce::Timer's callback can fire on
-    // the message thread right up until stopTimer() returns, and
-    // timerCallback() below touches engine_.
+    // particular engine_ and midiConnections_) tears down -- a juce::Timer's
+    // callback can fire on the message thread right up until stopTimer()
+    // returns, and timerCallback() below touches both.
     ~FroggersPluginProcessor() override;
 
     FroggersPluginProcessor(const FroggersPluginProcessor&) = delete;
@@ -387,6 +436,25 @@ public:
     // juce::AudioProcessorParameter::Listener (standard JUCE, added by the
     // test itself) is the right tool to observe this bridge's
     // setValueNotifyingHost() traffic rather than a bespoke counter here.
+
+    // -- Plugin services seam -------------------------------------------------
+    // The three accessors a Controllers/File-page host binding needs, the
+    // same shape Runtime<App>'s own GetEngine()/MidiConnections()/
+    // SetMidiProcessorsRebuiltHook() give JuceRuntimeMainServices
+    // (Runtime.hpp).
+    synth::Engine<synth_froggers::FroggersApp>& GetEngine() { return engine_; }
+
+    // The per-row MIDI connection owner: a Controllers-page binding reads
+    // its State()/EnumerateNow() to render device combos and status dots,
+    // the same way it reads Runtime<App>'s own MidiConnections().
+    synth_runtime::MidiConnectionManager<synth_froggers::FroggersApp>& MidiConnections() { return *midiConnections_; }
+
+    // Installs the Controllers-page binding's rebuild-notification hook,
+    // invoked at the end of the engine's rebuilt callback (constructor,
+    // below) right after midiConnections_->OnInstrumentRebuilt() -- every
+    // MIDI-processor rebuild, not just the page's own edits, mirroring
+    // Runtime<App>::SetMidiProcessorsRebuiltHook's own doc comment.
+    void SetMidiProcessorsRebuiltHook(std::function<void()> hook) { midiProcessorsRebuiltHook_ = std::move(hook); }
 
     // -- Editor render-host seam ---------------------------------------------
     // The exact synth::ui::Surface& FroggersPluginEditor renders through
@@ -724,6 +792,20 @@ private:
 
     std::chrono::steady_clock::time_point startTime_;
     synth::Engine<synth_froggers::FroggersApp> engine_;
+
+    // Owns every controller row's MIDI ports, exactly as
+    // synth_runtime::Runtime<App> owns one for the standalone (Runtime.hpp's
+    // own class comment). Declared after engine_ (not before): the
+    // constructor builds it from engine_ and a RuntimeMidiEpoch captured
+    // from startTime_, both already constructed by this point in the
+    // member-init list, and the destructor tears it down before engine_
+    // destroys the MIDI processor chain it forwards into.
+    std::unique_ptr<synth_runtime::MidiConnectionManager<synth_froggers::FroggersApp>> midiConnections_;
+
+    // The Controllers-page binding's subscription to every MIDI-processor
+    // rebuild -- see SetMidiProcessorsRebuiltHook()'s own comment above.
+    // Empty (falsy) whenever no such binding is installed.
+    std::function<void()> midiProcessorsRebuiltHook_;
 };
 
 }  // namespace frogg3rs_vst

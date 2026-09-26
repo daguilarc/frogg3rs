@@ -76,9 +76,11 @@
 
 #include "FroggersPluginProcessor.hpp"
 
+#include "FroggersMidiCatalog.hpp"
 #include "FroggersRegistration.hpp"
 #include "FroggersUiSurface.hpp"
 #include "synth/AppRegistry.hpp"
+#include "synth/ControllerWizard.hpp"
 #include "synth/MidiController.hpp"
 #include "synth/PatchPersistence.hpp"
 #include "synth/PortableUI.hpp"
@@ -90,6 +92,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <deque>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -3011,6 +3014,461 @@ TEST_CASE(new_instance_reads_and_writes_none_of_the_standalones_data) {
     std::cout << "  [plugin data paths] host param bank0.slot0=" << audioSlot0->getValue()
               << " (expected default 0.3087), MidiControllerCount=" << processor.MidiControllerCountForTest()
               << " (expected 0), standalone's config and data tree unchanged.\n";
+}
+
+// -- 8. Controller rows open their own ports -----------------------------
+// The processor's own MidiConnectionManager opens and closes each row's
+// ports exactly as the standalone's does; every case below drives a fake
+// MidiDeviceAccess so no real hardware is touched (mirrors
+// External/Sheaf/projects/synth/juce/MidiConnectionManagerTests.cpp's own
+// FakeDeviceAccess, extended to more than one device pair at once).
+
+// The observable state of one fake endpoint, owned by FakeMidiDeviceAccess
+// itself rather than by the endpoint object: MidiConnectionManager (and
+// therefore every endpoint it built) is destroyed with the processor under
+// test, but several cases below (the destructor case especially) need to
+// read what an endpoint recorded AFTER that processor is gone. A log
+// outliving the endpoint that writes into it is what makes that safe.
+struct FakeInputLog {
+    std::vector<std::string> opens;
+    int closes = 0;
+    bool isOpen = false;
+};
+
+struct FakeOutputLog {
+    std::vector<std::string> opens;
+    std::vector<bool> senderRunningAtClose;
+    std::vector<synth::BasicMidi> sent;
+    bool isOpen = false;
+};
+
+class FakeMidiInputEndpoint final : public synth_runtime::MidiInputEndpoint {
+public:
+    explicit FakeMidiInputEndpoint(FakeInputLog* log) : log_(log) {}
+    bool Open(const juce::String& identifier) override {
+        log_->opens.push_back(identifier.toStdString());
+        log_->isOpen = true;
+        return true;
+    }
+    void Close() override {
+        ++log_->closes;
+        log_->isOpen = false;
+    }
+    void SetProcessor(std::unique_ptr<synth::MidiInProcessor> processor) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        processor_ = std::move(processor);
+    }
+    // Delivers straight to whatever processor MidiConnectionManager last
+    // installed here -- the same call a real JUCE MIDI callback makes
+    // (MidiInHandler::handleIncomingMidiMessage, juce/MidiHandlers.hpp).
+    void Deliver(const synth::BasicMidi& midi) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (processor_) {
+            processor_->Process(midi);
+        }
+    }
+
+private:
+    FakeInputLog* log_;
+    std::mutex mutex_;
+    std::unique_ptr<synth::MidiInProcessor> processor_;
+};
+
+class FakeMidiOutputEndpoint final : public synth_runtime::MidiOutputEndpoint {
+public:
+    // `senderSlot` points at a field the test fills in once the real
+    // MidiSender exists (ContextForTest().midiSender, valid only after the
+    // processor's constructor returns) -- read lazily, at Close() time, not
+    // captured up front: this endpoint is built from inside that same
+    // constructor's own StartupReconcile() call, before the field is set.
+    FakeMidiOutputEndpoint(FakeOutputLog* log, synth::MidiSender* const* senderSlot)
+        : log_(log), senderSlot_(senderSlot) {}
+    bool Open(const juce::String& identifier) override {
+        log_->opens.push_back(identifier.toStdString());
+        log_->isOpen = true;
+        return true;
+    }
+    void Close() override {
+        log_->senderRunningAtClose.push_back(senderSlot_ != nullptr && *senderSlot_ != nullptr &&
+                                             (*senderSlot_)->IsRunning());
+        log_->isOpen = false;
+    }
+    void Send(const synth::BasicMidi& midi) override { log_->sent.push_back(midi); }
+
+private:
+    FakeOutputLog* log_;
+    synth::MidiSender* const* senderSlot_ = nullptr;
+};
+
+// One or more named device pairs, each independently toggled present or
+// absent, and the log for every controller slot's fake endpoints, in
+// construction order -- ResizeToControllerCount() builds one input and one
+// output per growing slot index, in index order, matching the order
+// controller rows are added in every case below. Logs live in `std::deque`s
+// (never reallocated on growth, unlike a vector) so a pointer handed to an
+// endpoint at construction stays valid for that endpoint's whole lifetime.
+class FakeMidiDeviceAccess {
+public:
+    std::size_t AddPair(std::string name, std::string inputIdentifier, std::string outputIdentifier) {
+        pairs_.push_back(Pair{std::move(inputIdentifier), name, std::move(outputIdentifier), name, true});
+        return pairs_.size() - 1;
+    }
+
+    synth::MidiEndpointRef InputRef(std::size_t pairIx) const {
+        return synth::MidiEndpointRef{pairs_[pairIx].inputIdentifier, pairs_[pairIx].inputName};
+    }
+    synth::MidiEndpointRef OutputRef(std::size_t pairIx) const {
+        return synth::MidiEndpointRef{pairs_[pairIx].outputIdentifier, pairs_[pairIx].outputName};
+    }
+    void SetPresent(std::size_t pairIx, bool present) { pairs_[pairIx].present = present; }
+
+    synth::MidiDeviceList Enumerate() const {
+        synth::MidiDeviceList list;
+        for (const Pair& pair : pairs_) {
+            if (pair.present) {
+                list.inputs.push_back({pair.inputIdentifier, pair.inputName});
+                list.outputs.push_back({pair.outputIdentifier, pair.outputName});
+            }
+        }
+        return list;
+    }
+
+    synth_runtime::MidiDeviceAccess Access() {
+        synth_runtime::MidiDeviceAccess access;
+        access.enumerate = [this] { return Enumerate(); };
+        access.makeInput = [this](synth_juce::RuntimeMidiEpoch) -> std::unique_ptr<synth_runtime::MidiInputEndpoint> {
+            FakeInputLog& log = inputs.emplace_back();
+            auto endpoint = std::make_unique<FakeMidiInputEndpoint>(&log);
+            // Deliver() must reach the LIVE endpoint (it forwards into
+            // whatever synth::MidiInProcessor is currently installed), so a
+            // test drives it through this pointer -- valid only while the
+            // processor under test is alive, unlike the logs above.
+            inputEndpoints.push_back(endpoint.get());
+            return endpoint;
+        };
+        access.makeOutput =
+            [this](synth_juce::RuntimeMidiEpoch) -> std::unique_ptr<synth_runtime::MidiOutputEndpoint> {
+            FakeOutputLog& log = outputs.emplace_back();
+            return std::make_unique<FakeMidiOutputEndpoint>(&log, &sender);
+        };
+        access.pollInterval = pollInterval;
+        return access;
+    }
+
+    std::chrono::milliseconds pollInterval{std::chrono::seconds(5)};
+    std::deque<FakeInputLog> inputs;
+    std::deque<FakeOutputLog> outputs;
+    // Live endpoint pointers, index-aligned with `inputs` above -- see
+    // makeInput's own comment for why Deliver() needs these instead of the
+    // logs.
+    std::vector<FakeMidiInputEndpoint*> inputEndpoints;
+    // Filled in by the test right after constructing the processor
+    // (ContextForTest().midiSender) -- FakeMidiOutputEndpoint reads through
+    // this pointer lazily, since it is built before the sender exists (see
+    // its own comment).
+    synth::MidiSender* sender = nullptr;
+
+private:
+    struct Pair {
+        std::string inputIdentifier;
+        std::string inputName;
+        std::string outputIdentifier;
+        std::string outputName;
+        bool present = true;
+    };
+    std::vector<Pair> pairs_;
+};
+
+// One real, wizard-generated MidiControllerSlot for `wizardId`, bound to
+// `input`/`output` -- the same ConfigForm()/GenerateProfile() path the
+// Controllers page's add row uses for a catalog default (mirrors
+// FroggersControllersPageTests.cpp's own GenerateCatalogSlots), never a
+// hand-built config.
+synth::MidiControllerSlot MakeCatalogControllerSlot(const std::string& wizardId, const std::string& name,
+                                                    const synth::MidiEndpointRef& input,
+                                                    const synth::MidiEndpointRef& output) {
+    static const synth::MidiAppCatalog kCatalog = synth_froggers::FroggersMidiCatalog();
+    static const std::vector<synth::ControllerWizardDescriptor> kRegistry =
+        synth::MakeControllerWizardRegistry(kCatalog);
+    std::unique_ptr<synth::ControllerWizard> wizard = synth::MakeControllerWizard(kRegistry, wizardId);
+    REQUIRE_TRUE(wizard != nullptr);
+    std::unique_ptr<synth::ControllerConfigForm> form = wizard->ConfigForm();
+    REQUIRE_TRUE(form != nullptr);
+    const synth::WizardGenerationContext context{.name = name, .input = input, .output = output};
+    synth::WizardGenerationResult result = wizard->GenerateProfile(*form, context);
+    REQUIRE_TRUE(static_cast<bool>(result));
+    return std::move(*result.controller);
+}
+
+// Adds a row generated from `wizardId`, bound to fake pair `pairIx`, to
+// `processor`'s live instrument -- commits through Engine::EditInstrument,
+// the same seam the Controllers page's own Add row uses, which rebuilds MIDI
+// processors and runs one reconcile pass synchronously, so the row's ports
+// are already open (its pair being present) by the time this returns.
+void AddControllerRow(frogg3rs_vst::FroggersPluginProcessor& processor, FakeMidiDeviceAccess& access,
+                      std::size_t pairIx, const std::string& wizardId, const std::string& name) {
+    processor.GetEngine().EditInstrument([&](synth::MidiInstrumentConfig& instrument) {
+        REQUIRE_TRUE(instrument.AddController(
+            MakeCatalogControllerSlot(wizardId, name, access.InputRef(pairIx), access.OutputRef(pairIx))));
+    });
+}
+
+TEST_CASE(twister_row_turn_moves_the_shown_pages_slot_zero) {
+    FakeMidiDeviceAccess access;
+    const std::size_t twisterPair = access.AddPair("Midi Fighter Twister", "twister.in", "twister.out");
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("twister_turn_slot_zero"), access.Access());
+    access.sender = processor.ContextForTest().midiSender;
+    AddControllerRow(processor, access, twisterPair, "froggers.twister", "Twister");
+    REQUIRE_TRUE(access.inputs.size() == 1);
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+
+    juce::AudioProcessorParameter* audioSlot0 = FindHostParamById(processor, "bank0.slot0");
+    juce::AudioProcessorParameter* envelopeSlot0 = FindHostParamById(processor, "bank1.slot0");
+    REQUIRE_TRUE(audioSlot0 != nullptr && envelopeSlot0 != nullptr);
+    const float audioDefault = audioSlot0->getValue();
+    const float envelopeDefault = envelopeSlot0->getValue();
+
+    // Channel 1, CC 0 (encoder 1, clockwise) while Audio is the shown page.
+    access.inputEndpoints[0]->Deliver(synth::BasicMidi::CC(0, 0, 0, 65));
+    PumpAndSettle(processor, buffer, midi);
+    REQUIRE_TRUE(audioSlot0->getValue() > audioDefault);
+    const float audioAfterFirstTurn = audioSlot0->getValue();
+
+    // Move to the Envelope page (bank 1) -- the same seam the operator's own
+    // page button dispatches.
+    processor.ApplicationForTest().PortableSurface().DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kPageSelect, "1"));
+    PumpAndSettle(processor, buffer, midi);
+    REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == 1);
+
+    // The same turn now moves Envelope's slot 0, not Audio's.
+    access.inputEndpoints[0]->Deliver(synth::BasicMidi::CC(0, 0, 0, 65));
+    PumpAndSettle(processor, buffer, midi);
+    REQUIRE_TRUE(envelopeSlot0->getValue() > envelopeDefault);
+    REQUIRE_TRUE(std::fabs(audioSlot0->getValue() - audioAfterFirstTurn) < 1.0e-4f);
+
+    processor.releaseResources();
+    std::cout << "  [controller ports] Twister turn: Audio slot0 " << audioDefault << " -> " << audioAfterFirstTurn
+              << "; after page select, Envelope slot0 " << envelopeDefault << " -> " << envelopeSlot0->getValue()
+              << " (Audio unchanged).\n";
+}
+
+TEST_CASE(twister_side_button_moves_to_the_next_page) {
+    FakeMidiDeviceAccess access;
+    const std::size_t twisterPair = access.AddPair("Midi Fighter Twister", "twister.in", "twister.out");
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("twister_side_button_next_page"),
+                                                    access.Access());
+    access.sender = processor.ContextForTest().midiSender;
+    AddControllerRow(processor, access, twisterPair, "froggers.twister", "Twister");
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+
+    REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == 0);
+    // Channel 4, CC 8 (the left side button, Page Next), press then release.
+    access.inputEndpoints[0]->Deliver(synth::BasicMidi::CC(0, 3, 8, 127));
+    access.inputEndpoints[0]->Deliver(synth::BasicMidi::CC(0, 3, 8, 0));
+    PumpAndSettle(processor, buffer, midi);
+    REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == 1);
+
+    processor.releaseResources();
+    std::cout << "  [controller ports] Twister side button: page moved from Audio to Envelope.\n";
+}
+
+TEST_CASE(twister_row_feedback_reaches_its_output_port) {
+    FakeMidiDeviceAccess access;
+    const std::size_t twisterPair = access.AddPair("Midi Fighter Twister", "twister.in", "twister.out");
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("twister_feedback"), access.Access());
+    access.sender = processor.ContextForTest().midiSender;
+    AddControllerRow(processor, access, twisterPair, "froggers.twister", "Twister");
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+
+    REQUIRE_TRUE(access.outputs.size() == 1);
+    REQUIRE_TRUE(access.sender != nullptr);
+    REQUIRE_TRUE(access.sender->FlushForTests(std::chrono::milliseconds(500)));
+    const std::size_t sentBeforeTurn = access.outputs[0].sent.size();
+
+    access.inputEndpoints[0]->Deliver(synth::BasicMidi::CC(0, 0, 0, 65));
+    buffer.clear();
+    processor.processBlock(buffer, midi);
+    processor.PumpMessageThreadForTest();
+    REQUIRE_TRUE(access.sender->FlushForTests(std::chrono::milliseconds(500)));
+
+    bool foundRingFeedback = false;
+    for (std::size_t i = sentBeforeTurn; i < access.outputs[0].sent.size(); ++i) {
+        const synth::BasicMidi& msg = access.outputs[0].sent[i];
+        if (msg.IsCC() && msg.Channel() == 0 && msg.GetCC() == 0) {
+            foundRingFeedback = true;
+            break;
+        }
+    }
+    REQUIRE_TRUE(foundRingFeedback);
+
+    processor.releaseResources();
+    std::cout << "  [controller ports] Twister turn: output recorded " << access.outputs[0].sent.size()
+              << " message(s) total, including ring feedback on channel 1 CC 0.\n";
+}
+
+TEST_CASE(replugged_twister_reconnects_and_resends_feedback) {
+    FakeMidiDeviceAccess access;
+    access.pollInterval = std::chrono::milliseconds(1);
+    const std::size_t twisterPair = access.AddPair("Midi Fighter Twister", "twister.in", "twister.out");
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("twister_replug"), access.Access());
+    access.sender = processor.ContextForTest().midiSender;
+    AddControllerRow(processor, access, twisterPair, "froggers.twister", "Twister");
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+
+    REQUIRE_TRUE(access.sender->FlushForTests(std::chrono::milliseconds(500)));
+    const std::size_t sentBeforeUnplug = access.outputs[0].sent.size();
+
+    access.SetPresent(twisterPair, false);
+    bool bothOffline = false;
+    for (int attempt = 0; attempt < 100 && !bothOffline; ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        processor.PumpMessageThreadForTest();
+        const synth::MidiConnectionState& state = processor.MidiConnections().State();
+        bothOffline = !state.controllers.empty() &&
+                     state.controllers[0].input.status == synth::MidiEndpointStatus::Offline &&
+                     state.controllers[0].output.status == synth::MidiEndpointStatus::Offline;
+    }
+    REQUIRE_TRUE(bothOffline);
+
+    access.SetPresent(twisterPair, true);
+    bool bothOnline = false;
+    for (int attempt = 0; attempt < 100 && !bothOnline; ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        processor.PumpMessageThreadForTest();
+        const synth::MidiConnectionState& state = processor.MidiConnections().State();
+        bothOnline = !state.controllers.empty() &&
+                    state.controllers[0].input.status == synth::MidiEndpointStatus::Online &&
+                    state.controllers[0].output.status == synth::MidiEndpointStatus::Online;
+    }
+    REQUIRE_TRUE(bothOnline);
+    REQUIRE_TRUE(access.sender->FlushForTests(std::chrono::milliseconds(500)));
+    REQUIRE_TRUE(access.outputs[0].sent.size() > sentBeforeUnplug);
+
+    processor.releaseResources();
+    std::cout << "  [controller ports] Twister replug: both ports went offline then back online, and feedback ("
+              << access.outputs[0].sent.size() - sentBeforeUnplug << " new message(s)) followed.\n";
+}
+
+TEST_CASE(connect_messages_go_to_each_rows_output_when_it_opens) {
+    FakeMidiDeviceAccess access;
+    const std::size_t apcPair = access.AddPair("APC40", "apc40.in", "apc40.out");
+    const std::size_t launchpadPair = access.AddPair("Launchpad X", "launchpad.in", "launchpad.out");
+
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("connect_messages"), access.Access());
+    access.sender = processor.ContextForTest().midiSender;
+    AddControllerRow(processor, access, apcPair, "froggers.apc40.ableton", "APC40");
+    AddControllerRow(processor, access, launchpadPair, "froggers.launchpad.x", "Launchpad X");
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    PumpAndSettle(processor, buffer, midi);
+    REQUIRE_TRUE(access.sender->FlushForTests(std::chrono::milliseconds(500)));
+
+    REQUIRE_TRUE(access.outputs.size() == 2);
+    const std::vector<std::uint8_t> kApcConnect = {0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00,
+                                                   0x04, 0x41, 0x09, 0x07, 0x01, 0xF7};
+    const std::vector<std::uint8_t> kLaunchpadXConnect = {0xF0, 0x00, 0x20, 0x29, 0x02, 0x0C, 0x0E, 0x01, 0xF7};
+    // OpenSysExMidiOutProcessor sends its connect message once, the first
+    // time its own Process() runs -- interleaved with, not necessarily
+    // before, the other output processors a row installs (an absolute-mode
+    // encoder's own ring/LED feedback keeps re-sending every pump), so this
+    // looks for the connect message anywhere in what the row sent, rather
+    // than assuming it is literally the first entry.
+    const auto containsMessage = [](const std::vector<synth::BasicMidi>& sent, const std::vector<std::uint8_t>& raw) {
+        return std::any_of(sent.begin(), sent.end(),
+                           [&raw](const synth::BasicMidi& msg) { return msg.raw == raw; });
+    };
+    REQUIRE_TRUE(!access.outputs[0].sent.empty());
+    REQUIRE_TRUE(containsMessage(access.outputs[0].sent, kApcConnect));
+    REQUIRE_TRUE(!access.outputs[1].sent.empty());
+    REQUIRE_TRUE(containsMessage(access.outputs[1].sent, kLaunchpadXConnect));
+
+    processor.releaseResources();
+    std::cout << "  [controller ports] connect messages: APC40 (" << access.outputs[0].sent.size()
+              << " sent) and Launchpad X (" << access.outputs[1].sent.size()
+              << " sent) each recorded their own connect message.\n";
+}
+
+TEST_CASE(two_rows_each_read_only_their_own_port) {
+    FakeMidiDeviceAccess access;
+    const std::size_t twisterPair = access.AddPair("Midi Fighter Twister", "twister.in", "twister.out");
+    const std::size_t apcPair = access.AddPair("APC40 Generic", "apc40g.in", "apc40g.out");
+
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("two_rows_own_port"), access.Access());
+    access.sender = processor.ContextForTest().midiSender;
+    AddControllerRow(processor, access, twisterPair, "froggers.twister", "Twister");
+    AddControllerRow(processor, access, apcPair, "froggers.apc40.generic", "APC40 Generic");
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+
+    REQUIRE_TRUE(access.inputs.size() == 2);
+
+    juce::AudioProcessorParameter* crispy0 = FindHostParamById(processor, "bank0.crispy");
+    REQUIRE_TRUE(crispy0 != nullptr);
+    const float crispyBefore = crispy0->getValue();
+    const double bpmBefore = processor.ContextForTest().clockDiagnostics->Snapshot().currentBpm;
+
+    // Channel 1, CC 14 -- an address both presets map, delivered only on the
+    // Twister's own input.
+    access.inputEndpoints[0]->Deliver(synth::BasicMidi::CC(0, 0, 14, 65));
+    buffer.clear();
+    processor.processBlock(buffer, midi);
+    processor.PumpMessageThreadForTest();
+
+    REQUIRE_TRUE(crispy0->getValue() > crispyBefore);
+    REQUIRE_TRUE(std::fabs(processor.ContextForTest().clockDiagnostics->Snapshot().currentBpm - bpmBefore) < 1.0e-6);
+
+    processor.releaseResources();
+    std::cout << "  [controller ports] two rows: Twister's own CC14 moved Crispy (" << crispyBefore << " -> "
+              << crispy0->getValue() << ") and left BPM at " << bpmBefore << ".\n";
+}
+
+TEST_CASE(destroying_the_processor_stops_the_sender_before_closing_outputs) {
+    FakeMidiDeviceAccess access;
+    const std::size_t twisterPair = access.AddPair("Midi Fighter Twister", "twister.in", "twister.out");
+    {
+        frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("destroy_stops_sender"), access.Access());
+        access.sender = processor.ContextForTest().midiSender;
+        AddControllerRow(processor, access, twisterPair, "froggers.twister", "Twister");
+        processor.setRateAndBufferSizeDetails(48000.0, 256);
+        processor.prepareToPlay(48000.0, 256);
+        juce::AudioBuffer<float> buffer(2, 256);
+        juce::MidiBuffer midi;
+
+        // Queue feedback right before teardown.
+        access.inputEndpoints[0]->Deliver(synth::BasicMidi::CC(0, 0, 0, 65));
+        buffer.clear();
+        processor.processBlock(buffer, midi);
+        processor.PumpMessageThreadForTest();
+
+        processor.releaseResources();
+    }  // ~FroggersPluginProcessor runs here: stopTimer(), sender->Stop(), then midiConnections_.reset().
+
+    REQUIRE_TRUE(!access.outputs.empty());
+    REQUIRE_TRUE(!access.outputs[0].senderRunningAtClose.empty());
+    for (bool wasRunning : access.outputs[0].senderRunningAtClose) {
+        REQUIRE_TRUE(!wasRunning);
+    }
+    const std::size_t sentAtTeardown = access.outputs[0].sent.size();
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    REQUIRE_TRUE(access.outputs[0].sent.size() == sentAtTeardown);
+
+    std::cout << "  [controller ports] destroying the processor: the sender had stopped before Close(), and "
+                 "nothing sent afterward.\n";
 }
 
 }  // namespace

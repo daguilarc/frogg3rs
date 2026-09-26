@@ -237,10 +237,10 @@ target_sources(FroggersVst PRIVATE
     # PortableJuceBackend.hpp -- runtime/ and include/ alone (the
     # original set) never pulled that directory in.
     FroggersPluginEditor.cpp
-    # Only the tiny data-root helper (juce_core dependency, no
-    # window/device/MIDI-connection machinery) -- see
-    # FroggersPluginProcessor.hpp's header comment on why reusing this one
-    # file is not "launcher-code duplication."
+    # Only the tiny data-root helper (juce_core dependency, no window or
+    # device machinery of its own) -- see FroggersPluginProcessor.hpp's
+    # header comment on why reusing this one file is not "launcher-code
+    # duplication."
     "${SHEAF_SYNTH_DIR}/runtime/HostDataPaths.cpp"
 )
 
@@ -317,6 +317,10 @@ target_include_directories(FroggersVstSmokeTest PRIVATE
     "${APP_DIR}"
     "${SHEAF_SYNTH_DIR}/include"
     "${SHEAF_SYNTH_DIR}/runtime"
+    # FroggersPluginProcessor.hpp pulls in MidiConnectionManager.hpp, which
+    # needs synth_juce::MidiInHandler/MidiOutputHandler (juce/MidiHandlers.hpp)
+    # -- the same directory FroggersVst's own target already carries.
+    "${SHEAF_SYNTH_DIR}/juce"
 )
 target_compile_features(FroggersVstSmokeTest PRIVATE cxx_std_20)
 # Links the plugin's own shared-code target (juce_add_plugin's FroggersVst
@@ -339,6 +343,11 @@ target_include_directories(FroggersVstHostTests PRIVATE
     "${APP_DIR}"
     "${SHEAF_SYNTH_DIR}/include"
     "${SHEAF_SYNTH_DIR}/runtime"
+    # This file builds fake MidiInputEndpoint/MidiOutputEndpoint implementations
+    # (synth_runtime::MidiInputEndpoint/MidiOutputEndpoint, juce/MidiHandlers.hpp)
+    # and FroggersPluginProcessor.hpp itself needs the same directory -- see
+    # FroggersVstSmokeTest's own include list above for why.
+    "${SHEAF_SYNTH_DIR}/juce"
 )
 target_compile_features(FroggersVstHostTests PRIVATE cxx_std_20)
 target_link_libraries(FroggersVstHostTests PRIVATE FroggersVst)
