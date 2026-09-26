@@ -127,6 +127,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -138,9 +139,22 @@ namespace frogg3rs_vst {
 
 class FroggersPluginProcessor final : public juce::AudioProcessor, private juce::Timer {
 public:
+    // The data paths a plugin instance reads and writes: the standalone's own
+    // "frogg3rs" patches root under `dataRoot` (SheafPatchDataPathsForApp,
+    // synth/AppRegistry.hpp), so a patch saved here appears in the
+    // standalone's File page and vice versa, with `configFile` cleared --
+    // Sheaf's Engine::Initialize opens no startup patch and writes no
+    // configuration when configFile is empty (its own doc comment), so a new
+    // instance never reads the standalone's runtime configuration (its
+    // recorded patch version, its controller rows) and never writes one.
+    // Public and static so FroggersVstHostTests.cpp can lay out a scratch
+    // root the same way production does, over a scratch `dataRoot` instead
+    // of SheafUserApplicationDataRoot().
+    static synth::RuntimeDataPaths PluginDataPaths(const std::filesystem::path& dataRoot);
+
     // Production entry point (also what JUCE's generated createPluginFilter()
     // constructs, see FroggersPluginProcessor.cpp): resolves the shared
-    // "frogg3rs" data root (see this file's own header comment).
+    // "frogg3rs" data root through PluginDataPaths() above.
     FroggersPluginProcessor();
 
     // Test-only entry point (5.2): lets the smoke test point the engine at a
@@ -211,8 +225,8 @@ public:
     // engine_.Context().patchInputBus/patchOutputBus) rather than through
     // this class's host-parameter bridge, and both stay purely in memory:
     // neither direction reads or writes the shared "frogg3rs" patches
-    // directory this class's own data root points at (ProductionDataPaths(),
-    // FroggersPluginProcessor.cpp) or any other filesystem location. See
+    // directory this class's own data root points at (PluginDataPaths(),
+    // below) or any other filesystem location. See
     // PumpStatePersistence()'s own comment (in the .cpp) for the full
     // mechanism, including why both directions are necessarily asynchronous
     // and how getStateInformation() still returns synchronously despite
@@ -312,6 +326,13 @@ public:
     synth_froggers::FroggersApp& ApplicationForTest() { return engine_.Application(); }
     // Not const: engine_.UiBus() itself has no const overload (Engine.hpp).
     std::size_t UiBusPendingCountForTest() { return engine_.UiBus().Size(); }
+    // The engine's own controller-row count and current-patch record
+    // (Engine::MidiControllerCount()/CurrentPatchRelativePath()) -- a test's
+    // ground truth for "this instance opened no controller row and has no
+    // current patch," neither of which is otherwise observable through this
+    // class's public surface.
+    std::size_t MidiControllerCountForTest() { return engine_.MidiControllerCount(); }
+    std::optional<std::string> CurrentPatchRelativePathForTest() { return engine_.CurrentPatchRelativePath(); }
     // The same AppContext the app and its surface read clockDiagnostics/
     // syncConfiguration from -- lets a test read the engine's published
     // tempo, external-clock and transport-running state without a mirror of

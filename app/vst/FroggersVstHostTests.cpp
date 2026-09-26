@@ -76,7 +76,10 @@
 
 #include "FroggersPluginProcessor.hpp"
 
+#include "FroggersRegistration.hpp"
 #include "FroggersUiSurface.hpp"
+#include "synth/AppRegistry.hpp"
+#include "synth/MidiController.hpp"
 #include "synth/PatchPersistence.hpp"
 #include "synth/PortableUI.hpp"
 
@@ -2917,6 +2920,97 @@ TEST_CASE(input_bus_stereo_second_channel_and_sum_reach_the_external_audio_sourc
     processor.releaseResources();
     std::cout << "  [input bus] stereo: channel1=" << firstChannelValue << " (expected 0.8), channel2="
               << secondChannelValue << " (expected 0.4), sum=" << sumValue << " (expected 0.7).\n";
+}
+
+// -- 7. Plugin data paths -----------------------------------------------
+// PluginDataPaths() clears configFile: a plugin instance must read and write
+// none of the standalone's own runtime configuration or recorded patch
+// version, however far off its defaults the standalone's own saved data is.
+
+std::string ReadFileBytes(const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    REQUIRE_TRUE(static_cast<bool>(in));
+    std::ostringstream out;
+    out << in.rdbuf();
+    return out.str();
+}
+
+TEST_CASE(new_instance_reads_and_writes_none_of_the_standalones_data) {
+    const std::filesystem::path dataRoot =
+        std::filesystem::temp_directory_path() / "froggers-vst-host-tests" / "new_instance_data_paths";
+    std::filesystem::remove_all(dataRoot);
+
+    const synth::RuntimeDataPaths pluginPaths = frogg3rs_vst::FroggersPluginProcessor::PluginDataPaths(dataRoot);
+    REQUIRE_TRUE(pluginPaths.configFile.empty());
+    std::filesystem::create_directories(pluginPaths.patchesRoot);
+
+    // A saved patch off its default, with a Twister row of its own -- the
+    // same shape a standalone-saved patch has.
+    synth::MidiInstrumentConfig patchInstrument;
+    synth::MidiControllerSlot twisterSlot;
+    twisterSlot.name = "Twister";
+    twisterSlot.kind = synth::MidiProfileKind::MfTwister;
+    twisterSlot.config = synth::MfTwisterDefaultProfileConfig();
+    twisterSlot.input = synth::MidiEndpointRef{"twister.in", "Midi Fighter Twister"};
+    twisterSlot.output = synth::MidiEndpointRef{"twister.out", "Midi Fighter Twister"};
+    REQUIRE_TRUE(patchInstrument.AddController(std::move(twisterSlot)));
+
+    // A throwaway engine, over no data paths of its own, purely to reach the
+    // real FroggersParameterModel and build a genuine patch document off its
+    // default -- never the instance under test.
+    synth::Engine<synth_froggers::FroggersApp> setupEngine([] { return std::uint64_t{0}; });
+    setupEngine.Initialize();
+    constexpr float kOffDefaultValue = 0.9888f;
+    setupEngine.Application().Parameters().PageParameter(0, 0).SceneCenter(0) = kOffDefaultValue;
+    setupEngine.Manager().ComputeAllParameters();
+
+    synth::JsonArena arena(64 * 1024);
+    synth::JSON patchRoot = synth::BuildPatchJSON(arena, "standalone-patch", setupEngine.Manager(), patchInstrument,
+                                                  /*audioDevice=*/{}, /*carryInstrument=*/true);
+    REQUIRE_TRUE(!patchRoot.IsNull());
+    char* dumpedPatch = patchRoot.Dumps(JSON_ENCODE_ANY);
+    REQUIRE_TRUE(dumpedPatch != nullptr);
+    const std::string patchJsonText(dumpedPatch);
+    std::free(dumpedPatch);
+
+    const std::filesystem::path patchDir = pluginPaths.patchesRoot / "OnDisk";
+    const std::filesystem::path versionFile =
+        synth::SavePatchVersionInDirectory(patchDir, patchJsonText, std::chrono::system_clock::now());
+    REQUIRE_TRUE(!versionFile.empty());
+
+    // The standalone's own configuration: records that version and holds the
+    // same Twister row. Read only by a host that keeps a configuration file
+    // -- this plugin instance never does (pluginPaths.configFile is empty).
+    const std::filesystem::path standaloneConfigFile =
+        synth::SheafPatchDataPathsForApp(dataRoot, synth_froggers::FroggersManifest().appId).configFile;
+    const std::string lastPatchVersion =
+        std::filesystem::relative(versionFile, pluginPaths.patchesRoot).generic_string();
+    REQUIRE_TRUE(synth::SaveRuntimeConfigFile(standaloneConfigFile, patchInstrument, synth::AudioDeviceState{},
+                                              synth::SyncConfig{}, lastPatchVersion) ==
+                 synth::RuntimeConfigFileStatus::Ok);
+
+    const std::string configBytesBefore = ReadFileBytes(standaloneConfigFile);
+    const std::string treeBefore = SnapshotDirectoryTree(dataRoot);
+
+    // No processBlock()/timerCallback() pump runs before these reads: the
+    // host parameter's value is what BuildHostParameterInventory() baked in
+    // at construction (its own registered default), the same value a real
+    // host reads before this instance's audio callback or message-thread
+    // timer has fired even once.
+    frogg3rs_vst::FroggersPluginProcessor processor(pluginPaths);
+    juce::AudioProcessorParameter* audioSlot0 = FindHostParamById(processor, "bank0.slot0");
+    REQUIRE_TRUE(audioSlot0 != nullptr);
+    REQUIRE_TRUE(std::fabs(audioSlot0->getValue() - 0.3087f) < 1.0e-4f);
+    REQUIRE_TRUE(processor.MidiControllerCountForTest() == 0);
+    REQUIRE_TRUE(!processor.CurrentPatchRelativePathForTest().has_value());
+
+    REQUIRE_TRUE(ReadFileBytes(standaloneConfigFile) == configBytesBefore);
+    REQUIRE_TRUE(SnapshotDirectoryTree(dataRoot) == treeBefore);
+
+    processor.releaseResources();
+    std::cout << "  [plugin data paths] host param bank0.slot0=" << audioSlot0->getValue()
+              << " (expected default 0.3087), MidiControllerCount=" << processor.MidiControllerCountForTest()
+              << " (expected 0), standalone's config and data tree unchanged.\n";
 }
 
 }  // namespace

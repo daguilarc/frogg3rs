@@ -6,7 +6,7 @@
 #include "FroggersPluginEditor.hpp"
 #include "FroggersUiSurface.hpp"
 // Only FroggersManifest() (the app's own single-sourced identity, appId
-// "frogg3rs") -- see ProductionDataPaths() below for why. JUCE-free itself
+// "frogg3rs") -- see PluginDataPaths() below for why. JUCE-free itself
 // (that file's own header comment), so this adds no new dependency weight.
 #include "FroggersRegistration.hpp"
 // BuildPatchJSON/LoadPatchJSON, PatchMessageIn/MessageOut, JsonArena --
@@ -27,22 +27,6 @@
 namespace frogg3rs_vst {
 
 namespace {
-
-// Mirrors app/FroggersMain.cpp's `FroggersMainApplication::initialise`'s dataRoot_/SheafPatchDataPathsForApp
-// pair (same stable app id -- see that file's own header comment on why:
-// "so existing saved patches ... are not orphaned"), so a patch saved from
-// the standalone Frogg3rs app and one saved from this plugin land in, and
-// load from, the same ~/Library/Sheaf/synth/sheaf-patch/patches/frogg3rs/
-// directory. Reads the id from FroggersRegistration.hpp's own
-// FroggersManifest().appId -- the app's existing single-sourced identity,
-// already how FroggersApp registers with the launcher -- rather than
-// restating "frogg3rs" as a second, independent literal here. app/
-// FroggersMain.cpp's own pairing still carries its own separate literal
-// (pre-existing, out of scope for this app/vst file to touch).
-synth::RuntimeDataPaths ProductionDataPaths() {
-    const std::filesystem::path dataRoot = synth_runtime::SheafUserApplicationDataRoot();
-    return synth::SheafPatchDataPathsForApp(dataRoot, synth_froggers::FroggersManifest().appId);
-}
 
 // -- stable host-parameter IDs --------------------------------------
 // Derived ONLY from structural facts of FroggersParameterModel that are
@@ -128,8 +112,36 @@ bool IsJsonInteger(synth::JSON json) { return json.m_node != nullptr && json.m_n
 
 }  // namespace
 
+// Mirrors app/FroggersMain.cpp's `FroggersMainApplication::initialise`'s
+// dataRoot_/SheafPatchDataPathsForApp pair (same stable app id -- see that
+// file's own header comment on why: "so existing saved patches ... are not
+// orphaned"), so a patch saved from the standalone Frogg3rs app and one
+// saved from this plugin land in, and load from, the same
+// ~/Library/Sheaf/synth/sheaf-patch/patches/frogg3rs/ directory. Reads the
+// id from FroggersRegistration.hpp's own FroggersManifest().appId -- the
+// app's existing single-sourced identity, already how FroggersApp registers
+// with the launcher -- rather than restating "frogg3rs" as a second,
+// independent literal here. app/FroggersMain.cpp's own pairing still
+// carries its own separate literal (pre-existing, out of scope for this
+// app/vst file to touch).
+//
+// Clears the resulting `configFile`: a plugin instance keeps no runtime
+// configuration of its own (the standalone's audio device, sync settings and
+// reopen record belong to the standalone alone, and two writers of the same
+// file would clobber each other's saves). With `configFile` empty,
+// Engine::Initialize opens no startup patch and writes no configuration
+// (its own doc comment) -- a new instance starts at the default patch with
+// no controller rows and no current patch, whatever the standalone has
+// saved, while patches saved or loaded here still go through the same
+// shared `patchesRoot` the standalone reads.
+synth::RuntimeDataPaths FroggersPluginProcessor::PluginDataPaths(const std::filesystem::path& dataRoot) {
+    synth::RuntimeDataPaths paths = synth::SheafPatchDataPathsForApp(dataRoot, synth_froggers::FroggersManifest().appId);
+    paths.configFile.clear();
+    return paths;
+}
+
 FroggersPluginProcessor::FroggersPluginProcessor()
-    : FroggersPluginProcessor(ProductionDataPaths()) {}
+    : FroggersPluginProcessor(PluginDataPaths(synth_runtime::SheafUserApplicationDataRoot())) {}
 
 FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPathsForTest)
     // One OPTIONAL stereo input bus alongside the existing stereo output.
