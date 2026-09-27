@@ -99,6 +99,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -806,20 +807,29 @@ TEST_CASE(core_side_randomize_is_reflected_to_every_host_parameter) {
     // Every host parameter mirrors the real parameter authority -- walked
     // in the SAME construction order this plugin itself uses, so each
     // index lines up with a specific, known core Parameter without needing
-    // to parse IDs back apart.
+    // to parse IDs back apart. The bridge's core -> host branch reads
+    // rawKnobValue (FroggersPluginProcessor.cpp's own comment on why), not
+    // the slewed display value, so that is what the host is compared
+    // against here too: a Parameter::UIState snapshot, one voice, read
+    // fresh per parameter the same way PopulateUIState() always is.
     synth_froggers::FroggersParameterModel& model = processor.ApplicationForTest().Parameters();
+    synth::Parameter::UIState snapshot(1);
+    auto rawKnobValueOf = [&](synth::Parameter& parameter) {
+        parameter.PopulateUIState(snapshot);
+        return snapshot.rawKnobValue.load(std::memory_order_relaxed);
+    };
     int hostIx = 0;
     constexpr float kTolerance = 0.01f;
     for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
         for (std::size_t paramIx = 0; paramIx < synth_froggers::kFroggersParamsPerBank; ++paramIx) {
             const float hostValue = processor.getParameters()[hostIx++]->getValue();
-            REQUIRE_TRUE(std::fabs(hostValue - model.PageParameter(bankIx, paramIx).UIDisplayCenter(0)) < kTolerance);
+            REQUIRE_TRUE(std::fabs(hostValue - rawKnobValueOf(model.PageParameter(bankIx, paramIx))) < kTolerance);
         }
         const float hostCrispy = processor.getParameters()[hostIx++]->getValue();
-        REQUIRE_TRUE(std::fabs(hostCrispy - model.Crispy(bankIx).UIDisplayCenter(0)) < kTolerance);
+        REQUIRE_TRUE(std::fabs(hostCrispy - rawKnobValueOf(model.Crispy(bankIx))) < kTolerance);
     }
     const float hostCrunchy = processor.getParameters()[hostIx++]->getValue();
-    REQUIRE_TRUE(std::fabs(hostCrunchy - model.Crunchy().UIDisplayCenter(0)) < kTolerance);
+    REQUIRE_TRUE(std::fabs(hostCrunchy - rawKnobValueOf(model.Crunchy())) < kTolerance);
     // hostIx now points at Freeze -- RandomizeAll does not touch it
     // (transport-only latch), not asserted further here.
 
@@ -858,11 +868,14 @@ TEST_CASE(host_write_produces_a_bounded_number_of_notifications_not_an_endless_l
     juce::AudioProcessorParameter* target = FindHostParamById(processor, "bank2.slot5");
     REQUIRE_TRUE(target != nullptr);
 
-    // Let the core's own startup convergence finish BEFORE attaching the
-    // listener: a parameter with a non-zero registered default slews from
-    // the smoother's zero start over the first blocks, and the bridge
-    // mirrors that movement as real notifications. The steady-state control
-    // below is about the settled state, whatever any parameter's default is.
+    // Settle the core before attaching the listener, matching every other
+    // pumpAndSettle() call in this file: with rawKnobValue seeded at
+    // construction (BuildHostParameterInventory()'s own comment) and
+    // carrying no slew of its own (PumpHostParameterBridge()'s own
+    // comment), there is nothing left to converge here -- this step exists
+    // so the steady-state control below starts from the same settled shape
+    // every other TEST_CASE in this file does, not because anything is
+    // still moving.
     pumpAndSettle();
 
     // setValueNotifyingHost() is the ONLY thing that fires
@@ -870,35 +883,210 @@ TEST_CASE(host_write_produces_a_bounded_number_of_notifications_not_an_endless_l
     // setValue() -- what the test below calls to simulate the host's own
     // write -- does NOT notify listeners), so this listener counts
     // PumpHostParameterBridge()'s own core->host notifications exclusively,
-    // never the simulated host write itself.
+    // never the simulated host write itself. Attached to EVERY host
+    // parameter, not just `target`: the genuine-core-change control below
+    // dispatches RandomizeAll, and which parameters that fixed-seeded pass
+    // actually touches is not this test's concern -- only that the guard
+    // still lets a real change through, and still goes flat once it stops.
     CountingParamListener listener;
-    target->addListener(&listener);
+    for (int i = 0; i < processor.getParameters().size(); ++i) {
+        processor.getParameters()[i]->addListener(&listener);
+    }
 
     // -- Positive control, part 1: steady state produces zero notifications.
     pumpAndSettle();
     REQUIRE_TRUE(listener.count == 0);
 
     // -- Simulated host write --------------------------------------------
+    // rawKnobValue is the same scene-blend HandleSetAbsolute (the host ->
+    // core branch) writes into directly, with no one-pole slew stage
+    // between them (PumpHostParameterBridge()'s own comment) -- so the
+    // pump that applies this write also leaves coreValue == shadowNormalized
+    // already, and the core -> host branch has nothing left to report.
     target->setValue(0.42f);
-    pumpAndSettle();  // Parameter's own slew converges; several notifies may fire while it does (not a bug).
-    const int countAfterSettle = listener.count;
-    // Positive control, part 2: the guard can fire at all -- something WAS
-    // mirrored while the core converged toward the host's target, proving
-    // this is not just an always-suppress no-op.
-    REQUIRE_TRUE(countAfterSettle > 0);
+    pumpAndSettle();
+    REQUIRE_TRUE(listener.count == 0);
+
+    // -- Genuine core-side change: RandomizeAll, the same fixed-seeded
+    // production seam core_side_randomize_is_reflected_to_every_host_
+    // parameter dispatches (that test's own comment on why it is
+    // deterministic, not flaky). Positive control: the guard can fire at
+    // all -- something WAS mirrored, proving this is not just an
+    // always-suppress no-op.
+    processor.ApplicationForTest().PortableSurface().DispatchAction(
+        synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
+    pumpAndSettle();
+    const int countAfterRandomize = listener.count;
+    REQUIRE_TRUE(countAfterRandomize > 0);
 
     // -- Bounded, not endless: well past convergence, the count must be
-    // FLAT -- no further notifies once the core has genuinely settled
-    // (Parameter's uiDisplayCenterAlpha one-pole reaches a true, bit-exact
-    // fixed point in finite time on floating-point hardware -- see
-    // PumpHostParameterBridge()'s own comment).
+    // FLAT -- no further notifies once the core has genuinely settled.
     pumpAndSettle();
-    REQUIRE_TRUE(listener.count == countAfterSettle);
+    REQUIRE_TRUE(listener.count == countAfterRandomize);
 
-    std::cout << "  [7.2] host write -> " << countAfterSettle
-              << " notifications while settling, then flat (0 more) over a further ~1.5s of pumping.\n";
+    std::cout << "  [7.2] host write -> 0 notifications (rawKnobValue has no slew to echo); RandomizeAll -> "
+              << countAfterRandomize << " notifications, then flat (0 more) over a further ~1.5s of pumping.\n";
 
-    target->removeListener(&listener);
+    for (int i = 0; i < processor.getParameters().size(); ++i) {
+        processor.getParameters()[i]->removeListener(&listener);
+    }
+    processor.releaseResources();
+}
+
+// -- Ableton Live pitch drift: a host that echoes the plugin's own reports
+// back to it must never move the patch -----------------------------------
+// LCH-02 (VCO1/2/3 at 110/220/330 Hz on the default patch), PLG-08, PLG-09.
+// A real DAW does not apply a plugin's setValueNotifyingHost() report
+// synchronously: it queues it and hands it back in a LATER process() call's
+// automation, the same way it would replay recorded automation
+// (juce_audio_plugin_client_VST3.cpp's processParameterChanges ->
+// setValueAndNotifyIfChanged(), reproduced below exactly as
+// evidence/pitch/pitch_harness.cpp's own HostSim models it). Before this
+// change, that stale echo landed on rawKnobValue's slewed predecessor
+// (uiState->values[0]) and got written back into the core as the new scene
+// center, ratcheting the patch every time an echo arrived late -- this is
+// the mechanism the operator heard as "starts very low, then rises."
+struct EchoingHostSim final : juce::AudioProcessorListener {
+    bool onMessageThread = false;
+    bool inbound = false;  // set around a delivery, so delivering an echo is never captured as a new report.
+    std::map<int, float> pendingEdits;
+    std::deque<std::pair<long, std::map<int, float>>> inFlight;
+
+    void audioProcessorParameterChanged(juce::AudioProcessor*, int index, float v) override {
+        if (inbound || !onMessageThread) return;
+        pendingEdits[index] = v;
+    }
+    void audioProcessorChanged(juce::AudioProcessor*, const ChangeDetails&) override {}
+
+    void EndTick(long nextBlockIx, int latencyBlocks) {
+        if (!pendingEdits.empty()) {
+            inFlight.emplace_back(nextBlockIx + latencyBlocks, std::move(pendingEdits));
+            pendingEdits.clear();
+        }
+    }
+    void DeliverBefore(long blockIx, juce::AudioProcessor& processor) {
+        std::map<int, float> batch;
+        while (!inFlight.empty() && inFlight.front().first <= blockIx) {
+            for (auto& [index, v] : inFlight.front().second) batch[index] = v;
+            inFlight.pop_front();
+        }
+        auto& params = processor.getParameters();
+        for (auto& [index, v] : batch) {
+            juce::AudioProcessorParameter* param = params[index];
+            if (juce::approximatelyEqual(param->getValue(), v)) continue;
+            inbound = true;
+            param->setValueNotifyingHost(v);
+            inbound = false;
+        }
+    }
+};
+
+struct Vco1PitchSample {
+    float sceneCenter = 0.0f;
+    float cachedKnob = 0.0f;
+};
+
+// Drives VCO1 through the exact cadence evidence/pitch/pitch_harness.cpp
+// uses: 3 timer pumps (30 Hz, matching startTimerHz(30)) before the first
+// 512-sample block, then pumps and blocks interleaved for `seconds`.
+// `host` is null for the reference timeline (nothing echoes a report back);
+// otherwise every report is delivered back onto its own parameter
+// `latencyBlocks` process() calls later. Returns VCO1's
+// SceneCenter(0)/CachedKnobValue(0) sampled after EVERY block.
+std::vector<Vco1PitchSample> RunVco1PitchTrace(frogg3rs_vst::FroggersPluginProcessor& processor,
+                                               EchoingHostSim* host, int latencyBlocks, double seconds) {
+    constexpr double kSampleRate = 48000.0;
+    constexpr int kBlockSize = 512;
+    constexpr long kTickPeriod = 1600;  // 30 Hz at 48 kHz.
+    constexpr int kPreTicks = 3;
+
+    processor.setRateAndBufferSizeDetails(kSampleRate, kBlockSize);
+    processor.prepareToPlay(kSampleRate, kBlockSize);
+    juce::AudioBuffer<float> buffer(2, kBlockSize);
+    juce::MidiBuffer midi;
+
+    synth::Parameter& vco1 = processor.ApplicationForTest().Parameters().PageParameter(0, 0);
+
+    const long firstBlock = static_cast<long>(kPreTicks) * kTickPeriod + 1;
+    long nextTick = 0;
+    long nextBlockTime = firstBlock;
+    long blockIx = 0;
+    const long endTime = static_cast<long>(seconds * kSampleRate) + firstBlock;
+
+    std::vector<Vco1PitchSample> trace;
+    while (true) {
+        const long now = std::min(nextTick, nextBlockTime);
+        if (now >= endTime) break;
+        if (nextTick <= nextBlockTime) {
+            if (host != nullptr) host->onMessageThread = true;
+            processor.PumpMessageThreadForTest();
+            if (host != nullptr) {
+                host->onMessageThread = false;
+                host->EndTick(blockIx, latencyBlocks);
+            }
+            nextTick += kTickPeriod;
+        } else {
+            if (host != nullptr) host->DeliverBefore(blockIx, processor);
+            buffer.clear();
+            processor.processBlock(buffer, midi);
+            ++blockIx;
+            nextBlockTime += kBlockSize;
+            trace.push_back({vco1.SceneCenter(0), vco1.CachedKnobValue(0)});
+        }
+    }
+    return trace;
+}
+
+TEST_CASE(host_echoes_of_the_plugins_own_reports_leave_the_default_patch_in_place) {
+    constexpr double kRunSeconds = 10.0;
+    constexpr int kLatencyBlocks = 4;  // "four process calls later" -- longer than one 33 ms tick period.
+
+    // Reference: the identical pump/block timeline, nothing echoes a report
+    // back.
+    frogg3rs_vst::FroggersPluginProcessor referenceProcessor(ScratchDataPaths("pitch_echo_reference"));
+    const std::vector<Vco1PitchSample> reference =
+        RunVco1PitchTrace(referenceProcessor, /*host=*/nullptr, kLatencyBlocks, kRunSeconds);
+    referenceProcessor.releaseResources();
+
+    // Actual: the same timeline, with a host that echoes every report back.
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("pitch_echo_actual"));
+    EchoingHostSim host;
+    processor.addListener(&host);
+    const std::vector<Vco1PitchSample> withEcho = RunVco1PitchTrace(processor, &host, kLatencyBlocks, kRunSeconds);
+
+    REQUIRE_TRUE(withEcho.size() == reference.size());
+    constexpr float kTolerance = 1.0e-6f;
+    for (std::size_t i = 0; i < withEcho.size(); ++i) {
+        REQUIRE_TRUE(std::fabs(withEcho[i].sceneCenter - reference[i].sceneCenter) < kTolerance);
+        REQUIRE_TRUE(std::fabs(withEcho[i].cachedKnob - reference[i].cachedKnob) < kTolerance);
+    }
+
+    // Positive control: a genuine host write still lands and reads back
+    // afterward, with the echo model still wired up on the same processor --
+    // this is not "nothing moves because the bridge stopped working."
+    juce::AudioProcessorParameter* vco1Param = FindHostParamById(processor, "bank0.slot0");
+    REQUIRE_TRUE(vco1Param != nullptr);
+    vco1Param->setValue(0.2f);
+    juce::AudioBuffer<float> settleBuffer(2, 512);
+    juce::MidiBuffer settleMidi;
+    for (int i = 0; i < 45; ++i) {
+        processor.PumpMessageThreadForTest();
+        for (int b = 0; b < 3; ++b) {
+            settleBuffer.clear();
+            processor.processBlock(settleBuffer, settleMidi);
+        }
+    }
+
+    synth::Parameter& vco1 = processor.ApplicationForTest().Parameters().PageParameter(0, 0);
+    constexpr float kWriteTolerance = 1.0e-4f;
+    REQUIRE_TRUE(std::fabs(vco1.SceneCenter(0) - 0.2f) < kWriteTolerance);
+    REQUIRE_TRUE(std::fabs(vco1Param->getValue() - 0.2f) < kWriteTolerance);
+
+    std::cout << "  [7.2] VCO1 SceneCenter(0)/CachedKnobValue(0) matched the no-echo reference within 1e-6 across "
+              << withEcho.size() << " blocks (~" << kRunSeconds
+              << "s); a host write of 0.2 afterward still lands and reads back 0.2.\n";
+
+    processor.removeListener(&host);
     processor.releaseResources();
 }
 

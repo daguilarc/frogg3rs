@@ -794,9 +794,11 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
 
     engine_.ProcessBlock(block, NowMicros());
 
-    // Publish every host-exposed parameter's current
-    // display value into its own atomic UIState snapshot, for
-    // PumpHostParameterBridge() (message thread) to read. AFTER
+    // Publish every host-exposed parameter's current state -- display
+    // value AND raw knob value, PumpHostParameterBridge()'s own comment on
+    // which one its core -> host branch reads -- into its own atomic
+    // UIState snapshot, for PumpHostParameterBridge() (message thread) to
+    // read. AFTER
     // engine_.ProcessBlock() (so this block's own ProcessSamplePhase1/2
     // slewing has already run), on THIS thread (the audio thread owns every
     // Parameter's internal uiDisplayCenters_/uiDisplaySpreadEnergies_ etc,
@@ -1223,6 +1225,20 @@ void FroggersPluginProcessor::BuildHostParameterInventory() {
         addParameter(juceParam);
         hostParams_.push_back(std::move(entry));
     }
+
+    // Seed every entry's rawKnobValue with the value it was just registered
+    // at (entry.shadowNormalized, set per-branch above), so the FIRST
+    // PumpHostParameterBridge() pump -- which can land before ProcessBlock()
+    // has ever run entry.coreParam->PopulateUIState(*entry.uiState) (see that
+    // publish loop's own comment) -- reads the real starting value instead of
+    // UIState's zero-initialisation. Freeze has no uiState (this loop's own
+    // null check skips it); its branch reads FroggersAppCore::FreezeLatched()
+    // directly and needs no seed.
+    for (HostParamEntry& entry : hostParams_) {
+        if (entry.uiState != nullptr) {
+            entry.uiState->rawKnobValue.store(entry.shadowNormalized, std::memory_order_relaxed);
+        }
+    }
 }
 
 // PumpHostParameterBridge() -- message-thread-only (called from
@@ -1261,12 +1277,16 @@ void FroggersPluginProcessor::BuildHostParameterInventory() {
 //   applied to the core yet, so reading uiState/FreezeLatched() THIS pump
 //   would still see the OLD value and could otherwise echo it straight
 //   back over the host's fresh write). If the core's published value
-//   (entry.uiState->values[0], or FreezeLatched() for kFreeze) differs from
-//   the shadow, this is a genuine core-side change (randomize, a scene
-//   change, or -- ordinarily -- the settling tail of an EARLIER host write
-//   still slewing toward its target via Parameter's own ~10Hz
-//   uiDisplayCenterAlpha one-pole, ParameterModulation.hpp) --
-//   setValueNotifyingHost() relays it and the shadow is updated to match.
+//   (entry.uiState->rawKnobValue, or FreezeLatched() for kFreeze) differs
+//   from the shadow, this is a genuine core-side change (randomize, a scene
+//   change, an incoming controller move) -- setValueNotifyingHost() relays
+//   it and the shadow is updated to match. rawKnobValue is
+//   ClampToRange(ComputeRawCenter(scene), range) (ParameterModulation.hpp's
+//   Parameter::PopulateUIState()) -- the same scene-blend HandleSetAbsolute
+//   (the host -> core branch above) writes into directly, with no one-pole
+//   slew stage between them. A host write's own round trip therefore lands
+//   on exactly the value the shadow was just set to: this branch never
+//   re-reports a write this bridge itself just made.
 //
 //   Feedback-guard: the single shadowNormalized per entry is what makes
 //   this safe from an endless notify loop. The moment this method itself
@@ -1275,18 +1295,19 @@ void FroggersPluginProcessor::BuildHostParameterInventory() {
 //   juceParam->getValue() (unchanged since nothing else wrote it) still
 //   equals shadowNormalized, the host-check finds no diff, and only the
 //   core-check runs; that check only fires again once the core's ACTUAL
-//   published value has moved again. Because Parameter's own slew is a
-//   one-pole IIR converging on floating-point hardware, it reaches a true,
-//   bit-exact fixed point in finite time (the update term shrinks below the
-//   float ULP at that magnitude and the stored value stops changing bit for
-//   bit) -- so this is not merely "unlikely to loop forever," it provably
-//   goes to a fixed count of notifies and stops.
-//   FroggersVstHostTests.cpp's
+//   published value has moved again. Because rawKnobValue carries no slew
+//   of its own (the paragraph above), a host write settles in exactly one
+//   step: the pump that pushes the write also sets the shadow to that same
+//   value, so the very next pump's core-check already finds coreValue ==
+//   shadowNormalized, with no further notify at all. A genuine core-side
+//   change still notifies -- once, for the step HandleIncDec/
+//   HandleSetAbsolute made to sceneCenters_ -- and then goes flat the same
+//   way, since nothing keeps moving it. FroggersVstHostTests.cpp's
 //   host_write_produces_a_bounded_number_of_notifications_not_an_endless_loop
-//   proves this by pumping well past that settle window and asserting the
-//   notify count has gone flat, plus a positive control (a genuine
-//   core-side change DOES still notify) proving the guard discriminates
-//   rather than just suppressing everything.
+//   proves this: a host write settles with zero further notifications, and
+//   a positive control (a genuine core-side change DOES still notify, then
+//   also goes flat) proves the guard discriminates rather than just
+//   suppressing everything.
 void FroggersPluginProcessor::PumpHostParameterBridge() {
     constexpr float kEpsilon = 1.0e-5f;
 
@@ -1338,7 +1359,7 @@ void FroggersPluginProcessor::PumpHostParameterBridge() {
         // core -> host (only reached when the host did not just write this
         // parameter this same pump -- see this method's own header
         // comment).
-        const float coreValue = entry.uiState->values[0].load(std::memory_order_relaxed);
+        const float coreValue = entry.uiState->rawKnobValue.load(std::memory_order_relaxed);
         if (std::fabs(coreValue - entry.shadowNormalized) > kEpsilon) {
             entry.juceParam->setValueNotifyingHost(coreValue);
             entry.shadowNormalized = coreValue;

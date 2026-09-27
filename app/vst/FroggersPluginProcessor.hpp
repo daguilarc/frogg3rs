@@ -674,12 +674,15 @@ private:
 
         // Audio-thread-published (processBlock(), every block, via
         // Parameter::PopulateUIState() -- see processBlock()'s own comment)
-        // / message-thread-read (PumpHostParameterBridge()) snapshot of
-        // this parameter's current, post-fuego, post-modulation display
-        // value -- Parameter::UIState::values[] is an atomic array
-        // (ParameterModulation.hpp), safe for exactly this cross-thread
-        // read/publish split. Null only for kind == kFreeze (FreezeLatched()
-        // is already its own atomic -- no UIState needed).
+        // / message-thread-read (PumpHostParameterBridge()) snapshot of this
+        // parameter's full UI-published state: the post-fuego,
+        // post-modulation display value (values[]) the editor renders, and
+        // the raw, unmodulated scene value (rawKnobValue) that
+        // PumpHostParameterBridge()'s core -> host branch actually compares
+        // against the shadow (see that method's own comment on why). Both
+        // are atomic (ParameterModulation.hpp), safe for exactly this
+        // cross-thread read/publish split. Null only for kind == kFreeze
+        // (FreezeLatched() is already its own atomic -- no UIState needed).
         std::unique_ptr<synth::Parameter::UIState> uiState;
 
         // Message-thread-owned: the value BOTH sides last agreed on (either
