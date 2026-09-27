@@ -3577,8 +3577,28 @@ TEST_CASE(replugged_twister_reconnects_and_resends_feedback) {
                     state.controllers[0].output.status == synth::MidiEndpointStatus::Online;
     }
     REQUIRE_TRUE(bothOnline);
-    REQUIRE_TRUE(access.sender->FlushForTests(std::chrono::milliseconds(500)));
-    REQUIRE_TRUE(access.outputs[0].sent.size() > sentBeforeUnplug);
+
+    // Reopening the output only clears its feedback processors' caches
+    // (MidiConnectionManager's Resync -> Engine::ResetMidiOutputProcessors ->
+    // MidiOutProcessor::Reset()) inside the SAME pump whose OnTimerTick()
+    // reconcile pass just marked the port Online -- that pump's own
+    // MessageThreadTick() already ran every output processor's Process()
+    // (the call that actually enqueues MIDI) before OnTimerTick() runs, on
+    // this class's own binding order (MessageThreadTick() then
+    // midiConnections_->OnTimerTick(), FroggersPluginProcessor::
+    // timerCallback()). So the resend those cleared caches produce is only
+    // enqueued on the NEXT pump's Process() call, not the one that first
+    // observes Online. Keep pumping (and flushing) until it shows up,
+    // bounded the same way the Online poll above is.
+    bool feedbackResent = access.sender->FlushForTests(std::chrono::milliseconds(500)) &&
+                         access.outputs[0].sent.size() > sentBeforeUnplug;
+    for (int attempt = 0; attempt < 100 && !feedbackResent; ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        processor.PumpMessageThreadForTest();
+        feedbackResent = access.sender->FlushForTests(std::chrono::milliseconds(500)) &&
+                        access.outputs[0].sent.size() > sentBeforeUnplug;
+    }
+    REQUIRE_TRUE(feedbackResent);
 
     processor.releaseResources();
     std::cout << "  [controller ports] Twister replug: both ports went offline then back online, and feedback ("
