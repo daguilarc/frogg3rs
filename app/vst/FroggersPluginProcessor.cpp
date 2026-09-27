@@ -310,8 +310,7 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     // codebase's own established idiom for exactly this shape, e.g.
     // app/FroggersMain.cpp's own comment on activeSession_'s concrete
     // type).
-    static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface())
-        .SetPluginHostMode(true);
+    FroggersSurface().SetPluginHostMode(true);
 
     // The operator's input-channel selector, same downcast
     // reasoning and same instance as SetPluginHostMode() immediately above.
@@ -325,8 +324,7 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     // below so that call's own SetInputOptions() push has somewhere to land
     // (SetInputSelectionChangedCallback() itself never fires from a plain
     // registration).
-    static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface())
-        .SetInputSelectionChangedCallback([this](int selectionIndex) { ApplyInputSelection(selectionIndex); });
+    FroggersSurface().SetInputSelectionChangedCallback([this](int selectionIndex) { ApplyInputSelection(selectionIndex); });
     // Seeds the surface with the bus's initial (disabled, per the
     // constructor's own BusesProperties comment above) option list -- just
     // "None" -- and publishes the matching connected=false into
@@ -571,8 +569,7 @@ void FroggersPluginProcessor::ApplyInputSelection(int selectionIndex) {
     // fallen-back) selection into the portable surface -- the ONLY writer
     // of the surface's rendered copy, so what the operator sees can never
     // lag what this method just validated.
-    static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface())
-        .SetInputOptions(labels, inputSelection_);
+    FroggersSurface().SetInputOptions(labels, inputSelection_);
     // "Connected is consent, never channel presence": true only when the
     // OPERATOR has selected something other than
     // "None" -- never merely because the host left the bus enabled with
@@ -864,17 +861,16 @@ void FroggersPluginProcessor::timerCallback() {
     // SetPluginHostMode(true) call, above), so HandleAction's kPlay/kStop
     // branches gate out a controller's own Play/Stop and would gate out the
     // host's playhead edge too if this went through DispatchAction. The
-    // downcast mirrors the SetPluginHostMode()/SetInputSelectionChangedCallback()
-    // one above: engine_.Application() is concretely FroggersApp&, whose
-    // PortableSurface() is concretely a FroggersUiSurface (that method's own
-    // comment). No editor is required for this: neither method touches
+    // FroggersSurface() accessor (see its own comment in the header) is the
+    // same one SetPluginHostMode()/SetInputSelectionChangedCallback() call
+    // above. No editor is required for this: neither method touches
     // anything editor-owned.
     const int pendingEdge = pendingTransportEdge_.exchange(
         static_cast<int>(PendingTransportEdge::kNone), std::memory_order_relaxed);
     if (pendingEdge == static_cast<int>(PendingTransportEdge::kStart)) {
-        static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface()).StartTransport();
+        FroggersSurface().StartTransport();
     } else if (pendingEdge == static_cast<int>(PendingTransportEdge::kStop)) {
-        static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface()).StopTransport();
+        FroggersSurface().StopTransport();
     }
 
     // -- host tempo via the existing external-clock slave path ---------
@@ -1071,14 +1067,14 @@ void FroggersPluginProcessor::TestStartTransport() {
     // time would let this seam and the real transport-edge-trigger producer
     // independently drift from it. Not DispatchAction(kPlay): this instance
     // is always in plugin host mode, so HandleAction's kPlay branch would
-    // gate this out (see timerCallback()'s own comment on the same
-    // downcast).
-    static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface()).StartTransport();
+    // gate this out (see timerCallback()'s own comment on why it calls
+    // FroggersSurface() directly instead).
+    FroggersSurface().StartTransport();
 }
 
 void FroggersPluginProcessor::TestStopTransport() {
     // See TestStartTransport()'s own comment.
-    static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface()).StopTransport();
+    FroggersSurface().StopTransport();
 }
 
 // -- stable-ID host parameter surface -----------------------------------

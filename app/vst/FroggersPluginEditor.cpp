@@ -10,32 +10,6 @@ namespace frogg3rs_vst {
 
 namespace {
 
-// The plugin's own declared sidebar pages
-// (RuntimeSidebarPages, governing spec "The sidebar holds Controllers and
-// File"): Controllers and File, and nothing else -- the DAW owns audio
-// devices, tempo and transport, so Audio, Sync and the load readout stay
-// undeclared. One definition site, read both by the
-// constructor (to build mainComponent_) and by resized() (to place the ?
-// button below the declared rows) so the two can never disagree about how
-// many rows the sidebar shows.
-constexpr synth::runtime_ui::RuntimeSidebarPages PluginSidebarPages() {
-    synth::runtime_ui::RuntimeSidebarPages pages;
-    pages.audio = false;
-    pages.controllers = true;
-    pages.sync = false;
-    pages.file = true;
-    pages.loadReadout = false;
-    return pages;
-}
-
-// Mirrors BuildSidebarTree's own row-count formula (RuntimePages.hpp) for
-// the subset this file's own PluginSidebarPages() ever sets -- the plugin
-// never registers an app page, so that term is omitted.
-constexpr int DeclaredSidebarRowCount(synth::runtime_ui::RuntimeSidebarPages pages) {
-    return (pages.audio ? 1 : 0) + (pages.controllers ? 1 : 0) + (pages.sync ? 1 : 0) + (pages.file ? 1 : 0) +
-           (pages.loadReadout ? 1 : 0);
-}
-
 // Resize bounds ("resizable per the surface's own sizing
 // conventions"): neither the governing spec nor the design doc names a
 // specific limit, only that the editor must be resizable and follow the
@@ -61,7 +35,7 @@ FroggersPluginEditor::FroggersPluginEditor(FroggersPluginProcessor& processor)
     : juce::AudioProcessorEditor(processor),
       processor_(processor),
       services_(processor_),
-      mainComponent_(processor_.GetEngine().Application(), services_, PluginSidebarPages()),
+      mainComponent_(processor_.GetEngine().Application(), services_, FroggersPluginServices::PluginSidebarPages()),
       portableSurface_(mainComponent_) {
     addAndMakeVisible(portableSurface_);
     setResizable(true, true);
@@ -217,7 +191,8 @@ void FroggersPluginEditor::resized() {
     constexpr float kHelpButtonMargin = 4.0f;
     const float appRootWidth = intrinsic.width - synth::runtime_ui::Layout::kSidebarWidth;
     const float sidebarRowsBottom =
-        synth::runtime_ui::Layout::kSidebarButtonHeight * static_cast<float>(DeclaredSidebarRowCount(PluginSidebarPages()));
+        synth::runtime_ui::Layout::kSidebarButtonHeight *
+        static_cast<float>(synth::runtime_ui::DeclaredSidebarRowCount(FroggersPluginServices::PluginSidebarPages()));
     const juce::Rectangle<float> designBounds(
         appRootWidth + (synth::runtime_ui::Layout::kSidebarWidth - kHelpButtonSize) * 0.5f,
         sidebarRowsBottom + kHelpButtonMargin, kHelpButtonSize, kHelpButtonSize);

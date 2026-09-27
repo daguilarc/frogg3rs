@@ -1571,7 +1571,7 @@ std::string BuildPatchTextWithoutSessionExtras(const std::string& patchJsonText)
 // a plugin version that read the standalone's own controller rows into its
 // own snapshot rather than setting them up itself (the defect
 // unmarked_state_restores_sound_and_input_and_no_controller_rows proves a
-// restore no longer falls for). freezeLatched/visibleBankIndex/
+// restore no longer falls for). freezeLatched/"visibleBankIndex"/
 // inputSelection are kept, matching that earlier plugin's own snapshot
 // shape; schema/schemaVersion/patchName/parameterValues/midiInstrument are
 // copied by reference from `original`, the same "fresh top-level object,
@@ -3538,19 +3538,12 @@ TEST_CASE(destroying_the_processor_stops_the_sender_before_closing_outputs) {
 // New/Save As/Load actions round-trip through the standalone's own patch
 // format onto a scratch patches root.
 
-// One definition, matching FroggersPluginEditor.cpp's own PluginSidebarPages()
-// (that file's own comment: Controllers and File, nothing else) --
-// reproduced here rather than shared, this file's own per-file-self-contained
-// convention (see e.g. ScratchDataPaths()/FindNodeById() above, duplicated
-// again in FroggersVstEditorTest.cpp for the same reason).
+// Reads the editor's own page declaration (FroggersPluginServices::
+// PluginSidebarPages(), the one definition FroggersPluginEditor.cpp itself
+// builds mainComponent_ from) rather than reproducing it here, so this file
+// can never drive a page set production does not declare.
 synth::runtime_ui::RuntimeSidebarPages PluginPages() {
-    synth::runtime_ui::RuntimeSidebarPages pages;
-    pages.audio = false;
-    pages.controllers = true;
-    pages.sync = false;
-    pages.file = true;
-    pages.loadReadout = false;
-    return pages;
+    return frogg3rs_vst::FroggersPluginServices::PluginSidebarPages();
 }
 
 TEST_CASE(controllers_page_add_twister_binds_the_fake_device) {

@@ -122,8 +122,7 @@
 // the sidebar column in the SAME design-space coordinates BuildSidebarTree
 // resolves the sidebar into, then mapped through the SAME transform as
 // portableSurface_ -- so it stays visually attached to the sidebar, below
-// its last declared row, at every host-chosen size, rather than the fixed
-// real-pixel window corner this editor used before the sidebar existed.
+// its last declared row, at every host-chosen size.
 
 #include "synth/PortableUI.hpp"
 #include "synth/RuntimeMainComponent.hpp"

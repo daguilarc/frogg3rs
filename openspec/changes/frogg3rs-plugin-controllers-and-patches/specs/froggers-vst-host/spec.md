@@ -170,7 +170,7 @@ THE plugin SHALL offer the File page with New, Save, Save As and Load over the s
 - Check: not yet delivered: NEW file_page_load_applies_sound_and_rows_and_writes_no_configuration in app/vst/FroggersVstHostTests.cpp (task 2.3)
 
 ### Requirement: A controller cannot run the plugin's transport
-WHILE hosted as a plugin, a controller button mapped to Play, Stop or Record SHALL change nothing, the host playhead SHALL remain the only thing that starts and stops the transport, and a controller button mapped to Freeze SHALL latch as it does in the standalone.
+WHILE hosted as a plugin, only the host playhead SHALL start and stop the transport: a controller button mapped to Play, Stop or Record SHALL change nothing, and Freeze -- from the editor, its host parameter, or a controller -- SHALL stop the instrument and its release SHALL restart it, as in the standalone.
 
 #### Scenario: Play, Stop and Record on a controller change nothing
 - **WHEN** a Twister row is live and the DAW is stopped, and the user presses the button mapped to Play

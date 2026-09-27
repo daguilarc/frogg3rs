@@ -65,6 +65,23 @@ public:
     FroggersPluginServices(const FroggersPluginServices&) = delete;
     FroggersPluginServices& operator=(const FroggersPluginServices&) = delete;
 
+    // The plugin's own declared sidebar pages (RuntimeSidebarPages,
+    // governing spec "The sidebar holds Controllers and File"): Controllers
+    // and File, and nothing else -- the DAW owns audio devices, tempo and
+    // transport, so Audio, Sync and the load readout stay undeclared. The
+    // one definition site: the editor (FroggersPluginEditor.cpp) and the
+    // host tests both build their RuntimeMainComponent from this, so
+    // neither can drive a page set production does not declare.
+    static constexpr synth::runtime_ui::RuntimeSidebarPages PluginSidebarPages() {
+        synth::runtime_ui::RuntimeSidebarPages pages;
+        pages.audio = false;
+        pages.controllers = true;
+        pages.sync = false;
+        pages.file = true;
+        pages.loadReadout = false;
+        return pages;
+    }
+
     synth::runtime_ui::ControllersPageCallbacks MakeControllersCallbacks(std::function<void()> onBack) {
         return controllersBinding_.MakeCallbacks(
             std::move(onBack), [this] { return processor_.MidiConnections().State(); },

@@ -303,8 +303,12 @@ public:
     // edge trigger calls (timerCallback(), below) -- see that method's own
     // comment for why this bypasses DispatchAction/HandleAction rather than
     // hand-mirroring HandleAction's message sequence. Not reachable from any host UI: the editor draws no Play,
-    // Stop or Record (design decision 2), so a plugin instance's transport
-    // moves only from the host's own playhead or a controller row; exists
+    // Stop or Record, and in plugin host mode HandleAction's kPlay/kStop/kRecord
+    // branches do nothing (FroggersUiSurface.hpp's SetPluginHostMode() own
+    // comment), so a plugin instance's transport moves only from the host's
+    // own playhead -- a controller row's Play, Stop and Record do nothing;
+    // Freeze remains reachable and still stops the instrument and restarts
+    // it on release, as in the standalone. This method exists
     // solely so FroggersVstSmokeTest.cpp can drive the core with no
     // host/playhead at all, the same way SynthRig::StartAt/StopAt do for
     // the app core's own test suite. Safe to call from any single thread that is not
@@ -516,6 +520,19 @@ private:
     // this file's header comment on why processBlock() itself must not.
     void timerCallback() override;
 
+    // The concrete FroggersUiSurface behind PortableSurface(): engine_ is
+    // concretely synth::Engine<synth_froggers::FroggersApp>, so
+    // engine_.Application() is concretely FroggersApp&, whose
+    // PortableSurface() is defined as `return ui_;` over its own
+    // declared-concrete-type member (Froggers.hpp's `ui_`) -- so the object
+    // it returns a reference to is ALWAYS, provably, a FroggersUiSurface (see
+    // the constructor's own comment on this exact downcast, in the .cpp, for
+    // the full static_cast-not-dynamic_cast reasoning). One accessor instead
+    // of the same cast spelled out at every call site.
+    synth_froggers::FroggersUiSurface& FroggersSurface() {
+        return static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface());
+    }
+
     // -- host transport edge-trigger -----------------------------------
     // processBlock() (audio thread) is the only place allowed to call
     // getPlayHead()->getPosition() (juce_AudioPlayHead.h's own doc comment:
@@ -693,7 +710,7 @@ private:
     void PumpStatePersistence();
 
     // Attaches the "sessionExtras" sibling object (freezeLatched,
-    // visibleBankIndex, inputSelection, controllerRows and, when one is
+    // "visibleBankIndex", inputSelection, controllerRows and, when one is
     // current, currentPatch) to `root`, in `arena`. The one place every
     // sessionExtras object is built -- the constructor's own synchronous
     // seed and the host-snapshot consumer it installs on engine_.Patches()
@@ -732,9 +749,9 @@ private:
     // never blocks waiting for a fresh one. Seeded synchronously in the
     // constructor (safe pre-audio, mirroring engine_.Initialize()'s own
     // synchronous startup patch drain) and refreshed whenever the
-    // host-snapshot consumer PumpStatePersistence() installs on
-    // engine_.Patches() runs -- PumpStatePersistence() asks for a fresh one
-    // every pump it is not already busy with a snapshot or a save, so this
+    // host-snapshot consumer the constructor installs on engine_.Patches()
+    // runs -- PumpStatePersistence() asks for a fresh one every pump it is
+    // not already busy with a snapshot or a save, so this
     // is never more than about one pump interval stale, the same
     // consistency bound PumpHostParameterBridge() already accepts for
     // host-parameter readback.
