@@ -258,7 +258,12 @@ Freeze — from the plugin's own surface, its host parameter, or a controller �
 releasing it returns the transport to where it was when Freeze engaged, the same as in the standalone
 (Transport and the envelope gate, above). Whenever the host reports a tempo, the BPM control becomes a
 read-only display, "BPM `<value>` (external clock)", the same display the standalone shows while slaved
-to incoming MIDI clock.
+to incoming MIDI clock. Live always reports a tempo, so this holds for every Frogg3rs plugin instance: a
+control mapped on the plugin's own Controllers page — a shifted Crispy turn on the Twister (MIDI Fighter
+Twister, below), the APC40 mkII's master fader (Akai APC40 mkII (Generic), below), or any other control
+mapped to the BPM action — does nothing there, because a plugin cannot set its host's tempo. To change
+the tempo from a controller, map that control to Live's own tempo control through Live's MIDI mapping
+instead (Remote switch on, above).
 
 **Controllers** works as it does in the standalone (MIDI controllers, below): each row opens its own
 MIDI input and output ports directly, the same way a standalone row does, so a controller reaches the
@@ -382,8 +387,8 @@ Every front-screen control. Encoder turns (relative or absolute), encoder pushes
 knob's modulation exactly like an on-screen press), Play, Stop, Freeze, Record, Randomize All,
 Randomize Page, Reset All, Reset Page, Page 1 to 6, Page Previous, Page Next, Scene 1 and Scene 2
 (which set the scene blend to 0 and 1), the scene blend itself (an analog control), BPM (an analog
-control, or a shifted encoder turn, 30 to 300), **Hold Drill**, **Shift**, and gestures (see Gestures,
-below).
+control, or a shifted encoder turn, 30 to 300; in the plugin, tempo is mapped in the DAW instead —
+see Plugin, above), **Hold Drill**, **Shift**, and gestures (see Gestures, below).
 Buttons can be addressed by CC or by note number; analog controls by CC.
 
 ### Editing a field
@@ -477,9 +482,9 @@ a press paired with a second job under Shift:
 Two of the sixteen encoders carry a shifted job too. Crunchy's own knob: turning it moves Crunchy
 while Shift is released and moves the scene blend while Shift is held; the same turn moves Crunchy
 again the moment Shift releases. Crispy's own knob: turning it moves Crispy while Shift is released
-and moves the tempo while Shift is held, by the same amount whichever parameter page is on screen;
-the same turn moves Crispy again the moment Shift releases. No other Twister encoder has a shifted
-job.
+and moves the tempo while Shift is held, by the same amount whichever parameter page is on screen
+(in the plugin, tempo is mapped in the DAW instead; see Plugin, above); the same turn moves Crispy
+again the moment Shift releases. No other Twister encoder has a shifted job.
 
 A Twister row added from the MIDI Fighter Twister preset before this version keeps its old mappings,
 says it differs from its preset, and offers Restore. Pressing Restore installs both shifted turns and replaces edits made to that row. A
@@ -500,10 +505,10 @@ The unit powers up in this mode; nothing is sent to it. Top-row track knobs 1 to
 Play/Stop/Record, SCENE LAUNCH 1 and 2 are Scene 1 and 2, the LEFT and RIGHT arrows are Page
 Previous and Page Next, DEVICE ON/OFF is Randomize Page, DEVICE LOCK is Randomize All, CLIP/DEVICE
 VIEW is Reset Page, DETAIL VIEW is Reset All, STOP ALL CLIPS is Freeze, the CLIP STOP buttons under
-tracks 1 to 6 are Page 1 to 6, the crossfader is the scene blend and the master fader is BPM. Keep
-Track 1 selected: the device knobs follow the selected track, and after pressing another Track
-Select button they stop reaching encoders 9 to 16 until Track 1 is pressed again. The unit lights
-its own buttons in this mode.
+tracks 1 to 6 are Page 1 to 6, the crossfader is the scene blend and the master fader is BPM (in the
+plugin, tempo is mapped in the DAW instead; see Plugin, above). Keep Track 1 selected: the device
+knobs follow the selected track, and after pressing another Track Select button they stop reaching
+encoders 9 to 16 until Track 1 is pressed again. The unit lights its own buttons in this mode.
 
 ### Akai APC40 mkII (Ableton)
 
