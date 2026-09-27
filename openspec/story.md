@@ -30,7 +30,6 @@ Markers inside a step:
   manual, or both. Section 3.1 names the ruling, and section 5 quotes the manual text.
 - **CHECK**: the result comes from reading the code and has not been run. It becomes a SWEEP task that
   runs the build and records what happens.
-- **PENDING-PLG**: the separate investigation of controller MIDI in the plugin decides this step.
 
 The bounds come from OP and SR. The story follows one user through the full range of every feature.
 It covers one full modulation drill-down (MOD-01 to MOD-12, to the deepest level main allows) and one
@@ -114,8 +113,8 @@ Release artifacts: a macOS disk image, a Windows zip, VST3 for macOS and Windows
   All, Scene 1, Scene 2, the scene blend slider and the BPM slider beside it. The band has no Crunchy
   control. Below it are six page buttons, back and forward arrows, the 4×4 encoder grid, Randomize
   Page in the page header, Reset Page, and Reset All. The runtime sidebar holds Audio I/O,
-  Controllers, Sync, File and the load readout. **Caps:** P shows no sidebar and a different
-  transport row (PLG-04).
+  Controllers, Sync, File and the load readout. **Caps:** P's sidebar holds only Controllers and
+  File, and its transport row differs (PLG-04).
 - **SUR-02** `[SWEEP]` (A:SUR-02; B:N-01) **Start:** running, Audio page. **Action:** press Audio,
   Envelope, Filter, Drive, Delay and Reverb in turn. **Result:** slots 0–13 hold that page's
   parameters, slot 14 its own Crispy and slot 15 the shared Crunchy. Exactly one page button is lit.
@@ -588,7 +587,7 @@ the tests `fourth_level_drill_in_is_refused` and
   Back, quit and relaunch. **Result:** the last manual BPM is editable again, and the sync settings
   persist in the runtime configuration, not in patches.
 
-## 1.12 Controllers page: common to every row (S, B; P has none)
+## 1.12 Controllers page: common to every row (S, B, P)
 
 - **CTL-01** `[SWEEP]` (A:CTL-01; B:C-01) **Start:** nothing connected. **Action:** open Controllers.
   **Result:** "No connected controller is waiting to be set up" is shown. The add row has a
@@ -874,7 +873,7 @@ Froggers addresses one Twister device-bank. Parameter-bank means a Froggers page
   representative pair; "this should work on any midi device", and the Custom branch covers arbitrary
   devices).
 
-## 1.14 File page and patches (S, B; P has none)
+## 1.14 File page and patches (S, B, P)
 
 - **FILE-01** `[SWEEP]` (A:FILE-01; B:F-01) **Action:** open File. **Result:** it shows a header, the
   patches root, **New**, **Save**, **Save As** and **Load**, and a status area. There is no Revert.
@@ -932,7 +931,8 @@ Froggers addresses one Twister device-bank. Parameter-bank means a Froggers page
   P uses the "?" button (PLG-13). B uses the site links (WEB-01).
 - **LOAD-01** `[SWEEP]` (A:LOAD-01; B:A-04) **Action:** watch the readout through a spike.
   **Result:** a whole percent, which holds the spike briefly and then releases. Three digits fit.
-  **Caps:** S and B only. **CODE:** A listed P, but P has no sidebar (PLG-04).
+  **Caps:** S and B only. **CODE:** A listed P, but P's sidebar does not declare a load-readout page
+  (PLG-04); the DAW already reports its own load.
 
 ## 1.17 Plugin: what differs (P)
 
@@ -942,12 +942,12 @@ Froggers addresses one Twister device-bank. Parameter-bank means a Froggers page
   notes explain it. What Windows shows is not stated. **CHECK.**
 - **PLG-03** `[SWEEP]` (A:PLG-03; B:P-03) **Action:** scan and instantiate. **Result:** a stereo output
   and one optional stereo input bus. It instantiates either way, and the AU is macOS only.
-- **PLG-04** `[SWEEP]` (A:PLG-04, PLG-11, PLG-12; B:P-04, P-17) **Action:** open the editor.
-  **Result:** the row shows Freeze with a "FREEZE" label and **IN:**, and no Play, Stop or Record.
-  There is no sidebar at all: no Audio I/O, Controllers, Sync, File or load readout. A **?** button
-  sits top right. **CODE:** A and B expected a File page. The editor builds a `PortableComponent`
-  over the bare surface with "NO sidebar" (`FroggersPluginEditor.hpp` header). `SetPluginHostMode`
-  hides Play, Stop and Record (`FroggersUiSurface.hpp`, `kTransportRow` builder).
+- **PLG-04** `[SWEEP]` (A:PLG-04, PLG-11, PLG-12; B:P-04, P-17) **Action:** open the editor, then open
+  Controllers and File and press Back on each; close and reopen the editor. **Result:** the row shows
+  Freeze with a "FREEZE" label and **IN:**, and no Play, Stop or Record. The sidebar holds Controllers
+  and File, and no Audio I/O, Sync or load readout. A **?** button sits in the sidebar column below
+  File. Each page replaces the instrument view, and Back restores it with its state intact. The
+  reopened editor shows the instrument view.
 - **PLG-05** `[SWEEP]` (A:PLG-05; B:P-05) **Action:** start and stop the DAW transport. **Result:** the
   app follows, once per host transition.
 - **PLG-06** `[SWEEP]` (A:PLG-08; B:P-06) **Action:** change the DAW tempo, drag BPM, then use a host
@@ -968,9 +968,14 @@ Froggers addresses one Twister device-bank. Parameter-bank means a Froggers page
 - **PLG-09** `[SWEEP]` (A:PLG-10; B:P-10) **Action:** automate two pages while a third is shown, with a
   view open. **Result:** each value lands on its own parameter, the page does not move, and the view
   is neither closed nor written. **RULED** (HR, "Cross-bank automation = option (iii)").
-- **PLG-10** `[SWEEP]` (A:PLG-13; B:P-15) **Action:** edit, set IN:, save, close and reopen the
-  project. **Result:** the values and the IN: choice return. Standalone patches are untouched. A
-  project older than the IN: setting opens with input off. New parameters keep their defaults.
+- **PLG-10** `[SWEEP]` (A:PLG-13; B:P-15) **Action:** edit knobs, set IN:, add a controller row, Save
+  As a patch, then save, close and reopen the project. **Result:** the values, the IN: choice, the
+  visible page, the controller rows and the File page's current patch return. Each row's ports reopen
+  and its feedback is sent again, and Save adds a version to that patch. Saving and reopening the
+  project writes no patch and changes nothing the standalone reads. A project older than the IN:
+  setting opens with input off, one with no current patch opens with none, and new parameters keep
+  their defaults. A project saved by an earlier version of the plugin opens with its sound and IN:
+  choice and no controller rows.
 - **PLG-11** `[UX]` (B:P-19) manual expectation. **Action:** close and reopen the editor. **Result:**
   the page, values and open view are as they were.
 - **PLG-12** `[UX]` (B:P-20) manual expectation. **Action:** insert a second instance. **Result:** each
@@ -981,24 +986,49 @@ Froggers addresses one Twister device-bank. Parameter-bank means a Froggers page
   modulation. **Result:** the same as S.
 - **PLG-15** `[SWEEP]` (B:P-16) **Action:** look for Record. **Result:** there is none; the DAW
   records.
-- **PLG-16** `[SWEEP]` (A:PLG-16; B:P-C-01) **Action:** look for a Controllers page, Preset or Custom.
-  **Result:** none (PLG-04).
-- **PLG-17** `[SWEEP]` (A:PLG-17; B:P-C-02) **Start:** a Twister, APC40 or Launchpad routed through the
-  DAW to the track. **Action:** use every control with no DAW mapping. **Result:** manual: nothing
-  moves. **PENDING-PLG.** Lead only: `processBlock` calls `juce::ignoreUnused(midiMessages)`.
+- **PLG-16** `[SWEEP]` (A:PLG-16; B:P-C-01) **Action:** open Controllers and go through CTL-01 to
+  CTL-16, CON-01 to CON-03 and PRT-01. **Result:** as in S.
+- **PLG-17** `[SWEEP]` (A:PLG-17; B:P-C-02) **Start:** a Twister set up as TWI-01, its port's Track and
+  Remote switches off in the DAW as the manual describes, and a Twister row. **Action:** TWI-02 to
+  TWI-09; then close and reopen the editor. **Result:** as in S, with two differences: the left middle
+  button (Play, and Stop under Shift) does nothing (PLG-26), and Crispy's knob under Shift moves the
+  tempo only while the host reports no tempo (PLG-06). The rows are as the page last had them after the
+  editor reopens.
 - **PLG-18** `[SWEEP]` (A:PLG-18; B:P-C-04, P-C-06) **Action:** DAW-MIDI-learn knobs to host
   parameters, including relative encoders. **Result:** each moves one fixed parameter. How a relative
-  stream moves it is up to the DAW. **PENDING-PLG.**
-- **PLG-19** `[SWEEP]` (A:PLG-19; B:P-C-05) **Action:** try mapping Page, Randomize, Reset, Scene,
-  blend, BPM, push, Hold Drill and Shift. **Result:** they are not host parameters (PLG-08).
-  **PENDING-PLG** for any other route.
-- **PLG-20** `[SWEEP]` (A:PLG-20; B:P-C-03) **Action:** watch the controller. **Result:** manual
-  expectation: no LED feedback, no APC40 Ableton SysEx, no Launchpad programmer mode, and no clock
-  out. **PENDING-PLG.**
-- **PLG-21** `[UX]` (B:P-C-07) **Action:** save and reopen the project with DAW mappings. **Result:**
-  manual expectation: the DAW restores its own mappings.
-- **PLG-22** `[SWEEP]` (A:PLG-21) **Action:** open a standalone patch. **Result:** not possible, because
-  P has no File page (PLG-04). **CODE.**
+  stream moves it is up to the DAW. In Live the controller's port needs its Remote switch on for this;
+  a control that a Live mapping and a controller row both map moves both targets.
+- **PLG-19** `[SWEEP]` (A:PLG-19; B:P-C-05) **Action:** repeat APG-01 to APG-05, APA-01 to APA-03,
+  LPX-01 to LPX-05, LPP-01, LPM-01 to LPM-03, CUS-01 to CUS-13, CTL-18 to CTL-21 and GES-01 to GES-04 in
+  the plugin. **Result:** as in S, except that PLAY, STOP and RECORD, and the Launchpad's Play, Stop
+  and Record pads, do nothing (PLG-26), the APC40 master fader moves BPM only while the host reports no
+  tempo (PLG-06), and CTL-21's open saves no configuration.
+- **PLG-20** `[SWEEP]` (A:PLG-20; B:P-C-03) **Action:** watch the controller through PLG-17 and PLG-19.
+  **Result:** the Twister's rings and colours follow the page and the drill level. The APC40 (Ableton)
+  connect message and each Launchpad's programmer-mode message are sent when the output connects. No
+  clock goes out: the plugin has no Sync page.
+- **PLG-21** `[UX]` (B:P-C-07) **Action:** save and reopen the project with DAW mappings and controller
+  rows. **Result:** the DAW restores its own mappings, and the project restores the rows (PLG-10).
+- **PLG-22** `[SWEEP]` (A:PLG-21) **Action:** open File and go through FILE-01 to FILE-13. **Result:**
+  as in S. The patches root is the standalone's patches folder, and the patches listed are the
+  standalone's. Load applies sound and setup to this instance only, and saves no configuration. A
+  version saved here appears in the standalone's File page. The standalone's next launch reopens the
+  version it last opened or saved; a standalone with no such record opens the newest saved version,
+  wherever it was saved from.
+- **PLG-23** `[SWEEP]` (new) **Start:** two rows, both connected. **Action:** use both, then replug
+  one. **Result:** as in S.
+- **PLG-24** `[SWEEP]` (new) **Action:** insert a new instance. **Result:** the default patch (LCH-02,
+  LCH-03), no controller rows and no current patch. The standalone's patches and configuration are not
+  read, and nothing is written.
+- **PLG-25** `[SWEEP]` (new) **Action:** unplug the controller, then plug it back in. **Result:** both
+  dots go offline, and after replugging the row reconnects within one poll and resends its feedback.
+- **PLG-26** `[SWEEP]` (new) **Action:** press a controller button mapped to Play, Stop or Record, with
+  the DAW stopped and then playing; then press one mapped to Freeze. **Result:** Play, Stop and Record
+  do nothing; the DAW's transport starts and stops the instrument (PLG-05). Freeze latches (PLG-08).
+- **PLG-27** `[UX]` (new) **Action:** change only the controller setup, then close the Live Set, once
+  with the VST3 and once with the AU. **Result:** the manual's instruction to save the Live Set after
+  changing the controller setup holds: with the VST3, Live asks to save if it honours the plugin's
+  change flag; with the AU, it does not ask.
 
 ## 1.18 Browser build: what differs (B)
 
@@ -1113,7 +1143,7 @@ and OP's 30-minute cap (REC-07).
 | 16 | A:LCH-01 vs B:S1 | launch BPM is 120 | `kDefaultTempoBpm` | none |
 | 17 | A:LCH-01 vs B:S0 | first launch has no controller rows | empty `defaultInstrumentConfig_` | none |
 | 18 | A:CUS-11 vs B:C-CU-11 | scene blend is a config-level Analogs row | `RowGroup::AnalogSceneBlend` | none |
-| 19 | A:PLG-11,12, LOAD-01; B:P-17 | the plugin has no sidebar pages | `FroggersPluginEditor.hpp` header | MANUAL (silent about plugin pages) |
+| 19 | A:PLG-11,12, LOAD-01; B:P-17 | the plugin's sidebar holds Controllers and File, and no load readout | `FroggersPluginServices::PluginSidebarPages()` | none (MANUAL and PLG-04 describe this) |
 | 20 | A:TRN-07 vs B:T-FS-01 | Freeze from silence drones | `kFreeze` branch | none |
 | 21 | A:TWI-03 | the Twister knob-16 push goes up one level | `Back()` | none |
 | 22 | B:T-07 | Play while running restarts the grid (CHECK) | MasterClock internal Start | none |
@@ -1188,9 +1218,7 @@ precondition). If (C) lands, it rewrites TWI-01.
 | X-01 | A:FILE-12; B:F-12, F-13, BR-REVERT-* | the Revert button | no `kFileRevert` in `RuntimePages.hpp` `NodeIds`; ruled removed (2.1 f) |
 | X-02 | A:CTL-14; B:OTR-6 list | Reconfigure, Blacklist, Configure, Ignore, and the Configuration Wizard action | `Actions` list, ControllersPageUI.hpp:265-282; ruled (2.1 d) |
 | X-03 | B:A-SP-01, A-SP-02 (BR-SHEAF-PATCH) | launching frogg3rs from the Sheaf Patch desktop launcher | `app/FroggersMain.cpp` header: launches "only Frogg3rs -- no ... Launcher.hpp"; `apps/sheaf-patch` has no Froggers reference |
-| X-04 | A:PLG-11; B:P-17 | a File page (patches) in the plugin | `FroggersPluginEditor.hpp` header, "NO sidebar" |
-| X-05 | A:LOAD-01 (P column) | a load readout in the plugin | same |
-| X-06 | A:PLG-21 | opening a standalone patch in the plugin | same |
+| X-05 | A:LOAD-01 (P column) | a load readout in the plugin | `FroggersPluginServices::PluginSidebarPages()` (`loadReadout = false`) |
 | X-07 | A:MOD-19, MOD-20; B:M-06, M-07 | a refusal at the third level, and Back going straight to the grid | `kMaxDrillLevel = 3`, `Back()`; replaced by MOD-07 to MOD-09 |
 
 ## 3.3 Corrections to the control inventory, found while settling matches
@@ -1200,7 +1228,7 @@ precondition). If (C) lands, it rewrites TWI-01.
 - §4: Stop is listed as present on the plugin. It is hidden (`if (!pluginHostMode)` covers Play and
   Stop).
 - §5 and §11: the MIDI catalog and the Controllers page are listed on standalone and plugin, and not
-  on browser. The plugin has no sidebar. The browser has the page through Web MIDI (MANUAL; sbw-5).
+  on browser. The browser has the page too, through Web MIDI (MANUAL; sbw-5).
 - §6: the Preset dropdown is listed as "6 device defaults + Custom". Main also carries WRLD.Bldr
   (D-01), which is ruled removed.
 - §2 and §3: "up to 3 levels" is correct, and both drafts disagree with it (2.2 #13).
@@ -1221,14 +1249,14 @@ noise is dropped. A cost between the two is reported as numbers.
 
 | Quantity | S | B | P |
 |---|---|---|---|
-| Controller rows | unbounded | unbounded | n/a |
-| Mapping rows per controller | unbounded | unbounded | n/a |
-| Connect messages per row | unbounded | unbounded | n/a |
+| Controller rows | unbounded | unbounded | unbounded |
+| Mapping rows per controller | unbounded | unbounded | unbounded |
+| Connect messages per row | unbounded | unbounded | unbounded |
 | Knobs in a gesture | any number, up to every knob and depth; Sheaf stores membership on each parameter (SR 2026-09-23) | same | n/a |
 | Materialized modulation depths | 1440 slots provisioned at launch (`kDepthParameterStorageCapacity`, 96 parameters × 15 sources); the message thread adds more as they run low (`ParameterGroup::RequestParameterStorageBatchIfLow`, `Engine::MessageThreadTick`). A Randomize press can need a knob's old depths and its new ones at once; when no slot is free, the knob gets fewer sources than it drew (`partial` in `RandomizeParameterModulationDepths`, recorded by `LastRandomizePartial`, shown nowhere). **fix required** (SR 2026-09-23): the launch constant is the watermark; a patch applies only with its storage, at startup and running | same | same |
-| Patches | disk | browser storage quota | n/a |
-| Versions per patch | every Save adds one | same | n/a |
-| Same-name suffix | smallest free number | same | n/a |
+| Patches | disk | browser storage quota | the standalone's own disk root |
+| Versions per patch | every Save adds one | same | same |
+| Same-name suffix | smallest free number | same | same |
 
 ### The code's own limits
 
@@ -1245,8 +1273,8 @@ noise is dropped. A cost between the two is reported as numbers.
 | Gesture faders on main | 8, reached only through the Analogs Gestures rows (D-03) | 8 | 8 | `kNumGestures` |
 | Host parameters | n/a | n/a | 92 | PLG-08 |
 | Input channels | 1 requested | 1 requested, at most 32 | stereo bus: None, each channel, or Sum | `kMaxBrowserInputChannels` |
-| MIDI output sinks | 8; a sink index of 8 or more is ignored | same | n/a | `MidiSender::kMaxSinks` |
-| Absolute-feedback routes | 4096; a route past that is not tracked | same | n/a | `AbsoluteFeedbackCoordinator::kMaxRoutes` |
+| MIDI output sinks | 8; a sink index of 8 or more is ignored | same | same | `MidiSender::kMaxSinks` |
+| Absolute-feedback routes | 4096; a route past that is not tracked | same | same | `AbsoluteFeedbackCoordinator::kMaxRoutes` |
 
 ---
 
