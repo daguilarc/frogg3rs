@@ -34,7 +34,7 @@ Each modulation depth parameter can go down up to two more layers deep carrying 
 
 This compounds exponentially. One parameter has fifteen depth knobs. Each of those
 fifteen has fifteen of its own, which gives us 225. Each of those 225 has fifteen
-more, totaling 3,375, so asingle parameter sits on
+more, totaling 3,375, so a single parameter sits on
 top of 3,615 potential knobs. Across the instrument's 91 top-level parameters (six pages of
 fourteen, six Crispy knobs and Crunchy) that is 1,365 possible first-level depths and
 328,965 depths if every level were filled.
@@ -75,22 +75,18 @@ Full parameter reference: [`MANUAL.md`](MANUAL.md).
 
 **Two scenes** preserve two different values for each parameter in Scene 1 and Scene 2. Sliding between them slides each parameter value gradually between its Scene 1 and 2 values. Randomization puts different values on each scene, so really you get two different outcomes for each parameter with one roll of the dice, and you can then play around in a continuous spectrum between them.
 
-**Current development is the Sheaf-based app under [`app/`](app/README.md)** — see
-[Frogg3rs — Sheaf app](#frogg3rs--sheaf-app-current-development) below. `src/` is the **Daisy Field**
+**Frogg3rs runs from the Sheaf-based app under [`app/`](app/README.md)** — see
+[Frogg3rs — Sheaf app](#frogg3rs--sheaf-app) below. `src/` is the frozen **Daisy Field**
 hardware firmware; it builds as two variants, `FroggersSolo` and `FroggersGuitar` (see
 [`DAISY_MANUAL.md`](DAISY_MANUAL.md)), and its tests run with `make firmware-test`.
 
 - **Sheaf app docs:** [`app/README.md`](app/README.md) — build instructions, Sheaf submodule pin, status
-- **Manual:** [`MANUAL.md`](MANUAL.md) — global controls and all six parameter pages for the current
-  Sheaf app
 - **Daisy Field manual:** [`DAISY_MANUAL.md`](DAISY_MANUAL.md) — the Eurorack firmware (pages,
   buttons, modulation workflow, safe flash sequence)
 - **Firmware tests:** run `make firmware-test` to build and run the Daisy firmware's test suite.
-- **Quick Dict:** [`QUICK_DICT.md`](QUICK_DICT.md) — terse, slot-ordered parameter glossary for the
-  current Sheaf app
 - **License:** MIT — see [`LICENSE`](LICENSE) (copyright JoYoFresh and Diego Aguilar-Canabal)
 
-## Frogg3rs — Sheaf app (current development)
+## Frogg3rs — Sheaf app
 
 Froggers' DSP on [Sheaf](https://github.com/jvictor0/Sheaf)'s parameter and UI framework. Sheaf is a
 pinned submodule at `External/Sheaf`; [`app/README.md`](app/README.md) records the pinned commit.
@@ -106,7 +102,7 @@ It writes `app/build-launcher/Frogg3rs.app` and signs it. The script caps itself
 
 Change proposals and specs live under [`openspec/`](openspec/).
 
-Parameter reference for this app: [`MANUAL.md`](MANUAL.md) (global controls, then all six pages —
+Parameter reference: [`MANUAL.md`](MANUAL.md) (global controls, then all six pages —
 Audio, Envelope, Filter, Drive, Delay, Reverb — parameter by parameter) and [`QUICK_DICT.md`](QUICK_DICT.md)
 (the same six pages, one line per parameter).
 

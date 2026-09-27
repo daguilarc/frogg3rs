@@ -1,6 +1,6 @@
 # Frogg3rs Manual
 
-Operator manual for **Frogg3rs**, a modular synthesizer program running on the Sheaf design platform.
+This is the manual for **Frogg3rs**, a modular synthesizer program running on the Sheaf design platform.
 
 The same instrument core runs in four hosts:
 
@@ -29,15 +29,14 @@ the format exists only there.
 ### Opening a downloaded build
 
 The first time you open Frogg3rs, your computer will refuse and warn you it cannot check the app for
-malware. That is expected, and there is nothing wrong with the download. These builds are not
-registered with Apple or Microsoft, so neither one recognises them.
+malware, because these builds are not registered with Apple or Microsoft.
 
 You have to say yes once, and then it opens normally from then on. The steps are different on each
 system.
 
 **macOS.** Double-clicking shows **"Frogg3rs" Not Opened** — "Apple could not verify Frogg3rs is free
-of malware..." — with a single **Done** button. That dialog will never offer a way to continue, no
-matter how many times you open it. The permission lives elsewhere:
+of malware..." — with a single **Done** button. This dialog never offers a way to continue. The
+permission lives elsewhere:
 
 1. Click **Done** to dismiss the dialog. Dismissing it is what registers the blocked attempt.
 2. Open **System Settings → Privacy & Security** and scroll to **Security**.
@@ -50,8 +49,8 @@ back to Privacy & Security.
 macOS remembers the choice, so later launches open normally. The same three steps apply the first
 time a DAW loads the VST3 or the Audio Unit.
 
-Control-clicking the app and choosing **Open** used to bypass this. macOS 15 removed that route for
-apps in this state, so on current macOS the Privacy & Security panel is the only way through.
+Control-clicking the app and choosing **Open** does not open it on current macOS; the Privacy &
+Security panel above is the only way through.
 
 **Windows.** Opening the executable shows Microsoft Defender SmartScreen's blue **Windows protected
 your PC** dialog, which names an unrecognised app and offers only **Don't run**. Click **More info**,
@@ -86,10 +85,10 @@ differently from each other, because the scramble pattern follows the slot index
 
 - **Crispy** (slot 14, one instance per page, colored like that page) scrambles only that page's own 14
   page parameters (slots 0–13). It does not touch Crunchy, and it does not touch any other page.
-- **Crunchy** (slot 15) is a single shared parameter — the literal same value — wired into all six
-  pages at once. It scrambles every page parameter in every page, *and* it scrambles every page's own
-  Crispy value before that Crispy value is used to scramble its page (Crunchy stacks underneath Crispy,
-  never the other way around). Crunchy itself receives no scramble.
+- **Crunchy** (slot 15) is a single shared parameter wired into all six pages at once. It scrambles
+  every page parameter in every page, and it scrambles every page's own Crispy value before that
+  Crispy value is used to scramble its page — Crunchy stacks underneath Crispy, never the other way
+  around. Crunchy itself receives no scramble.
 - Both default to 0 (no-op). Turning up Crunchy alone is a fast way to add grit everywhere at once
   without touching six separate Crispy knobs.
 
@@ -118,7 +117,7 @@ the transport to where it was when Freeze engaged: if it was running, the transp
 same as pressing Play; if it was already stopped, releasing only silences the drone, the same teardown
 Stop triggers. Pressing Play always disarms Freeze and starts the transport.
 
-**Record** arms a capture of what the operator hears; press again to stop it. A finished recording is
+**Record** arms a capture of what you hear; press again to stop it. A finished recording is
 offered as a file named from today's date, `YYYY-MM-DD.wav` — the standalone through a save dialog on
 that name in the Documents folder, with a warning before it overwrites an existing file of the same
 name. Record refuses to arm while the transport is stopped: "Press Play before recording." shows
@@ -213,12 +212,6 @@ moves something:
 Whatever the gesture or the floor, the sources chosen are always distinct, and only sources that are
 currently connected are eligible — an unconnected External Audio source is never drawn.
 
-The weights are shaped this way because a parameter pushed by many sources at once tends to sit near
-its center — independent movements cancel each other out — and a patch where everything is modulated
-by everything sounds uniformly busy. Parameters staying still is what gives a randomized patch its
-contrast, and the ones that do move keep each source's contribution audible. The tail never closes, so
-an occasional densely modulated parameter still happens.
-
 ### Reset
 
 **Reset All** on a parameter page returns the whole patch to its launch state: every page's
@@ -237,8 +230,8 @@ that view's depths to their launch values.
 ### Standalone
 
 An **Audio I/O** page (reached from the app's sidebar) offers **Output device** and **Input device**
-selectors listing the machine's own audio devices, plus a **Retry Input** button if capture fails. It is
-named Audio I/O rather than Audio so it is not read as the Audio parameter page. A
+selectors listing the machine's own audio devices, plus a **Retry Input** button if capture fails; it is
+separate from the Audio parameter page. A
 **Controllers** page maps an external MIDI controller to this app's own controls; see MIDI controllers, below. A **Sync** page offers **Send clock**, **Receive clock**, **Send transport** and
 **Receive transport** toggles and a **PPQN** field 1–960; Receive clock and Receive transport slave
 the transport to incoming MIDI clock, and while slaved, the BPM control (Global controls, above)
@@ -287,7 +280,7 @@ MIDI buffer is accepted but never read for this.
 into it. On the plugin's own surface, an **IN:** button beside Freeze cycles through **None** (the
 default), each channel the host's bus currently provides, and, once the bus carries two or more channels,
 their **Sum**. Selecting anything other than None is what connects External Audio and External Audio EF
-(Global controls, above) — routing the DAW's bus into the plugin is not itself enough; the operator must
+(Global controls, above) — routing the DAW's bus into the plugin is not itself enough; you must
 select an input here.
 
 **File** works on the standalone's own patches folder: the patches listed here, and any patch saved here,
@@ -332,7 +325,7 @@ Below it, the add row offers a **Preset** selector — **MIDI Fighter Twister**,
 (Generic)**, **Akai APC40 mkII (Ableton)**, **Launchpad X**, **Launchpad Pro MK3**, **Launchpad
 Mini MK3**, or **Custom** — and an **Add** button. The selector starts on the first
 waiting device's first preset, so pressing Add without touching it sets that device up in one
-press. For a device more than one preset matches, such as the APC40 mkII, the player picks the
+press. For a device more than one preset matches, such as the APC40 mkII, you pick the
 preset first, and Add binds the device to whichever preset is picked. Choosing a named preset and
 pressing Add installs a new row carrying that preset's complete mapping, with its ports bound to
 the matching connected device. Choosing Custom and pressing Add installs a row
@@ -363,7 +356,7 @@ every connected device, and the stored port's name, which stays selected. Leavin
 selected keeps the port, and the row reconnects when the device returns. Choosing a connected
 device binds the row to it, and choosing **(none)** clears the port.
 
-A released row, which a configuration saved by an earlier version can hold, shows its name, device
+A released row, which a saved configuration can already hold, shows its name, device
 label, and a **Released** badge on the first line, and its stored MIDI in/out ports and **Delete**
 on the second. It has no disclosure arrow and no editor.
 
@@ -438,7 +431,7 @@ released again.
 
 ### Gestures
 
-A gesture is a set of actions the player chooses, grouped into one MIDI control. Operating that
+A gesture is a set of actions you choose, grouped into one MIDI control. Operating that
 control does every action in the set.
 
 To build one, map a button to **Hold Gesture Select** with a gesture number from 0 to 7, and map
@@ -486,12 +479,9 @@ and moves the tempo while Shift is held, by the same amount whichever parameter 
 (in the plugin, tempo is mapped in the DAW instead; see Plugin, above); the same turn moves Crispy
 again the moment Shift releases. No other Twister encoder has a shifted job.
 
-A Twister row added from the MIDI Fighter Twister preset before this version keeps its old mappings,
-says it differs from its preset, and offers Restore. Pressing Restore installs both shifted turns and replaces edits made to that row. A
-patch saved earlier carries the old row, so load it, press Restore and save it again. A Twister row
-from an earlier version — one that either predates the preset or was released, in that version,
-with that version's own Release button — shows no Restore; delete it and add the MIDI Fighter
-Twister preset again.
+A Twister row whose mappings diverge from its preset shows Restore, which reinstalls the preset's
+complete mapping (see Reading a controller row, above). A released Twister row has no editor, so it
+shows no Restore; delete it and add the MIDI Fighter Twister preset again.
 
 Utility settings the device needs, set in the Midi Fighter Utility: every encoder's sensitivity/mode to
 "Enc 3FH/41H" (relative), all six side buttons to "CC Hold", and "Bank Side Buttons" unchecked, so the
@@ -563,9 +553,9 @@ output is a source (Modulation assignment, above).
 
 **VCO1 / VCO2 / VCO3** (slots 0–2) — each VCO's pitch, mapped exponentially from
 20 Hz to 5 kHz. Default values land on 110 Hz, 220 Hz, and 330 Hz respectively, so a freshly launched app
-already makes an audible chord with no knobs touched. Each VCO's pitch also launches with a small
+already makes an audible chord. Each VCO's pitch also launches with a small
 modulation depth from each of the other two VCOs' audio-rate output — six depths in all, each ±0.01 —
-so the chord already carries a light cross-VCO drift before any knob is touched.
+adding a light cross-VCO drift from the start.
 
 **Shape 1 / Shape 2 / Shape 3** (slots 3–5) — each VCO's own waveform morph: sine at the
 bottom, through saw at the middle, to square at the top, blending continuously rather than switching.
@@ -577,12 +567,11 @@ above it, it grows from a subtle vibrato into an increasingly warbly, FM-like wo
 size of the wobble is set here and does not change with the rate. All three VCOs' LFOs share one rate
 (see PM rate, slot 12).
 
-**Ringmod 1 / Ringmod 2 / Ringmod 3** (slots 9–11) — each VCO ring-modulates against its *own*
-internal carrier oscillator, never another VCO's signal. One knob sets the carrier and the amount
+**Ringmod 1 / Ringmod 2 / Ringmod 3** (slots 9–11) — each VCO ring-modulates against its own
+internal carrier oscillator. One knob sets the carrier and the amount
 together: as it is raised, the carrier's own frequency sweeps 20 Hz–5 kHz and, at the same time, more
-of the metallic ring-modulated product blends in, fully replacing the dry tone at maximum. Has a
-genuine zero at the very bottom of its travel — below a small floor, ring mod is completely off, not
-just quiet. Defaults to 0, so ring mod is off on a fresh app.
+of the metallic ring-modulated product blends in, fully replacing the dry tone at maximum. Below a
+small floor at the bottom of its travel, ring mod is off. Defaults to 0, so ring mod is off on a fresh app.
 
 **PM rate** (slot 12) — one shared knob (2 Hz–20 Hz) setting how fast the phase-mod wobble runs
 for all three VCOs at once. Depth and rate are independent: this sets the speed for all three, and each
@@ -590,8 +579,7 @@ VCO's own Phase mod knob sets how far its pitch swings.
 
 **VCO balance** (slot 13) — a single tilt sweeping mix emphasis from VCO1 (bottom of travel)
 through an even three-way split (center, the default) to VCO3 (top of travel). By construction, every
-VCO always keeps at least 10% and never exceeds 80% of the mix — this knob can shift emphasis but can
-never silence a VCO outright.
+VCO's share of the mix stays between 10% and 80%.
 
 ---
 
@@ -609,8 +597,8 @@ Defaults to the floor (fastest, essentially instant-on).
 fall from the Attack peak down to its Sustain level, mapped exponentially from 5 ms to 1 s.
 
 **Sustain VCO1 / Sustain VCO2 / Sustain VCO3** (`S1`/`S2`/`S3`, slots 2/6/10) — the level held while the
-gate stays open. Floored at 25% — it can never be modulated down to a true, silencing zero — and
-defaults to full level (100%) so a freshly launched app makes sound without touching any knob.
+gate stays open. Floored at 25%, so modulation cannot reduce it to silence, and
+defaults to full level (100%), so a freshly launched app makes sound.
 
 **Release VCO1 / Release VCO2 / Release VCO3** (`R1`/`R2`/`R3`, slots 3/7/11) — time for that VCO's
 level to fall to silence once the gate closes, mapped exponentially from 5 ms to 2.5 s. Release VCO1
@@ -627,9 +615,9 @@ unaffected.
 
 **Grace** (slot 13) — shared across all three voices. A minimum-hold: once a note reaches
 Sustain, Grace keeps it there for at least this long (0–1 s) before honoring a gate-close, so a very
-short gate pulse can't cut a note off mid-way through its own Attack/Decay. At its default (0) a note
-cuts to Release the instant the gate closes. Grace only delays *when* Release starts; it never changes
-the length of Attack, Decay or Release themselves.
+short gate pulse does not cut a note off mid-way through its own Attack/Decay. At its default (0) a note
+cuts to Release the instant the gate closes. Grace delays only when Release starts; Attack, Decay and
+Release durations stay the same.
 
 ---
 
@@ -648,9 +636,10 @@ Reverb downstream.
 travel the peak is flat. The peak path divides its own output by the same height it raises the peak
 to, so turning this up holds the level at the peak's own center frequency and pulls the rest of the
 signal down. With the page at its defaults, which put the peak at 100 Hz, a full-scale tone at that
-center frequency holds within 0.0000097 dB across the whole travel, a tone at 1 kHz falls
-5.27 dB, and a tone at 5 kHz falls 5.75 dB; a broadband source loses 6.72 dB of total level end to
-end. The peak is shaped by attenuation, so reaching its full height costs that much level.
+center frequency stays essentially unchanged across the whole travel, a tone at 1 kHz falls about
+5 dB, and a tone at 5 kHz falls about 6 dB; a broadband source loses about 7 dB of total level end to
+end. Because the peak is shaped by attenuation, raising this control also lowers the overall output
+level by roughly that amount.
 
 **Peak Q** (slot 2) — width/resonance of the peak: a wide, gentle bump at the bottom, a narrow,
 ringing resonance at the top.
@@ -662,8 +651,8 @@ comb's attack transient without changing the comb's own pitch.
 — this sets the comb's characteristic pitched ringing.
 
 **Comb feedback** (`Comb FB`, slot 5) — comb resonance. Neutral (no resonance) at the exact center of
-travel; pushing toward either end raises feedback up to ±0.95, where the comb rings almost
-indefinitely — but always, eventually, decays; it can never truly self-sustain forever.
+travel; pushing toward either end raises feedback up to ±0.95, where the comb rings for a long time
+before decaying.
 
 **Comb LP** (slot 6) — a low-pass filter inside the comb's own feedback loop. Turning it down
 darkens/dampens the comb's repeats faster; turning it up brightens and sustains them longer, up to
@@ -707,20 +696,18 @@ Signal path: an oversampled polynomial waveshaper (with a sine-fold/tanh-fuzz bl
 reorganizer (bit XOR + bit-scramble) → two sample-rate reducers in series → a tone low-pass → dry/wet
 Wet/Dry with an allpass Phase stage on the wet side.
 
-Wet/Dry is the page's master and Gain is what makes distortion as opposed to crushing, which is why
-those two sit first. No knob switches the whole page off except Wet/Dry: the bit and rate manglers
-act on a signal at any level, so crushing a quiet signal still crushes it.
+Wet/Dry is the only control that switches off the whole page. Gain sets the input level driving the
+waveshaper. The bit and rate reducers further down the chain act on a signal at any level, so they
+still process a quiet signal.
 
 **Wet/Dry** (slot 0) — crossfades the dry (pre-Gain) signal against the fully processed Drive
 chain output. 0 = dry only, untouched by everything below and bit-for-bit identical to the input;
-1 = fully wet. Unlike Delay's and Reverb's own wet/dry controls, this one is not capped — it reaches
-fully wet, because a distortion that replaces its source is a sound you ask for by name.
+1 = fully wet. Unlike Delay's and Reverb's own wet/dry controls, this one is not capped: it reaches
+fully wet.
 
 The crossfade is equal-power rather than linear. That matters here more than on most mixes: the
 wet path's fundamental is partly out of phase with the dry one, and which way it leans changes as
-Gain moves, so a linear crossfade thinned the sound over the knob's first quarter instead of
-fading the distortion in. Worst dip across the page's range is now about 1 dB, where it was
-just over 4 dB.
+Gain moves. The worst dip across the page's range is about 1 dB.
 
 **Gain** (slot 1) — input gain into the polynomial waveshaper (1×–5×). Higher gain pushes the
 shaper into denser, more extreme harmonic territory.
@@ -738,85 +725,80 @@ second layer of decimation; same off-at-the-bottom mapping as SRR 1.
 **XOR** (slot 5) — an 8-bit XOR mask applied to the (quantized) sample, producing bit-flip
 glitching. 0 = no flip.
 
-The middle of the travel is not a quiet spot, though it reads as one: from roughly 0.3 to 0.7 the
-mask strips about 16 dB out of everything below 1 kHz while leaving the top octaves where they
-were. Overall level barely moves. Body gone, fizz intact — most obvious into a filter. The knob is
-also mirror-symmetric: a setting and its opposite differ by a polarity flip, which is inaudible at
-full wet and audible at partial Wet/Dry, where the sign sums against the dry signal.
+From roughly 0.3 to 0.7 on the knob, the mask strips about 16 dB out of everything below 1 kHz while
+leaving the top octaves unchanged; overall level barely moves, and the effect is most audible when
+followed by a filter. The knob is also mirror-symmetric: a setting and its opposite differ by a
+polarity flip, inaudible at full wet and audible at partial Wet/Dry, where the sign sums against the
+dry signal.
 
 **Bit depth** (slot 6) — how many of the sample's low bits the digital reorganizer scrambles.
 0 = untouched; higher values add progressively harsher low-bit digital noise. The knob is mapped
 onto the bit counts that actually do something, so the first audible step arrives just off the
-floor rather than a fifth of the way up.
+floor.
 
 **Fuzz** (slot 7) — blends between the sine-folded wet path (bottom of travel, the default) and a
-tanh-style saturator (top of travel) inside the waveshaper stage. The saturator's curve is smooth
-up to an input of 3 and clamps above that. What the blend sounds like depends on Gain (slot 1): at
-Gain's default the drive stage passes the signal unchanged and neither leg adds harmonics, so Fuzz
-barely changes the tone; with Gain raised, the folder at the bottom of the knob turns nearly all of
-the energy into harmonics while the saturator at the top keeps about half of it in the fundamental
-and cuts the energy above the fifth harmonic to a third, so the top of the knob reads cleaner than
-the bottom.
+tanh-style saturator (top of travel) inside the waveshaper stage. What the blend sounds like depends
+on Gain (slot 1): at Gain's default the drive stage passes the signal unchanged and neither leg adds
+harmonics, so Fuzz barely changes the tone. With Gain raised, the folder at the bottom of the knob
+turns nearly all of the energy into harmonics, while the saturator at the top keeps more of the
+fundamental and fewer high harmonics, so the top of the knob reads cleaner than the bottom.
 
-The blend is floored the same way Comb/Peak's is, so both paths stay in the sound at every
-position: the held-back one sits about −22 dB at either extreme, and the two meet at −3 dB — a
-true 50/50 — at the center of travel. At the default the saturator is the held-back path.
+The blend is floored the same way Comb/Peak's is: the held-back path sits about −22 dB at either
+extreme, and the two meet at −3 dB (a 50/50 blend) at the center of travel. At the default the
+saturator is the held-back path.
 
-Fuzz therefore sets how much of the folder reaches the output, and Feedback, Fold and Symmetry all
-work inside that folder. At the top of Fuzz's travel their reach shrinks: on a 220 Hz tone at full
-wet, sweeping Symmetry end to end moves the output about 25 dB less than the same sweep does with
-Fuzz at the bottom, and Feedback and Fold are held back by the same blend. What Fold still moves up
-there is under Fold below.
+Fuzz sets how much of the folder reaches the output; Feedback, Fold and Symmetry all work inside
+that folder, and their audible reach shrinks as Fuzz rises. On a 220 Hz tone at full wet, sweeping
+Symmetry end to end moves the output about 25 dB less at Fuzz's top than at Fuzz's bottom, and
+Feedback and Fold are reduced the same way. See Fold, below, for what still changes there even at
+Fuzz's top.
 
 **Phase** (slot 8) — a first-order allpass filter on the wet signal, applied *before* the Wet/Dry
 crossfade above. At Wet/Dry 0 this has no audible effect at all, since dry passes through unfiltered
 regardless of this knob's position.
 
-An allpass does not change level on its own, so everything you hear from this knob is how the
-rotated wet signal sums against the dry one. That makes its range conditional rather than fixed: at
-a partial Wet/Dry on a bass note the top of the travel lifts the sum by a couple of dB, while on a
-mid note with the shaper driven hard no position changes the tone measurably. The knob is mapped
-through the allpass's own corner frequency, so equal turns move the audible band by comparable
-amounts across the whole travel.
+An allpass does not change level directly; what you hear from this knob is how the rotated wet
+signal sums against the dry one, so its audible range depends on the material: at a partial Wet/Dry
+on a bass note, the top of the travel lifts the sum by a couple of dB, while on a mid note with the
+shaper driven hard, no position changes the tone measurably. The knob is mapped through the
+allpass's own corner frequency, so equal turns move the audible band by comparable amounts across
+the whole travel.
 
 **Anti-alias brightness** (`Anti-alias`, slot 9) — crossfades between a clean, heavily
 oversampled shaper path and a grittier one. The top of the travel — the default — is all grit,
 with the clean path multiplied out of the mix entirely; the bottom is the clean path.
 
-Turned down, it removes the metallic ring that hard shaping puts on higher notes: partials that
-belong to no key, a different one per semitone, so a line played up the keyboard changes character
-note to note instead of transposing. Measured at a 1.5 kHz tone, the clean end is about 23 dB
-cleaner than the grit end.
+Turning it down removes the metallic ring that hard shaping puts on higher notes: inharmonic
+partials whose pitch shifts with each semitone rather than transposing with the note, so a line
+played up the keyboard changes character note to note. Measured at a 1.5 kHz tone, the clean end is
+about 23 dB cleaner than the grit end.
 
-It runs out at the top of the range, and deliberately so. It cleans up to roughly A6; above about
-2 kHz the harmonics that would need cleaning have already passed the oversampled domain's own
-ceiling, where no filter in this path can reach them. Expect no change at all on a bass note —
-nothing folds down there to remove. The in-band level moves a little across the sweep: the
-fundamental drops about 2.5 dB from the clean end to the grit end.
+It cleans up to roughly A6; above about 2 kHz, the harmonics that would need cleaning have already
+passed the oversampled domain's own ceiling, so no filter in this path reaches them there. It has no
+audible effect on a bass note, since nothing folds down there to remove. The in-band level moves a
+little across the sweep: the fundamental drops about 2.5 dB from the clean end to the grit end.
 
-The crossfade holds its level through the middle of the travel at the page's own defaults, where the
-deepest point of the sweep sits about 0.6 dB under the quieter of the two ends. That figure belongs
-to those defaults.
+At the page's own defaults, the crossfade holds its level through the middle of the travel, with the
+deepest point of the sweep sitting about 0.6 dB under the quieter of the two ends; this figure is
+specific to those default settings.
 
 **Feedback** (slot 10) — the amount of the folder's own output fed back into its own input,
-one sample later. At 0 (the default) the folder reduces to a plain sine fold with no feedback at
-all. Turning it up makes the fold resonate and sing back on itself instead of simply getting
-louder or grittier; the coefficient stays below the point where that resonance turns into
-self-sustaining oscillation across the whole travel, so a struck note's own resonance always dies
-away once the note does, at every setting. The margin shrinks toward the top of the travel, so the
-ring after a note stops takes noticeably longer to die out up there than it does lower down the
-knob, even though it always eventually reaches silence.
+one sample later. At 0 (the default) the folder is a plain sine fold with no feedback. Turning it up
+makes the fold resonate; the coefficient stays below the point where that resonance turns into
+self-sustaining oscillation across the whole travel, so a struck note's resonance dies away once the
+note does. The margin shrinks toward the top of the travel, so the ring after a note stops takes
+noticeably longer to die out there than lower on the knob.
 
 The loop wraps the folder alone, so Fuzz sets how much of it is audible: turning Fuzz up holds the
 folder back behind the saturator, and Feedback's reach goes with it.
 
 **Fold** (slot 11) — divisor inside the sine-fold stage. The divisor falls from 16× to 1× as the
 knob is turned up, so more of the signal's swing wraps through the fold each cycle and fold density
-RISES with the knob. Every position folds; the bottom of the travel folds least.
+rises with the knob. Every position folds; the bottom of the travel folds least.
 
-At Fuzz's maximum the folder sits about 22 dB under the saturator, so Fold is quieter up there
-without going inert: on a 220 Hz tone at full wet with Gain and Shape at their page defaults, every
-position above the bottom of Fold's travel still changes the sound.
+At Fuzz's maximum the folder sits about 22 dB under the saturator, so Fold is quieter there: on a
+220 Hz tone at full wet with Gain and Shape at their page defaults, every position above the bottom
+of Fold's travel still changes the sound.
 
 **Tone** (slot 12) — a low-pass filter at the end of the Drive chain, on the driven signal that
 Wet/Dry mixes against the dry. Fully open at the top of travel (the default), and progressively darker as
@@ -827,11 +809,10 @@ default: the middle of the travel is no offset, and the two halves skew opposite
 to fold first. It is loudest with Fuzz low, where the folder carries most of the sound; at Fuzz's
 top the same end-to-end sweep moves the output about 25 dB less.
 
-Silence in always produces silence out, at any Symmetry setting. A held or picked note is not
-silence, though, and skewing which half of a wave folds first is a genuine asymmetry, so a driven
-signal comes out with a DC offset. At the page's default settings the offset stays small, under two
-hundredths of full scale at either end of the travel. At some combinations of Gain, Shape and Fold
-away from those defaults it grows much larger, up to around three-quarters of full scale.
+At any Symmetry setting, silence in produces silence out. On a held or picked note, skewing which
+half of the wave folds first creates a DC offset. At the page's default settings the offset stays
+under two hundredths of full scale at either end of the knob's travel; at some other combinations of
+Gain, Shape and Fold it grows to around three-quarters of full scale.
 
 ### "Feedback" across the instrument
 
@@ -856,7 +837,7 @@ Reverb's tank runs on one feedback coefficient, and two controls set it: Decay p
 
 ## Delay page
 
-A stereo delay effect, positioned after Filter and before Reverb in the actual audio chain.
+A stereo delay effect, positioned after Filter and before Reverb in the audio chain.
 
 **Wet/dry** (slot 0) — how much of the delay's wet output continues on toward Reverb. The dry signal
 never drops below 30% of its own level, the same floor Reverb's own Wet/dry shares. At 0, with Send
@@ -873,9 +854,9 @@ no output — an exact bypass.
 **Stereo width** (slot 4) — offsets when the right channel reads the delay line relative to the left;
 at 0 both taps read the same point in the line, and raising the knob spreads the right tap further
 behind the left in time. That time offset is the whole of the widening: the knob sets nothing in the
-feedback path, so Feedback (slot 3) and Freeze (slot 5) change how long the repeats last, not how
-wide they are. The offset never asks for more than the line holds; near the top of Delay time
-(slot 2) the spread shrinks so the right tap's read stays inside the line.
+feedback path. Feedback (slot 3) and Freeze (slot 5) change how long the repeats last. Near the top
+of Delay time (slot 2), the spread is reduced automatically so the right tap's read position stays
+inside the buffered line.
 
 **Freeze** (slot 5) — crossfades the delay's feedback loop from its ordinary level toward full,
 lossless recirculation. Raising it both lets more of each repeat feed back, up to unity gain, and
@@ -893,7 +874,7 @@ history and loops with a short crossfade to avoid an audible click at the wrap p
 **Diffusion** (slot 8) — smears each repeat through a cascade of three short allpass sections applied
 once per repeat, after the feedback write and before the output limiter. At 0 this is an exact bypass;
 raising it progressively blurs the sharp attack of each repeat into a smoother, more diffuse tail, up
-to a comfortably stable maximum. Reverb's Density (slot 7) runs the same three-section allpass cascade,
+to its maximum setting. Reverb's Density (slot 7) runs the same three-section allpass cascade,
 ahead of its tank rather than on an already-repeating signal: Diffusion smooths what this page's own
 repeats have already produced, Density smooths what reaches the tank in the first place.
 
@@ -921,8 +902,8 @@ crushed.
 
 ## Reverb page
 
-The signal actually reaches this page last, after Audio/Envelope, Drive, Filter, and Delay have all
-already processed it.
+The signal reaches this page last, after Audio/Envelope, Drive, Filter, and Delay have all already
+processed it.
 
 **Wet/dry** (slot 0) — reverb mix. The dry signal never drops below 30% of its own level, even at
 maximum, so it always remains audible. At 0, with Send also at its default-closed 0, the tank is
@@ -942,20 +923,18 @@ transient from the onset of the reverb tail. Roughly 0.02 ms up to about 85 ms a
 ceiling being as much as the pre-delay line can hold; the top of the travel is far enough out to
 hear the dry hit and its tail as two separate events.
 
-**Damping** (slot 5) — a low-pass on the tank's output. Turning it UP darkens the tail; turning
+**Damping** (slot 5) — a low-pass on the tank's output. Turning it up darkens the tail; turning
 it down brightens it, up to roughly a 1.7 kHz cutoff at the bottom of travel. The dark end is
 floored at about 150 Hz, so the tail keeps some top even at maximum.
 
-It also makes the tail quieter, and that is the filter doing its job rather than a fault: a
-low-pass removes the energy sitting above its corner, so how much level it takes depends entirely
-on the material. Across the full travel it costs about 10 dB on a broad, bright source and about
-half a decibel on a low sine. Nothing compensates for that on purpose — a fixed makeup set for one
-of those two is wrong for the other, and it would turn Damping into a volume control on the
-material it currently leaves alone. Use **Send** to put the level back.
+Turning Damping up also makes the tail quieter: a low-pass filter removes energy above its corner,
+so how much level is lost depends on the material. Across the full travel it costs about 10 dB on a
+broad, bright source and about half a decibel on a low sine. Damping applies no automatic level
+compensation; use **Send** to bring the level back up.
 
-Line A and line B each run through their own filter, with no shared state between them, so the two
-taps stay as far apart as Stereo width (slot 6) sets them at every Damping setting. Damping shapes
-the tail's tone and its level; the stereo image stays Stereo width's to set.
+Line A and line B each run through their own filter with no shared state between them, so the stereo
+spread Stereo width (slot 6) sets holds at every Damping setting. Damping changes the tail's tone and
+level; it does not change the stereo width.
 
 **Stereo width** (slot 6) — spread between the tank's two internal taps in the final left/right
 output.
@@ -974,9 +953,8 @@ coloration clearly audible, and the rest of the travel adds progressively less o
 **Mod** (slot 8) — depth of a slow sinusoidal wow on the tank's read taps, for chorus-y
 movement in the tail, at a fixed rate (0.35 Hz). 0 = no movement.
 
-**Hold** (slot 9) — pushes the tank's internal feedback coefficient toward, but never quite to,
-self-oscillation — indefinitely extending the tail's sustain without ever letting it hang forever. At 0
-it adds nothing beyond ordinary Decay.
+**Hold** (slot 9) — pushes the tank's internal feedback coefficient close to self-oscillation,
+extending the tail's sustain. At 0 it adds nothing beyond ordinary Decay.
 
 **Tank drive** (slot 10) — pre-gain (0.25×–4×, unity at the center default) into the tank's own
 feedback saturator, for more obvious saturation on the tail as it is raised.

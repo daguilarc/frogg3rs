@@ -36,7 +36,7 @@ Six pages — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 ## Filter
 
 - **Peak freq** (slot 0) — Resonant peaking-EQ center frequency, 100 Hz–20 kHz.
-- **Peak gain** (slot 1) — Raises the peak above its surroundings by attenuating them; level at the peak's own center frequency holds across the travel. With the page at its defaults, which put the peak at 100 Hz, 1 kHz falls 5.27 dB, 5 kHz falls 5.75 dB, and broadband level falls 6.72 dB.
+- **Peak gain** (slot 1) — Raises the peak above its surroundings by attenuating them; level at the peak's own center frequency stays essentially unchanged across the travel. With the page at its defaults, which put the peak at 100 Hz, 1 kHz falls about 5 dB, 5 kHz falls about 6 dB, and broadband level falls about 7 dB.
 - **Peak Q** (slot 2) — Peak width/resonance.
 - **Comb offset** (slot 3) — Short pure delay ahead of the comb, 1–100 ms.
 - **Comb delay** (slot 4) — Comb filter pitch, 100 Hz–10 kHz.
@@ -52,20 +52,20 @@ Six pages — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 
 ## Drive
 
-- **Wet/Dry** (slot 0) — Dry/wet crossfade of the whole Drive chain; not capped, reaches fully wet.
+- **Wet/Dry** (slot 0) — Dry/wet crossfade of the whole Drive chain, reaching fully wet at 1 (unlike Delay's and Reverb's own Wet/dry, which floor the dry signal at 30%).
 - **Gain** (slot 1) — Input gain into the polynomial waveshaper, 1×–5×.
 - **Shape** (slot 2) — Recomputes the waveshaper's coefficients; harmonic character.
 - **SRR 1** (slot 3) — First sample-rate reducer stage; raising the knob increases the reduction, off at the bottom.
 - **SRR 2** (slot 4) — Second sample-rate reducer stage, in series after SRR 1; same off-at-the-bottom mapping.
 - **XOR** (slot 5) — 8-bit XOR mask on the sample; the mid-travel plateau strips the low end and leaves the top.
 - **Bit depth** (slot 6) — How many low bits the digital reorganizer scrambles.
-- **Fuzz** (slot 7) — Floored equal-power blend from sine-fold (bottom, the default) to tanh-style saturation (smooth up to an input of 3, clamped above it, and the gain ahead of it drives past 3); the held-back path sits about −22 dB at either extreme, and both paths sit at −3 dB at the centre. Sets how much of the folder reaches the output, and with it how far Feedback, Fold and Symmetry reach: at Fuzz's top a Symmetry sweep moves the output about 25 dB less than at Fuzz's bottom.
+- **Fuzz** (slot 7) — Floored equal-power blend from sine-fold (bottom, the default) to tanh-style saturation (top); the held-back path sits about −22 dB at either extreme, and both paths sit at −3 dB at the centre. Sets how much of the folder reaches the output, and with it how far Feedback, Fold and Symmetry reach: at Fuzz's top a Symmetry sweep moves the output about 25 dB less than at Fuzz's bottom.
 - **Phase** (slot 8) — Allpass on the wet signal before Wet/Dry; silent effect at Wet/Dry 0.
-- **Anti-alias brightness** (`Anti-alias`, slot 9) — Crossfade between a clean oversampled shaper path and a gritty one; all grit at the top of travel (the default), clean at the bottom. Level holds through the travel at the page's default Gain and Shape: the deepest point sits about 0.6 dB under the quieter end.
-- **Feedback** (slot 10) — Folder output fed back into its own input, one sample later; 0 = no feedback, bounded below self-oscillation across the whole travel, though the margin — and the ring's decay time — shrinks toward the top. Wraps the folder alone, so raising Fuzz holds the folder back and Feedback's reach goes with it.
-- **Fold** (slot 11) — Sine-fold divisor, 16× down to 1× as the knob rises, so fold density rises with it; every position folds. At Fuzz's maximum the folder sits about 22 dB under the saturator, so Fold is quieter there without going inert: every position above the bottom still changes the sound.
+- **Anti-alias brightness** (`Anti-alias`, slot 9) — Crossfade between a clean oversampled shaper path and a gritty one; all grit at the top of travel (the default), clean at the bottom. At the page's own defaults, level holds through the travel, with the deepest point about 0.6 dB under the quieter end.
+- **Feedback** (slot 10) — Folder output fed back into its own input, one sample later; 0 = no feedback. The coefficient stays below self-oscillation across the whole travel; the margin narrows and the ring's decay time lengthens toward the top. Wraps the folder alone, so raising Fuzz holds the folder back and reduces Feedback's reach.
+- **Fold** (slot 11) — Sine-fold divisor, 16× down to 1× as the knob rises, so fold density rises with it; every position folds. At Fuzz's maximum the folder sits about 22 dB under the saturator, so Fold is quieter there: every position above the bottom still changes the sound.
 - **Tone** (slot 12) — Low-pass at the end of the chain, ~800 Hz to bypass; bypass at default.
-- **Symmetry** (slot 13) — Bipolar phase offset into the folder, centred at default (middle of travel = no offset, the two halves skew opposite sides of the wave); loudest with Fuzz low, and about 25 dB less effect at Fuzz's top; silence in is always silence out, but a driven, sustained tone picks up a DC offset, small at the page's default settings and up to about three-quarters of full scale at some other Gain/Shape/Fold combinations.
+- **Symmetry** (slot 13) — Bipolar phase offset into the folder, centred at default (middle of travel = no offset, the two halves skew opposite sides of the wave); loudest with Fuzz low, and about 25 dB less effect at Fuzz's top. On a held or picked note this creates a DC offset, small at the page's default settings and up to about three-quarters of full scale at some other Gain/Shape/Fold combinations.
 
 ## Delay
 
@@ -73,7 +73,7 @@ Six pages — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 - **Send** (slot 1) — Signal sent into the delay line; 0 = bypass.
 - **Delay time** (slot 2) — Base delay length, ~1 ms–2 s.
 - **Feedback** (slot 3) — Repeat feedback, capped below 98%.
-- **Stereo width** (slot 4) — Offsets the right tap's read time behind the left. The offset is the whole of the widening; nothing rides the feedback path, and the read never leaves the line.
+- **Stereo width** (slot 4) — Offsets the right tap's read time behind the left; the offset is the whole of the widening. Near the top of Delay time the spread is reduced automatically so the read stays inside the line.
 - **Freeze** (slot 5) — Crossfades the feedback loop from the ordinary Feedback level toward full, lossless recirculation; at 0 the loop runs at the Feedback level.
 - **Mod depth** (slot 6) — LFO wobble depth on delay time.
 - **Reverse blend** (`Reverse`, slot 7) — Blends in a backward-travelling read of the delay line against the forward tap; 0 = off, 1 = fully reversed.
@@ -91,11 +91,11 @@ Six pages — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 - **Room size** (slot 2) — Both tank delay-line lengths.
 - **Decay** (slot 3) — Tank feedback / tail length.
 - **Pre-delay** (slot 4) — Time before input reaches the tank, 0.02 ms to about 85 ms.
-- **Damping** (slot 5) — low-pass on the tank output; darker AND quieter tail at higher knob. Each tank line filters independently, so Stereo width's spread holds at every Damping setting.
+- **Damping** (slot 5) — low-pass on the tank output; darker and quieter tail at higher knob. Each tank line filters independently, so Stereo width's spread holds at every Damping setting.
 - **Stereo width** (slot 6) — Spread between the tank's two taps.
 - **Density** (slot 7) — Decorrelates the signal reaching the tank through a short allpass cascade; exact bypass at 0. Same cascade as Delay's Diffusion (slot 8), applied ahead of the tank instead of to already-repeating signal.
 - **Mod** (slot 8) — Sinusoidal wow depth on the tank's read taps, fixed 0.35 Hz rate.
-- **Hold** (slot 9) — Pushes tank feedback toward, never to, self-oscillation.
+- **Hold** (slot 9) — Pushes tank feedback close to self-oscillation without reaching it.
 - **Tank drive** (slot 10) — Pre-gain into the tank's feedback saturator, 0.25×–4×, unity at default.
 - **Grit** (slot 11) — Digital reorganizer (bit-scramble) on the tank's feedback taps; bypass at 0.
 - **Tilt** (slot 12) — Bipolar tone shave on the final output around ~1 kHz; center = no change.
