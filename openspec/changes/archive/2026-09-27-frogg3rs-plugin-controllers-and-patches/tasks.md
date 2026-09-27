@@ -18,7 +18,7 @@ are in the proposal's Policies section and bind every task below.
 
 ## 1. Sheaf
 
-- [ ] S1 A host that names no configuration file opens no startup patch.
+- [x] S1 A host that names no configuration file opens no startup patch.
       Behaviour: `Engine::Initialize` runs its startup-patch step (the block
       that reads `lastPatchVersionRecord_`) only when
       `dataPaths_.configFile` is non-empty. `Engine::LoadRuntimeConfiguration`
@@ -38,7 +38,7 @@ are in the proposal's Policies section and bind every task below.
       guard; the probe assertion goes red. `engine_startup_loads_lexicographically_latest_patch`
       and `engine_initialize_treats_missing_runtime_config_as_defaults_and_still_loads_startup_patch`
       stay green. Spec: `sar-42`.
-- [ ] S2 `PatchManager` is the only serialize requester. Behaviour:
+- [x] S2 `PatchManager` is the only serialize requester. Behaviour:
       `PatchManager` gains NEW `PatchManager::RequestHostSnapshot(std::string
       patchName)` and NEW `PatchManager::SetHostSnapshotConsumer`, whose
       consumer takes the `JsonDocument` by reference and is called on the
@@ -76,7 +76,7 @@ are in the proposal's Policies section and bind every task below.
       outstanding, `RequestHostSnapshot` answers Busy and
       `PatchMessageInBus::Size` does not move). Break: answer Busy from a save
       while a snapshot is outstanding; the first case goes red. Spec: `spp-14`.
-- [ ] S3 A host names the current patch without loading it. Behaviour: NEW
+- [x] S3 A host names the current patch without loading it. Behaviour: NEW
       `Engine::NameCurrentPatch`, taking an optional path relative to the
       patches root, returns whether a patch is now current, and NEW
       `Engine::CurrentPatchRelativePath` returns the current patch
@@ -102,7 +102,7 @@ are in the proposal's Policies section and bind every task below.
       leave no current patch, and Save answers NeedsSaveAsPath). Break:
       record `relative` without resolving it; the outside-root case goes red.
       Spec: `spp-15`.
-- [ ] S4 `MidiConnectionManager` takes an injectable device access. Behaviour:
+- [x] S4 `MidiConnectionManager` takes an injectable device access. Behaviour:
       NEW `synth_runtime::MidiDeviceAccess` in
       `runtime/MidiConnectionManager.hpp` holds an `enumerate` function, an
       input endpoint factory and an output endpoint factory (each taking the
@@ -136,7 +136,7 @@ are in the proposal's Policies section and bind every task below.
       change consumed, `MidiConnectionManager::State` marks both offline.
       Break: build the JUCE handlers in `ResizeToControllerCount` regardless
       of the access; the `Open` assertions go red.
-- [ ] S5 A host declares which runtime pages its sidebar offers. Behaviour:
+- [x] S5 A host declares which runtime pages its sidebar offers. Behaviour:
       NEW `synth::runtime_ui::RuntimeSidebarPages` in `RuntimePages.hpp`
       (audio, controllers, sync, file and loadReadout, each true by default);
       `SidebarSnapshot` carries it; `BuildSidebarTree` emits only declared
@@ -159,7 +159,7 @@ are in the proposal's Policies section and bind every task below.
       ignore the declaration in `BuildSidebarTree`; the absence assertion goes
       red; ignore it in `HandleSidebarAction`; the routing assertion goes red.
       Spec: `sru-69`.
-- [ ] S6 One construct per duplicated host binding. Behaviour, each built
+- [x] S6 One construct per duplicated host binding. Behaviour, each built
       once and called by `JuceRuntimeMainServices`,
       `BrowserRuntimeMainServices` and, in task 2.3, the plugin services:
       (a) NEW `synth::runtime_ui::ControllersPageBinding<EngineType>` in NEW
@@ -200,7 +200,7 @@ are in the proposal's Policies section and bind every task below.
 
 ## 2. frogg3rs
 
-- [ ] 2.1 The plugin keeps no runtime configuration. Behaviour: the
+- [x] 2.1 The plugin keeps no runtime configuration. Behaviour: the
       anonymous-namespace `ProductionDataPaths` becomes NEW public static
       `FroggersPluginProcessor::PluginDataPaths(const std::filesystem::path&
       dataRoot)`, returning `SheafPatchDataPathsForApp(dataRoot,
@@ -217,7 +217,7 @@ are in the proposal's Policies section and bind every task below.
       configuration's bytes and the root's file list are unchanged. Break:
       keep `configFile` in `PluginDataPaths`; the knob and row assertions go
       red.
-- [ ] 2.2 The processor opens each row's ports. Behaviour: the processor owns
+- [x] 2.2 The processor opens each row's ports. Behaviour: the processor owns
       NEW `std::unique_ptr<synth_runtime::MidiConnectionManager<FroggersApp>>
       midiConnections_`, declared after `engine_`, constructed with the engine,
       a `RuntimeMidiEpoch::Capture(startTime_)` and a `MidiDeviceAccess`. The
@@ -267,7 +267,7 @@ are in the proposal's Policies section and bind every task below.
       `StartupReconcile` (every case goes red); skip `OnTimerTick` (the
       replug case goes red); drop the explicit sender stop from the
       destructor (the teardown case goes red).
-- [ ] 2.3 The editor shows Controllers and File. Behaviour: NEW
+- [x] 2.3 The editor shows Controllers and File. Behaviour: NEW
       `frogg3rs_vst::FroggersPluginServices` in NEW
       `app/vst/FroggersPluginServices.hpp` satisfies
       `synth::runtime_ui::RuntimeMainServices`: Controllers through a
@@ -311,7 +311,7 @@ are in the proposal's Policies section and bind every task below.
       declaration (the editor case goes red); leave the ? button at the
       window's top right (its overlap assertion goes red); unbind `savePatchAs`
       (the Save As case goes red).
-- [ ] 2.4 A controller cannot run the plugin's transport. Behaviour:
+- [x] 2.4 A controller cannot run the plugin's transport. Behaviour:
       `FroggersUiSurface::StartTransport` becomes public and NEW
       `FroggersUiSurface::StopTransport` holds the `kStop` branch's call;
       `FroggersUiSurface::HandleAction`'s `kPlay`, `kStop` and `kRecord`
@@ -333,7 +333,7 @@ are in the proposal's Policies section and bind every task below.
       and `FroggersVstSmokeTest` stay green. Break: remove the `kRecord` gate
       (the Record assertion goes red, because the playhead is running); remove
       the `kPlay` gate (the first assertion goes red).
-- [ ] 2.5 The DAW project restores the current patch, and the snapshot comes
+- [x] 2.5 The DAW project restores the current patch, and the snapshot comes
       through `PatchManager`. Behaviour: `PumpStatePersistence` no longer
       pushes `SerializeToJSON`; `pendingStateSnapshotRequestId_` and
       `nextStateRequestId_` are removed. The constructor installs a
@@ -390,7 +390,7 @@ are in the proposal's Policies section and bind every task below.
       keep the processor's own serialize push beside `PatchManager`'s (the
       second case goes red, as the two requesters take each other's
       responses).
-- [ ] 2.6 The host learns of a non-parameter change. Behaviour: NEW
+- [x] 2.6 The host learns of a non-parameter change. Behaviour: NEW
       `FroggersPluginProcessor::NotifyHostOfNonParameterChange` calls
       `updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true))`;
       task 2.3's services call it per the proposal's notification policy.
@@ -401,7 +401,7 @@ are in the proposal's Policies section and bind every task below.
       after an Add, after New, after Save As and after Load, and none after a
       Save or a state restore. Break: remove the call from the
       `saveRuntimeConfiguration` callback; the Add assertion goes red.
-- [ ] 2.7 The operator's run in Ableton Live 12 Suite on macOS, with the
+- [x] 2.7 The operator's run in Ableton Live 12 Suite on macOS, with the
       final VST3 and AU builds and one MIDI Fighter Twister. Setup, as the
       manual writes it: open Settings (Cmd-comma), the Link, Tempo & MIDI tab;
       in MIDI Ports, set the Twister's input and output Track, Sync and
@@ -421,7 +421,7 @@ are in the proposal's Policies section and bind every task below.
 
 ## 3. Documents
 
-- [ ] 3.1 `MANUAL.md`: the Plugin subsection says the plugin has Controllers
+- [x] 3.1 `MANUAL.md`: the Plugin subsection says the plugin has Controllers
       and File pages and no Audio I/O, Sync or load readout; that each
       controller row opens its own ports as in the standalone; the Live setup
       of task 2.7 word for word, and that Live MIDI-learn on a port needs its
@@ -439,7 +439,7 @@ are in the proposal's Policies section and bind every task below.
       says)" are rewritten, and the Saving subsection gains the plugin's
       project. A reader who wrote none of it checks the rewritten sections
       against the built plugin.
-- [ ] 3.2 `openspec/story.md`: after the operator ratifies the proposal's
+- [x] 3.2 `openspec/story.md`: after the operator ratifies the proposal's
       table, its steps replace PLG-04, PLG-10, PLG-16, PLG-17 and PLG-19 to
       PLG-22, PLG-18 gains its sentence, and PLG-23 to PLG-27 are added; the
       platform notes that say the plugin has no sidebar (SUR-01's Caps, the
@@ -448,7 +448,7 @@ are in the proposal's Policies section and bind every task below.
       section 4's P columns for controller rows, mapping rows, connect
       messages, patches, versions, the same-name suffix, MIDI output sinks and
       absolute-feedback routes are brought into line with them.
-- [ ] 3.3 Code comments this change makes false, each rewritten in the task
+- [x] 3.3 Code comments this change makes false, each rewritten in the task
       that makes it false and listed in that task's report: the
       `FroggersPluginProcessor.hpp` header (the sentence that the class
       duplicates none of `Runtime.hpp`'s MIDI-connection machinery, the
@@ -464,14 +464,14 @@ are in the proposal's Policies section and bind every task below.
       The comments on `processBlock`'s MIDI buffer, `acceptsMidi` and
       `NEEDS_MIDI_INPUT` stay true and stay as they are. Check: a reader who
       wrote none of it reads each listed comment against the landed code.
-- [ ] 3.4 Every scenario in this change's two spec deltas names the check
+- [x] 3.4 Every scenario in this change's two spec deltas names the check
       that backs it by test name, and each named test exists in the file named
       or is marked NEW in the task that writes it; before the archive, each
       "not yet delivered" line names a test that now exists and passes.
 
 ## 4. Delivery
 
-- [ ] 4.1 In this order: in `External/Sheaf`, make the branch
+- [x] 4.1 In this order: in `External/Sheaf`, make the branch
       `app-plugin-controllers` from the pinned commit, commit S1 to S6 and
       the Sheaf change's spec deltas, run the Sheaf gate and
       `make -C apps/miniapp test`; if a task's change sits inside a concept an
