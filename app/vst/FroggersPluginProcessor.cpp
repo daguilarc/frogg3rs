@@ -203,9 +203,11 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     // Built here, in the member-init list, the same place Runtime<App>'s own
     // constructor builds its midiConnections_ -- engine_ and startTime_ are
     // already constructed by this point (both declared earlier in this
-    // class), so the manager's engine reference and captured epoch are both
-    // valid immediately.
-    , midiConnections_(std::make_unique<synth_runtime::MidiConnectionManager<synth_froggers::FroggersApp>>(
+    // class), so the construct's engine reference and captured epoch are
+    // both valid immediately. EngineMidiConnections's own constructor wires
+    // the will-rebuild/rebuilt callbacks (see its class comment), so this
+    // constructor's body no longer needs to.
+    , midiConnections_(std::make_unique<synth_runtime::EngineMidiConnections<synth_froggers::FroggersApp>>(
           engine_, synth_juce::RuntimeMidiEpoch::Capture(startTime_), std::move(deviceAccess))) {
     // `Runtime::Start()`'s order (External/Sheaf/projects/synth/runtime/Runtime.hpp,
     // this file's header comment):
@@ -229,23 +231,17 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     // own unregistration through this same pointer.
     engine_.Context().inputRoutingSignal = &inputRoutingSignal_;
 
-    // Wires midiConnections_ into the engine's MIDI-processor rebuild
-    // callbacks BEFORE engine_.Initialize() below ever runs the first
-    // (silent) RebuildMidiProcessors() pass -- the exact ordering
-    // Runtime<App>'s own constructor uses (Runtime.hpp), and required by
+    // midiConnections_'s own constructor (above, in the member-init list)
+    // already wired the engine's MIDI-processor rebuild callbacks BEFORE
+    // engine_.Initialize() below ever runs the first (silent)
+    // RebuildMidiProcessors() pass -- the exact ordering Runtime<App>'s own
+    // constructor uses (EngineMidiConnections.hpp), and required by
     // MidiConnectionManager's own forwarding-processor-swap contract
     // (MidiConnectionManager.hpp's class comment): the will-rebuild callback
     // detaches every row's forwarding processor before the engine destroys
     // midiProcessors_, and the rebuilt callback resizes/reinstalls it
     // afterward, then notifies the Controllers-page binding a host installs
     // through SetMidiProcessorsRebuiltHook().
-    engine_.SetMidiProcessorsWillRebuildCallback([this] { midiConnections_->OnMidiProcessorsWillRebuild(); });
-    engine_.SetMidiProcessorsRebuiltCallback([this] {
-        midiConnections_->OnInstrumentRebuilt();
-        if (midiProcessorsRebuiltHook_) {
-            midiProcessorsRebuiltHook_();
-        }
-    });
 
     // PatchManager is the only requester of a serialized snapshot (Save,
     // Save As and this class's own DAW session-state snapshot all flow
@@ -274,18 +270,15 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     // (External/Sheaf/projects/synth/runtime/Runtime.hpp).
     engine_.Initialize();
 
-    // Startup order (binding, mirrors Runtime::Start()): the MIDI sender
-    // starts before any row's output port opens, so every producer
-    // StartupReconcile() below is about to create already has a live
-    // consumer; StartupReconcile() then resizes midiConnections_ to the
-    // current controller count and runs one synchronous reconcile against
-    // the actually-enumerated device list, opening each row's configured
-    // ports (absent -> offline, never a startup failure), before starting
-    // its background poller.
-    if (synth::MidiSender* sender = engine_.Context().midiSender; sender != nullptr) {
-        sender->Start();
-    }
-    midiConnections_->StartupReconcile();
+    // Startup order (binding, mirrors Runtime::Start(), stated once in
+    // EngineMidiConnections's own header comment): the MIDI sender starts
+    // before any row's output port opens, so every producer this call is
+    // about to create already has a live consumer; it then resizes
+    // midiConnections_ to the current controller count and runs one
+    // synchronous reconcile against the actually-enumerated device list,
+    // opening each row's configured ports (absent -> offline, never a
+    // startup failure), before starting its background poller.
+    midiConnections_->Start();
 
     // This is SetPluginHostMode()'s first PRODUCTION
     // call site (app/FroggersUiSurface.hpp's own comment on that method
@@ -419,13 +412,9 @@ FroggersPluginProcessor::~FroggersPluginProcessor() {
     // timerCallback() touches) begins tearing down.
     stopTimer();
     // Shutdown ordering (binding, mirrors Runtime<App>'s own destructor,
-    // Runtime.hpp): stop the MIDI sender before closing any row's output --
-    // so no in-flight enqueued MIDI is delivered to a sink about to be torn
-    // down -- THEN reset midiConnections_, whose own destructor stops/joins
-    // its poller before closing any device handler.
-    if (synth::MidiSender* sender = engine_.Context().midiSender; sender != nullptr) {
-        sender->Stop();
-    }
+    // stated once in EngineMidiConnections's own header comment): its
+    // destructor stops the MIDI sender before destroying the manager, so no
+    // in-flight enqueued MIDI is delivered to a sink about to be torn down.
     midiConnections_.reset();
 }
 

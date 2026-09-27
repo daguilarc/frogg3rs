@@ -39,13 +39,14 @@
 // needed to drive the core, so none of it is duplicated: the core is not
 // blocked on launcher-session machinery to run headlessly -- synth::Engine
 // <App> is the seam, and it is already JUCE-free and driven exactly this
-// way by SynthRig.hpp's own JUCE-free tests. One piece of Runtime.hpp's
-// machinery IS duplicated, deliberately: MIDI-connection ownership. A
+// way by SynthRig.hpp's own JUCE-free tests. MIDI-connection ownership is
+// the one piece of Runtime.hpp's machinery this class also needs -- a
 // controller row needs its own MIDI ports open in the plugin exactly as in
-// the standalone (midiConnections_ below), so this class wires a
-// synth_runtime::MidiConnectionManager the same way Runtime<App>'s
-// constructor does, reconciled once at construction and polled from this
-// class's own message-thread timer.
+// the standalone (midiConnections_ below) -- and it is not duplicated: this
+// class owns a synth_runtime::EngineMidiConnections, the same shared
+// construct Runtime<App>'s own constructor owns one of (EngineMidiConnections.hpp),
+// reconciled once at construction and polled from this class's own
+// message-thread timer.
 //
 // Data path: reuses the SAME "frogg3rs" stable app id and shared
 // ~/Library/Sheaf data root FroggersMain.cpp's direct-launch app uses
@@ -127,6 +128,7 @@
 #include "synth/MasterClock.hpp"
 #include "synth/ParameterModulation.hpp"
 
+#include "EngineMidiConnections.hpp"
 #include "HostDataPaths.hpp"
 #include "MidiConnectionManager.hpp"
 
@@ -447,14 +449,14 @@ public:
     // The per-row MIDI connection owner: a Controllers-page binding reads
     // its State()/EnumerateNow() to render device combos and status dots,
     // the same way it reads Runtime<App>'s own MidiConnections().
-    synth_runtime::MidiConnectionManager<synth_froggers::FroggersApp>& MidiConnections() { return *midiConnections_; }
+    synth_runtime::MidiConnectionManager<synth_froggers::FroggersApp>& MidiConnections() { return midiConnections_->MidiConnections(); }
 
     // Installs the Controllers-page binding's rebuild-notification hook,
-    // invoked at the end of the engine's rebuilt callback (constructor,
-    // below) right after midiConnections_->OnInstrumentRebuilt() -- every
+    // invoked at the end of the engine's rebuilt callback (EngineMidiConnections's
+    // own constructor wires this) right after OnInstrumentRebuilt() -- every
     // MIDI-processor rebuild, not just the page's own edits, mirroring
     // Runtime<App>::SetMidiProcessorsRebuiltHook's own doc comment.
-    void SetMidiProcessorsRebuiltHook(std::function<void()> hook) { midiProcessorsRebuiltHook_ = std::move(hook); }
+    void SetMidiProcessorsRebuiltHook(std::function<void()> hook) { midiConnections_->SetMidiProcessorsRebuiltHook(std::move(hook)); }
 
     // Tells the host this instance changed something other than a
     // juce::AudioProcessorParameter's own value -- a controller row commit,
@@ -811,19 +813,14 @@ private:
     std::chrono::steady_clock::time_point startTime_;
     synth::Engine<synth_froggers::FroggersApp> engine_;
 
-    // Owns every controller row's MIDI ports, exactly as
-    // synth_runtime::Runtime<App> owns one for the standalone (Runtime.hpp's
-    // own class comment). Declared after engine_ (not before): the
-    // constructor builds it from engine_ and a RuntimeMidiEpoch captured
-    // from startTime_, both already constructed by this point in the
-    // member-init list, and the destructor tears it down before engine_
-    // destroys the MIDI processor chain it forwards into.
-    std::unique_ptr<synth_runtime::MidiConnectionManager<synth_froggers::FroggersApp>> midiConnections_;
-
-    // The Controllers-page binding's subscription to every MIDI-processor
-    // rebuild -- see SetMidiProcessorsRebuiltHook()'s own comment above.
-    // Empty (falsy) whenever no such binding is installed.
-    std::function<void()> midiProcessorsRebuiltHook_;
+    // Owns every controller row's MIDI ports through one MidiConnectionManager,
+    // exactly as synth_runtime::Runtime<App> owns one for the standalone
+    // (EngineMidiConnections.hpp's own class comment). Declared after engine_
+    // (not before): the constructor builds it from engine_ and a
+    // RuntimeMidiEpoch captured from startTime_, both already constructed by
+    // this point in the member-init list, and the destructor tears it down
+    // before engine_ destroys the MIDI processor chain it forwards into.
+    std::unique_ptr<synth_runtime::EngineMidiConnections<synth_froggers::FroggersApp>> midiConnections_;
 };
 
 }  // namespace frogg3rs_vst
