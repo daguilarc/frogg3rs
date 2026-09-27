@@ -1252,7 +1252,7 @@ noise is dropped. A cost between the two is reported as numbers.
 | Controller rows | unbounded | unbounded | unbounded |
 | Mapping rows per controller | unbounded | unbounded | unbounded |
 | Connect messages per row | unbounded | unbounded | unbounded |
-| Knobs in a gesture | any number, up to every knob and depth; Sheaf stores membership on each parameter (SR 2026-09-23) | same | n/a |
+| Knobs in a gesture | any number, up to every knob and depth; Sheaf stores membership on each parameter (SR 2026-09-23) | same | same |
 | Materialized modulation depths | 1440 slots provisioned at launch (`kDepthParameterStorageCapacity`, 96 parameters × 15 sources); the message thread adds more as they run low (`ParameterGroup::RequestParameterStorageBatchIfLow`, `Engine::MessageThreadTick`). A Randomize press can need a knob's old depths and its new ones at once; when no slot is free, the knob gets fewer sources than it drew (`partial` in `RandomizeParameterModulationDepths`, recorded by `LastRandomizePartial`, shown nowhere). **fix required** (SR 2026-09-23): the launch constant is the watermark; a patch applies only with its storage, at startup and running | same | same |
 | Patches | disk | browser storage quota | the standalone's own disk root |
 | Versions per patch | every Save adds one | same | same |
