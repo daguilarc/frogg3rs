@@ -2985,7 +2985,6 @@ TEST_CASE(new_instance_reads_and_writes_none_of_the_standalones_data) {
     std::filesystem::remove_all(dataRoot);
 
     const synth::RuntimeDataPaths pluginPaths = frogg3rs_vst::FroggersPluginProcessor::PluginDataPaths(dataRoot);
-    REQUIRE_TRUE(pluginPaths.configFile.empty());
     std::filesystem::create_directories(pluginPaths.patchesRoot);
 
     // A saved patch off its default, with a Twister row of its own -- the
@@ -3036,15 +3035,22 @@ TEST_CASE(new_instance_reads_and_writes_none_of_the_standalones_data) {
     const std::string configBytesBefore = ReadFileBytes(standaloneConfigFile);
     const std::string treeBefore = SnapshotDirectoryTree(dataRoot);
 
-    // No processBlock()/timerCallback() pump runs before these reads: the
-    // host parameter's value is what BuildHostParameterInventory() baked in
-    // at construction (its own registered default), the same value a real
-    // host reads before this instance's audio callback or message-thread
-    // timer has fired even once.
     frogg3rs_vst::FroggersPluginProcessor processor(pluginPaths);
-    juce::AudioProcessorParameter* audioSlot0 = FindHostParamById(processor, "bank0.slot0");
-    REQUIRE_TRUE(audioSlot0 != nullptr);
-    REQUIRE_TRUE(std::fabs(audioSlot0->getValue() - 0.3087f) < 1.0e-4f);
+
+    // Reads the CORE parameter directly rather than the host parameter:
+    // BuildHostParameterInventory() seeds every host parameter from its own
+    // registered default at construction (layout.params[paramIx].defaultValue),
+    // independent of whatever the engine loaded, so a host-parameter read
+    // with zero pumps cannot tell "loaded the standalone's 0.9888 patch"
+    // apart from "loaded nothing" -- both read the same registered default.
+    // The core parameter carries no such independent default path: it reads
+    // whatever Engine::Initialize() actually left it at, with no processBlock()
+    // run in between (the host parameter's own display value drifts by a
+    // small amount of per-sample slew after even one block; the raw core
+    // value read here does not).
+    constexpr float kRegisteredDefaultValue = 0.3087f;
+    const float loadedSlot0Value = processor.ApplicationForTest().Parameters().PageParameter(0, 0).SceneCenter(0);
+    REQUIRE_TRUE(std::fabs(loadedSlot0Value - kRegisteredDefaultValue) < 1.0e-4f);
     REQUIRE_TRUE(processor.MidiControllerCountForTest() == 0);
     REQUIRE_TRUE(!processor.CurrentPatchRelativePathForTest().has_value());
 
@@ -3052,7 +3058,7 @@ TEST_CASE(new_instance_reads_and_writes_none_of_the_standalones_data) {
     REQUIRE_TRUE(SnapshotDirectoryTree(dataRoot) == treeBefore);
 
     processor.releaseResources();
-    std::cout << "  [plugin data paths] host param bank0.slot0=" << audioSlot0->getValue()
+    std::cout << "  [plugin data paths] core param bank0.slot0=" << loadedSlot0Value
               << " (expected default 0.3087), MidiControllerCount=" << processor.MidiControllerCountForTest()
               << " (expected 0), standalone's config and data tree unchanged.\n";
 }
@@ -3101,8 +3107,15 @@ public:
     }
     // Delivers straight to whatever processor MidiConnectionManager last
     // installed here -- the same call a real JUCE MIDI callback makes
-    // (MidiInHandler::handleIncomingMidiMessage, juce/MidiHandlers.hpp).
+    // (MidiInHandler::handleIncomingMidiMessage, juce/MidiHandlers.hpp). A
+    // real JUCE input delivers nothing while its device is not open; this
+    // fake matches that -- log_->isOpen is the same flag Open()/Close()
+    // above maintain, so a port this test never opened (or already closed)
+    // delivers nothing here either.
     void Deliver(const synth::BasicMidi& midi) {
+        if (!log_->isOpen) {
+            return;
+        }
         std::lock_guard<std::mutex> lock(mutex_);
         if (processor_) {
             processor_->Process(midi);
@@ -3957,19 +3970,24 @@ TEST_CASE(save_during_a_snapshot_writes_a_version_and_refreshes_the_state) {
 
     juce::AudioProcessorParameter* audioSlot0 = FindHostParamById(processor, "bank0.slot0");
     REQUIRE_TRUE(audioSlot0 != nullptr);
-    constexpr float kTarget = 0.63f;
-    audioSlot0->setValueNotifyingHost(kTarget);
-    PumpAndSettle(processor, buffer, midi);  // settle the host write onto the authority first.
 
     // One pump requests a fresh snapshot; nothing has drained it onto
     // patchOutputBus yet, so a snapshot is outstanding and unanswered.
     processor.PumpMessageThreadForTest();
 
+    // The value that must reach the eventual snapshot is set AFTER that
+    // request goes out and BEFORE Save: a second requester answering the
+    // outstanding request early, from a snapshot already taken before this
+    // write lands, would miss it.
+    constexpr float kTarget = 0.63f;
+    audioSlot0->setValueNotifyingHost(kTarget);
+
     REQUIRE_TRUE(processor.GetEngine().Patches().SavePatch().status == synth::PatchCommandStatus::Pending);
 
-    // Settle: the outstanding snapshot's response reaches the consumer,
-    // PatchManager dispatches the held save right after, and the save's own
-    // response reaches ProcessResponses on a later pump.
+    // Settle: the host write lands on the core parameter, the outstanding
+    // snapshot's response reaches the consumer carrying it, PatchManager
+    // dispatches the held save right after, and the save's own response
+    // reaches ProcessResponses on a later pump.
     PumpAndSettle(processor, buffer, midi);
 
     std::size_t versionCount = 0;

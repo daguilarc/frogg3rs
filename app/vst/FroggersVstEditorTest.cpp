@@ -531,9 +531,51 @@ TEST_CASE(editor_sidebar_holds_controllers_and_file_only) {
     REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == pageBefore);
     REQUIRE_TRUE(processor.ApplicationForTest().DrillLevel() == drillBefore);
 
+    // Opening File and pressing Back must leave the app's page and drill
+    // level untouched too -- checked from a NON-default page and drill
+    // level, not page 0 / drill 0 (where a Back that wrongly reset both to
+    // their defaults would look identical to one that left them alone).
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    const auto runBlock = [&] {
+        buffer.clear();
+        processor.processBlock(buffer, midi);
+    };
+
+    constexpr std::size_t kNonDefaultPage = 3;
+    processor.EditorSurface().DispatchAction(synth::ui::Action::WithValue(
+        synth_froggers::FroggersActions::kPageSelect, std::to_string(kNonDefaultPage)));
+    runBlock();  // ApplyAppCommand() applies the press -- ActivePageIndex() moves this block.
+    REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == kNonDefaultPage);
+
+    constexpr std::size_t kDrilledSlot = 5;
+    processor.EditorSurface().DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kEncoderPress, std::to_string(kDrilledSlot)));
+    runBlock();
+    REQUIRE_TRUE(processor.ApplicationForTest().ActiveDrillIn().Level() == 1);
+
+    const std::size_t pageBeforeFile = processor.ApplicationForTest().ActivePageIndex();
+    const std::size_t drillBeforeFile = processor.ApplicationForTest().ActiveDrillIn().Level();
+
+    auto* fileButton = dynamic_cast<juce::Button*>(renderer.FindByNodeId(synth::runtime_ui::NodeIds::kSidebarFile));
+    REQUIRE_TRUE(fileButton != nullptr && static_cast<bool>(fileButton->onClick));
+    fileButton->onClick();
+    renderer.RefreshFromSurface();
+
+    auto* fileBack = dynamic_cast<juce::Button*>(renderer.FindByNodeId(synth::runtime_ui::NodeIds::kFileBack));
+    REQUIRE_TRUE(fileBack != nullptr && static_cast<bool>(fileBack->onClick));
+    fileBack->onClick();
+    renderer.RefreshFromSurface();
+
+    REQUIRE_TRUE(processor.ApplicationForTest().ActivePageIndex() == pageBeforeFile);
+    REQUIRE_TRUE(processor.ApplicationForTest().ActiveDrillIn().Level() == drillBeforeFile);
+
     processor.releaseResources();
     std::cout << "  [sidebar] holds Controllers and File only; the ? button clears the sidebar at two sizes; "
-                 "Controllers Back leaves the app's page and drill level unchanged.\n";
+                 "Controllers Back leaves the app's page and drill level unchanged; File Back leaves them "
+                 "unchanged from a non-default page and drill level too.\n";
 }
 
 }  // namespace
