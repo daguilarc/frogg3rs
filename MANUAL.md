@@ -356,15 +356,10 @@ every connected device, and the stored port's name, which stays selected. Leavin
 selected keeps the port, and the row reconnects when the device returns. Choosing a connected
 device binds the row to it, and choosing **(none)** clears the port.
 
-A released row, which a saved configuration can already hold, shows its name, device
-label, and a **Released** badge on the first line, and its stored MIDI in/out ports and **Delete**
-on the second. It has no disclosure arrow and no editor.
-
 ### Renaming
 
 Open a row's editor with the disclosure arrow at its left. The editor's first line is a **Name**
-field and a **Rename** button. Renaming leaves the row open with its sections as they were. A
-released row has no editor, so it cannot be renamed.
+field and a **Rename** button. Renaming leaves the row open with its sections as they were.
 
 ### Adding a controller
 
@@ -480,9 +475,7 @@ and moves the tempo while Shift is held, by the same amount whichever parameter 
 again the moment Shift releases. No other Twister encoder has a shifted job.
 
 A Twister row whose mappings diverge from its preset shows Restore, which reinstalls the preset's
-complete mapping (see Reading a controller row, above). A released Twister row has no editor, so it
-shows no Restore; delete it and add the MIDI Fighter Twister preset again. A Twister row loaded from
-an older saved patch never shows Restore either; delete it and add the MIDI Fighter Twister preset again.
+complete mapping (see Reading a controller row, above).
 
 Utility settings the device needs, set in the Midi Fighter Utility: every encoder's sensitivity/mode to
 "Enc 3FH/41H" (relative), all six side buttons to "CC Hold", and "Bank Side Buttons" unchecked, so the
