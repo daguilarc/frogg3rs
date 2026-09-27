@@ -246,20 +246,37 @@ becomes a read-only status display instead of an editable slider.
 
 ### Plugin (VST3 / AU)
 
-The DAW owns audio devices, transport and tempo. The plugin editor renders only the parameter/
-modulation surface the standalone and browser builds also show; it has no Audio I/O, Controllers,
-Sync or File sidebar page.
+The DAW owns audio devices, transport and tempo. The plugin editor renders the same parameter/
+modulation surface the standalone and browser builds show, with a sidebar holding **Controllers** and
+**File**; there is no Audio I/O, Sync or load-readout page, because the DAW already owns what each of
+those would control. A **?** button sits in the sidebar column below File.
 
 **Transport and tempo** follow the host. The plugin's own surface shows only Freeze (labeled "FREEZE")
-where the standalone shows Play, Stop, Freeze, and Record. Whenever the host reports a tempo, the BPM
-control becomes a read-only display, "BPM `<value>` (external clock)", the same display the standalone
-shows while slaved to incoming MIDI clock.
+where the standalone shows Play, Stop, Freeze, and Record. A controller button mapped to Play, Stop or
+Record does nothing in the plugin; only the host's own transport starts and stops the instrument.
+Freeze — from the plugin's own surface, its host parameter, or a controller — stops the instrument, and
+releasing it returns the transport to where it was when Freeze engaged, the same as in the standalone
+(Transport and the envelope gate, above). Whenever the host reports a tempo, the BPM control becomes a
+read-only display, "BPM `<value>` (external clock)", the same display the standalone shows while slaved
+to incoming MIDI clock.
 
-**MIDI** reaches this instrument entirely through host-parameter automation. Every parameter — each
-page's 14 page parameters, its own Crispy, the one shared Crunchy, and Freeze — is exposed to the host as
-a standard automatable plugin parameter, so a DAW's own MIDI-learn/CC-mapping targets one of these the
-same way it would target any other plugin parameter. The plugin accepts the host's MIDI buffer but does
-not read it itself.
+**Controllers** works as it does in the standalone (MIDI controllers, below): each row opens its own
+MIDI input and output ports directly, the same way a standalone row does, so a controller reaches the
+instrument without going through the host's MIDI track. Encoders follow the shown page and drill level,
+buttons do their jobs, and feedback and reconnect-on-replug work the same way.
+
+To set up a controller in Ableton Live 12: open Settings (Cmd-comma), the Link, Tempo & MIDI tab; in MIDI
+Ports, set the controller's input and output **Track**, **Sync** and **Remote** switches off; set up the
+controller as its own subsection below describes; if it is also set as a Control Surface, set that to
+None; then insert Frogg3rs on a MIDI track. DAW MIDI-learn onto a host parameter (below) instead needs
+that port's **Remote** switch on; with the switch on, a control that a Live mapping and a controller row
+both map moves both targets.
+
+**Host parameters.** Every parameter — each page's 14 page parameters, its own Crispy, the one shared
+Crunchy, and Freeze — is exposed to the host as a standard automatable plugin parameter, so a DAW's own
+MIDI-learn/CC-mapping targets one of these the same way it would target any other plugin parameter. The
+plugin's own controller rows are the only route a controller reaches the instrument through; the host's
+MIDI buffer is accepted but never read for this.
 
 **Input audio** is opt-in. The plugin has one optional stereo input bus, disabled until the host routes
 into it. On the plugin's own surface, an **IN:** button beside Freeze cycles through **None** (the
@@ -267,6 +284,21 @@ default), each channel the host's bus currently provides, and, once the bus carr
 their **Sum**. Selecting anything other than None is what connects External Audio and External Audio EF
 (Global controls, above) — routing the DAW's bus into the plugin is not itself enough; the operator must
 select an input here.
+
+**File** works on the standalone's own patches folder: the patches listed here, and any patch saved here,
+are the standalone's. Load applies a patch's sound and controller setup to this instance only, and no
+File page action writes the standalone's runtime configuration. The File page, not a host preset, carries
+a setup between instances — Live's Save as Default Configuration does not save one.
+
+A newly inserted plugin instance reads none of the standalone's saved patches or configuration: it opens
+at the default patch, with no controller rows and no current patch, whatever the standalone has saved or
+opened.
+
+**Saving.** The DAW project keeps this instance's parameter values, IN: choice, controller rows and the
+File page's current patch; reopening the project returns all of it, and each row's ports reopen and its
+feedback is sent again. A new instance always starts with no controller rows and no current patch, never
+a previous instance's. Save the Live Set after changing the controller setup: the VST3 tells Live its
+state changed, so Live offers to save it; the AU never asks.
 
 ### Browser build
 
@@ -281,8 +313,10 @@ granted. A stopped recording downloads as `YYYY-MM-DD.wav`.
 
 ### Overview
 
-The Controllers page exists in the standalone and browser builds (the plugin takes MIDI through host
-automation, as the Plugin subsection says). "Available controllers" lists each connected device that no row uses and that a preset recognizes
+The Controllers page exists in the standalone, browser and plugin builds; the Plugin subsection above
+covers what differs there (a controller button mapped to Play, Stop or Record does nothing, and a
+controller reaches the instrument through its own ports, never the host's MIDI track). "Available
+controllers" lists each connected device that no row uses and that a preset recognizes
 by its port names, together with every preset that matches it — an Akai APC40 mkII reads as one
 device offering both **Akai APC40 mkII (Generic)** and **Akai APC40 mkII (Ableton)**. Every other
 connected port that no row uses is listed as "Other inputs" or "Other outputs": a port no preset recognizes, or a
@@ -509,6 +543,9 @@ a patch. A patch keeps the sound and the controller setup, and opening a patch a
 relaunch reopens the patch version last opened or saved, with the controller setup as the page last
 had it. After New, a relaunch starts from New's defaults. Sound changes that were never saved are
 lost on relaunch.
+
+The plugin keeps no configuration file of its own, so this does not apply to it: its project, in the
+DAW, is what keeps the controller setup between sessions (Plugin, above).
 
 ---
 
