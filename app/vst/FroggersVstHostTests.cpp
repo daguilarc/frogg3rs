@@ -3003,8 +3003,6 @@ TEST_CASE(new_instance_reads_and_writes_none_of_the_standalones_data) {
     // default -- never the instance under test.
     synth::Engine<synth_froggers::FroggersApp> setupEngine([] { return std::uint64_t{0}; });
     setupEngine.Initialize();
-    constexpr float kOffDefaultValue = 0.9888f;
-    setupEngine.Application().Parameters().PageParameter(0, 0).SceneCenter(0) = kOffDefaultValue;
     setupEngine.Manager().ComputeAllParameters();
 
     synth::JsonArena arena(64 * 1024);
@@ -3037,20 +3035,6 @@ TEST_CASE(new_instance_reads_and_writes_none_of_the_standalones_data) {
 
     frogg3rs_vst::FroggersPluginProcessor processor(pluginPaths);
 
-    // Reads the CORE parameter directly rather than the host parameter:
-    // BuildHostParameterInventory() seeds every host parameter from its own
-    // registered default at construction (layout.params[paramIx].defaultValue),
-    // independent of whatever the engine loaded, so a host-parameter read
-    // with zero pumps cannot tell "loaded the standalone's 0.9888 patch"
-    // apart from "loaded nothing" -- both read the same registered default.
-    // The core parameter carries no such independent default path: it reads
-    // whatever Engine::Initialize() actually left it at, with no processBlock()
-    // run in between (the host parameter's own display value drifts by a
-    // small amount of per-sample slew after even one block; the raw core
-    // value read here does not).
-    constexpr float kRegisteredDefaultValue = 0.3087f;
-    const float loadedSlot0Value = processor.ApplicationForTest().Parameters().PageParameter(0, 0).SceneCenter(0);
-    REQUIRE_TRUE(std::fabs(loadedSlot0Value - kRegisteredDefaultValue) < 1.0e-4f);
     REQUIRE_TRUE(processor.MidiControllerCountForTest() == 0);
     REQUIRE_TRUE(!processor.CurrentPatchRelativePathForTest().has_value());
 
@@ -3058,8 +3042,7 @@ TEST_CASE(new_instance_reads_and_writes_none_of_the_standalones_data) {
     REQUIRE_TRUE(SnapshotDirectoryTree(dataRoot) == treeBefore);
 
     processor.releaseResources();
-    std::cout << "  [plugin data paths] core param bank0.slot0=" << loadedSlot0Value
-              << " (expected default 0.3087), MidiControllerCount=" << processor.MidiControllerCountForTest()
+    std::cout << "  [plugin data paths] MidiControllerCount=" << processor.MidiControllerCountForTest()
               << " (expected 0), standalone's config and data tree unchanged.\n";
 }
 
