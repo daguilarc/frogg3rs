@@ -18,5 +18,6 @@ A change's own implementation report — what changed, why, what it measured —
 message or the change's proposal. It never goes in these docs.
 
 Every docs edit is read by a context that wrote none of it. For each changed sentence, that
-context answers: does a first-time user, who never saw an earlier version, need this to use the
-control? Keep the sentence if yes; cut or rewrite it if no.
+context answers two questions: does a first-time user, who never saw an earlier version, need
+this to use the control, and is it true against the code? Keep the sentence if both are yes;
+cut or rewrite it if either is no.

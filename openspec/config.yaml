@@ -24,6 +24,6 @@ rules:
     - A task that edits user docs (MANUAL.md, QUICK_DICT.md, README.md, DAISY_MANUAL.md) states
       the present behavior for a first-time reader who never saw an earlier version, with no
       implementation report.
-    - Its check is that reader question, answered per changed sentence by a context that wrote
+    - Its check is two reader questions, answered per changed sentence by a context that wrote
       none of it: does a first-time user, who never saw an earlier version, need this to use the
-      control?
+      control, and is it true against the code?

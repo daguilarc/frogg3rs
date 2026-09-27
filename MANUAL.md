@@ -481,7 +481,8 @@ again the moment Shift releases. No other Twister encoder has a shifted job.
 
 A Twister row whose mappings diverge from its preset shows Restore, which reinstalls the preset's
 complete mapping (see Reading a controller row, above). A released Twister row has no editor, so it
-shows no Restore; delete it and add the MIDI Fighter Twister preset again.
+shows no Restore; delete it and add the MIDI Fighter Twister preset again. A Twister row loaded from
+an older saved patch never shows Restore either; delete it and add the MIDI Fighter Twister preset again.
 
 Utility settings the device needs, set in the Midi Fighter Utility: every encoder's sensitivity/mode to
 "Enc 3FH/41H" (relative), all six side buttons to "CC Hold", and "Bank Side Buttons" unchecked, so the
