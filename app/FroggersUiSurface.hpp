@@ -111,6 +111,15 @@ inline constexpr const char* kRightBlock = "froggers.layout.right";
 // itself that stack and neither id exists.
 inline constexpr const char* kLeftStack = "froggers.layout.left.stack";
 inline constexpr const char* kLeftButtons = "froggers.layout.left.buttons";
+// Wraps kLeftButtons and kSidebarSlot below (narrow only) so the pair can
+// sit beside kLeftStack as one Row child while kLeftButtons itself keeps
+// its own "ends at the last button" box -- see
+// FroggersUiSurface::AppendNarrowButtonColumn()'s own comment.
+inline constexpr const char* kLeftButtonsGroup = "froggers.layout.left.buttons.group";
+// An empty node reserving the room below the Randomize/Reset buttons
+// (narrow only), named by FroggersUiSurface::SidebarSlot() so the runtime
+// places Sheaf's own sidebar there.
+inline constexpr const char* kSidebarSlot = "froggers.layout.left.sidebar";
 
 inline constexpr const char* kPlay = "froggers.transport.play";
 inline constexpr const char* kStop = "froggers.transport.stop";
@@ -253,12 +262,17 @@ inline constexpr const char* kEncoderDrag = "froggers.encoder.drag";
 // None). See FroggersNodeIds::kInputSelect above and HandleAction's own
 // branch for the exact cycle/callback mechanics.
 inline constexpr const char* kInputSelect = "froggers.transport.input";
-// Dispatched by a browser shell to report its own viewport width, not
-// something this surface measures itself. Selects the narrow topology:
-// equal outer split weights, and the Randomize/Reset buttons emitted
-// beside the sliders in the chrome block rather than below the encoder
-// grid. "1" is narrow; every other value, including wide, is not.
-inline constexpr const char* kViewportNarrow = "froggers.viewport.narrow";
+// Dispatched by a browser shell to report its own viewport width in CSS
+// px, not something this surface measures itself -- the value this
+// surface's SelfSizedSurface implementation resolves its own root against
+// (FroggersPageLayout::RootBounds()/FroggersUiSurface::BuildTree()). A
+// width greater than zero and no more than
+// FroggersPageLayout::kNarrowMaxWidth selects the narrow topology: the
+// chrome and grid blocks stack in a Column instead of sitting side by side
+// in a Row, and the Randomize/Reset buttons move beside the sliders in the
+// chrome block rather than below the encoder grid. Zero (never reported)
+// or a width above the narrow limit keeps the wide, side-by-side layout.
+inline constexpr const char* kViewportWidth = "froggers.viewport.width";
 
 }  // namespace FroggersActions
 
@@ -332,14 +346,85 @@ struct FroggersPageLayout {
     // already carries.
     static constexpr float kSliderWidthFraction = 0.8f;
 
-    static synth::ui::Bounds RootBounds(const synth::AppContext* context) {
-        const float width = context != nullptr && context->config != nullptr
-                                 ? static_cast<float>(context->config->uiWidth)
-                                 : kDefaultWidth;
-        const float height = context != nullptr && context->config != nullptr
-                                  ? static_cast<float>(context->config->uiHeight)
-                                  : kDefaultHeight;
-        return {0.0f, 0.0f, width, height};
+    // The narrow layout's own upper bound: a browser shell reports its
+    // width in CSS px through FroggersActions::kViewportWidth, and any
+    // width in (0, kNarrowMaxWidth] selects the narrow, stacked topology
+    // (RootBounds()/FroggersUiSurface::BuildTree() below); zero (never
+    // reported) or a width above this keeps the desktop, side-by-side one.
+    static constexpr float kNarrowMaxWidth = 720.0f;
+
+    // The narrow topology stacks the chrome block above the grid block,
+    // both spanning the reported width, unlike the desktop split, which
+    // sits them side by side sharing the CONFIGURED width. The four
+    // constants below carry today's chrome/grid proportions forward into
+    // that stack, so the stacked blocks read exactly as dense as the
+    // side-by-side ones already do at this app's one compiled-in size,
+    // rather than a second, independently tuned narrow design.
+    //
+    // Half of the configured content width, less the one gap between the
+    // two blocks -- what an equal, side-by-side split gives each block
+    // today.
+    static constexpr float kNarrowOldHalfBlockWidth = (kDefaultWidth - 2.0f * kMargin - kGap) / 2.0f;
+    // The smallest root width the narrow layout will ever build at: the
+    // width whose stacked block (spanning the whole root, less margins) is
+    // exactly as wide as that side-by-side half already is. Below this, a
+    // reported width would only cram every control narrower than today's
+    // side-by-side narrow split already allows.
+    static constexpr float kNarrowMinWidth = kNarrowOldHalfBlockWidth + 2.0f * kMargin;
+    // The configured content height, in full -- the grid block's own
+    // height in the side-by-side split (it fills the row).
+    static constexpr float kNarrowOldContentHeight = kDefaultHeight - 2.0f * kMargin;
+    // The grid block's width:height ratio in that side-by-side split. The
+    // stacked grid block's height, at whatever width is actually reported,
+    // is this app's one derivation of "keeping today's narrow aspect
+    // ratio" (ComputeNarrowBlockHeights() below).
+    static constexpr float kNarrowGridAspectRatio = kNarrowOldHalfBlockWidth / kNarrowOldContentHeight;
+    // The chrome block's height in the stack, as this fraction of the grid
+    // block's. The side-by-side split already shrinks the chrome block's
+    // CROSS extent to this same fraction of the row's full height while
+    // widening it, so its rows keep the density they are drawn for instead
+    // of spreading over the extra room a plain equal split would give
+    // them; stacking preserves that same relationship instead of
+    // reinventing it.
+    static constexpr float kNarrowChromeHeightFraction = 2.0f / 3.0f;
+
+    // The chrome and grid blocks' own heights in the narrow, stacked
+    // layout, derived from the reported (clamped) root width -- the ONE
+    // definition both RootBounds() (the total root height) and
+    // FroggersUiSurface::AppendLeftBlock()/AppendRightBlock() (each
+    // block's own declared height) read, so the three can never
+    // independently disagree about how tall a block at a given width is.
+    struct NarrowBlockHeights {
+        float chrome;
+        float grid;
+    };
+    static NarrowBlockHeights ComputeNarrowBlockHeights(float rootWidth) {
+        const float blockContentWidth = rootWidth - 2.0f * kMargin;
+        const float grid = blockContentWidth / kNarrowGridAspectRatio;
+        return {grid * kNarrowChromeHeightFraction, grid};
+    }
+
+    // The one definition of the surface's root. `reportedWidth` is what a
+    // browser shell reports through FroggersActions::kViewportWidth (0,
+    // the default, means "nothing reported" -- the desktop case). Both
+    // FroggersUiSurface::RootBounds() (the SelfSizedSurface interface) and
+    // FroggersUiSurface::BuildTree() call this, so the bounds the runtime
+    // validates the built tree against and the bounds BuildTree() actually
+    // resolves against can never independently disagree.
+    static synth::ui::Bounds RootBounds(const synth::AppContext* context, float reportedWidth = 0.0f) {
+        if (!(reportedWidth > 0.0f) || reportedWidth > kNarrowMaxWidth) {
+            const float width = context != nullptr && context->config != nullptr
+                                     ? static_cast<float>(context->config->uiWidth)
+                                     : kDefaultWidth;
+            const float height = context != nullptr && context->config != nullptr
+                                      ? static_cast<float>(context->config->uiHeight)
+                                      : kDefaultHeight;
+            return {0.0f, 0.0f, width, height};
+        }
+        const float rootWidth = std::max(reportedWidth, kNarrowMinWidth);
+        const NarrowBlockHeights heights = ComputeNarrowBlockHeights(rootWidth);
+        const float rootHeight = 2.0f * kMargin + heights.chrome + kGap + heights.grid;
+        return {0.0f, 0.0f, rootWidth, rootHeight};
     }
 };
 
@@ -399,11 +484,14 @@ static_assert(FroggersEncoderGridLayout::kEncoderCount == kFroggersSlotsPerBank,
 // The operator-approved topology, kept as PURE DATA -- no builder calls, no
 // layout math -- separate from the emission code that interprets it
 // (AppendLeftBlock()/AppendRightBlock() below). This stays the one
-// definition site for "what goes where", including the narrow-viewport
-// variant: the narrow topology differs in the outer split weights
-// (kLeftBlockWeightNarrow/kRightBlockWeightNarrow) and in which block the
-// four Randomize/Reset buttons land in, and both of those are values here,
-// read by the same emission code rather than a forked builder path.
+// definition site for "what goes where", including which block the four
+// Randomize/Reset buttons land in at a narrow viewport (kRightRows below
+// skips the Randomize/Reset rows there, and AppendLeftBlock's own narrow
+// branch places the same four buttons beside the sliders instead) -- the
+// narrow ROOT geometry itself (block heights, the stacked Column) is
+// FroggersPageLayout's concern (kNarrowMaxWidth/kNarrowMinWidth/
+// ComputeNarrowBlockHeights), since it also has to agree with
+// RootBounds().
 //
 // The left and right columns are two INDEPENDENT stacked Columns (siblings
 // under the outer split Row, AppendLeftBlock()/AppendRightBlock()), not one
@@ -436,11 +524,15 @@ static_assert(FroggersEncoderGridLayout::kEncoderCount == kFroggersSlotsPerBank,
 //   7 | Randomize page (span 2) | Randomize all (span 2)
 //   8 | Reset page (span 2) | Reset all (span 2)
 //
-//   NARROW (a phone, where the browser shell stacks the two blocks
-//   vertically instead of placing them side by side): the two blocks carry
-//   equal weight so each spans the viewport, rows 7 and 8 above are not
-//   emitted, and their four buttons become a second column inside the LEFT
-//   block, beside the Scope/Transport/Scenes/blend/BPM stack:
+//   NARROW (a phone, where FroggersUiSurface itself -- a
+//   synth::ui::SelfSizedSurface, see FroggersPageLayout::RootBounds() --
+//   stacks the two blocks vertically instead of placing them side by
+//   side): each block spans the full reported width, rows 7 and 8 above
+//   are not emitted, and their four buttons become a second column inside
+//   the LEFT block, beside the Scope/Transport/Scenes/blend/BPM stack,
+//   with an empty slot (FroggersNodeIds::kSidebarSlot, named by
+//   FroggersUiSurface::SidebarSlot()) reserving the room below them for
+//   Sheaf's own runtime sidebar:
 //   L | Scope        | Randomize page
 //     | Play | Stop  | Randomize all
 //     | Scene 1 | 2  | Reset page
@@ -504,30 +596,14 @@ struct FroggersCellMap {
         {FroggersNodeIds::kResetAll, "Reset All", FroggersActions::kResetAll},
     }};
 
-    // The outer split Row's weights (L1+L2 = 2 units, E1-E4 = 4 units,
-    // matching the table's 6-column width exactly).
+    // The outer split Row's weights at a WIDE viewport (L1+L2 = 2 units,
+    // E1-E4 = 4 units, matching the table's 6-column width exactly). At a
+    // narrow viewport the outer split is a Column, not a Row, and each
+    // block's own height comes from
+    // FroggersPageLayout::ComputeNarrowBlockHeights() instead of a weight
+    // pair here -- see that function's own comment.
     static constexpr float kLeftBlockWeight = 2.0f;
     static constexpr float kRightBlockWeight = 4.0f;
-    // The same split at a narrow viewport, where the two blocks are stacked
-    // vertically by the browser shell rather than placed side by side. The
-    // shell derives ONE scale from the grid block and applies it to every
-    // stacked block (app/browser/site/mobile-stack.mjs, `sharedScale`), so
-    // a chrome block narrower than the grid block renders narrower than the
-    // viewport with the remainder left empty. Equal weights make the two
-    // blocks the same width in design space and therefore the same width on
-    // screen, which is what puts usable room beside the sliders.
-    static constexpr float kLeftBlockWeightNarrow = 3.0f;
-    static constexpr float kRightBlockWeightNarrow = 3.0f;
-    // How tall the chrome block is when narrow, as a fraction of the outer
-    // Row's height. Widening the block without shortening it would keep
-    // laying its five rows out over the whole page height, spreading the
-    // same controls over half again as much space and pushing the encoder
-    // grid -- stacked underneath it by the shell -- clean off the first
-    // screen. The ratio of the two weights above keeps the block's design
-    // AREA the same as it widens, so its rows stay at the density they are
-    // drawn for and the grid starts at the same position as in the wide
-    // layout.
-    static constexpr float kLeftBlockCrossWeightNarrow = kLeftBlockWeight / kLeftBlockWeightNarrow;
 };
 
 // Play/Stop as coloured icons: Play is a green triangle, Stop a red square,
@@ -887,7 +963,7 @@ inline std::vector<synth::ui::DrawCommand> BuildEncoderLabelRowCommands(std::str
     return synth::ui::BuildFourteenSegmentCommands(padded, rowBounds, onColor, offColor, columns);
 }
 
-class FroggersUiSurface final : public synth::ui::Surface {
+class FroggersUiSurface final : public synth::ui::Surface, public synth::ui::SelfSizedSurface {
 public:
     void Attach(synth::AppContext* context, FroggersAppCore* app) {
         context_ = context;
@@ -979,7 +1055,11 @@ public:
     }
 
     synth::ui::NodeTree BuildTree() override {
-        const synth::ui::Bounds root = FroggersPageLayout::RootBounds(context_);
+        const synth::ui::Bounds root = FroggersPageLayout::RootBounds(context_, viewportWidth_);
+        const bool narrow = IsNarrowViewport();
+        const FroggersPageLayout::NarrowBlockHeights heights =
+            narrow ? FroggersPageLayout::ComputeNarrowBlockHeights(root.width)
+                   : FroggersPageLayout::NarrowBlockHeights{0.0f, 0.0f};
 
         synth::ui::Builder builder;
         builder.Root(FroggersNodeIds::kRoot, root);
@@ -990,21 +1070,29 @@ public:
         // left for a future logo,
         // deferred pending upstream `DrawCommand::Image`.
 
-        // ONE outer split Row -- left block (Weight(2): scope,
-        // transport, scenes, scene-blend, BPM) beside right block
-        // (Weight(4): page tabs, the 16-slot encoder grid, randomize) --
-        // matching the CELL MAP's 2-of-6 vs 4-of-6 column split. Outer
-        // padding/gap are this file's own design tokens
+        // ONE outer split -- left (chrome) block beside right (grid) block
+        // at a wide viewport (a Row, matching the CELL MAP's 2-of-6 vs
+        // 4-of-6 column split), the chrome block ABOVE the grid block at a
+        // narrow one (a Column, FroggersPageLayout::RootBounds()'s own
+        // comment) -- same two children either way, AppendLeftBlock()/
+        // AppendRightBlock() below read `narrow` to declare their own
+        // height along whichever axis is now the container's main one.
+        // Outer padding/gap are this file's own design tokens
         // (FroggersPageLayout::kMargin/kGap), not upstream defaults.
         synth::ui::LayoutOptions outerLayout;
         outerLayout.main = synth::ui::Extent::Weight(1.0f);
         outerLayout.cross = synth::ui::Extent::Weight(1.0f);
         outerLayout.padding = FroggersPageLayout::kMargin;
         outerLayout.gap = FroggersPageLayout::kGap;
-        builder.Row(FroggersNodeIds::kLayoutRoot, outerLayout, [this](synth::ui::Builder& b) {
-            AppendLeftBlock(b);
-            AppendRightBlock(b);
-        });
+        const synth::ui::Builder::Children appendBlocks = [this, narrow, heights](synth::ui::Builder& b) {
+            AppendLeftBlock(b, narrow, heights.chrome);
+            AppendRightBlock(b, narrow, heights.grid);
+        };
+        if (narrow) {
+            builder.Column(FroggersNodeIds::kLayoutRoot, outerLayout, appendBlocks);
+        } else {
+            builder.Row(FroggersNodeIds::kLayoutRoot, outerLayout, appendBlocks);
+        }
 
         return builder.Build(root);
     }
@@ -1020,7 +1108,33 @@ public:
         }
     }
 
+    // -- synth::ui::SelfSizedSurface ------------------------------------
+    // Both overrides below and BuildTree() above call the SAME
+    // FroggersPageLayout definitions (RootBounds()/ComputeNarrowBlockHeights()),
+    // so the bounds the runtime validates the built tree against, the
+    // bounds BuildTree() actually resolves against, and the slot this
+    // reports can never independently disagree about the current
+    // viewport.
+
+    synth::ui::Bounds RootBounds() const override {
+        return FroggersPageLayout::RootBounds(context_, viewportWidth_);
+    }
+
+    std::optional<synth::ui::NodeId> SidebarSlot() const override {
+        if (!IsNarrowViewport()) {
+            return std::nullopt;
+        }
+        return synth::ui::NodeId(FroggersNodeIds::kSidebarSlot);
+    }
+
 private:
+    // Zero (the default) or a width above FroggersPageLayout::kNarrowMaxWidth
+    // is the desktop layout; see FroggersActions::kViewportWidth's own
+    // comment.
+    bool IsNarrowViewport() const {
+        return viewportWidth_ > 0.0f && viewportWidth_ <= FroggersPageLayout::kNarrowMaxWidth;
+    }
+
     // Display-only offset for the scene-blend slider: the Scene 1/Scene 2
     // buttons read 1/2 (AppendScenesRow() above, DO NOT CHANGE), while
     // Sheaf's own `SceneState.blend` -- clamped 0..1 inside Sheaf -- must
@@ -1034,15 +1148,25 @@ private:
 
     // -- Left block (FroggersCellMap, columns L1-L2) ------------------
 
-    void AppendLeftBlock(synth::ui::Builder& builder) const {
+    // `narrow` and `narrowHeight` come from BuildTree()'s own single call to
+    // FroggersPageLayout::ComputeNarrowBlockHeights() -- this method reads
+    // no viewport state of its own, so it can never resolve a height that
+    // disagrees with the root BuildTree() just declared.
+    void AppendLeftBlock(synth::ui::Builder& builder, bool narrow, float narrowHeight) const {
         synth::ui::LayoutOptions blockLayout;
-        blockLayout.main = synth::ui::Extent::Weight(narrowViewport_ ? FroggersCellMap::kLeftBlockWeightNarrow
-                                                                     : FroggersCellMap::kLeftBlockWeight);
-        blockLayout.cross = synth::ui::Extent::Weight(
-            narrowViewport_ ? FroggersCellMap::kLeftBlockCrossWeightNarrow : 1.0f);
+        // Wide: a share of the outer Row's width, like every other row's
+        // Weight(1) cross fills the Row's full height. Narrow: the outer
+        // container is now a Column, so `main` is this block's own height
+        // -- a fixed px height derived from the reported width (see
+        // FroggersPageLayout::ComputeNarrowBlockHeights()'s own comment),
+        // not a share of anything -- while `cross` (now the Column's
+        // width) fills it, spanning the root less its margins.
+        blockLayout.main = narrow ? synth::ui::Extent::Px(narrowHeight)
+                                   : synth::ui::Extent::Weight(FroggersCellMap::kLeftBlockWeight);
+        blockLayout.cross = synth::ui::Extent::Weight(1.0f);
         blockLayout.padding = 0.0f;
         blockLayout.gap = FroggersPageLayout::kGap;
-        if (!narrowViewport_) {
+        if (!narrow) {
             builder.Column(FroggersNodeIds::kLeftBlock, blockLayout, [this](synth::ui::Builder& b) {
                 AppendLeftRows(b);
             });
@@ -1090,34 +1214,67 @@ private:
     // its label width with a 72px floor (PortableUIMetrics.hpp's
     // `IntrinsicFor`), so four of them cost one label's width here, not a
     // share of the block.
+    //
+    // kLeftButtons alone would end its own box at the last button (its
+    // `cross` stays Intrinsic below, unchanged) -- exactly what
+    // SidebarSlot() needs NOT to happen to the space below it. Rather than
+    // stretch kLeftButtons itself (which would just as wrongly stretch the
+    // gap BETWEEN buttons, since a Column's main-axis Weight child shares
+    // the axis those buttons are stacked on), a wrapping Column
+    // (kLeftButtonsGroup) carries the "fill the block's full height" role
+    // instead: it holds kLeftButtons exactly as before, then the empty
+    // slot (kSidebarSlot, named by SidebarSlot()) as a Weight(1) sibling
+    // that takes whatever height kLeftButtons does not.
     void AppendNarrowButtonColumn(synth::ui::Builder& builder) const {
-        synth::ui::LayoutOptions columnLayout;
-        // Intrinsic along the parent Row's main axis: the column is exactly
-        // as wide as its widest button, leaving everything else to the stack.
-        columnLayout.main = synth::ui::Extent::Intrinsic();
-        // Intrinsic on the cross axis too, so the column's own box ENDS where
-        // its last button ends rather than running to the bottom of the
-        // block. The browser shell reads that box to find where the space
-        // below these buttons begins, and places Sheaf's runtime sidebar
-        // there (app/browser/site/mobile-stack.mjs) -- a block this surface
-        // cannot contain, since Sheaf emits it as a separate tree. Declaring
-        // the extent here is what keeps that arrangement readable from this
-        // surface instead of living as an offset in the shell.
-        // The parent is a Row, so its cross axis is vertical, which is this
-        // Column's own MAIN axis -- and a container's intrinsic extent sums
-        // its children plus gaps only along its main axis
-        // (PortableUILayout.hpp's IntrinsicForNode). Those two axes coinciding
-        // is why this resolves to the four buttons plus three gaps.
-        columnLayout.cross = synth::ui::Extent::Intrinsic();
-        columnLayout.padding = 0.0f;
-        columnLayout.gap = FroggersPageLayout::kGap;
-        builder.Column(FroggersNodeIds::kLeftButtons, columnLayout, [](synth::ui::Builder& b) {
-            for (const FroggersCellMap::ButtonCell& button : FroggersCellMap::kRandomizeResetButtons) {
-                synth::ui::ControlStyle style{};
-                style.layout.main = synth::ui::Extent::Intrinsic();
-                style.layout.cross = synth::ui::Extent::Intrinsic();
-                b.Button(button.id, button.label, synth::ui::Action::Named(button.action), style);
-            }
+        synth::ui::LayoutOptions groupLayout;
+        // Intrinsic along the parent Row's main axis: the group is exactly
+        // as wide as its widest button (kLeftButtons' own intrinsic width,
+        // below), leaving everything else to the stack -- the slot's own
+        // Weight(1) cross contributes nothing to THIS estimate (a Draw leaf
+        // has no intrinsic size), so it never widens the group past that.
+        groupLayout.main = synth::ui::Extent::Intrinsic();
+        // Weighted on the cross axis: unlike kLeftButtons, the GROUP fills
+        // the block's full height, so the slot inside it has the block's
+        // remaining height (below the buttons) to occupy.
+        groupLayout.cross = synth::ui::Extent::Weight(1.0f);
+        groupLayout.padding = 0.0f;
+        groupLayout.gap = FroggersPageLayout::kGap;
+        builder.Column(FroggersNodeIds::kLeftButtonsGroup, groupLayout, [](synth::ui::Builder& group) {
+            synth::ui::LayoutOptions columnLayout;
+            columnLayout.main = synth::ui::Extent::Intrinsic();
+            // Intrinsic on the cross axis too, so the column's own box ENDS
+            // where its last button ends rather than running to the bottom
+            // of the group -- the empty slot below (kSidebarSlot) is what
+            // fills the rest, not this column stretching into it. The
+            // parent here is now kLeftButtonsGroup (a Column), so this
+            // Column's own MAIN axis (height) is ALSO the group's main
+            // axis -- and a container's intrinsic extent sums its children
+            // plus gaps only along its main axis (PortableUILayout.hpp's
+            // IntrinsicForNode). Those two axes coinciding is why this
+            // resolves to the four buttons plus three gaps.
+            columnLayout.cross = synth::ui::Extent::Intrinsic();
+            columnLayout.padding = 0.0f;
+            columnLayout.gap = FroggersPageLayout::kGap;
+            group.Column(FroggersNodeIds::kLeftButtons, columnLayout, [](synth::ui::Builder& b) {
+                for (const FroggersCellMap::ButtonCell& button : FroggersCellMap::kRandomizeResetButtons) {
+                    synth::ui::ControlStyle style{};
+                    style.layout.main = synth::ui::Extent::Intrinsic();
+                    style.layout.cross = synth::ui::Extent::Intrinsic();
+                    b.Button(button.id, button.label, synth::ui::Action::Named(button.action), style);
+                }
+            });
+
+            // The reserved slot: an always-empty Draw node (never drawn,
+            // never reachable -- Sheaf's own runtime composes its actual
+            // sidebar into this space, see RuntimeMainComponent.hpp's own
+            // ComputeCompositePosition/SidebarSlot handling), filling
+            // whatever height kLeftButtons above did not and the group's
+            // full width.
+            synth::ui::LayoutOptions slotLayout;
+            slotLayout.main = synth::ui::Extent::Weight(1.0f);
+            slotLayout.cross = synth::ui::Extent::Weight(1.0f);
+            group.Draw(FroggersNodeIds::kSidebarSlot, slotLayout,
+                       [](synth::ui::Bounds) -> std::vector<synth::ui::DrawCommand> { return {}; });
         });
     }
 
@@ -1528,21 +1685,22 @@ private:
 
     // -- Right block (FroggersCellMap, columns E1-E4) -----------------
 
-    void AppendRightBlock(synth::ui::Builder& builder) const {
+    // `narrow`/`narrowHeight`: see AppendLeftBlock()'s own comment.
+    void AppendRightBlock(synth::ui::Builder& builder, bool narrow, float narrowHeight) const {
         synth::ui::LayoutOptions blockLayout;
-        blockLayout.main = synth::ui::Extent::Weight(narrowViewport_ ? FroggersCellMap::kRightBlockWeightNarrow
-                                                                     : FroggersCellMap::kRightBlockWeight);
+        blockLayout.main = narrow ? synth::ui::Extent::Px(narrowHeight)
+                                   : synth::ui::Extent::Weight(FroggersCellMap::kRightBlockWeight);
         blockLayout.cross = synth::ui::Extent::Weight(1.0f);
         blockLayout.padding = 0.0f;
         blockLayout.gap = FroggersPageLayout::kGap;
-        builder.Column(FroggersNodeIds::kRightBlock, blockLayout, [this](synth::ui::Builder& b) {
+        builder.Column(FroggersNodeIds::kRightBlock, blockLayout, [this, narrow](synth::ui::Builder& b) {
             for (const FroggersCellMap::RightRow& row : FroggersCellMap::kRightRows) {
-                AppendRightRow(b, row);
+                AppendRightRow(b, row, narrow);
             }
         });
     }
 
-    void AppendRightRow(synth::ui::Builder& builder, const FroggersCellMap::RightRow& row) const {
+    void AppendRightRow(synth::ui::Builder& builder, const FroggersCellMap::RightRow& row, bool narrow) const {
         switch (row.kind) {
             case FroggersCellMap::RightKind::PageTabs:
                 AppendPageTabsRow(builder);
@@ -1559,13 +1717,13 @@ private:
             // width. Skipping them here rather than selecting a second row
             // table keeps kRightRows the one description of this column.
             case FroggersCellMap::RightKind::Randomize:
-                if (narrowViewport_) {
+                if (narrow) {
                     return;
                 }
                 AppendRandomizeRow(builder);
                 return;
             case FroggersCellMap::RightKind::Reset:
-                if (narrowViewport_) {
+                if (narrow) {
                     return;
                 }
                 AppendResetRow(builder);
@@ -2148,6 +2306,16 @@ private:
     }
 
     void HandleAction(const synth::ui::Action& action) {
+        // A UI-only flag, read by BuildTree()/RootBounds()/SidebarSlot()
+        // alone -- never app_, and never gated on it: a bare-context
+        // surface (no app_ attached, this file's own layout-only test
+        // convention, e.g. BuildFroggersTreeAt()) still has to resolve
+        // narrow layouts, since the layout is exactly what those tests
+        // check.
+        if (action.name == FroggersActions::kViewportWidth) {
+            viewportWidth_ = FroggersParseFloat(action.value, 0.0f);
+            return;
+        }
         if (app_ == nullptr) {
             return;
         }
@@ -2367,12 +2535,6 @@ private:
             }
             return;
         }
-        if (action.name == FroggersActions::kViewportNarrow) {
-            // A UI-only flag, same as pluginHostMode_ -- no PushMessage,
-            // the audio thread has no concept of viewport width.
-            narrowViewport_ = (action.value == "1");
-            return;
-        }
     }
 
     void PushMessage(const synth::MessageIn& message) {
@@ -2416,20 +2578,19 @@ private:
     // existing construction of this class -- default constructed, this flag
     // never touched -- renders exactly as before.
     bool pluginHostMode_ = false;
-    // Set only by kViewportNarrow, which a browser shell dispatches to
-    // report its own viewport width. Purely a rendering choice -- which
-    // outer split weights AppendLeftBlock/AppendRightBlock declare, and
-    // whether the chrome block is a plain stack or a stack beside a button
-    // column -- so it never reaches the audio thread, same as
-    // pluginHostMode_ above. Defaults false, so every existing
-    // construction of this class (default constructed, no such action ever
-    // dispatched) renders exactly as before.
-    bool narrowViewport_ = false;
+    // Set only by kViewportWidth, which a browser shell dispatches to
+    // report its own viewport width in CSS px. Purely a rendering choice
+    // (RootBounds()/BuildTree()/IsNarrowViewport() above) -- it never
+    // reaches the audio thread, same as pluginHostMode_ above. Defaults to
+    // 0.0f (the desktop case, IsNarrowViewport()'s own comment), so every
+    // existing construction of this class (default constructed, no such
+    // action ever dispatched) renders exactly as before.
+    float viewportWidth_ = 0.0f;
     // The refusal text shown in the transport row until a recording arms or
     // the transport starts. Set by HandleAction's kRecord branch and
     // cleared by StartTransport() (the kPlay branch, and the Freeze release
     // that resumes playing), read fresh into the transport row lambda every
-    // rebuild, same per-frame idiom as pluginHostMode_/narrowViewport_
+    // rebuild, same per-frame idiom as pluginHostMode_/viewportWidth_
     // above.
     std::string transportNotice_;
     // Whether the transport was running the moment Freeze last engaged the

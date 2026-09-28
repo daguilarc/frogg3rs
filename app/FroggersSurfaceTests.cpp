@@ -27,6 +27,7 @@
 #include "synth/MasterClock.hpp"
 #include "synth/ParameterModulation.hpp"
 #include "synth/PortableUI.hpp"
+#include "synth/RuntimePages.hpp"
 
 #ifdef JUCE_MAJOR_VERSION
 #error "Froggers surface tests must not see JUCE headers"
@@ -2513,7 +2514,7 @@ TEST_CASE(randomize_reset_sit_beside_the_sliders_in_a_narrow_viewport) {
     // dispatching it here exercises the same path the shell takes rather
     // than reaching past it to the flag.
     surface.DispatchAction(
-        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kViewportNarrow, "1"));
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kViewportWidth, "390"));
     rig.RunBlocks(4);
 
     const synth::ui::NodeTree narrow = surface.BuildTree();
@@ -2521,9 +2522,9 @@ TEST_CASE(randomize_reset_sit_beside_the_sliders_in_a_narrow_viewport) {
     const synth::ui::Bounds grid = AbsoluteBounds(narrow, synth_froggers::FroggersNodeIds::kRightBlock);
     REQUIRE_TRUE(chrome.width > 0.0f && grid.width > 0.0f);
 
-    // The shell derives ONE scale from the grid block and applies it to
-    // every stacked block, so equal design widths here are what makes the
-    // chrome block span the viewport on a phone instead of half of it.
+    // The chrome and grid blocks are now stacked -- each spans the root
+    // less its margins by construction (FroggersPageLayout::RootBounds()'s
+    // own comment), so they are the same width exactly, not merely close.
     REQUIRE_TRUE(std::fabs(chrome.width - grid.width) <= grid.width * 0.05f);
 
     const synth::ui::Bounds bpm = AbsoluteBounds(narrow, synth_froggers::FroggersNodeIds::kBpm);
@@ -2552,12 +2553,13 @@ TEST_CASE(randomize_reset_sit_beside_the_sliders_in_a_narrow_viewport) {
     }
 
     // The column's own box has to END at its last button, not run to the
-    // bottom of the block. The browser shell reads exactly this box to find
-    // where the space beside the sliders begins, and places Sheaf's runtime
-    // sidebar there -- a block this surface cannot contain. A column that
-    // filled the block would put that sidebar off the bottom of the chrome
-    // block, where the mount's own clipping would hide it rather than show
-    // it in the wrong place.
+    // bottom of the block: the empty slot the runtime places its own
+    // sidebar into (FroggersNodeIds::kSidebarSlot, a sibling of this
+    // column under kLeftButtonsGroup -- see
+    // narrow_sidebar_slot_sits_under_the_buttons below) fills whatever
+    // this column does not. A column that filled the block would leave
+    // that slot zero height, pushing the sidebar off the bottom of the
+    // chrome block instead of showing it beneath the buttons.
     const synth::ui::Bounds buttonColumn =
         AbsoluteBounds(narrow, synth_froggers::FroggersNodeIds::kLeftButtons);
     const synth::ui::Bounds lastButton = AbsoluteBounds(
@@ -2582,6 +2584,149 @@ TEST_CASE(randomize_reset_sit_beside_the_sliders_in_a_narrow_viewport) {
               << ", button column " << buttonColumn.height << " tall leaving "
               << (chrome.y + chrome.height) - (buttonColumn.y + buttonColumn.height)
               << " under it\n";
+}
+
+// FroggersUiSurface implements synth::ui::SelfSizedSurface (sprs-19): at a
+// narrow reported width, RootBounds() returns a root sized to fit the
+// chrome block stacked above the grid block, and BuildTree() actually
+// builds that stack -- the two can never disagree since both read
+// FroggersPageLayout::RootBounds()/ComputeNarrowBlockHeights().
+TEST_CASE(narrow_layout_stacks_chrome_above_the_grid) {
+    for (float width : {320.0f, 390.0f, 412.0f, 720.0f}) {
+        synth::RuntimeConfig config = synth_froggers::FroggersApp::Config();
+        synth::AppContext context;
+        context.config = &config;
+        synth_froggers::FroggersUiSurface surface;
+        surface.Attach(&context, nullptr);
+        surface.DispatchAction(synth::ui::Action::WithValue(
+            synth_froggers::FroggersActions::kViewportWidth, std::to_string(width)));
+        const synth::ui::NodeTree tree = surface.BuildTree();
+
+        // Root width is as FroggersPageLayout::RootBounds() defines it
+        // (clamped up to kNarrowMinWidth), and BuildTree() actually built
+        // to exactly that root.
+        const synth::ui::Bounds expectedRoot = synth_froggers::FroggersPageLayout::RootBounds(&context, width);
+        const float expectedRootWidth = std::max(width, synth_froggers::FroggersPageLayout::kNarrowMinWidth);
+        REQUIRE_TRUE(std::fabs(expectedRoot.width - expectedRootWidth) < 0.01f);
+        const synth::ui::Bounds builtRoot = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kRoot);
+        REQUIRE_TRUE(std::fabs(builtRoot.width - expectedRoot.width) < 0.01f);
+        REQUIRE_TRUE(std::fabs(builtRoot.height - expectedRoot.height) < 0.01f);
+
+        // Chrome above the grid, no vertical overlap.
+        const synth::ui::Bounds chrome = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kLeftBlock);
+        const synth::ui::Bounds grid = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kRightBlock);
+        REQUIRE_TRUE(chrome.width > 0.0f && grid.width > 0.0f);
+        REQUIRE_TRUE(chrome.y + chrome.height <= grid.y + 0.01f);
+        REQUIRE_TRUE(!Overlaps(chrome, grid));
+
+        // Both blocks span the root less its margins.
+        const float expectedBlockWidth = expectedRoot.width - 2.0f * synth_froggers::FroggersPageLayout::kMargin;
+        REQUIRE_TRUE(std::fabs(chrome.width - expectedBlockWidth) < 0.01f);
+        REQUIRE_TRUE(std::fabs(grid.width - expectedBlockWidth) < 0.01f);
+
+        // One node per Randomize/Reset button.
+        for (const synth_froggers::FroggersCellMap::ButtonCell& button :
+             synth_froggers::FroggersCellMap::kRandomizeResetButtons) {
+            std::size_t occurrences = 0;
+            for (const synth::ui::Node& node : tree.nodes) {
+                if (node.id == button.id) {
+                    ++occurrences;
+                }
+            }
+            REQUIRE_TRUE(occurrences == 1);
+        }
+
+        std::cout << "  [narrow root @" << width << "] root " << expectedRoot.width << "x"
+                  << expectedRoot.height << ", chrome " << chrome.width << "x" << chrome.height
+                  << ", grid " << grid.width << "x" << grid.height << "\n";
+    }
+}
+
+// The runtime sidebar (Sheaf's RuntimeMainComponent) composes into
+// whatever node FroggersUiSurface::SidebarSlot() names, so that node has to
+// exist, sit where an operator would look for it (under the buttons, beside
+// the sliders), and be at least as large as the sidebar itself resolves to.
+TEST_CASE(narrow_sidebar_slot_sits_under_the_buttons) {
+    synth::RuntimeConfig config = synth_froggers::FroggersApp::Config();
+    synth::AppContext context;
+    context.config = &config;
+    synth_froggers::FroggersUiSurface surface;
+    surface.Attach(&context, nullptr);
+    surface.DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kViewportWidth, "390"));
+    const synth::ui::NodeTree tree = surface.BuildTree();
+
+    const synth::ui::SelfSizedSurface& selfSized = surface;
+    const std::optional<synth::ui::NodeId> slotId = selfSized.SidebarSlot();
+    REQUIRE_TRUE(slotId.has_value());
+    REQUIRE_TRUE(*slotId == synth::ui::NodeId(synth_froggers::FroggersNodeIds::kSidebarSlot));
+
+    const synth::ui::Bounds chrome = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kLeftBlock);
+    const synth::ui::Bounds slot = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kSidebarSlot);
+    const synth::ui::Bounds bpm = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kBpm);
+    REQUIRE_TRUE(slot.width > 0.0f && slot.height > 0.0f);
+    REQUIRE_TRUE(FullyInside(slot, chrome));
+
+    // Below the lowest Randomize/Reset button.
+    float lowestButtonBottom = 0.0f;
+    for (const synth_froggers::FroggersCellMap::ButtonCell& button :
+         synth_froggers::FroggersCellMap::kRandomizeResetButtons) {
+        const synth::ui::Bounds box = AbsoluteBounds(tree, button.id);
+        lowestButtonBottom = std::max(lowestButtonBottom, box.y + box.height);
+    }
+    REQUIRE_TRUE(slot.y + 0.01f >= lowestButtonBottom);
+
+    // Right of the BPM slider's centre.
+    REQUIRE_TRUE(slot.x + slot.width * 0.5f > bpm.x + bpm.width * 0.5f);
+
+    // At least as large as the runtime sidebar it will hold, for the row
+    // count the runtime actually computes for frogg3rs's sidebar: the
+    // default synth::runtime_ui::RuntimeSidebarPages (every field true) and
+    // no registered app page, since FroggersMain.cpp never customizes
+    // either.
+    const int rowCount = synth::runtime_ui::DeclaredSidebarRowCount(synth::runtime_ui::RuntimeSidebarPages{});
+    const synth::ui::Bounds minimum = synth::runtime_ui::Layout::SidebarRootBounds(rowCount);
+    REQUIRE_TRUE(slot.width >= minimum.width - 0.01f);
+    REQUIRE_TRUE(slot.height >= minimum.height - 0.01f);
+
+    std::cout << "  [sidebar slot] " << slot.width << "x" << slot.height << " vs. minimum "
+              << minimum.width << "x" << minimum.height << " (rowCount " << rowCount << ")\n";
+}
+
+// A width above the narrow limit -- and no reported width at all -- both
+// keep the desktop layout: config bounds, no declared slot, the wide
+// side-by-side weights.
+TEST_CASE(a_width_above_the_narrow_limit_keeps_the_desktop_layout) {
+    for (bool dispatchWidth : {false, true}) {
+        synth::RuntimeConfig config = synth_froggers::FroggersApp::Config();
+        synth::AppContext context;
+        context.config = &config;
+        synth_froggers::FroggersUiSurface surface;
+        surface.Attach(&context, nullptr);
+        if (dispatchWidth) {
+            surface.DispatchAction(
+                synth::ui::Action::WithValue(synth_froggers::FroggersActions::kViewportWidth, "721"));
+        }
+        const synth::ui::NodeTree tree = surface.BuildTree();
+
+        const synth::ui::Bounds root = synth_froggers::FroggersPageLayout::RootBounds(&context);
+        REQUIRE_TRUE(std::fabs(root.width - synth_froggers::FroggersPageLayout::kDefaultWidth) < 0.01f);
+        REQUIRE_TRUE(std::fabs(root.height - synth_froggers::FroggersPageLayout::kDefaultHeight) < 0.01f);
+        const synth::ui::Bounds builtRoot = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kRoot);
+        REQUIRE_TRUE(std::fabs(builtRoot.width - root.width) < 0.01f);
+        REQUIRE_TRUE(std::fabs(builtRoot.height - root.height) < 0.01f);
+
+        const synth::ui::SelfSizedSurface& selfSized = surface;
+        REQUIRE_TRUE(!selfSized.SidebarSlot().has_value());
+
+        const synth::ui::Bounds chrome = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kLeftBlock);
+        const synth::ui::Bounds grid = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kRightBlock);
+        REQUIRE_TRUE(chrome.width > 0.0f && grid.width > 0.0f);
+        // Side by side, not stacked -- and the desktop's 2:4 split.
+        REQUIRE_TRUE(chrome.x + chrome.width <= grid.x + 0.01f);
+        REQUIRE_TRUE(std::fabs(chrome.height - grid.height) < 0.5f);
+        REQUIRE_TRUE(grid.width > chrome.width * 1.5f);
+    }
 }
 
 TEST_CASE(reset_all_clears_values_and_neutralises_depths_end_to_end) {
@@ -3406,7 +3551,8 @@ TEST_CASE(record_action_refused_while_stopped_shows_the_transport_notice) {
     // stack's (froggers.layout.left.transport.stack, the Column wrapping
     // the plates Row and the notice line -- not the plates Row itself,
     // which the notice sits BELOW as the stack's second child), in this
-    // wide-layout default (narrowViewport_ defaults false).
+    // wide-layout default (viewportWidth_ defaults to 0.0f, the desktop
+    // case).
     const synth::ui::Bounds noticeBounds =
         AbsoluteBounds(refusedTree, synth_froggers::FroggersNodeIds::kTransportNotice);
     const synth::ui::Bounds transportStackBounds =

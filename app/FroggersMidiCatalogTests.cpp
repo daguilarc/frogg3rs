@@ -400,12 +400,12 @@ TEST_CASE(catalog_names_every_front_screen_action) {
     // kEncoderPress    -- the catalog's own encoderPressAction, not a listed action.
     // kEncoderDrag     -- the screen's mouse route into the library's ParamIncDec.
     // kInputSelect     -- the plugin host's input picker, not offered.
-    // kViewportNarrow  -- a browser shell flag, not a control.
+    // kViewportWidth   -- the browser shell's reported viewport width, not a control.
     REQUIRE_TRUE(screenActionNames.count(synth_froggers::FroggersActions::kSceneBlend) == 0);
     REQUIRE_TRUE(screenActionNames.count(synth_froggers::FroggersActions::kEncoderPress) == 0);
     REQUIRE_TRUE(screenActionNames.count(synth_froggers::FroggersActions::kEncoderDrag) == 0);
     REQUIRE_TRUE(screenActionNames.count(synth_froggers::FroggersActions::kInputSelect) == 0);
-    REQUIRE_TRUE(screenActionNames.count(synth_froggers::FroggersActions::kViewportNarrow) == 0);
+    REQUIRE_TRUE(screenActionNames.count(synth_froggers::FroggersActions::kViewportWidth) == 0);
 
     REQUIRE_TRUE(catalogActionNames == screenActionNames);
     REQUIRE_TRUE(catalog.encoderPressAction == synth_froggers::FroggersActions::kEncoderPress);
