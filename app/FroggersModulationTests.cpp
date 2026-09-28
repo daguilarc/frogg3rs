@@ -705,6 +705,49 @@ TEST_CASE(crispy_and_crunchy_are_registered_as_one_way_amount_targets) {
     REQUIRE_TRUE(fx.model.Crunchy().TargetKind() == synth::ModulationTargetKind::kOneWayAmount);
 }
 
+TEST_CASE(crispy_depth_only_ever_adds_scramble_never_subtracts) {
+    Fixture fx;
+    synth::Parameter& crispy = fx.model.Crispy(FroggersBankId::Reverb);
+    for (const synth::SceneState& pole : detail::kScenePoles) {
+        crispy.HandleSetAbsolute(pole, 0.1f);
+    }
+    fx.StepOnce(/*externalConnected=*/true, /*externalAudioSample=*/0.6f);
+    fx.model.Group().UpdateModValues();
+    REQUIRE_NEAR(fx.slate.SourceValue(kModSlotExternalAudio), 0.8f, 1e-6f);  // NormalizeBipolarToUnit(0.6) == 0.8.
+
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    drillIn.PressEncoder(kFroggersCrispySlot);
+    synth::Parameter* depth = crispy.ModulationDepthParameter(kModSlotExternalAudio);
+    REQUIRE_TRUE(depth != nullptr);
+    for (const synth::SceneState& pole : detail::kScenePoles) {
+        depth->SceneCenter(pole.leftScene) = 1.0f;  // one-way raw depth == 1.0 (full)
+    }
+    fx.manager.ComputeAllParameters();
+    REQUIRE_NEAR(crispy.GetRaw(0), 0.9f, 1e-4f);  // 0.1 + 1.0*0.8 == 0.9 (the attenuverter law would read 0.4).
+
+    // The SAME depth cell, driven with HandleSetAbsolute(scene, 0.1f) -- an
+    // attempt to set it into what was, before this change, the negative
+    // half -- lands its own stored raw value at exactly 0.5 (S1.5's own
+    // floor, not 0.1), and Crispy's own resolved value reads back
+    // UNCHANGED at 0.1 (off, not a subtracted value), with the route still
+    // assigned.
+    for (const synth::SceneState& pole : detail::kScenePoles) {
+        depth->HandleSetAbsolute(pole, 0.1f);
+    }
+    for (const synth::SceneState& pole : detail::kScenePoles) {
+        REQUIRE_NEAR(depth->SceneCenter(pole.leftScene), 0.5f, 1e-4f);
+    }
+    fx.manager.ComputeAllParameters();
+    REQUIRE_NEAR(crispy.GetRaw(0), 0.1f, 1e-4f);
+    REQUIRE_TRUE(crispy.ModulationDepthParameter(kModSlotExternalAudio) == depth);
+}
+
+// The one clause most likely to read as a bug to a future maintainer who has
+// not read design.md: a bipolar-metadata source at ITS OWN rest still nudges
+// Crispy/Crunchy's amount up by half depth, where the same source contributes
+// exactly nothing to a real (sound) parameter's attenuverter law at the same
+// rest value (see connected_external_audio_modulation_reaches_a_destination_
+// end_to_end above for the contrast).
 TEST_CASE(disconnected_external_audio_never_receives_randomized_depth) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/false);
