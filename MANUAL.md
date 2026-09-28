@@ -128,13 +128,15 @@ beneath the transport buttons until Play is pressed or a recording arms. A captu
 
 Click any parameter's encoder — a page parameter, a page's own Crispy, or Crunchy — to open
 a modulation view for that one parameter. It exposes 15 modulation sources, each with its own signed
-depth. A depth of 0 means that source is off for this parameter. Turning a source's depth changes how
-hard that source pushes the target, and depths on the same parameter sum together. Clicking one of
-those depth's own encoder drills further in, to a modulation view for that depth, up to three levels
-deep in all. Click the parameter's encoder again, or the back target in the corner, to go up exactly
-one level — from the deepest level this returns to the level above it, not out of the modulation view
-entirely. Pressing the currently viewed page's own sidebar button leaves every level at once, back to
-that page's top-level parameter grid.
+depth. A depth of 0 means that source is off for this parameter. The parameter's own knob sets its
+centre; each source swings the target around that centre, scaled by that source's own signed depth.
+Several sources' swings sum together, clamped to the control's own travel. Turning a depth past its
+centre position inverts which way that source pushes. Clicking one of those depth's own encoder drills
+further in, to a modulation view for that depth, up to three levels deep in all. Click the parameter's
+encoder again, or the back target in the corner, to go up exactly one level — from the deepest level
+this returns to the level above it, not out of the modulation view entirely. Pressing the currently
+viewed page's own sidebar button leaves every level at once, back to that page's top-level parameter
+grid.
 
 The view fills the same 4×4 grid the parameters use: 15 sources and, in the last slot, the way back
 out.
