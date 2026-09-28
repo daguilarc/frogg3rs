@@ -150,6 +150,17 @@ TEST_CASE(bank_layouts_have_nine_named_parameters_plus_fixed_crispy_and_crunchy)
     REQUIRE_TRUE(manager.ParameterCount() == 91);
 }
 
+// The app's one CreateGroup() call (FroggersParameterModel::Init) opts every
+// Froggers page parameter and every nested modulation view into the
+// attenuverter blend law, not Sheaf's kCrossfade default.
+TEST_CASE(the_one_parameter_group_is_configured_for_the_attenuverter_blend_mode) {
+    synth::ParameterManager manager;
+    synth_froggers::FroggersParameterModel model;
+    model.Init(manager);
+
+    REQUIRE_TRUE(model.Group().Config().modulationBlendMode == synth::ModulationBlendMode::kAttenuverter);
+}
+
 // --- 4.5 check 2: Crispy/Crunchy identity stable across bank changes -------
 
 TEST_CASE(crispy_and_crunchy_identity_stable_when_active_bank_changes) {

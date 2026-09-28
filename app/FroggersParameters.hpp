@@ -417,6 +417,7 @@ public:
             .numModulators = kNumModulators,
             .numScenes = kNumScenes,
             .maxParameters = kMaxParameters,
+            .modulationBlendMode = synth::ModulationBlendMode::kAttenuverter,
         });
 
         // Crunchy is ONE Parameter, created before any bank so
