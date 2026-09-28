@@ -243,8 +243,8 @@ TEST_CASE(envelope_follower_sources_are_registered_as_resting_at_zero) {
     REQUIRE_TRUE(fx.slate.Metadata(kModSlotVco3Ef).restsAtZero);
     REQUIRE_TRUE(fx.slate.Metadata(kModSlotExternalAudioEf).restsAtZero);
 
-    // Every other slot -- including kModSlotVco1Audio, named explicitly in
-    // this task's own check -- keeps S1.1's default, restsAtZero == false.
+    // Every other slot -- including kModSlotVco1Audio -- keeps S1.1's
+    // default, restsAtZero == false.
     for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
         if (modIx == kModSlotVco1Ef || modIx == kModSlotVco2Ef || modIx == kModSlotVco3Ef ||
             modIx == kModSlotExternalAudioEf) {
@@ -296,8 +296,8 @@ TEST_CASE(a_resting_envelope_follower_source_contributes_nothing_regardless_of_d
 // the follower's exponential attack (~10ms time constant,
 // SingleEnvelopeFollower::SetSampleRate) saturates its [0,1] level to 1.0f
 // within float32 precision, must push the resolved value up by HALF the
-// applied depth, not the whole depth -- Finding A's own defect, reproduced
-// deliberately in this task's own red stage (b), read the full +1.0.
+// applied depth, not the whole depth -- Finding A's own defect read the
+// full +1.0 here instead, with the halving absent.
 TEST_CASE(a_fully_driven_envelope_follower_source_pushes_up_by_half_the_depth_not_the_whole_depth) {
     Fixture fx;
     for (int i = 0; i < 20000; ++i) {
@@ -535,59 +535,66 @@ TEST_CASE(external_audio_cells_present_and_inert_with_no_input) {
 // The metadata flag and the depth cell's mere existence (both proven above)
 // are not proof that modulation actually reaches a destination: a connected
 // source with a materialized but unread depth would look identical on both
-// counts. This proves the source's VALUE flows through: at a full (|depth|
-// == 1.0) route, the resolved value is driven entirely by the source and the
-// destination's own commanded center contributes nothing at all
-// (`Parameter::ComputeAtDepth`'s weightSum>=1.0 branch,
-// External/Sheaf/projects/synth/src/ParameterModulation.cpp, zeroes
-// targetCenterScales_ -- see AttachFullPositiveAudioRateModulation's own
-// comment, below, for the fuller derivation). So pinning the destination's
-// commanded value to a KNOWN quantity, then attaching a full-positive
-// external-audio route, must move the resolved value away from that known
-// quantity and toward the source's own -- a swing that cannot happen unless
-// the source's value actually reached the destination. The destination is
-// pinned explicitly (`HandleSetAbsolute`) rather than read as whatever its
-// unexamined default happens to be: this fixture's StepOnce() defaults
-// `externalAudioSample` to 0.0f, so the external-audio source's own value
-// here is exactly 0.5 (externalAudioSource_'s NSDMI, and what a 0.0f sample
-// normalizes to -- Step()'s own comment), and 0.5 is
-// `NormalizeBipolarToUnit`'s "no signal" convention, so a destination
-// that ALSO happened to default to 0.5 would make full-positive and
-// full-negative depth resolve identically (verified empirically: they do,
-// at exactly 0.5, for this bank's own default) -- a coincidence of the
-// destination's default, not proof of anything. Pinning it to 1.0 removes
-// that dependency entirely. `Parameter::TargetValue` is the private
-// accessor this mechanism is named after; `GetRaw(0)` (public) reads the
-// same resolved quantity through `currentCenter_`/`CurrentDepthSlots`, which
+// counts. This proves the source's VALUE flows through, with exact numbers
+// under the attenuverter law rather than a loose swing: pinning the
+// destination's own commanded center to a known quantity (0.2, away from
+// both the external-audio source's own value here, 0.9, and the range's own
+// floor/ceiling), then attaching one full-depth route, must move the
+// resolved value to exactly `center + depth * (source - 0.5)`
+// (`TargetCenterScale` stays fixed at `1` under
+// `kAttenuverter` -- `Parameter::ComputeAtDepth`,
+// External/Sheaf/projects/synth/src/ParameterModulation.cpp -- for this
+// route's own rest point, `0.5`, since External Audio is not one of the
+// four `restsAtZero` sources). A full-negative depth inverts which way the
+// source pushes and, at this center and source value, its own unclamped sum
+// falls below the parameter's range floor -- doubling as coverage of the
+// ruled "the sum is clamped to the parameter's own range" clause. The
+// destination is pinned explicitly (`HandleSetAbsolute`) so both cases read
+// against a known, non-neutral quantity rather than whatever an unexamined
+// default happens to be. `GetRaw(0)` reads the resolved quantity through
+// `currentCenter_`/`CurrentDepthSlots`, which
 // `ParameterManager::ComputeAllParameters()`'s `SnapCurrentToTarget()` call
-// keeps equal to the target ones (External/Sheaf/projects/synth/src/ParameterModulation.cpp) --
-// the same convergence AttachFullPositiveAudioRateModulation's
-// own comment relies on for the depth parameter's `GetRaw()`.
+// keeps equal to the target ones
+// (External/Sheaf/projects/synth/src/ParameterModulation.cpp) -- the same
+// convergence AttachFullPositiveAudioRateModulation's own comment relies on
+// for the depth parameter's `GetRaw()`.
 TEST_CASE(connected_external_audio_modulation_reaches_a_destination_end_to_end) {
     Fixture fx;
-    fx.StepOnce(/*externalConnected=*/true);
+    // 0.8f bipolar normalizes to (0.8 + 1) / 2 = 0.9 -- moves the
+    // external-audio source's normalized value off its "no signal" 0.5.
+    fx.StepOnce(/*externalConnected=*/true, /*externalAudioSample=*/0.8f);
     fx.model.Group().UpdateModValues();
 
     synth::Parameter& target = fx.model.PageParameter(FroggersBankId::Reverb, 0);
     for (const synth::SceneState& pole : detail::kScenePoles) {
-        target.HandleSetAbsolute(pole, 1.0f);  // known quantity, deliberately far from the source's own 0.5.
+        target.HandleSetAbsolute(pole, 0.2f);
     }
     fx.manager.ComputeAllParameters();
     const float unmodulated = target.GetRaw(0);
+    REQUIRE_NEAR(unmodulated, 0.2f, 1e-5f);
 
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
     drillIn.PressEncoder(0);
     synth::Parameter* depth = target.ModulationDepthParameter(kModSlotExternalAudio);
     REQUIRE_TRUE(depth != nullptr);
+
+    // Full-positive depth (SceneCenter == 1.0 -> signed depth == +1.0, an
+    // exact anchor of ModulationDepthTargetFromKnob's curve).
     for (const synth::SceneState& pole : detail::kScenePoles) {
-        depth->SceneCenter(pole.leftScene) = 1.0f;  // full-positive bipolar depth
+        depth->SceneCenter(pole.leftScene) = 1.0f;
     }
     fx.manager.ComputeAllParameters();
-    const float modulated = target.GetRaw(0);
+    const float modulatedPositive = target.GetRaw(0);
+    REQUIRE_NEAR(modulatedPositive, 0.6f, 1e-4f);  // 0.2 - 0.5*1.0 + 1.0*0.9 == 0.6
 
-    std::cout << "connected_external_audio_modulation_reaches_a_destination_end_to_end: unmodulated="
-              << unmodulated << " modulated=" << modulated << "\n";
-    REQUIRE_TRUE(std::fabs(modulated - unmodulated) > 0.3f);
+    // Full-negative depth (SceneCenter == 0.0 -> signed depth == -1.0).
+    for (const synth::SceneState& pole : detail::kScenePoles) {
+        depth->SceneCenter(pole.leftScene) = 0.0f;
+    }
+    fx.manager.ComputeAllParameters();
+    const float modulatedNegative = target.GetRaw(0);
+    // 0.2 - 0.5*(-1.0) + (-1.0)*0.9 == -0.2, clamped to the range floor.
+    REQUIRE_NEAR(modulatedNegative, 0.0f, 1e-4f);
 }
 
 TEST_CASE(disconnected_external_audio_never_receives_randomized_depth) {
