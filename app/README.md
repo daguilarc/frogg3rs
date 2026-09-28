@@ -31,7 +31,9 @@ before reading a partial result as green.
 
 A full port of the Froggers synth onto Sheaf: the DSP, parameter/bank model,
 modulation slate, and portable UI surface live under `app/` alongside this
-file; `app/vst/` hosts the VST3/AU plugin build, and `app/browser/` hosts the
-browser build and its site/e2e suite. `Main.cpp` is a minimal build-skeleton
-translation unit kept separate from the real app entry points
+file; `app/vst/` hosts the VST3/AU plugin build, `app/browser/` hosts the
+browser build and its site/e2e suite, and `app/standalone/` hosts the Windows
+standalone build, a CMake project producing the same application
+`app/build-launcher.sh` produces on macOS. `Main.cpp` is a minimal
+build-skeleton translation unit kept separate from the real app entry points
 (`Froggers.hpp`/`FroggersMain.cpp`) -- see its own header comment.
