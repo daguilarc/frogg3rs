@@ -27,6 +27,17 @@ CXXFLAGS ?= -std=c++20 -Wall -Wextra -Wpedantic -O2
 CPPFLAGS := -I$(SHEAF_SYNTH_DIR)/include -DFROGGERS_DSP_CHECKS
 
 BUILD_DIR := $(APP_DIR)/build
+
+# Every C++ rule below writes its own compiler-generated dependency file
+# beside its output (-MMD -MP -MF $@.d), naming every header its
+# translation unit actually includes, transitively. Including them here
+# makes header prerequisites exact and automatic instead of hand-written
+# lists that can fall out of sync with what a source file really includes
+# (a stale test binary passing on a changed header is exactly that
+# failure). `-include`, not `include`: missing on a clean checkout or
+# after `make clean`, and silently skipped rather than erroring.
+-include $(wildcard $(BUILD_DIR)/*.d)
+
 APP_NAME := froggers_skeleton
 APP := $(BUILD_DIR)/$(APP_NAME)
 APP_SOURCES := $(APP_DIR)/Main.cpp
@@ -156,10 +167,10 @@ NO_JUCE_CHECK := $(BUILD_DIR)/check_no_juce
 # --- DSP port (pure, dependency-free, own test suite) ------
 # app/dsp/*.hpp are copies of Froggers DSP formulas -- no
 # #include of src/, and no Sheaf/JUCE dependency at
-# all: the port is deliberately pure DSP. DSP_HEADERS is
-# listed as a prerequisite so editing any ported unit rebuilds the suite.
-DSP_HEADERS := $(wildcard $(APP_DIR)/dsp/*.hpp)
-#
+# all: the port is deliberately pure DSP. Editing any ported unit rebuilds
+# the suite through its own compiler-generated dependency file (see the
+# -MMD -MP -MF flags on every rule below and the -include at the top of
+# this Makefile), not a hand-written header list.
 DSP_TEST_SOURCES := $(APP_DIR)/FroggersDspParityTests.cpp
 DSP_TEST_BIN := $(BUILD_DIR)/froggers_dsp_parity_tests
 
@@ -184,7 +195,7 @@ $(SHEAF_LIB): force
 # the recipe returns, so $(APP) relinks only when libsynth.a's mtime actually
 # moved -- not merely because the sub-make ran.
 $(APP): $(APP_SOURCES) $(SHEAF_LIB) | $(BUILD_DIR)
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(APP_SOURCES) $(SHEAF_LIB) -o $@
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -MF $@.d $(APP_SOURCES) $(SHEAF_LIB) -o $@
 
 # --- mechanical firmware-tree-include guard --------------------
 # Fails the build if any file under app/ (**/*.hpp, **/*.cpp) #includes
@@ -282,8 +293,8 @@ check-delay-capacity-break-proofs:
 	@python3 $(APP_DIR)/check_delay_capacity_break_proofs.py "$(APP_DIR)" "$(CXX)" "-I$(APP_DIR) $(CPPFLAGS) $(CXXFLAGS)" "$(DSP_TEST_SOURCES)"
 
 # --- MIDI Fighter Twister manual-diagram label program target -------------
-$(TWISTER_LABELS_BIN): $(TWISTER_LABELS_SOURCES) $(APP_DIR)/FroggersMidiCatalog.hpp $(APP_DIR)/FroggersParameters.hpp $(APP_DIR)/FroggersUiSurface.hpp $(SHEAF_LIB) | $(BUILD_DIR)
-	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(TWISTER_LABELS_SOURCES) $(SHEAF_LIB) -o $@
+$(TWISTER_LABELS_BIN): $(TWISTER_LABELS_SOURCES) $(SHEAF_LIB) | $(BUILD_DIR)
+	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) -MMD -MP -MF $@.d $(TWISTER_LABELS_SOURCES) $(SHEAF_LIB) -o $@
 
 # Regenerates assets/manual/twister-controls.json from the code and the two
 # PNGs MANUAL.md's MIDI Fighter Twister subsection shows from it. Run this
@@ -311,43 +322,43 @@ check-twister-manual-diagrams-drift: $(TWISTER_LABELS_BIN)
 	@python3 $(APP_DIR)/check_twister_manual_diagrams_drift.py "$(APP_DIR)"
 
 # --- no-JUCE-in-app-core target ---------------------------------------------
-$(NO_JUCE_CHECK): $(NO_JUCE_CHECK_SRC) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(DSP_HEADERS) | $(BUILD_DIR)
-	$(CXX) $(CPPFLAGS) -I$(JUCE_DIR)/modules $(CXXFLAGS) $(NO_JUCE_CHECK_SRC) -o $@
+$(NO_JUCE_CHECK): $(NO_JUCE_CHECK_SRC) | $(BUILD_DIR)
+	$(CXX) $(CPPFLAGS) -I$(JUCE_DIR)/modules $(CXXFLAGS) -MMD -MP -MF $@.d $(NO_JUCE_CHECK_SRC) -o $@
 
 check-no-juce: $(NO_JUCE_CHECK)
 	@echo "check-no-juce: OK - Froggers.hpp (app core) resolves no JUCE header"
 
 # --- headless test target -------------------------------------------------------------
-$(TEST_BIN): $(TEST_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
-	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(TEST_SOURCES) $(SHEAF_LIB) -o $@
+$(TEST_BIN): $(TEST_SOURCES) $(SHEAF_LIB) | $(BUILD_DIR)
+	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) -MMD -MP -MF $@.d $(TEST_SOURCES) $(SHEAF_LIB) -o $@
 
 # --- mono-validation target -------------------------------------------------------------
-$(MONO_VALIDATION_BIN): $(MONO_VALIDATION_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(SHEAF_LIB) | $(BUILD_DIR)
-	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(MONO_VALIDATION_SOURCES) $(SHEAF_LIB) -o $@
+$(MONO_VALIDATION_BIN): $(MONO_VALIDATION_SOURCES) $(SHEAF_LIB) | $(BUILD_DIR)
+	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) -MMD -MP -MF $@.d $(MONO_VALIDATION_SOURCES) $(SHEAF_LIB) -o $@
 
 # --- parameter-model target ----------------------------------------------------------
-$(PARAMETER_MODEL_BIN): $(PARAMETER_MODEL_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersParameters.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
-	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(PARAMETER_MODEL_SOURCES) $(SHEAF_LIB) -o $@
+$(PARAMETER_MODEL_BIN): $(PARAMETER_MODEL_SOURCES) $(SHEAF_LIB) | $(BUILD_DIR)
+	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) -MMD -MP -MF $@.d $(PARAMETER_MODEL_SOURCES) $(SHEAF_LIB) -o $@
 
 # --- modulation-slate target ------------------------------------------------
-$(MODULATION_BIN): $(MODULATION_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersModulation.hpp $(APP_DIR)/FroggersParameters.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
-	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(MODULATION_SOURCES) $(SHEAF_LIB) -o $@
+$(MODULATION_BIN): $(MODULATION_SOURCES) $(SHEAF_LIB) | $(BUILD_DIR)
+	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) -MMD -MP -MF $@.d $(MODULATION_SOURCES) $(SHEAF_LIB) -o $@
 
 # --- audio-routing target ------------------------------------------------------------
-$(AUDIO_ROUTING_BIN): $(AUDIO_ROUTING_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersModulation.hpp $(APP_DIR)/FroggersParameters.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
-	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(AUDIO_ROUTING_SOURCES) $(SHEAF_LIB) -o $@
+$(AUDIO_ROUTING_BIN): $(AUDIO_ROUTING_SOURCES) $(SHEAF_LIB) | $(BUILD_DIR)
+	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) -MMD -MP -MF $@.d $(AUDIO_ROUTING_SOURCES) $(SHEAF_LIB) -o $@
 
 # --- visualizer target ---------------------------------------------------------
-$(VISUALIZER_BIN): $(VISUALIZER_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersModulation.hpp $(APP_DIR)/FroggersParameters.hpp $(APP_DIR)/FroggersTransferFunctionVisualizer.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
-	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(VISUALIZER_SOURCES) $(SHEAF_LIB) -o $@
+$(VISUALIZER_BIN): $(VISUALIZER_SOURCES) $(SHEAF_LIB) | $(BUILD_DIR)
+	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) -MMD -MP -MF $@.d $(VISUALIZER_SOURCES) $(SHEAF_LIB) -o $@
 
 # --- scope-advance-index target ----------------------------------------------------------
-$(SCOPE_ADVANCE_INDEX_BIN): $(SCOPE_ADVANCE_INDEX_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersModulation.hpp $(APP_DIR)/FroggersParameters.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
-	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(SCOPE_ADVANCE_INDEX_SOURCES) $(SHEAF_LIB) -o $@
+$(SCOPE_ADVANCE_INDEX_BIN): $(SCOPE_ADVANCE_INDEX_SOURCES) $(SHEAF_LIB) | $(BUILD_DIR)
+	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) -MMD -MP -MF $@.d $(SCOPE_ADVANCE_INDEX_SOURCES) $(SHEAF_LIB) -o $@
 
 # --- marbles-clock target ----------------------------------------------------------
-$(MARBLES_CLOCK_BIN): $(MARBLES_CLOCK_SOURCES) $(APP_DIR)/FroggersModulation.hpp $(APP_DIR)/FroggersParameters.hpp $(APP_DIR)/FroggersRandomShVisualizer.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
-	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(MARBLES_CLOCK_SOURCES) $(SHEAF_LIB) -o $@
+$(MARBLES_CLOCK_BIN): $(MARBLES_CLOCK_SOURCES) $(SHEAF_LIB) | $(BUILD_DIR)
+	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) -MMD -MP -MF $@.d $(MARBLES_CLOCK_SOURCES) $(SHEAF_LIB) -o $@
 
 # --- DSP parity suite target -----------------------------------------
 # app/dsp/*.hpp's usual convention: NO Sheaf/JUCE dependency and no -I into
@@ -360,20 +371,20 @@ $(MARBLES_CLOCK_BIN): $(MARBLES_CLOCK_SOURCES) $(APP_DIR)/FroggersModulation.hpp
 # further transitive Sheaf includes and no link-time dependency, so this
 # still needs no SHEAF_LIB. See app/dsp/Vco.hpp's and app/dsp/FilterFx.hpp's
 # own header comments for the full justification.
-$(DSP_TEST_BIN): $(DSP_TEST_SOURCES) $(DSP_HEADERS) | $(BUILD_DIR)
-	$(CXX) -I$(APP_DIR) $(CPPFLAGS) $(CXXFLAGS) $(DSP_TEST_SOURCES) -o $@
+$(DSP_TEST_BIN): $(DSP_TEST_SOURCES) | $(BUILD_DIR)
+	$(CXX) -I$(APP_DIR) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -MF $@.d $(DSP_TEST_SOURCES) -o $@
 
 # --- surface target -----------------------------------------------------------
-$(SURFACE_BIN): $(SURFACE_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersParameters.hpp $(APP_DIR)/FroggersModulation.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
-	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(SURFACE_SOURCES) $(SHEAF_LIB) -o $@
+$(SURFACE_BIN): $(SURFACE_SOURCES) $(SHEAF_LIB) | $(BUILD_DIR)
+	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) -MMD -MP -MF $@.d $(SURFACE_SOURCES) $(SHEAF_LIB) -o $@
 
 # --- MIDI catalog target -------------------------------------------------------
-$(MIDI_CATALOG_BIN): $(MIDI_CATALOG_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersMidiCatalog.hpp $(APP_DIR)/FroggersParameters.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
-	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(MIDI_CATALOG_SOURCES) $(SHEAF_LIB) -o $@
+$(MIDI_CATALOG_BIN): $(MIDI_CATALOG_SOURCES) $(SHEAF_LIB) | $(BUILD_DIR)
+	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) -MMD -MP -MF $@.d $(MIDI_CATALOG_SOURCES) $(SHEAF_LIB) -o $@
 
 # --- Controllers page real-catalog target -----------------------------------
-$(CONTROLLERS_PAGE_BIN): $(CONTROLLERS_PAGE_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersMidiCatalog.hpp $(APP_DIR)/FroggersParameters.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
-	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(CONTROLLERS_PAGE_SOURCES) $(SHEAF_LIB) -o $@
+$(CONTROLLERS_PAGE_BIN): $(CONTROLLERS_PAGE_SOURCES) $(SHEAF_LIB) | $(BUILD_DIR)
+	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) -MMD -MP -MF $@.d $(CONTROLLERS_PAGE_SOURCES) $(SHEAF_LIB) -o $@
 
 # --- catalog-covers-every-screen-action check -----------------------------
 # Every FroggersActions constant (FroggersUiSurface.hpp) must be both
