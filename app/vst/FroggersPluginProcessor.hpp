@@ -230,6 +230,22 @@ public:
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) override;
 
+    // Reports the input bus to a VST3 host as an aux (sidechain) bus, never
+    // as its main input. JUCE's VST3 wrapper
+    // (juce_audio_plugin_client_VST3.cpp's getBusInfo()) designates input
+    // bus 0 kMain unless this returns extensions whose
+    // getPluginHasMainInput() answers false -- the default answer, with no
+    // override, is true (juce_VST3ClientExtensions.h). A synth's one input
+    // bus exists only to feed External Audio/External EF, the same role a
+    // sidechain input plays in every DAW; hosts that only offer a track's
+    // audio to an instrument through an aux/sidechain bus (Ableton Live,
+    // Bitwig) can route into this bus only once it reports as one. The
+    // returned pointer is non-owning, to a member this class owns
+    // (vst3ClientExtensions_ below) -- the same non-owning-pointer contract
+    // juce::AudioProcessor::getVST3ClientExtensions()'s own doc comment
+    // states. The AU wrapper has no main/aux concept and reads none of this.
+    juce::VST3ClientExtensions* getVST3ClientExtensions() override { return &vst3ClientExtensions_; }
+
     // Fires once per actual bus-layout change (never once per
     // processBlock()) -- see this method's own comment in the .cpp for the
     // full JUCE-callback trace and why this, not processBlock() or
@@ -760,6 +776,17 @@ private:
     std::optional<std::string> pendingRestoreJsonText_;
 
     std::uint64_t NowMicros() const;
+
+    // The VST3ClientExtensions object getVST3ClientExtensions() (above)
+    // returns a pointer to. Its only override is getPluginHasMainInput(),
+    // answering false so the VST3 wrapper designates input bus 0 kAux
+    // instead of its own default kMain (see that method's own comment).
+    // Holds no state and outlives every call through it (a plain member,
+    // same lifetime as the processor itself).
+    struct Vst3ClientExtensions final : public juce::VST3ClientExtensions {
+        bool getPluginHasMainInput() const override { return false; }
+    };
+    Vst3ClientExtensions vst3ClientExtensions_;
 
     // This plugin's own storage for the "is an input actually
     // routed in" signal FroggersAppCore reads via synth::AppContext::

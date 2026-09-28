@@ -9,7 +9,7 @@
 // juce::AudioProcessor, and is isolated in its own CTest binary instead
 // (FroggersVstEditorTest.cpp's own header comment explains why).
 //
-// Six things this file needs proven, each its own section below:
+// Seven things this file needs proven, each its own section below:
 //   1. Transport edges: a fake juce::AudioPlayHead drives
 //      processBlock()'s real edge-detector; PumpMessageThreadForTest()
 //      (timerCallback() itself, since a headless CTest binary runs no
@@ -73,6 +73,13 @@
 //      code actually calls SetPluginHostMode(true) (section 4's own test
 //      never constructs a real processor, so it cannot see that call at
 //      all), combined with the Tempo-follow section's own host-tempo-slaving.
+//   7. VST3 bus posture: the processor's getVST3ClientExtensions() exists
+//      and its getPluginHasMainInput() answers false, the one signal JUCE's
+//      VST3 wrapper reads to designate input bus 0 aux instead of main
+//      (FroggersPluginProcessor.hpp's own comment on that override) -- a
+//      host that only offers a track's audio to an instrument through an
+//      aux/sidechain bus can route into this one only when that answer is
+//      false.
 
 #include "FroggersPluginProcessor.hpp"
 
@@ -4377,6 +4384,26 @@ TEST_CASE(controller_commit_and_file_actions_mark_non_parameter_state_changed) {
     processor.releaseResources();
     std::cout << "  [notify] Add/New/SaveAs/Load each marked non-parameter state changed exactly once; Save and a "
                  "restore marked nothing.\n";
+}
+
+// -- 7. VST3 bus posture ------------------------------------------------------
+// The processor must supply VST3 client extensions reporting no main input,
+// so JUCE's VST3 wrapper designates the input bus aux (sidechain) instead of
+// main (see FroggersPluginProcessor.hpp's getVST3ClientExtensions() comment
+// for the full trace to juce_audio_plugin_client_VST3.cpp's getBusInfo()).
+// Break: remove the override (or flip Vst3ClientExtensions::
+// getPluginHasMainInput() back to true, the juce::VST3ClientExtensions base
+// class's own default) and either assertion below goes red -- not run here;
+// a verifier runs that break separately.
+TEST_CASE(processor_reports_the_input_bus_as_aux_not_main) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("vst3_bus_posture"));
+
+    juce::VST3ClientExtensions* extensions = processor.getVST3ClientExtensions();
+    REQUIRE_TRUE(extensions != nullptr);
+    REQUIRE_TRUE(!extensions->getPluginHasMainInput());
+
+    processor.releaseResources();
+    std::cout << "  [7] getVST3ClientExtensions() is non-null and getPluginHasMainInput() reads false.\n";
 }
 
 }  // namespace
