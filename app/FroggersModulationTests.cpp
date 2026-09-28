@@ -748,6 +748,30 @@ TEST_CASE(crispy_depth_only_ever_adds_scramble_never_subtracts) {
 // exactly nothing to a real (sound) parameter's attenuverter law at the same
 // rest value (see connected_external_audio_modulation_reaches_a_destination_
 // end_to_end above for the contrast).
+TEST_CASE(crunchy_bipolar_source_at_its_own_rest_still_nudges_scramble_up) {
+    Fixture fx;
+    synth::Parameter& crunchy = fx.model.Crunchy();
+    for (const synth::SceneState& pole : detail::kScenePoles) {
+        crunchy.HandleSetAbsolute(pole, 0.4f);
+    }
+    fx.StepOnce(/*externalConnected=*/true, /*externalAudioSample=*/0.0f);
+    fx.model.Group().UpdateModValues();
+    // NormalizeBipolarToUnit(0.0) == 0.5 -- External Audio's own rest value.
+    REQUIRE_NEAR(fx.slate.SourceValue(kModSlotExternalAudio), 0.5f, 1e-6f);
+
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    drillIn.PressEncoder(kFroggersCrunchySlot);
+    synth::Parameter* depth = crunchy.ModulationDepthParameter(kModSlotExternalAudio);
+    REQUIRE_TRUE(depth != nullptr);
+    for (const synth::SceneState& pole : detail::kScenePoles) {
+        depth->SceneCenter(pole.leftScene) = 1.0f;
+    }
+    fx.manager.ComputeAllParameters();
+    // 0.4 + 1.0*0.5 == 0.9, NOT 0.4 (which is what a real attenuverter target
+    // would read at the same rest value).
+    REQUIRE_NEAR(crunchy.GetRaw(0), 0.9f, 1e-4f);
+}
+
 TEST_CASE(disconnected_external_audio_never_receives_randomized_depth) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/false);
