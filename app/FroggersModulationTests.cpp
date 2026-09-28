@@ -229,6 +229,107 @@ TEST_CASE(vco_audio_and_ef_sources_are_wired_to_the_correct_identity_not_just_pr
 }
 
 // ============================================================================
+// attenuverter rest-point registration: the four envelope-follower sources
+// (S1.1's `restsAtZero` field, read by the Sheaf `kAttenuverter` law) rest at
+// their own floor, 0.0f, not the other eleven sources' 0.5f neutral --
+// registered here (RegisterSources()) rather than branched on a source index
+// inside Sheaf, per spm-93.
+// ============================================================================
+
+TEST_CASE(envelope_follower_sources_are_registered_as_resting_at_zero) {
+    Fixture fx;
+    REQUIRE_TRUE(fx.slate.Metadata(kModSlotVco1Ef).restsAtZero);
+    REQUIRE_TRUE(fx.slate.Metadata(kModSlotVco2Ef).restsAtZero);
+    REQUIRE_TRUE(fx.slate.Metadata(kModSlotVco3Ef).restsAtZero);
+    REQUIRE_TRUE(fx.slate.Metadata(kModSlotExternalAudioEf).restsAtZero);
+
+    // Every other slot -- including kModSlotVco1Audio, named explicitly in
+    // this task's own check -- keeps S1.1's default, restsAtZero == false.
+    for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+        if (modIx == kModSlotVco1Ef || modIx == kModSlotVco2Ef || modIx == kModSlotVco3Ef ||
+            modIx == kModSlotExternalAudioEf) {
+            continue;
+        }
+        REQUIRE_TRUE(!fx.slate.Metadata(modIx).restsAtZero);
+    }
+}
+
+// A resting envelope-follower source (its own floor, 0.0f -- driven here via
+// the External Audio EF slot held CONNECTED with an exactly-silent (0.0f
+// bipolar) sample: the follower's own level starts at 0.0f and a 0.0f target
+// never moves it, so it stays pinned at its own floor from sample one, while
+// staying CONNECTED so its depth cell actually materializes -- a
+// DISCONNECTED source's ModulationDepthParameter is always null, per
+// external_audio_cells_present_and_inert_with_no_input above, so that route
+// to "silence" cannot be used to assign a depth in the first place) must
+// contribute nothing to the resolved value at FULL depth, for more than one
+// commanded center -- proving the attenuverter law's `restPoint == 0.0`
+// route, not merely a coincidence at one center value.
+TEST_CASE(a_resting_envelope_follower_source_contributes_nothing_regardless_of_depth) {
+    Fixture fx;
+    for (int i = 0; i < 8; ++i) {
+        fx.StepOnce(/*externalConnected=*/true, /*externalAudioSample=*/0.0f);
+    }
+    fx.model.Group().UpdateModValues();
+    REQUIRE_TRUE(fx.slate.SourceValue(kModSlotExternalAudioEf) == 0.0f);
+
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    synth::Parameter& target = fx.model.PageParameter(FroggersBankId::Reverb, 0);
+    drillIn.PressEncoder(0);
+    synth::Parameter* depth = target.ModulationDepthParameter(kModSlotExternalAudioEf);
+    REQUIRE_TRUE(depth != nullptr);
+    for (const synth::SceneState& pole : detail::kScenePoles) {
+        depth->SceneCenter(pole.leftScene) = 1.0f;  // full-positive: raw depth == +1.0
+    }
+
+    for (const float center : {0.25f, 0.75f}) {
+        for (const synth::SceneState& pole : detail::kScenePoles) {
+            target.HandleSetAbsolute(pole, center);
+        }
+        fx.manager.ComputeAllParameters();
+        REQUIRE_NEAR(target.GetRaw(0), center, 1e-5f);
+    }
+}
+
+// The same source (External Audio EF), now driven to its own maximum by a
+// sustained full-scale (|1.0|) bipolar sample held for enough samples that
+// the follower's exponential attack (~10ms time constant,
+// SingleEnvelopeFollower::SetSampleRate) saturates its [0,1] level to 1.0f
+// within float32 precision, must push the resolved value up by HALF the
+// applied depth, not the whole depth -- Finding A's own defect, reproduced
+// deliberately in this task's own red stage (b), read the full +1.0.
+TEST_CASE(a_fully_driven_envelope_follower_source_pushes_up_by_half_the_depth_not_the_whole_depth) {
+    Fixture fx;
+    for (int i = 0; i < 20000; ++i) {
+        fx.StepOnce(/*externalConnected=*/true, /*externalAudioSample=*/1.0f);
+    }
+    fx.model.Group().UpdateModValues();
+    // The float32 attack recurrence (level += (target - level) * coeff)
+    // plateaus once the remaining increment falls below the accumulator's
+    // own representable resolution near 1.0 -- measured empirically at
+    // 0.999986 after 20000 samples, not the unreachable exact 1.0 a real
+    // number would give; 2e-4 gives ample margin above that measured
+    // plateau while still requiring genuine saturation, not a partial rise.
+    REQUIRE_NEAR(fx.slate.SourceValue(kModSlotExternalAudioEf), 1.0f, 2e-4f);
+
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    synth::Parameter& target = fx.model.PageParameter(FroggersBankId::Reverb, 0);
+    drillIn.PressEncoder(0);
+    synth::Parameter* depth = target.ModulationDepthParameter(kModSlotExternalAudioEf);
+    REQUIRE_TRUE(depth != nullptr);
+    for (const synth::SceneState& pole : detail::kScenePoles) {
+        depth->SceneCenter(pole.leftScene) = 1.0f;  // full-positive: raw depth == +1.0
+    }
+
+    constexpr float kCenter = 0.2f;  // away from the range's own 1.0 ceiling.
+    for (const synth::SceneState& pole : detail::kScenePoles) {
+        target.HandleSetAbsolute(pole, kCenter);
+    }
+    fx.manager.ComputeAllParameters();
+    REQUIRE_NEAR(target.GetRaw(0), kCenter + 0.5f, 1e-4f);
+}
+
+// ============================================================================
 // drill-in level cap and depth materialization
 // ============================================================================
 

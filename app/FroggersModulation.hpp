@@ -656,17 +656,17 @@ private:
         {
             const std::array<float*, 1> src{&vco1EfSource_};
             group_->SetModulationSource(kModSlotVco1Ef, src,
-                {"VCO1 EF", "V1EF", synth::Color::Red.AdjustBrightness(0.55f), nullptr, true});
+                {"VCO1 EF", "V1EF", synth::Color::Red.AdjustBrightness(0.55f), nullptr, true, true});
         }
         {
             const std::array<float*, 1> src{&vco2EfSource_};
             group_->SetModulationSource(kModSlotVco2Ef, src,
-                {"VCO2 EF", "V2EF", synth::Color::Orange.AdjustBrightness(0.55f), nullptr, true});
+                {"VCO2 EF", "V2EF", synth::Color::Orange.AdjustBrightness(0.55f), nullptr, true, true});
         }
         {
             const std::array<float*, 1> src{&vco3EfSource_};
             group_->SetModulationSource(kModSlotVco3Ef, src,
-                {"VCO3 EF", "V3EF", synth::Color::Yellow.AdjustBrightness(0.55f), nullptr, true});
+                {"VCO3 EF", "V3EF", synth::Color::Yellow.AdjustBrightness(0.55f), nullptr, true, true});
         }
 
         // Reuses NoiseModulatorProcessor's own SourcePointers() span
@@ -688,7 +688,7 @@ private:
         {
             const std::array<float*, 1> src{&externalAudioEfSource_};
             group_->SetModulationSource(kModSlotExternalAudioEf, src,
-                {"External Audio EF", "ExtEF", synth::Color::Green.AdjustBrightness(0.55f), nullptr, false});
+                {"External Audio EF", "ExtEF", synth::Color::Green.AdjustBrightness(0.55f), nullptr, false, true});
         }
     }
 
