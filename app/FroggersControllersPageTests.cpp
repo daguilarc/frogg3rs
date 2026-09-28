@@ -627,6 +627,47 @@ TEST_CASE(launchpad_presets_pair_with_the_port_names_a_host_reports) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// twister_preset_pairs_with_the_android_port_names
+// ---------------------------------------------------------------------------
+// Android names a MIDI 1.0 USB device with no name of its own
+// "<manufacturer> <product> <direction> Port N" -- see
+// FroggersMidiCatalog.hpp's TwisterDeviceDefault() for the full trace of
+// where each part of that name comes from. Enumerates exactly those two
+// names as one connected unit (no other device present) and asserts the
+// Controllers page offers and pairs the MIDI Fighter Twister preset with
+// them, same "offered and paired" shape as
+// launchpad_presets_pair_with_the_port_names_a_host_reports above.
+TEST_CASE(twister_preset_pairs_with_the_android_port_names) {
+    const char* androidIn = "DJ TechTools Midi Fighter Twister Output Port 1";  // this application's input.
+    const char* androidOut = "DJ TechTools Midi Fighter Twister Input Port 1";  // this application's output.
+
+    synth::MidiDeviceList devices;
+    devices.inputs.push_back({"froggers.twister.android.in", androidIn});
+    devices.outputs.push_back({"froggers.twister.android.out", androidOut});
+
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+    const std::vector<synth::ControllerWizardDescriptor> registry =
+        synth::MakeControllerWizardRegistry(catalog);
+    const synth::MidiInstrumentConfig instrument;
+    const synth::WizardDiscovery discovery =
+        synth::DiscoverControllerWizards(devices, instrument, registry);
+
+    const synth::WizardCandidate* candidate = nullptr;
+    for (const synth::WizardCandidate& available : discovery.available) {
+        if (available.wizardId == "froggers.twister") {
+            candidate = &available;
+            break;
+        }
+    }
+    if (candidate == nullptr) {
+        std::cout << "  [froggers.twister] nothing paired with \"" << androidIn << "\"\n";
+    }
+    REQUIRE_TRUE(candidate != nullptr);
+    REQUIRE_TRUE(candidate->input.name == androidIn);
+    REQUIRE_TRUE(candidate->output.name == androidOut);
+}
+
 }  // namespace
 
 int main() {

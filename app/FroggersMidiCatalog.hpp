@@ -99,10 +99,23 @@ inline synth::MidiAppDeviceDefault TwisterDeviceDefault() {
     device.id = "froggers.twister";
     device.displayName = "MIDI Fighter Twister";
     device.kind = synth::MidiProfileKind::MfTwister;
-    // The library's own descriptor alias (ControllerWizard.cpp's
-    // file-local kMfTwisterAlias, not exported from a header).
-    device.inputAliases = {"Midi Fighter Twister"};
-    device.outputAliases = {"Midi Fighter Twister"};
+    // "Midi Fighter Twister" is the library's own descriptor alias
+    // (ControllerWizard.cpp's file-local kMfTwisterAlias, not exported from
+    // a header), matching the desktop USB product string the firmware
+    // reports. On Android, a MIDI 1.0 USB device with no name of its own
+    // exposes one ALSA/USB MIDI port per direction, and Android names each
+    // "<manufacturer> <product> Output Port N" (rawMidi Direction OUTPUT --
+    // i.e. FROM the device, which is this application's INPUT) or "...
+    // Input Port N" (INTO the device, this application's OUTPUT); "DJ
+    // TechTools" is the Twister's own USB manufacturer string, "Midi
+    // Fighter Twister" its product string. Matching stays whole-string
+    // equality (case insensitive, MatchesAnyAlias) -- see
+    // FroggersControllersPageTests.cpp's own
+    // launchpad_presets_pair_with_the_port_names_a_host_reports for the
+    // same direction-flip rule applied to every other class-compliant
+    // controller this catalog offers.
+    device.inputAliases = {"Midi Fighter Twister", "DJ TechTools Midi Fighter Twister Output Port 1"};
+    device.outputAliases = {"Midi Fighter Twister", "DJ TechTools Midi Fighter Twister Input Port 1"};
 
     synth::MidiControllerProfileConfig config;
     config.encoderInput = synth::EncoderMidiInConfig::TwisterDefault(0);
