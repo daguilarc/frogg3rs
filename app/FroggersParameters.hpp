@@ -426,6 +426,7 @@ public:
             .name = "Crunchy",
             .shortName = "Crnchy",
             .baseColor = FroggersCrunchyColor(),
+            .modulationTargetKind = synth::ModulationTargetKind::kOneWayAmount,
         });
         crunchy_ = &manager.ParameterById(crunchyId);
 
@@ -523,6 +524,7 @@ public:
                 .name = crispyName,
                 .shortName = "Crispy",
                 .baseColor = layout.color,
+                .modulationTargetKind = synth::ModulationTargetKind::kOneWayAmount,
             });
             synth::Parameter* crispyParam = &manager.ParameterById(crispyId);
             std::array<synth::Parameter*, 1> crispyArr{crispyParam};

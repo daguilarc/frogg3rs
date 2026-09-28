@@ -692,6 +692,19 @@ TEST_CASE(attenuverter_two_sources_swing_independently_and_clamp) {
     REQUIRE_NEAR(resolvedClamped, 1.0f, 1e-5f);
 }
 
+TEST_CASE(crispy_and_crunchy_are_registered_as_one_way_amount_targets) {
+    Fixture fx;
+    for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
+        const auto bankId = static_cast<FroggersBankId>(bankIx);
+        REQUIRE_TRUE(fx.model.Crispy(bankId).TargetKind() == synth::ModulationTargetKind::kOneWayAmount);
+        for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
+            REQUIRE_TRUE(fx.model.PageParameter(bankId, paramIx).TargetKind() ==
+                         synth::ModulationTargetKind::kBipolar);
+        }
+    }
+    REQUIRE_TRUE(fx.model.Crunchy().TargetKind() == synth::ModulationTargetKind::kOneWayAmount);
+}
+
 TEST_CASE(disconnected_external_audio_never_receives_randomized_depth) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/false);
