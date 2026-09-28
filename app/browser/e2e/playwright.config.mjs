@@ -32,8 +32,13 @@ if (!process.env.CI) {
   }
 }
 
-const MOBILE_SPECS = [/link-roles\.spec\.mjs$/, /mobile-stacking\.spec\.mjs$/, /visibility\.spec\.mjs$/, /runtime-pages-narrow\.spec\.mjs$/];
-const DESKTOP_SPECS = [/link-roles\.spec\.mjs$/, /desktop-layout\.spec\.mjs$/, /visibility\.spec\.mjs$/, /blank-frame\.spec\.mjs$/, /audio-activation\.spec\.mjs$/, /midi-activation\.spec\.mjs$/, /recording\.spec\.mjs$/, /controllers-persistence\.spec\.mjs$/];
+const MOBILE_SPECS = [/link-roles\.spec\.mjs$/, /mobile-stacking\.spec\.mjs$/, /visibility\.spec\.mjs$/, /runtime-pages-narrow\.spec\.mjs$/, /download-link\.spec\.mjs$/, /screen-wake\.spec\.mjs$/];
+const DESKTOP_SPECS = [/link-roles\.spec\.mjs$/, /desktop-layout\.spec\.mjs$/, /visibility\.spec\.mjs$/, /blank-frame\.spec\.mjs$/, /audio-activation\.spec\.mjs$/, /midi-activation\.spec\.mjs$/, /recording\.spec\.mjs$/, /controllers-persistence\.spec\.mjs$/, /download-link\.spec\.mjs$/, /screen-wake\.spec\.mjs$/];
+// The Android Chrome phone project (task 3.4): only the specs whose
+// behaviour is actually gated on the Android-phone device class, plus the
+// narrow-viewport runtime pages coverage that already runs at phone widths
+// under "mobile" and applies just as well here.
+const ANDROID_SPECS = [/link-roles\.spec\.mjs$/, /download-link\.spec\.mjs$/, /screen-wake\.spec\.mjs$/, /runtime-pages-narrow\.spec\.mjs$/];
 const PAGES_SPECS = [/blank-frame\.spec\.mjs$/, /first-visit-race\.spec\.mjs$/];
 // Measured on this machine's Playwright Chromium (audio-devices.spec.mjs's
 // own header comment carries the numbers): a plain launch's
@@ -95,6 +100,21 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1280, height: 800 },
+      },
+    },
+    {
+      name: "android",
+      testMatch: ANDROID_SPECS,
+      // Android Chrome phone: a user agent containing both "Android" and
+      // "Mobile" (device-class.mjs's own Android-phone predicate), at the
+      // AVD frogg3rs-api35's own portrait resolution.
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 412, height: 915 },
+        userAgent:
+          "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36",
+        isMobile: true,
+        hasTouch: true,
       },
     },
     {

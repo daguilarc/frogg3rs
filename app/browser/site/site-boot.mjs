@@ -52,6 +52,7 @@ import { runtimeIdentityForCatalogApp } from "./sheaf-runtime/catalog.js";
 import { installSynthBrowserApp } from "./sheaf-runtime/main.js";
 import { materializePackage } from "./sheaf-runtime/package-loader.js";
 import { BrowserUiBackend } from "./sheaf-runtime/ui.js";
+import { ANDROID_PHONE, IPHONE, classifyDevice } from "./device-class.mjs";
 import { installViewportWidth } from "./viewport-width.mjs";
 
 const APP_ID = "frogg3rs";
@@ -60,6 +61,67 @@ const APP_ID = "frogg3rs";
 // reports the mount's width. See viewport-width.mjs's own header comment for
 // the full mechanism.
 installViewportWidth(BrowserUiBackend);
+
+// Read once at module start: the user agent does not change over the page's
+// lifetime, and both the footer treatment below and the wake lock wiring in
+// boot() key off the same classification.
+const deviceClass = classifyDevice();
+
+// Footer: on an Android phone the desktop-app download link becomes the
+// Android release link; on an iPhone there is no APK to offer, so the link
+// and the separator right after it are removed outright. Every other device
+// class (including desktop) leaves the footer exactly as index.html wrote
+// it.
+(function applyDeviceClassToFooter() {
+  const downloadLink = document.querySelector('[data-site-link="download"]');
+  if (!downloadLink) return;
+  if (deviceClass === ANDROID_PHONE) {
+    downloadLink.textContent = "Download Android app";
+    downloadLink.href = "https://github.com/daguilarc/frogg3rs/releases/tag/frogg3rs_android";
+  } else if (deviceClass === IPHONE) {
+    const separator = downloadLink.nextElementSibling;
+    downloadLink.remove();
+    separator?.remove();
+  }
+})();
+
+// Screen wake lock, held only while the AudioContext driving the app is
+// actually running and the page is visible -- a phone left playing with the
+// screen off is the whole point of the Android app, and a browser tab
+// should behave the same way while it can (task 3.3). Re-evaluated on the
+// context's own `statechange` and on the page's `visibilitychange`; every
+// refusal (a denied permission, or `navigator.wakeLock` not existing at
+// all, which throws synchronously on the property access below) is caught
+// here so it never reaches the page's `unhandledrejection` backstop further
+// down this file.
+let wakeLockSentinel = null;
+
+async function updateWakeLock(audioContext) {
+  try {
+    const shouldHold = audioContext.state === "running" && document.visibilityState === "visible";
+    if (shouldHold && !wakeLockSentinel) {
+      wakeLockSentinel = await navigator.wakeLock.request("screen");
+      // The platform itself can release a held lock outside any event this
+      // file listens for (e.g. the OS reclaiming it) -- forgetting the
+      // stale sentinel here is what lets the next re-evaluation request a
+      // fresh one instead of believing one is still held.
+      wakeLockSentinel.addEventListener("release", () => {
+        wakeLockSentinel = null;
+      });
+    } else if (!shouldHold && wakeLockSentinel) {
+      const sentinel = wakeLockSentinel;
+      wakeLockSentinel = null;
+      await sentinel.release();
+    }
+  } catch {
+    wakeLockSentinel = null;
+  }
+}
+
+function wireScreenWakeLock(audioContext) {
+  audioContext.addEventListener("statechange", () => void updateWakeLock(audioContext));
+  document.addEventListener("visibilitychange", () => void updateWakeLock(audioContext));
+}
 
 // A failed boot must SAY so on the page. The data attribute alone left a
 // visitor (and the operator, debugging remotely) staring at a blank frame
@@ -97,6 +159,7 @@ async function boot(root) {
 
   let materialized;
   const audioContext = new AudioContext();
+  if (deviceClass === ANDROID_PHONE || deviceClass === IPHONE) wireScreenWakeLock(audioContext);
   try {
     materialized = await materializePackage(app);
     await installSynthBrowserApp(root, {
