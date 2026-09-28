@@ -2611,12 +2611,13 @@ TEST_CASE(app_commands_apply_every_press_in_bus_order_within_one_tick) {
 
 // Attaches a FULL-POSITIVE (SceneCenter == 1.0 -> ModulationDepthTargetFromKnob
 // == +1.0 bipolar) modulation route from VCO1 Audio to `parameter`, so
-// `TargetValue(0)` is driven by the live, audio-rate-oscillating source
-// signal instead of `parameter`'s own commanded value. At depth == +1.0 the
-// route's |depth| weight sum is exactly 1.0, which zeroes
-// `targetCenterScales_` (`Parameter::ComputeAtDepth`'s weightSum>=1.0
-// branch, External/Sheaf/projects/synth/src/ParameterModulation.cpp) -- i.e. the commanded center contributes NOTHING to
-// `TargetValue(0)`; it is driven entirely by the oscillating source. VCO1's
+// `TargetValue(0)` moves with the live, audio-rate-oscillating source
+// signal around `parameter`'s own commanded value. This bank runs the
+// attenuverter blend (`Parameter::ComputeAtDepth`,
+// External/Sheaf/projects/synth/src/ParameterModulation.cpp), so at depth
+// == +1.0 `TargetValue(0)` is the commanded center plus (2 * source - 1) *
+// 0.5, clamped to [0, 1]: the source swings it by up to half the range
+// either way. VCO1's
 // pitch is pinned near the top of its kPitchMinHz-kPitchMaxHz exponential
 // map (dsp/Vco.hpp's `PitchToPhaseIncrement`): at 48 kHz and pitch==1.0 that
 // is kPitchMaxHz/48000 ~= 0.104 cycles/sample, so a handful of `Step()`
