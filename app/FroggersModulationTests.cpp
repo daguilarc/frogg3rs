@@ -824,6 +824,53 @@ TEST_CASE(saved_crispy_depth_positive_keeps_depth_negative_and_neutral_load_off)
     REQUIRE_NEAR(resolvedNeutral, 0.5f, 1e-4f);
 }
 
+TEST_CASE(randomize_page_crispy_depth_never_lands_off_by_construction) {
+    auto disconnectAllExceptExternalAudio = [](synth::ParameterGroup& group) {
+        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+            if (modIx == kModSlotExternalAudio) {
+                continue;
+            }
+            group.GetModulators().Metadata(modIx).connected = false;
+        }
+    };
+
+    auto runWithDraw = [&](float draw) -> float {
+        Fixture fx;
+        fx.StepOnce(/*externalConnected=*/true, /*externalAudioSample=*/1.0f);
+        disconnectAllExceptExternalAudio(fx.model.Group());
+        fx.model.Group().UpdateModValues();
+        REQUIRE_NEAR(fx.slate.SourceValue(kModSlotExternalAudio), 1.0f, 1e-6f);
+
+        FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+        drillIn.PressEncoder(kFroggersCrispySlot);
+        REQUIRE_TRUE(drillIn.Level() == 1);
+
+        // Deterministic random source: exactly one coin flip says "keep
+        // going" (count == 1, the only eligible source), the index draw is
+        // moot (exactly one eligible source), and every value draw returns
+        // the fixed `draw`.
+        fx.manager.SetRandomSource([draw]() { return draw; }, []() { return 0.9f; },
+                                   [](std::size_t) { return std::size_t{0}; });
+
+        const FroggersRandomizeResult result = RandomizePage(fx.manager, drillIn);
+        REQUIRE_TRUE(!result.partial);
+
+        synth::Parameter& crispy = fx.model.Crispy(FroggersBankId::Reverb);
+        synth::Parameter* depth = crispy.ModulationDepthParameter(kModSlotExternalAudio);
+        REQUIRE_TRUE(depth != nullptr);
+        fx.manager.ComputeAllParameters();
+        return crispy.GetRaw(0);
+    };
+
+    // Worst-case draw (0.0): the named zero-probability floor -- still
+    // attaches the route, but its resolved contribution is exactly 0.0.
+    REQUIRE_NEAR(runWithDraw(0.0f), 0.0f, 1e-4f);
+
+    // Midpoint draw (0.5): remapped raw 0.5 + 0.5*0.5 == 0.75, one-way depth
+    // strictly positive (without the remap: raw 0.5, depth 0).
+    REQUIRE_TRUE(runWithDraw(0.5f) > 1e-4f);
+}
+
 TEST_CASE(disconnected_external_audio_never_receives_randomized_depth) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/false);
