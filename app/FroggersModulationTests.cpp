@@ -772,6 +772,58 @@ TEST_CASE(crunchy_bipolar_source_at_its_own_rest_still_nudges_scramble_up) {
     REQUIRE_NEAR(crunchy.GetRaw(0), 0.9f, 1e-4f);
 }
 
+TEST_CASE(saved_crispy_depth_positive_keeps_depth_negative_and_neutral_load_off) {
+    auto loadAndResolve = [](float storedRaw) {
+        Fixture fx;
+        synth::Parameter& crispy = fx.model.Crispy(FroggersBankId::Reverb);
+        fx.StepOnce(/*externalConnected=*/true, /*externalAudioSample=*/1.0f);
+        fx.model.Group().UpdateModValues();
+        REQUIRE_NEAR(fx.slate.SourceValue(kModSlotExternalAudio), 1.0f, 1e-6f);
+
+        synth::JsonArena arena(4096);
+        synth::JSON root = arena.Object();
+        synth::JSON sceneCenters = arena.Array();
+        sceneCenters.AppendNew(arena.Real(0.5));
+        sceneCenters.AppendNew(arena.Real(0.5));
+        root.SetNew("sceneCenters", sceneCenters);
+        synth::JSON modDepths = arena.Object();
+        synth::JSON depthJson = arena.Object();
+        synth::JSON depthSceneCenters = arena.Array();
+        depthSceneCenters.AppendNew(arena.Real(storedRaw));
+        depthSceneCenters.AppendNew(arena.Real(storedRaw));
+        depthJson.SetNew("sceneCenters", depthSceneCenters);
+        const std::string key = std::to_string(static_cast<int>(kModSlotExternalAudio));
+        modDepths.SetNew(key.c_str(), depthJson);
+        root.SetNew("modDepths", modDepths);
+
+        REQUIRE_TRUE(crispy.LoadValuesFromJSON(root));
+        synth::Parameter* depth = crispy.ModulationDepthParameter(kModSlotExternalAudio);
+        REQUIRE_TRUE(depth != nullptr);
+        fx.manager.ComputeAllParameters();
+        return std::pair<float, float>{depth->SceneCenter(0), crispy.GetRaw(0)};
+    };
+
+    // 0.75 (a patch saved with the depth knob turned right of centre): the
+    // stored raw value is unchanged (S1.5's floor is a no-op at or above
+    // 0.5), and it resolves to the SAME magnitude a pre-change build would
+    // have shown as +m.
+    const auto [storedPositive, resolvedPositive] = loadAndResolve(0.75f);
+    REQUIRE_NEAR(storedPositive, 0.75f, 1e-4f);
+    const float expectedMagnitude = synth::ModulationDepthTargetFromKnob(0.75f);
+    REQUIRE_NEAR(resolvedPositive, 0.5f + expectedMagnitude, 1e-4f);
+
+    // 0.25 (a legacy negative encoding): the stored raw value lands at
+    // exactly 0.5 (S1.5's floor, not 0.25), no migration, and resolves off.
+    const auto [storedNegative, resolvedNegative] = loadAndResolve(0.25f);
+    REQUIRE_NEAR(storedNegative, 0.5f, 1e-4f);
+    REQUIRE_NEAR(resolvedNegative, 0.5f, 1e-4f);
+
+    // 0.5 (neutral, also the default): unchanged, resolves off.
+    const auto [storedNeutral, resolvedNeutral] = loadAndResolve(0.5f);
+    REQUIRE_NEAR(storedNeutral, 0.5f, 1e-4f);
+    REQUIRE_NEAR(resolvedNeutral, 0.5f, 1e-4f);
+}
+
 TEST_CASE(disconnected_external_audio_never_receives_randomized_depth) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/false);
