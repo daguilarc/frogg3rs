@@ -129,8 +129,10 @@ beneath the transport buttons until Play is pressed or a recording arms. A captu
 Click any parameter's encoder — a page parameter, a page's own Crispy, or Crunchy — to open
 a modulation view for that one parameter. It exposes 15 modulation sources, each with its own signed
 depth. A depth of 0 means that source is off for this parameter. The parameter's own knob sets its
-centre; each source swings the target around that centre, scaled by that source's own signed depth.
-Several sources' swings sum together, clamped to the control's own travel. Turning a depth past its
+centre; each source moves the target away from that centre, scaled by that source's own signed depth.
+The Random S&H, VCO Audio, Noise and External Audio sources swing it both ways. The four EF sources
+push it one way only, further the louder the signal they follow, so a silent one leaves the target at
+its centre. Several sources' swings sum together, clamped to the control's own travel. Turning a depth past its
 centre position inverts which way that source pushes. Clicking one of those depth's own encoder drills
 further in, to a modulation view for that depth, up to three levels deep in all. Click the parameter's
 encoder again, or the back target in the corner, to go up exactly one level — from the deepest level
