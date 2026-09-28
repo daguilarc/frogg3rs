@@ -3,15 +3,15 @@
    stylesheet, loaded before this file so these rules can layer on top of
    it without overriding any `#synth-root [data-synth-node-kind=...]` rule).
 
-   Mobile stacking (see index.html's header comment for the coupling
+   Narrow/mobile layout (see index.html's header comment for the full
    trace): this file stacks the shell's OWN chrome -- title above,
    #synth-root, links below -- in plain document flow, which is
    above/below by construction and never beside. That covers everything
-   this shell controls; the surface's internal left/right split does not
-   fall under host-page CSS at all -- a plain stylesheet rule cannot
-   reflow those wire-positioned nodes (index.html's header comment has the
-   trace) -- so that part ships via JS instead, in ./mobile-stack.mjs
-   (per-block transforms, not a CSS rule). */
+   this shell controls; the surface's own internal narrow-vs-wide topology
+   is `synth_froggers::FroggersUiSurface`'s own concern
+   (app/FroggersUiSurface.hpp, a `synth::ui::SelfSizedSurface`) -- this
+   file's rules never need to reflow it, since the surface already builds
+   the right tree for whatever width ./viewport-width.mjs reports. */
 
 html,
 body {

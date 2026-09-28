@@ -12,10 +12,8 @@ import {
   SIDEBAR_SELECTOR,
   SURFACE_ROOT_SELECTOR,
   encoderGridBoundingBox,
-  expectedStackedWidth,
   verticalOverlapPx,
   waitForSurfaceReady,
-  wireWidth,
 } from "./helpers.mjs";
 
 test.describe("desktop layout sanity", () => {
@@ -66,118 +64,65 @@ test.describe("desktop layout sanity", () => {
     expect(status ?? "").not.toContain("audio:online");
   });
 
-  // mobile-stack.mjs re-applies from a ResizeObserver on
-  // the same host element Sheaf's own fitSurface observes
-  // (mobile-stack.mjs's own header comment has the full reasoning), not
-  // window "resize" alone -- this drives an actual live resize (starting
-  // wide, matching this describe block's own project) rather than a fresh
-  // page load at a narrow viewport, so it exercises that observer path
-  // specifically, in both directions.
+  // viewport-width.mjs reports the mount's width from a ResizeObserver on
+  // the same host element Sheaf's own fitSurface observes, not window
+  // "resize" alone (viewport-width.mjs's own header comment) -- this drives
+  // an actual live resize (starting wide, matching this describe block's
+  // own project) rather than a fresh page load at a narrow viewport, so it
+  // exercises that observer path specifically, in both directions.
   test("a live resize from wide to narrow engages the stack, and back restores wide layout", async ({ page }) => {
     const gridBefore = await page.locator(RIGHT_BLOCK_SELECTOR).boundingBox();
     const leftBefore = await page.locator(LEFT_BLOCK_SELECTOR).boundingBox();
 
     await page.setViewportSize({ width: 390, height: 844 });
-    // Polls on BOTH the grid's X POSITION (crossed back toward 0) AND its
-    // WIDTH (reached the actual 390 target), not either alone -- both
-    // turned out to have their own false-positive window, found via this
-    // exact test flaking (~40-45% of runs at each single-signal attempt)
-    // and traced with a MutationObserver-based instrumentation pass (kept
-    // out of the committed test):
-    //  - width alone: at WIDE, the grid's own NATIVE (un-stacked) rendered
-    //    width is already comfortably above the "0.9x narrow viewport"
-    //    threshold (it is a large block regardless of layout), so
-    //    `page.setViewportSize()` resolving before the page's own resize
-    //    reaction has even run once could read the STILL-WIDE state and
-    //    mistake it for "already stacked".
-    //  - x alone: `mount.clientWidth` itself was observed passing through
-    //    transient intermediate values while an active CDP-driven resize
-    //    settles (a real browser/CDP characteristic during live resize,
-    //    not a mobile-stack.mjs defect -- production self-corrects every
-    //    ~33ms frame regardless), and this shell's per-block math makes
-    //    the grid's rendered x converge to ~0 for ANY narrow-mode
-    //    application, even one computed from a not-yet-final width --
-    //    so x alone can go true before the width has actually settled.
-    // Requiring both together has no known false-positive window: WIDE
-    // fails the x check, and an unsettled-width narrow frame fails the
-    // width check (per this file's own comment on `applyStackedTransform`
-    // in mobile-stack.mjs, the grid's rendered width always exactly
-    // equals whatever `mount.clientWidth` was at that specific frame, so
-    // it cannot read >=351 without the width truly having reached ~390).
-    // A THIRD signal, and the one that is specific to a live resize: the
-    // shell reacts to the new width immediately, but the SURFACE only
-    // switches to its narrow topology once the browser-narrow action the
-    // shell dispatches has reached the wasm app and it has emitted another
-    // frame. Between those two the blocks are stacked while still carrying
-    // WIDE design widths, and anything derived from a wire width -- the
-    // shared scale below is -- reads a value that is about to change.
-    // Equal chrome and grid wire widths is the surface-side half of
-    // "settled": it is true only of the narrow topology
-    // (FroggersCellMap::kLeftBlockWeightNarrow).
+    // Settled-narrow signal: the grid's own rendered box has reached near
+    // the left edge (stacked, not beside chrome) and close to the new
+    // viewport's width. A resize is reported asynchronously (the observer
+    // callback, then a round trip through the wasm app's own next
+    // BuildTree()), so this polls rather than reading once immediately
+    // after setViewportSize() resolves.
     await expect
       .poll(
         async () => {
           const box = await page.locator(RIGHT_BLOCK_SELECTOR).boundingBox();
-          const gridWire = await wireWidth(page, RIGHT_BLOCK_SELECTOR);
-          const chromeWire = await wireWidth(page, LEFT_BLOCK_SELECTOR);
-          return box.x < 50 && box.width >= 390 * 0.9 && Math.abs(gridWire - chromeWire) < 1;
+          return box.x < 50 && box.width >= 390 * 0.85;
         },
         { timeout: 5_000 },
       )
       .toBe(true);
+
+    const chromeNarrow = await page.locator(LEFT_BLOCK_SELECTOR).boundingBox();
     const gridNarrow = await page.locator(RIGHT_BLOCK_SELECTOR).boundingBox();
+    // Chrome stacks fully above the grid, at the same width -- the surface's
+    // own narrow tree (FroggersPageLayout::ComputeNarrowBlockHeights()),
+    // not independently stretched by this shell.
+    expect(verticalOverlapPx(chromeNarrow, gridNarrow)).toBe(0);
+    expect(Math.abs(chromeNarrow.width - gridNarrow.width)).toBeLessThan(gridNarrow.width * 0.05);
+
     const sidebarNarrow = await page.locator(SIDEBAR_SELECTOR).boundingBox();
-    // Never beside the grid, at either placement: it used to stack under the
-    // grid and now sits in the chrome block above it, and zero vertical
-    // overlap is what both have in common.
+    // Never beside the grid, at either placement, and inside the chrome
+    // block -- resolved by Sheaf's RuntimeMainComponent against the
+    // surface's own declared slot (mobile-stacking.spec.mjs's own header
+    // comment has the full mechanism), not computed by this shell.
     expect(verticalOverlapPx(sidebarNarrow, gridNarrow)).toBe(0);
-    // The sidebar shares the grid's scale rather than being independently
-    // stretched to full width too (see mobile-stack.mjs's
-    // own comment) -- expect it at the grid's shared scale (viewport width
-    // over the grid's own live wire width, read live via
-    // page.viewportSize() -- already 390 here, set above) times the
-    // sidebar's own live wire width, not at the viewport width.
-    const expectedSidebarWidth = await expectedStackedWidth(page, SIDEBAR_SELECTOR);
-    expect(Math.abs(sidebarNarrow.width - expectedSidebarWidth)).toBeLessThan(1.5);
+    expect(sidebarNarrow.y).toBeGreaterThanOrEqual(chromeNarrow.y - 1);
+    expect(sidebarNarrow.y + sidebarNarrow.height).toBeLessThanOrEqual(chromeNarrow.y + chromeNarrow.height + 1);
 
     await page.setViewportSize({ width: 1280, height: 800 });
-    // Wide-mode settle signal: the mount's `height` is Sheaf's alone
-    // (browser/src/ui.ts's fitSurface) at every width, and the shell never
-    // writes it. What the shell writes when narrow, and must drop when
-    // wide, is a `min-height` reserving the stacked total; a stale
-    // reservation left behind would hold every wide viewport open to a
-    // phone-sized page. So "settled wide" is: a non-empty px height
-    // authored by Sheaf, no reservation from the shell, AND the stacked
-    // blocks' own transforms released.
+    // Wide layout matches the original exactly, once the resize has been
+    // reported and the surface has rebuilt its wide (config-bounds) tree.
     await expect
       .poll(
-        async () =>
-          page.locator(RIGHT_BLOCK_SELECTOR).evaluate((el) => el.style.transform),
+        async () => {
+          const box = await page.locator(RIGHT_BLOCK_SELECTOR).boundingBox();
+          return Math.abs(box.width - gridBefore.width) < 1 && Math.abs(box.x - gridBefore.x) < 1;
+        },
         { timeout: 5_000 },
       )
-      .toBe("");
-    await expect
-      .poll(async () => page.locator("#synth-root").evaluate((el) => el.style.height), { timeout: 5_000 })
-      .not.toBe("");
-    await expect
-      .poll(async () => page.locator("#synth-root").evaluate((el) => el.style.minHeight), { timeout: 5_000 })
-      .toBe("");
-    // mobile-stack.mjs's own follow-up burst (scheduleApply, FOLLOW_UP_TICKS)
-    // keeps re-asserting for a short span after the resize to out-last a
-    // possible race with ui.ts's own internal resize-triggered fitSurface()
-    // call (its own comment has the full reasoning); give that burst room to
-    // fully settle before reading final state.
-    await page.waitForTimeout(300);
+      .toBe(true);
     const gridAfter = await page.locator(RIGHT_BLOCK_SELECTOR).boundingBox();
     const leftAfter = await page.locator(LEFT_BLOCK_SELECTOR).boundingBox();
-    const mountHeight = await page.locator("#synth-root").evaluate((el) => el.style.height);
-    const leftTransform = await page.locator(LEFT_BLOCK_SELECTOR).evaluate((el) => el.style.transform);
-    // Restored wide layout matches the original wide layout exactly (no
-    // leftover transform from the narrow pass), and the mount is sized by
-    // Sheaf again rather than by this shell or by nobody.
     expect(gridAfter).toEqual(gridBefore);
     expect(leftAfter).toEqual(leftBefore);
-    expect(leftTransform).toBe("");
-    expect(mountHeight).toMatch(/^\d+(\.\d+)?px$/);
   });
 });

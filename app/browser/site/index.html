@@ -24,30 +24,26 @@
   (see `froggers-browser-package/spec.md`'s "Registry listing requires no
   Sheaf source change" requirement).
 
-  MOBILE STACKING ("encoder grid full
-  width, everything else above/below, never beside"): host-page CSS
-  ALONE cannot reflow the surface's own internal layout.
-  FroggersUiSurface.hpp lays the
-  encoder grid and the left-hand chrome block (scope, transport, scenes,
-  scene-blend, bpm) out as ONE outer Row (`AppendLeftBlock` and
-  `AppendRightBlock` as Weight(2)/Weight(4) siblings),
-  which Sheaf's browser UI backend positions as absolutely-bounded DOM
-  nodes and scales as ONE unit (External/Sheaf/projects/synth/browser/
-  src/ui.ts `fitSurface` -- a single uniform
-  `transform: scale()` on the whole surface root), so no plain stylesheet
-  rule can independently reflow those internal, wire-positioned nodes
-  without rewriting the surface's own topology (an app-core change, out
-  of this file's own scope).
-  Rather than fighting those wire-managed
-  properties at the stylesheet level, ./mobile-stack.mjs applies its own
-  PER-BLOCK CSS transforms that compose with them instead, reasserted
-  every render frame -- see that file's own header comment for the full
-  mechanism (a small Sheaf drag-delta fix keeps drag/press input
-  mapping correctly through the transform) and e2e/mobile-stacking.spec.mjs for the
-  assertions this actually satisfies (real, passing tests -- not
-  test.fixme). This shell's OWN chrome (the links banner below)
-  separately stacks above/below the surface in normal document flow,
-  same as before.
+  NARROW/MOBILE LAYOUT: `synth_froggers::FroggersUiSurface`
+  (app/FroggersUiSurface.hpp) is a `synth::ui::SelfSizedSurface` --
+  given a narrow reported width it builds its OWN stacked tree (the chrome
+  block above the encoder-grid block, both spanning the reported width,
+  instead of the wide layout's side-by-side Row) and declares that tree's
+  root bounds itself, which `RuntimeMainComponent::BuildTree()` (Sheaf)
+  composes the whole runtime -- including Sheaf's own sidebar, placed into
+  the surface's declared slot -- against. Sheaf's browser UI backend then
+  scales that WHOLE composite root as one unit
+  (External/Sheaf/projects/synth/browser/src/ui.ts `fitSurface` -- a single
+  uniform `transform: scale()` on the whole surface root) to fit this
+  shell's mount, exactly as it already does for the desktop layout: no
+  per-block CSS transform is needed, because the surface's own root is
+  already shaped for the reported width before `fitSurface` ever scales it.
+  ./viewport-width.mjs's only job is reporting the mount's width to that
+  surface -- see that file's own header comment -- and
+  e2e/runtime-pages-narrow.spec.mjs covers the resulting narrow layout
+  (real, passing tests -- not test.fixme). This shell's OWN chrome (the
+  links banner below) separately stacks above/below the surface in normal
+  document flow, same as before.
 -->
 <html lang="en">
   <head>
@@ -110,9 +106,8 @@
         // failure -- whenever a ResizeObserver callback's own layout work
         // needs another observation pass in the same frame. This app runs
         // two independent ResizeObservers on #synth-root (Sheaf's own
-        // fitSurface one, and mobile-stack.mjs's), which reliably
-        // provokes it, especially at narrow viewports. Must NOT be
-        // treated as a boot failure.
+        // fitSurface one, and viewport-width.mjs's), which reliably
+        // provokes it. Must NOT be treated as a boot failure.
         var BENIGN_WINDOW_ERROR_MESSAGES = {
           "ResizeObserver loop completed with undelivered notifications.": true,
           "ResizeObserver loop limit exceeded": true,
@@ -134,12 +129,9 @@
           if (!root) return;
           shown = true;
           // Same reason as fail()'s own clear: a late failure can land
-          // after fitSurface left an inline height, and mobile-stack.mjs a
-          // narrow-mode min-height and overflow: hidden, on this element,
-          // which would otherwise clip the panel below down to invisible.
+          // after fitSurface left an inline height on this element, which
+          // would otherwise clip the panel below down to invisible.
           root.style.height = "";
-          root.style.minHeight = "";
-          root.style.overflow = "";
           root.textContent = "";
           var notice = document.createElement("div");
           notice.className = "boot-error";

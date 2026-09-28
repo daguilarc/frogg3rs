@@ -105,7 +105,7 @@
 //
 // The browser host (app/browser/**, read-only precedent, NOT modified by
 // this file) solved the identical problem for viewport-adaptive sizing:
-// app/browser/site/mobile-stack.mjs's own header comment says the
+// app/browser/site/viewport-width.mjs's own header comment says the
 // composite "runtime.main.root fitSurface actually scales" -- i.e. a
 // uniform CSS `transform: scale(...)` applied to the surface's rendered
 // root, leaving the surface's OWN internal (wire-space) layout completely

@@ -2,11 +2,11 @@
 // this e2e suite measures GEOMETRY (boundingBox() / getBoundingClientRect,
 // see helpers.mjs and mobile-stacking.spec.mjs), and geometry reports a
 // full, correct box for an element that is actually clipped to
-// invisibility by an ancestor -- exactly how a real defect (the
-// mobile-stacking wide branch briefly clearing `mount.style.height`,
-// which Sheaf's own fitSurface owns -- see mobile-stack.mjs's own header
-// comment) once produced a blank surface at every wide viewport while
-// every geometry assertion kept passing. The defect class is broader than
+// invisibility by an ancestor -- exactly how a real defect (an earlier
+// per-block stacking mechanism's wide branch briefly clearing
+// `mount.style.height`, which Sheaf's own fitSurface owns) once produced a
+// blank surface at every wide viewport while every geometry assertion kept
+// passing. The defect class is broader than
 // that one bug: an element can have correct geometry and be invisible via
 // ancestor `height: 0` + `overflow: hidden`, `display: none`, a zero-size
 // canvas, or a canvas that is sized but never painted. Each assertion

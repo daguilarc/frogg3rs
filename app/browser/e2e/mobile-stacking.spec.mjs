@@ -1,31 +1,25 @@
 // Mobile-emulated stacking assertion: mobile viewport stacks around a
 // full-width encoder grid.
 //
-// Host-page CSS alone cannot restack this layout, because
-// FroggersUiSurface.hpp lays the chrome and grid blocks out as one outer
-// Row (`AppendLeftBlock`/`AppendRightBlock`, Weight(2)/Weight(4) siblings) that
-// Sheaf's browser UI backend positions as absolutely-bounded, wire-managed
-// DOM nodes an active render loop keeps rewriting.
-// Per-block
-// CSS transforms sidestep that instead of fighting it: they compose with (rather than override) those wire-managed
-// properties, reasserted every render frame from the site shell
-// (app/browser/site/mobile-stack.mjs, hooked in site-boot.mjs) -- see that
-// file's own header comment for the full mechanism. TWO blocks stack --
-// chrome above, grid full-width below it -- and Sheaf's own generic runtime
-// sidebar (SIDEBAR_SELECTOR, helpers.mjs) is PLACED rather than stacked:
-// inside the chrome block, under its Randomize/Reset column, beside the
-// sliders. It is still never left beside the grid.
-//
-// SHARED SCALE: only the GRID is stretched to fill the viewport width.
-// Every other stacked block renders at that SAME scale (mobile-stack.mjs's
-// own comment has the full reasoning: independently stretching each block
-// to full width made a narrow block balloon in height and pushed the grid
-// far down the page). How wide a block ends up is therefore decided by its
-// own declared design width, in the surface. The chrome block declares
-// equal weight with the grid when narrow and so comes out the same width;
-// Sheaf's own generic sidebar has no narrow variant of its own -- this
-// surface cannot declare a weight for a tree Sheaf emits -- and so comes out
-// narrower, sitting in the chrome block's own free space.
+// `synth_froggers::FroggersUiSurface` (app/FroggersUiSurface.hpp) is a
+// `synth::ui::SelfSizedSurface`: given a narrow reported width, it builds
+// its OWN stacked tree (chrome block above the grid block, both spanning
+// the reported width) and declares that tree's root bounds itself
+// (`FroggersPageLayout::RootBounds()`), which Sheaf's
+// `RuntimeMainComponent::BuildTree()` composes the whole runtime --
+// including Sheaf's own generic sidebar (SIDEBAR_SELECTOR, helpers.mjs),
+// placed into the surface's declared slot -- against. This shell's only
+// job is reporting the mount's width to that surface
+// (app/browser/site/viewport-width.mjs, hooked in site-boot.mjs -- see
+// that file's own header comment); Sheaf's own generic `fitSurface`
+// (External/Sheaf/projects/synth/browser/src/ui.ts) then scales the WHOLE
+// composite as one unit to fit the mount, exactly as it already does for
+// the desktop layout. No per-block CSS transform is involved: the two
+// blocks stack -- chrome above, grid full-width below it -- because the
+// surface's own declared tree already stacks them, and the sidebar is
+// PLACED inside the chrome block, under its Randomize/Reset column, beside
+// the sliders, because `RuntimeMainComponent` resolves it there directly
+// against the surface's declared slot -- never computed by this shell.
 import { expect, test } from "@playwright/test";
 import {
   BPM_SELECTOR,
@@ -35,9 +29,7 @@ import {
   RANDOMIZE_RESET_SELECTORS,
   RIGHT_BLOCK_SELECTOR,
   SIDEBAR_BUTTON_SELECTORS,
-  SIDEBAR_SELECTOR,
   encoderGridBoundingBox,
-  expectedStackedWidth,
   verticalOverlapPx,
   waitForSurfaceReady,
 } from "./helpers.mjs";
@@ -63,24 +55,20 @@ test.describe("mobile stacking (phone-width layout)", () => {
     expect(verticalOverlapPx(rightBlockBox, leftBlockBox)).toBe(0);
   });
 
-  test("chrome renders at the grid's shared scale, and at the grid's own width", async ({ page }) => {
-    // This test used to assert the opposite of its second half: that
-    // chrome came out "well short of the grid's own full width". That was
-    // a deliberate guard on the shell not stretching each block
-    // independently, and it stayed correct for as long as the surface
-    // declared the chrome block at half the grid's weight. The surface now
-    // declares them EQUAL when narrow
-    // (FroggersCellMap::kLeftBlockWeightNarrow), because the half-width
-    // chrome block left the other half of a phone viewport empty with
-    // nothing able to reach it. The shared-scale half below is unchanged
-    // and still the thing that would catch an independent stretch: a block
-    // stretched on its own would not land on the grid's scale times its
-    // own wire width except by coincidence.
+  test("chrome renders at the same width as the grid, stacked fully above it", async ({ page }) => {
+    // This test used to assert the opposite: that chrome came out "well
+    // short of the grid's own full width". That was a deliberate guard on
+    // an earlier shell not stretching each block independently, and it
+    // stayed correct for as long as the surface declared the chrome block
+    // at half the grid's weight. The surface's narrow tree now spans both
+    // blocks across the SAME reported width
+    // (FroggersPageLayout::ComputeNarrowBlockHeights()'s own comment),
+    // because the half-width chrome block left the other half of a phone
+    // viewport empty with nothing able to reach it.
     const gridBox = await page.locator(RIGHT_BLOCK_SELECTOR).boundingBox();
     const chromeBox = await page.locator(LEFT_BLOCK_SELECTOR).boundingBox();
 
-    expect(Math.abs(chromeBox.width - (await expectedStackedWidth(page, LEFT_BLOCK_SELECTOR)))).toBeLessThan(1.5); // within ~1.5px
-    // Same width as the grid, within the delta's own 5%, so neither block
+    // Same width as the grid, within a small tolerance, so neither block
     // leaves a usable strip of the viewport empty beside it.
     expect(Math.abs(chromeBox.width - gridBox.width)).toBeLessThan(gridBox.width * 0.05);
 
@@ -157,17 +145,16 @@ test.describe("mobile stacking (phone-width layout)", () => {
   });
 
   test("a scroll offset survives the render loop", async ({ page }) => {
-    // The published site could not be scrolled at all: an offset held for
-    // about two frames and was then pinned back at the top, every frame,
-    // so everything below the fold was unreachable. Nothing called a
-    // scroll API. Sheaf's fitSurface writes the mount's `height` at the
-    // end of every render frame, sized for its own un-stacked scale, and
-    // mobile-stack.mjs used to reserve the stacked height on that same
-    // property -- so between the two writes the document briefly fitted
-    // the viewport, and the first layout read in that window made the
-    // browser clamp the scroll offset to zero. The reservation is now a
-    // `min-height`, which floors the used height above whatever fitSurface
-    // writes, so the document is never momentarily short.
+    // Regression guard for a real bug: an earlier stacking mechanism wrote
+    // the mount's reserved height on a DIFFERENT property than Sheaf's own
+    // `fitSurface` (External/Sheaf/projects/synth/browser/src/ui.ts) did,
+    // racing two writers every frame -- the document briefly fitted the
+    // viewport between them, and the first layout read in that window made
+    // the browser clamp the scroll offset to zero. `fitSurface` is now the
+    // ONLY writer of the mount's height, and it already writes the surface's
+    // own full (self-sized, narrow) height directly, so nothing here should
+    // be able to reintroduce that race -- this stays a real regression
+    // guard, not a check on a mechanism this file still owns.
     //
     // Asserted after several animation frames, not immediately: a
     // single-frame check passes against the bug.
@@ -203,19 +190,17 @@ test.describe("mobile stacking (phone-width layout)", () => {
   });
 
   test("the runtime page buttons sit beside the sliders, under Randomize/Reset", async ({ page }) => {
-    // This replaces "the sidebar stacks below the grid at the grid's shared
-    // scale, not full width", which asserted the placement this test's
-    // subject moved away from. Sheaf's sidebar used to be a third stacked
-    // block under the encoder grid, which put four runtime page buttons a
-    // whole page-scroll from everything else. It is now placed inside the
-    // chrome block, under the Randomize/Reset column, where the column's
-    // own intrinsic height leaves room for it beside the sliders.
-    //
-    // It is still Sheaf's block, with no narrow variant of its own -- the
-    // frogg3rs surface has no weight to declare for a tree it does not
-    // emit -- so the SHELL places it, and the shell derives the position
-    // from the surface's own button-column box rather than from an offset
-    // of its own. Hence the assertion against that box below.
+    // Sheaf's sidebar used to be a third stacked block under the encoder
+    // grid, which put four runtime page buttons a whole page-scroll from
+    // everything else. It is now placed inside the chrome block, under the
+    // Randomize/Reset column, where the column's own intrinsic height
+    // leaves room for it beside the sliders -- resolved entirely by Sheaf's
+    // `RuntimeMainComponent::BuildTree()` against the surface's own
+    // declared slot (`FroggersUiSurface::SidebarSlot()`,
+    // FroggersNodeIds::kSidebarSlot), never computed by this shell. The
+    // assertion below is still against the button-column's own rendered
+    // box, since that is the ONE definition of where the slot's free space
+    // begins, on both the C++ and the browser side alike.
     const chromeBox = await page.locator(LEFT_BLOCK_SELECTOR).boundingBox();
     const columnBox = await page.locator(NARROW_BUTTON_COLUMN_SELECTOR).boundingBox();
     const bpmBox = await page.locator(BPM_SELECTOR).boundingBox();
@@ -258,74 +243,10 @@ test.describe("mobile stacking (phone-width layout)", () => {
   });
 
 
-  test("a transient measurement failure on one block does not disturb the other two", async ({ page }) => {
-    // Regression test for a real bug this suite caught during development:
-    // mobile-stack.mjs's
-    // per-frame stacking pass is supposed to be atomic across the three
-    // blocks -- if ONE block's measurement fails on a given frame (e.g.
-    // Sheaf's sidebar surface reporting a transient zero-extent bounds
-    // mid-resize), the OTHER two must stay exactly where they were, not
-    // flash back toward their native/unstacked size for that frame.
-    //
-    // Forces the failure deterministically: overrides the sidebar
-    // element's OWN `getBoundingClientRect` to report a degenerate
-    // (zero-width) rect for a short window, and polls chrome/grid's real
-    // boxes throughout that window (not just before/after) to catch a
-    // transient revert a single before/after snapshot would miss.
-    await expect
-      .poll(async () => page.locator("#synth-root").evaluate((el) => el.style.minHeight), { timeout: 5_000 })
-      .not.toBe("");
-    const chromeBefore = await page.locator(LEFT_BLOCK_SELECTOR).boundingBox();
-    const gridBefore = await page.locator(RIGHT_BLOCK_SELECTOR).boundingBox();
-
-    const observed = await page.evaluate(
-      async ({ chromeBefore, gridBefore, leftSelector, rightSelector, sidebarSelector }) => {
-        const sidebar = document.querySelector(sidebarSelector);
-        const original = sidebar.getBoundingClientRect.bind(sidebar);
-        sidebar.getBoundingClientRect = () => ({
-          width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0, x: 0, y: 0,
-          toJSON() { return this; },
-        });
-
-        const chromeEl = document.querySelector(leftSelector);
-        const gridEl = document.querySelector(rightSelector);
-        let maxChromeDeltaW = 0;
-        let maxGridDeltaW = 0;
-        const deadline = performance.now() + 250; // several render frames' worth
-        while (performance.now() < deadline) {
-          maxChromeDeltaW = Math.max(maxChromeDeltaW, Math.abs(chromeEl.getBoundingClientRect().width - chromeBefore.width));
-          maxGridDeltaW = Math.max(maxGridDeltaW, Math.abs(gridEl.getBoundingClientRect().width - gridBefore.width));
-          await new Promise((resolve) => requestAnimationFrame(resolve));
-        }
-
-        sidebar.getBoundingClientRect = original;
-        return { maxChromeDeltaW, maxGridDeltaW };
-      },
-      { chromeBefore, gridBefore, leftSelector: LEFT_BLOCK_SELECTOR, rightSelector: RIGHT_BLOCK_SELECTOR, sidebarSelector: SIDEBAR_SELECTOR },
-    );
-
-    // A genuine revert-to-native would move these by tens to hundreds of
-    // px (chrome/grid's native, un-stacked widths are far below the
-    // ~390px stacked target); a generous few-px tolerance still catches
-    // that while giving normal sub-pixel layout/transform-matrix rounding
-    // room to be sub-pixel.
-    expect(observed.maxChromeDeltaW).toBeLessThan(2);
-    expect(observed.maxGridDeltaW).toBeLessThan(2);
-
-    // Confirms recovery too: the sidebar's own real getBoundingClientRect
-    // is restored above, so the very next frame should re-settle it back
-    // into the stack, at the grid's shared scale (not full width -- see
-    // this file's own header comment).
-    const expectedSidebarWidth = await expectedStackedWidth(page, SIDEBAR_SELECTOR);
-    await expect
-      .poll(async () => (await page.locator(SIDEBAR_SELECTOR).boundingBox()).width, { timeout: 5_000 })
-      .toBeGreaterThan(expectedSidebarWidth * 0.9);
-  });
-
-  // Positive control: proves the drag/press input
-  // mapping survives the per-block transform above, for one control in
-  // EACH stacked block -- not just that the boxes land in the right
-  // place, but that the app still genuinely reacts to input inside them.
+  // Positive control: proves the drag/press input mapping still reaches the
+  // app for one control in EACH stacked block -- not just that the boxes
+  // land in the right place, but that the app still genuinely reacts to
+  // input inside them.
 
   test("a button press in the chrome block still reaches the app", async ({ page }) => {
     // FroggersNodeIds::SceneButton(1) ("Scene 2") -- a plain click-dispatch
@@ -344,15 +265,15 @@ test.describe("mobile stacking (phone-width layout)", () => {
   test("an encoder drag in the grid block still reaches the app", async ({ page }) => {
     // FroggersNodeIds::Encoder(0) -- a Draw-kind node whose value is only
     // ever changed via pointerDragAction (ui.ts continuePointerDrag), the
-    // exact code path a drag-input regression in the mobile-stack transform
-    // would break. Playwright's
+    // exact code path a drag-input regression under Sheaf's `fitSurface`
+    // scale would break. Playwright's
     // page.mouse.* does not reliably synthesize the pointerdown/pointermove
     // sequence Chromium's PointerEvent + setPointerCapture flow needs in
-    // this headless run (reproduced with zero mobile-stack transforms
-    // involved, on the desktop project too -- an environment/harness
-    // characteristic, not a mobile-stack defect); dispatching real
-    // PointerEvents directly against the element sidesteps that and is
-    // what this test does. A successful drag repaints the encoder's own
+    // this headless run (reproduced on the desktop project too, at no
+    // scale at all -- an environment/harness characteristic, not a scale
+    // defect); dispatching real PointerEvents directly against the element
+    // sidesteps that and is what this test does. A successful drag repaints
+    // the encoder's own
     // canvas (its drawn value), which this asserts directly -- the
     // strongest available "rendered state change" signal, stronger than
     // the internal draggedSincePointerDown flag alone.

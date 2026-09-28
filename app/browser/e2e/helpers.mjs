@@ -47,9 +47,9 @@ export const SURFACE_ROOT_SELECTOR = '[data-synth-node-id="froggers.root"]';
 // runtime-chrome sidebar (Audio/Controllers/Sync/File + CPU meter), a
 // sibling of `froggers.root` under the composite `runtime.main.root`
 // Sheaf's fitSurface actually scales (RuntimeMainComponent::BuildTree()).
-// Not a FroggersUiSurface node, but the mobile stack includes it as
-// a third stacked block, alongside everything else above or
-// below the grid.
+// Not a FroggersUiSurface node -- placed, when narrow, into the surface's
+// own declared sidebar slot by Sheaf's RuntimeMainComponent::BuildTree(),
+// inside the chrome block beside the sliders, never beside the grid.
 export const SIDEBAR_SELECTOR = '[data-synth-node-id="runtime.sidebar.root"]';
 // FroggersNodeIds::kPlay (FroggersUiSurface.hpp) -- a plain
 // click-dispatch transport control (ControlStyle::action, not a drag
@@ -128,37 +128,6 @@ export async function encoderGridBoundingBox(page) {
 }
 
 /**
- * A block's own wire-set (design-space) width, read live from the DOM the
- * same way mobile-stack.mjs itself derives it (mobile-stack.mjs's own
- * `wireExtent`) -- never a hardcoded design width number.
- */
-export async function wireWidth(page, selector) {
-  return page.locator(selector).evaluate((el) => parseFloat(el.style.width));
-}
-
-/**
- * The ONE shared scale mobile-stack.mjs applies to every stacked block
- * when narrow (that file's own "ONE shared scale for the WHOLE stack"
- * comment): viewport width over the grid block's own live wire width.
- */
-export async function gridSharedScale(page) {
-  const viewport = page.viewportSize();
-  const gridWire = await wireWidth(page, RIGHT_BLOCK_SELECTOR);
-  return viewport.width / gridWire;
-}
-
-/**
- * A stacked block's expected on-screen width at the grid's shared scale
- * (gridSharedScale(page) * that block's own live wire width) -- the
- * formula both the chrome and sidebar width assertions need, since
- * mobile-stack.mjs applies the same shared scale to every stacked block.
- */
-export async function expectedStackedWidth(page, selector) {
-  const [scale, wire] = await Promise.all([gridSharedScale(page), wireWidth(page, selector)]);
-  return scale * wire;
-}
-
-/**
  * Vertical overlap in px between two bounding boxes (0 when one renders
  * entirely above/below the other) -- the "stacked, not beside" predicate
  * the mobile-stacking and desktop-layout suites both need. Direction-
@@ -214,11 +183,10 @@ export async function canvasHasPaintedPixels(page, canvasSelector) {
  *  - toBeInViewport() polls a real IntersectionObserver, which resolves
  *    intersection against every ancestor's own clipping (unlike
  *    boundingBox()/getBoundingClientRect(), which reports an element's
- *    own box regardless of whether an ancestor clips it away -- see
- *    mobile-stack.mjs's own header comment for the concrete bug this
- *    distinction guards against: a collapsed, overflow:hidden ancestor
- *    that clips an otherwise-correctly-sized, correctly-painted child
- *    completely out of view).
+ *    own box regardless of whether an ancestor clips it away -- a
+ *    collapsed, overflow:hidden ancestor could clip an otherwise
+ *    correctly-sized, correctly-painted child completely out of view
+ *    while boundingBox() alone still reported it fine).
  *  - canvasHasPaintedPixels reads the canvas's own backing store, which
  *    an ancestor's clipping does not touch at all -- a canvas that was
  *    simply never painted into would still report itself "in viewport"
@@ -235,10 +203,11 @@ export async function expectEncoderCanvasVisible(page, canvasSelector) {
   // overflow:hidden ancestor clips its child away at every scroll offset,
   // so scrolling cannot bring such a child into the viewport and the
   // assertion below still fails.
-  // The scroll is INSIDE the retry: once audio is running, renderFrame
-  // re-applies the stacked transforms every frame, which can move a
-  // just-scrolled-to row back out from under the viewport. Scrolling once
-  // and then waiting only works while nothing re-lays-out underneath.
+  // The scroll is INSIDE the retry: once audio is running, a resize the
+  // surface reacts to (or the scale `fitSurface` applies changing, e.g.
+  // from a scrollbar appearing) can move a just-scrolled-to row back out
+  // from under the viewport. Scrolling once and then waiting only works
+  // while nothing re-lays-out underneath.
   // Still toBeInViewport (IntersectionObserver), never a hand-rolled
   // getBoundingClientRect check -- see this helper's own note above on why
   // that distinction is the whole point.

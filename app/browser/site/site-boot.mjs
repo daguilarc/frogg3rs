@@ -52,14 +52,14 @@ import { runtimeIdentityForCatalogApp } from "./sheaf-runtime/catalog.js";
 import { installSynthBrowserApp } from "./sheaf-runtime/main.js";
 import { materializePackage } from "./sheaf-runtime/package-loader.js";
 import { BrowserUiBackend } from "./sheaf-runtime/ui.js";
-import { installMobileStack } from "./mobile-stack.mjs";
+import { installViewportWidth } from "./viewport-width.mjs";
 
 const APP_ID = "frogg3rs";
 
-// Installs before the app boots so the very first render frame
-// already carries the mobile stack when narrow. See mobile-stack.mjs's own
-// header comment for the full mechanism and its input-mapping trace.
-installMobileStack(BrowserUiBackend);
+// Installs before the app boots so the very first render frame already
+// reports the mount's width. See viewport-width.mjs's own header comment for
+// the full mechanism.
+installViewportWidth(BrowserUiBackend);
 
 // A failed boot must SAY so on the page. The data attribute alone left a
 // visitor (and the operator, debugging remotely) staring at a blank frame
@@ -69,8 +69,6 @@ function fail(root, error) {
   const message = error instanceof Error ? error.message : "frogg3rs failed to start";
   root.dataset.synthStatus = message;
   root.style.height = "";
-  root.style.minHeight = "";
-  root.style.overflow = "";
   const notice = document.createElement("div");
   notice.className = "boot-error";
   notice.setAttribute("role", "alert");
@@ -127,13 +125,12 @@ async function boot(root) {
 // callback itself triggers layout work that would need yet another
 // observation in the same frame. This app has TWO independent
 // ResizeObservers on the same `#synth-root` element -- Sheaf's own
-// `fitSurface`-triggering one (ui.ts) and mobile-stack.mjs's own
-// (installMobileStack's own comment on why) -- which is exactly the
-// reactive-layout pattern that provokes this notice, especially at narrow
-// viewports where mobile-stack.mjs's per-frame stacking pass is actively
-// engaged. Empirically confirmed harmless and frequent here (caught by
-// this file's own e2e suite going red the moment the backstop below
-// started treating it as fatal): DO NOT treat it as a boot failure.
+// `fitSurface`-triggering one (ui.ts) and viewport-width.mjs's own
+// (installViewportWidth's own comment on why) -- which is exactly the
+// reactive-layout pattern that provokes this notice. Empirically confirmed
+// harmless and frequent here (caught by this file's own e2e suite going red
+// the moment the backstop below started treating it as fatal): DO NOT treat
+// it as a boot failure.
 const BENIGN_WINDOW_ERROR_MESSAGES = new Set([
   "ResizeObserver loop completed with undelivered notifications.",
   "ResizeObserver loop limit exceeded",
