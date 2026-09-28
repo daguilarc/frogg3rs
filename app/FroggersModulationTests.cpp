@@ -597,6 +597,101 @@ TEST_CASE(connected_external_audio_modulation_reaches_a_destination_end_to_end) 
     REQUIRE_NEAR(modulatedNegative, 0.0f, 1e-4f);
 }
 
+// Two distinct, simultaneously-active routes on the same parameter -- route
+// A (External Audio, restsAtZero == false, instant and exactly controllable
+// via the sample argument) and route B (its own EF, restsAtZero == true,
+// smoothed). Both derive from the same `externalAudioSample`, but route A
+// always reads the CURRENT sample while route B keeps rising toward it
+// sample by sample -- so holding the sample constant gives two genuinely
+// different route-B readings with route A's own source provably unmoved (it
+// depends only on the current sample, which never changes within each half
+// of this test).
+TEST_CASE(attenuverter_two_sources_swing_independently_and_clamp) {
+    // -- (a) swings add independently: route A's own contribution stays
+    // fixed while route B's own (still-rising) source is read twice, and
+    // each reading's resolved value matches the law exactly with NO cross
+    // term -- proving a change to route B's source does not move route A's
+    // own contribution. --
+    Fixture fx;
+    synth::Parameter& target = fx.model.PageParameter(FroggersBankId::Reverb, 1);
+    constexpr float kIndependenceCenter = 0.5f;
+    for (const synth::SceneState& pole : detail::kScenePoles) {
+        target.HandleSetAbsolute(pole, kIndependenceCenter);
+    }
+    for (int i = 0; i < 50; ++i) {
+        fx.StepOnce(/*externalConnected=*/true, /*externalAudioSample=*/0.6f);
+    }
+    fx.model.Group().UpdateModValues();
+    const float sourceA = fx.slate.SourceValue(kModSlotExternalAudio);
+    REQUIRE_NEAR(sourceA, 0.8f, 1e-6f);  // NormalizeBipolarToUnit(0.6) == 0.8, exact.
+    const float sourceB1 = fx.slate.SourceValue(kModSlotExternalAudioEf);
+
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    drillIn.PressEncoder(1);
+    synth::Parameter* depthA = target.ModulationDepthParameter(kModSlotExternalAudio);
+    synth::Parameter* depthB = target.ModulationDepthParameter(kModSlotExternalAudioEf);
+    REQUIRE_TRUE(depthA != nullptr);
+    REQUIRE_TRUE(depthB != nullptr);
+    for (const synth::SceneState& pole : detail::kScenePoles) {
+        depthA->SceneCenter(pole.leftScene) = 1.0f;  // raw depth == +1.0
+        depthB->SceneCenter(pole.leftScene) = 1.0f;  // raw depth == +1.0
+    }
+    fx.manager.ComputeAllParameters();
+    const float resolved1 = target.GetRaw(0);
+    // restsAtZero == false: signal == 2*sourceA - 1 (contribution == sourceA - 0.5); fixed for the rest of this test.
+    const float contributionA = 1.0f * (sourceA - 0.5f);
+    // restsAtZero == true: signal == sourceB1 directly (no -0.5 shift).
+    REQUIRE_NEAR(resolved1, kIndependenceCenter + contributionA + 1.0f * sourceB1 * 0.5f, 1e-4f);
+
+    for (int i = 0; i < 50; ++i) {
+        fx.StepOnce(/*externalConnected=*/true, /*externalAudioSample=*/0.6f);  // same sample: route A untouched.
+    }
+    fx.model.Group().UpdateModValues();
+    fx.manager.ComputeAllParameters();
+    const float sourceB2 = fx.slate.SourceValue(kModSlotExternalAudioEf);
+    REQUIRE_TRUE(sourceB2 > sourceB1);  // positive control: route B's own source kept rising.
+    REQUIRE_NEAR(fx.slate.SourceValue(kModSlotExternalAudio), sourceA, 1e-6f);  // route A's own source untouched.
+    const float resolved2 = target.GetRaw(0);
+    REQUIRE_NEAR(resolved2, kIndependenceCenter + contributionA + 1.0f * sourceB2 * 0.5f, 1e-4f);
+
+    // -- (b) the combined sum clamps to the range boundary rather than
+    // renormalizing: a FRESH fixture (so route B's own EF starts from its
+    // own floor, 0.0, rather than carrying over (a)'s state) at a moderate
+    // center with BOTH routes at full depth and route A pinned to its own
+    // maximum. Route A's own contribution (0.5, its own maximum) plus this
+    // center alone (1.0) does not yet reach the range's own ceiling; route
+    // B, still mid-rise (checked below, not yet saturated), supplies the
+    // rest, so the clamp is driven by the COMBINED routes, not by either
+    // route alone already at its own ceiling. --
+    Fixture fx2;
+    synth::Parameter& target2 = fx2.model.PageParameter(FroggersBankId::Reverb, 1);
+    constexpr float kClampingCenter = 0.5f;
+    for (const synth::SceneState& pole : detail::kScenePoles) {
+        target2.HandleSetAbsolute(pole, kClampingCenter);
+    }
+    for (int i = 0; i < 100; ++i) {
+        fx2.StepOnce(/*externalConnected=*/true, /*externalAudioSample=*/1.0f);
+    }
+    fx2.model.Group().UpdateModValues();
+    REQUIRE_NEAR(fx2.slate.SourceValue(kModSlotExternalAudio), 1.0f, 1e-6f);
+    const float sourceB3 = fx2.slate.SourceValue(kModSlotExternalAudioEf);
+    REQUIRE_TRUE(sourceB3 > 0.05f && sourceB3 < 0.5f);  // mid-rise, not saturated.
+
+    FroggersModulationDrillIn drillIn2(fx2.model.BankAt(FroggersBankId::Reverb));
+    drillIn2.PressEncoder(1);
+    synth::Parameter* depthA2 = target2.ModulationDepthParameter(kModSlotExternalAudio);
+    synth::Parameter* depthB2 = target2.ModulationDepthParameter(kModSlotExternalAudioEf);
+    REQUIRE_TRUE(depthA2 != nullptr);
+    REQUIRE_TRUE(depthB2 != nullptr);
+    for (const synth::SceneState& pole : detail::kScenePoles) {
+        depthA2->SceneCenter(pole.leftScene) = 1.0f;
+        depthB2->SceneCenter(pole.leftScene) = 1.0f;
+    }
+    fx2.manager.ComputeAllParameters();
+    const float resolvedClamped = target2.GetRaw(0);
+    REQUIRE_NEAR(resolvedClamped, 1.0f, 1e-5f);
+}
+
 TEST_CASE(disconnected_external_audio_never_receives_randomized_depth) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/false);
