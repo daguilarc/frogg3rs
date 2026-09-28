@@ -176,6 +176,15 @@ External Audio and External Audio EF carry signal once an external input is conn
 MIDI controllers, below, for how each host connects one. Until then External Audio holds at 0.5 and
 its envelope follower at 0.0, so neither one modulates anything.
 
+**Crispy and Crunchy are the two exceptions to the signed, both-ways law above.** For these two controls
+only, every one of the 15 sources only ever ADDS scramble amount — never the signed, both-ways swing the
+rest of this section describes, and never a subtraction. This holds even for a source that swings both
+ways everywhere else: a Random S&H, VCO Audio, Noise or External Audio source sitting at its own resting
+value still nudges Crispy or Crunchy's amount up by half depth, where that same source at that same
+resting value contributes nothing to a page parameter. The depth knob itself runs one-sided, from off to
+full, with no inverting half. Turning it left of off stops there and goes no further — a hard floor, not
+a dead zone that merely stops having an effect once you reach it.
+
 ### Randomize
 
 Two randomize controls, both scoped to what is on screen.
