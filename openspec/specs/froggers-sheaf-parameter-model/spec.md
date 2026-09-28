@@ -803,3 +803,58 @@ The Filter page SHALL limit its output with one limiter placed after the Comb/Pe
 - **AND** a replica that applies no limiter to either branch, only to the blend, matches the chain's own output sample for sample
 - Check: `app/FroggersDspParityTests.cpp`, `filter_fx_chain_limits_neither_branch_ahead_of_the_blend_on_a_pinned_comb`, which pins Peak gain and comb feedback at maximum, Topology at maximum so the peak's input is the comb branch alone, and Peak frequency and Comb delay at their shared registered-default pitch, then drives a full-scale sine at that pitch through both the shipped `FilterFxChain::Process` and a replica that applies the output limiter only to the blend, never to either branch alone, and asserts that the two match sample for sample, and that the peak branch's own peak and the comb branch's own peak, each read before the blend, both exceed the limiter's threshold.
 
+### Requirement: Froggers' modulation depth is an attenuverter, not a crossfade
+
+Froggers' single `ParameterGroup` SHALL be configured with Sheaf's modulation blend mode `kAttenuverter` (the `attenuverter-blend-mode` Sheaf change's spm-92).
+
+The `manager.CreateGroup(...)` call in `FroggersParameters::Init` (`app/FroggersParameters.hpp`) sets that field, realizing one law for every source (ruled by the operator on 2026-09-28, replacing an earlier revision that scaled a resting envelope follower's full depth to `+1.0` instead of `+0.5`): `value = clamp(knob + Σ depth × signal × 0.5, range)`, where `signal` is that source decoded to its real signal, `0` meaning "doing nothing." Each of the 11 modulation sources whose own rest/neutral value sits at the middle of its `[0,1]` range — the six Random S&H lanes, the three VCO Audio sources, External Audio, and Noise — decodes to `signal = 2×source − 1 ∈ [−1,1]`, bipolar around that own midpoint. Each of the 4 modulation sources whose own rest/neutral value sits at the floor of its `[0,1]` range instead — VCO1, VCO2, and VCO3's own Envelope Follower, and the External Audio Envelope Follower, flagged by the registered `restsAtZero` (Sheaf's spm-93) — decodes to `signal = source ∈ [0,1]` unchanged. The SAME `× 0.5` then applies to every source regardless of category, so the target's own commanded knob value keeps full weight at every modulation depth; a bipolar source swings the target `±0.5` of its range at full depth and full signal; an envelope-follower source pushes the target up to `+0.5` — never `+1` — at full depth and full signal, and a resting (silent) envelope-follower source contributes nothing to its target regardless of depth; several sources on one parameter add their swings independently and the sum is clamped to the parameter's range, with no renormalization between sources; a negative depth inverts its source's contribution; and a modulation view opened on a depth parameter's own depth (a nested/recursive view) computes under the identical law, because Sheaf materializes a depth-of-a-depth `Parameter` into the same `ParameterGroup` as its parent (spm-92). The per-source rest-point distinction (which of the 15 sources is which) is read from each source's own registered `ModulatorMetadata::restsAtZero` (Sheaf's spm-93), never from a hardcoded source index inside Sheaf — `app/FroggersModulation.hpp`'s `RegisterSources()` is what sets it, per source. The depth knob's own centre-neutral exponential knob-to-depth curve (`ModulationDepthTargetFromKnob`), Randomize's draws (`RandomizeParameterModulationDepths`, `RandomizeVisibleValue`), Crispy and Crunchy's own resolution path (`mod-blend-semantics`'s "Modulation applied before fuegoization," unchanged by this requirement, and given no carve-out — also ruled by the operator on 2026-09-28), and patch persistence (`Parameter::ToValueJSON`/`LoadValuesFromJSON`) are unchanged by this requirement: a saved patch's depth-knob values load exactly as before, and any patch with a nonzero depth on any parameter sounds different after this change takes effect, with no version marker and no migration. `braid-4` and `miniapp` do not set this field and keep today's crossfade law unless their own owners opt in separately.
+
+#### Scenario: Froggers' group opts into the attenuverter blend mode
+- **WHEN** `FroggersParameters::Init` creates its `ParameterGroup`
+- **THEN** the group's configuration reports modulation blend mode `kAttenuverter`
+- Check: `app/FroggersParameterModelTests.cpp: the_one_parameter_group_is_configured_for_the_attenuverter_blend_mode`
+
+#### Scenario: A parameter's own knob keeps full authority at full depth
+- **WHEN** a Froggers page parameter has one rest-at-0.5 modulation source (e.g. External Audio) assigned at depth `1.0` (full depth) and that source's own value is at its neutral midpoint `0.5`
+- **THEN** the parameter's resolved value equals its own commanded knob value, unchanged, because the source's swing at its own midpoint is `0` and the knob's weight never drops to `0`
+- **AND** this is the outcome the operator's ruling names directly: turning the depth knob to full no longer replaces the target's own knob with the bare source
+- Check: `app/FroggersModulationTests.cpp: connected_external_audio_modulation_reaches_a_destination_end_to_end` (knob 0.2, External Audio at 0.9: full positive depth reads 0.6, full negative clamps to 0.0); Sheaf `External/Sheaf/projects/synth/tests/parameter_modulation_tests.cpp: attenuverter_rest_at_half_source_contributes_nothing_at_its_own_rest`
+
+#### Scenario: A resting envelope-follower source contributes nothing, at any depth
+- **WHEN** a Froggers page parameter has one of the 4 rest-at-zero modulation sources (VCO1/VCO2/VCO3 Envelope Follower or External Audio Envelope Follower) assigned at any depth, including full depth `1.0`, and that source's own oscillator or input is silent (its own rest value, `0`)
+- **THEN** the parameter's resolved value equals its own commanded knob value, unchanged, regardless of the depth's magnitude or sign — not `center - 0.5 * depth`, which is what an unruled uniform-midpoint substitution would have produced (the defect the operator's 2026-09-28 ruling and Sheaf's spm-93 exist to prevent)
+- Check: `app/FroggersModulationTests.cpp: a_resting_envelope_follower_source_contributes_nothing_regardless_of_depth`
+
+#### Scenario: A fully-driven envelope-follower source pushes the target up by half the depth, never the whole depth
+- **WHEN** a Froggers page parameter has one of the 4 rest-at-zero modulation sources assigned at full depth `1.0`, and that source's own oscillator or input is driving it to its own maximum (its own signal `1.0`, not its rest value)
+- **THEN** the parameter's resolved value moves up from its own commanded knob value by exactly `0.5` — half of the full depth, matching a bipolar source's own maximum upward swing at the same depth — never by the full `1.0` a resting-at-zero source's raw signal alone would suggest
+- Check: `app/FroggersModulationTests.cpp: a_fully_driven_envelope_follower_source_pushes_up_by_half_the_depth_not_the_whole_depth`; Sheaf `External/Sheaf/projects/synth/tests/parameter_modulation_tests.cpp: attenuverter_rest_at_zero_source_reaches_only_half_the_range_at_full_signal`
+
+#### Scenario: Each source's own rest point is read from what it registered, not its slot number
+- **WHEN** the Controllers/Modulation view is inspected for any of the 15 registered sources
+- **THEN** each source's contribution to a resolved value follows from that source's own registered `ModulatorMetadata::restsAtZero` (`app/FroggersModulation.hpp`'s `RegisterSources()`), not from which of the 15 slots it happens to occupy
+- Check: `app/FroggersModulationTests.cpp: envelope_follower_sources_are_registered_as_resting_at_zero`
+
+#### Scenario: Several sources swing a parameter independently and clamp to its range
+- **WHEN** a Froggers page parameter has two modulation sources assigned, each at a nonzero depth whose swings would sum past the parameter's range
+- **THEN** each source's contribution is computed independently of the other's depth or value
+- **AND** the summed result is clamped to the parameter's `[0, 1]` range without either source's depth being rescaled by the other's presence
+- Check: `app/FroggersModulationTests.cpp: attenuverter_two_sources_swing_independently_and_clamp`
+
+#### Scenario: A depth's own depth (nested view) follows the same law
+- **WHEN** a modulation view is opened on a depth parameter's own depth, up to the existing three-level limit (`openspec/specs/froggers-sheaf-parameter-model`'s recursive modulation-view scenarios)
+- **THEN** that nested depth parameter's resolved value follows the identical attenuverter law as a top-level parameter, because it is materialized into the same `ParameterGroup`
+- Check: Sheaf `External/Sheaf/projects/synth/tests/parameter_modulation_tests.cpp: nested_depth_inherits_its_parents_attenuverter_mode`
+
+#### Scenario: Saved patches load unchanged and sound different at nonzero depth
+- **WHEN** a patch saved before this change, with a nonzero depth on any parameter, is loaded after this change ships
+- **THEN** every stored depth-knob value loads exactly as `Parameter::LoadValuesFromJSON` loaded it before this change (spm-51 is unaffected)
+- **AND** the patch's audible result differs wherever a nonzero depth was in effect, because the same stored depth value now resolves through the attenuverter law instead of the crossfade law
+- **AND** no patch-format version field or migration step is introduced
+- Check: none automated; MANUAL.md's Modulation assignment section states what depth does now, for a reader who never saw the earlier behavior.
+
+#### Scenario: Other Sheaf apps are unaffected
+- **WHEN** `braid-4` and `miniapp` build their own `ParameterGroup`s without setting modulation blend mode
+- **THEN** their modulation resolution is byte-for-byte unchanged (Sheaf spm-92's own "Existing groups are unaffected" scenario)
+- Check: Sheaf `External/Sheaf/projects/synth/tests/parameter_modulation_tests.cpp: modulation_normalization_under_one`, `overfull_negative_modulation_offset_uses_normalized_depths`, and the braid4 and miniapp system test binaries, all passing unchanged under the full Sheaf `test` target with this change applied.
+

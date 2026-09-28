@@ -13,6 +13,8 @@ where `base` is the stored knob value, `depth` is mod amount, and `modSource` is
 
 All sim hosts SHALL implement this via `ModMgr::Modulate` (not duplicated inline crossfade math) for page rows and Delay sidecar rows.
 
+This requirement governs the firmware host engine only (`src/core/ModMgr.hpp`, consumed by `src/core/Parameter.hpp`'s `GetPreFuegoization`, `src/core/FroggersEngine.hpp`, and `src/core/Page.hpp`) — the Daisy Field hardware pedal's own modulation resolution, which `modulation-depth-attenuverter` does not edit: ruled by the operator on 2026-09-28, firmware under `src/` does not change. Frogg3rs's Sheaf-based app engine (`app/`, `External/Sheaf/projects/synth`) does not use `ModMgr::Modulate` at all (confirmed: no reference to `ModMgr` exists outside `src/` and `test/firmware/`) and resolves modulation through Sheaf's own `Parameter::ComputeAtDepth`/`GetRaw` instead, per `froggers-sheaf-parameter-model` — whose scope note that Sheaf's `ParameterManager` is "the sole parameter authority" for the app build already established these as two independent implementations before this change. As of `modulation-depth-attenuverter`, Froggers' app-side `ParameterGroup` uses a different law (attenuverter, not crossfade) than this requirement describes, with no carve-out for Crispy or Crunchy (also ruled by the operator on 2026-09-28: those two are ordinary attenuverter targets like any other Froggers parameter); the two engines are not required to agree, and a player's hardware pedal and desktop/VST/browser build can sound different at the same depth setting as a result — this is the ruled outcome, not an oversight.
+
 #### Scenario: Zero depth returns base only
 
 - **WHEN** a parameter has mod source assigned and mod depth = 0
