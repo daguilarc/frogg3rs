@@ -58,13 +58,16 @@ public:
 
             // Operator documentation ships with the app (froggers-sheaf-
             // runtime-app spec, "Operator documentation ships with the
-            // app"): a native macOS main-menu "Help" menu, entirely
-            // separate from the app's own rendered surface (MainWindow's
-            // content, set below) -- opening the manual/quick dictionary
-            // needs no new UI inside FroggersUiSurface's node tree.
+            // app"): a native main-menu "Help" menu, entirely separate from
+            // the app's own rendered surface (MainWindow's content, set
+            // below) -- opening the manual/quick dictionary needs no new UI
+            // inside FroggersUiSurface's node tree. Android gets neither
+            // form: the app looks like the site (operator, 2026-09-29), no
+            // menu bar at all, so helpMenu_ is never attached to a window
+            // there.
 #if JUCE_MAC
             juce::MenuBarModel::setMacMainMenu(&helpMenu_);
-#else
+#elif !JUCE_ANDROID
             window_->setMenuBar(&helpMenu_);
 #endif
 
@@ -89,6 +92,12 @@ public:
         if (window_ != nullptr) {
             window_->setMenuBar(nullptr);
         }
+#endif
+#if JUCE_ANDROID
+        // Clears the kiosk-mode component before window_ is destroyed below:
+        // Desktop::getKioskModeComponent() would otherwise dangle (same
+        // ordering reason as the setMenuBar(nullptr) call above).
+        juce::Desktop::getInstance().setKioskModeComponent(nullptr, false);
 #endif
         window_.reset();
         activeSession_.reset();
@@ -130,11 +139,41 @@ private:
             setResizable(true, true);
 #if JUCE_ANDROID
             // Target SDK 35 draws edge to edge: fill the display's user area
-            // (design.md, "Window, docs, Record"), then pull in the
-            // safe-area insets so the surface never sits under a system bar.
-            // `config.uiWidth`/`uiHeight` (used elsewhere, see ShowContent
-            // below) name a DESKTOP window size and are not applied here.
+            // (design.md, "Window, docs, Record"). setFullScreen(true) also
+            // creates this window's native peer if it doesn't exist yet
+            // (setKioskModeComponent below asserts on a component with no
+            // peer -- "Only components that are already on the desktop can
+            // be put into kiosk mode!", juce_Desktop.cpp -- so this call must
+            // run first).
             setFullScreen(true);
+
+            // Operator, 2026-09-29: like an instrument app, hide the status
+            // and navigation bars while Frogg3rs is in front, immersive and
+            // sticky (an edge swipe shows them briefly, then they hide
+            // again), rather than only insetting content inside them.
+            // juce::Desktop's kiosk-mode component is JUCE's own Android
+            // mechanism for exactly this: setKioskModeComponent() calls
+            // through to AndroidComponentPeer::setFullScreen() again
+            // (Desktop::setKioskComponent, juce_Windowing_android.cpp),
+            // which this time hides the bars because
+            // Desktop::getKioskModeComponent() is now non-null
+            // (isKioskModeComponent() / shouldNavBarsBeHidden(), same file);
+            // its own ComponentPeerView.setSystemUiVisibilityCompat sets
+            // exactly SYSTEM_UI_FLAG_HIDE_NAVIGATION | SYSTEM_UI_FLAG_FULLSCREEN
+            // | SYSTEM_UI_FLAG_IMMERSIVE_STICKY when hiding -- Android's own
+            // "immersive sticky" mode, whose documented behaviour is that
+            // same edge-swipe-reveals-then-hides-again shape.
+            // allowMenusAndBars=false is what hides the bars (JUCE's own
+            // naming is inverted: true keeps them).
+            juce::Desktop::getInstance().setKioskModeComponent(this, false);
+
+            // Pulls in the safe-area insets so the surface never sits under
+            // the display CUTOUT specifically -- hiding the status/
+            // navigation bars above does not move content out of a cutout
+            // (a notch/hole-punch can sit inside the drawable area even with
+            // both bars hidden). `config.uiWidth`/`uiHeight` (used
+            // elsewhere, see ShowContent below) name a DESKTOP window size
+            // and are not applied here.
             ApplySafeAreaBounds();
 #endif
             setVisible(true);
@@ -167,6 +206,36 @@ private:
             if (onViewportWidthChanged) {
                 onViewportWidthChanged(getWidth());
             }
+        }
+
+        // Both ApplySafeAreaBounds() call sites above (the constructor and
+        // ShowContent) run before Android has ever delivered real window
+        // insets to the activity's decor view: juce_Windowing_android.cpp's
+        // Displays::findDisplays() reads them via
+        // `decorView.getRootWindowInsets()`, which returns null until the
+        // view is attached and has gone through a layout pass, so
+        // `display->safeAreaInsets` is still the zero-inset default at both
+        // calls. The real insets arrive later, asynchronously, through the
+        // decor view's OnApplyWindowInsetsListener (installed by JUCE's
+        // AndroidComponentPeer) and a couple of other startup callbacks
+        // (onActivityStarted, onLayoutChange) -- every one of them calls
+        // ComponentPeer::forceDisplayUpdate(), which calls
+        // Desktop::getInstance().displays->refresh(). Displays::refresh()
+        // re-reads the insets and, when they differ from the stale snapshot
+        // (verified in juce_Displays.cpp: safeAreaInsets is one of the
+        // fields `refresh()` diffs), calls handleScreenSizeChange() on every
+        // ComponentPeer, which calls `component.parentSizeChanged()`
+        // unconditionally -- before comparing old and new peer bounds, so it
+        // fires even though our window's own bounds (already set to the
+        // full, un-inset userArea) haven't changed and `resized()` above
+        // never runs. ResizableWindow::parentSizeChanged() (DocumentWindow's
+        // base) only acts when this window has a parent Component, which a
+        // top-level desktop window never does, so overriding it here is safe
+        // and is JUCE's actual notification path for "the display's insets
+        // just became known/changed" on Android, not a poll or guess.
+        void parentSizeChanged() override {
+            DocumentWindow::parentSizeChanged();
+            ApplySafeAreaBounds();
         }
 
         std::function<void(int)> onViewportWidthChanged;
@@ -313,6 +382,9 @@ private:
                 if (ok) {
                     ok = stream->write(fileExport.bytes.data(), fileExport.bytes.size());
                     stream->flush();
+#if JUCE_ANDROID
+                    INFO("F2diag: write ok=%d bytes=%zu", (int)ok, fileExport.bytes.size());
+#endif
                 }
 
                 juce::String message =

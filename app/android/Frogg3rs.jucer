@@ -42,7 +42,7 @@
     XML attribute, is the old name androidActivitySubClassName, confirmed
     the same way as gradleWrapperVersion above: the wrong name resaves with
     no error and no custom activity in the generated manifest) names
-    Frogg3rsActivity, which extends android.app.Activity directly -- the
+    Frogg3rsActivity, which extends android.app.Activity directly - the
     same class getActivityClassString() in jucer_ProjectExport_Android.h
     returns itself for an app with no custom activity and no push
     notifications. JUCE's own com.rmsl.juce.JuceActivity is not used: its

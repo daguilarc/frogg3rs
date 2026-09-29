@@ -24,22 +24,12 @@
 //
 // Either way, there is no second checked-in copy of either document
 // anywhere for the bundled ones to drift from.
-//
-// On Android there is no bundled copy at all, and no default handler for
-// Markdown even if there were one: the document is opened online instead,
-// at its path in the daguilarc/frogg3rs GitHub repository's main branch,
-// with the system's default browser (juce::URL::launchInDefaultBrowser,
-// which on Android starts an ACTION_VIEW intent).
 
 #include <juce_core/juce_core.h>
 
 namespace frogg3rs_docs {
 
 inline void OpenBundledDoc(const char* filename) {
-#if JUCE_ANDROID
-    const juce::URL url("https://github.com/daguilarc/frogg3rs/blob/main/" + juce::String(filename));
-    url.launchInDefaultBrowser();
-#else
 #if JUCE_MAC
     const juce::File bundleRoot = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
     const juce::File doc = bundleRoot.getChildFile("Contents/Resources").getChildFile(filename);
@@ -48,7 +38,6 @@ inline void OpenBundledDoc(const char* filename) {
     const juce::File doc = exeDir.getChildFile(filename);
 #endif
     doc.startAsProcess();
-#endif
 }
 
 }  // namespace frogg3rs_docs
