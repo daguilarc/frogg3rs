@@ -51,10 +51,10 @@
     service runs
     without that permission and its notice appears in the task manager.
 
-    androidAdditionalJavaFolders below carries a SECOND line, an absolute
-    path into this operator's own ~/JUCE checkout (~/JUCE/modules/juce_gui_
-    basics/native/javaopt/app, where com.rmsl.juce.JuceActivity.java itself
-    lives). This is required, not optional: getAndroidJavaSourceSets() in
+    androidAdditionalJavaFolders below carries a SECOND line naming the
+    folder where com.rmsl.juce.JuceActivity.java itself lives inside a JUCE
+    checkout (<JUCE checkout>/modules/juce_gui_basics/native/javaopt/app).
+    This is required, not optional: getAndroidJavaSourceSets() in
     jucer_ProjectExport_Android.h only auto-adds that folder to the Gradle
     sourceSet "if (isUsingDefaultActivityClass() || isContentSharingEnabled())",
     true until this project named a custom activity class, false now
@@ -68,16 +68,15 @@
     fresh on whatever machine runs Projucer from ITS OWN global module-path
     setting), androidAdditionalJavaFolders has no such per-machine
     indirection in Projucer, only a literal absolute path or one relative
-    to this .jucer's own folder. An absolute path is the only way to add a
-    folder that lives outside both repositories (as ~/JUCE, task 4.1, does)
-    to this list, so it is exactly as machine-specific as ~/JUCE itself:
-    it works on any worktree on THIS Mac (the same reasoning 4.2's own
-    global-module-path choice already accepts, since ~/JUCE sits outside
-    every worktree at a fixed absolute location), but not unmodified on a
-    different operator's machine or in CI (task 4.11, not yet built), which
-    will need its own JUCE checkout at this same path, or a resave-time
-    rewrite of this one attribute, before a custom-activity build like this
-    one can compile there.
+    to this .jucer's own folder, and the JUCE checkout it must name
+    (task 4.1's ~/JUCE on this Mac, task 4.11's fresh clone in CI) lives
+    outside both repositories, at a different absolute path on every
+    machine that builds this project. So this file names no absolute path
+    itself: the second line is the literal token @JUCE_CHECKOUT@, and
+    app/android/build-android.sh substitutes the caller's JUCE checkout
+    path (JUCE_CHECKOUT, default ~/JUCE) for that token in a scratch copy
+    of this attribute immediately before every resave, restoring the token
+    afterward so the committed file never carries a real path.
   -->
   <MAINGROUP id="VgRV5IfL" name="Frogg3rs">
     <GROUP id="BcbfnoGM" name="app">
@@ -144,7 +143,7 @@
                    androidReadMediaAudioPermission="0" androidReadMediaImagesPermission="0"
                    androidReadMediaVideoPermission="0" androidExternalWriteNeeded="0"
                    androidActivitySubClassName="io.github.daguilarc.frogg3rs.Frogg3rsActivity"
-                   androidAdditionalJavaFolders="java&#10;/Users/diegoaguilar-canabal/JUCE/modules/juce_gui_basics/native/javaopt/app"
+                   androidAdditionalJavaFolders="java&#10;@JUCE_CHECKOUT@/modules/juce_gui_basics/native/javaopt/app"
                    androidPushNotifications="0"
                    androidManifestCustomXmlElements="&lt;manifest&gt;&lt;uses-permission android:name=&quot;android.permission.FOREGROUND_SERVICE&quot;/&gt;&lt;uses-permission android:name=&quot;android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK&quot;/&gt;&lt;uses-permission android:name=&quot;android.permission.FOREGROUND_SERVICE_MICROPHONE&quot;/&gt;&lt;uses-permission android:name=&quot;android.permission.WAKE_LOCK&quot;/&gt;&lt;application&gt;&lt;service android:name=&quot;io.github.daguilarc.frogg3rs.PlaybackService&quot; android:foregroundServiceType=&quot;mediaPlayback|microphone&quot; android:exported=&quot;false&quot;/&gt;&lt;/application&gt;&lt;/manifest&gt;"
                    gradleVersion="9.1.0" gradleWrapperVersion="8.13.2">

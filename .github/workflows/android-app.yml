@@ -1,0 +1,217 @@
+name: Android App
+
+on:
+  push:
+    # main: same paths-ignore as pages.yml, so an openspec/README-only push
+    # does not trigger this build. android-app: task 4.11 verifies this
+    # workflow from its own branch before it can exist on main (GitHub only
+    # dispatches a workflow from the default branch) -- task 6.4 removes
+    # this branch from the list once the workflow has merged there.
+    branches: [main, android-app]
+    tags: ['frogg3rs_android']
+    paths-ignore: ['openspec/**', 'README.md']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # JUCE's own Linux Dependencies list for building Projucer and a JUCE
+      # GUI application on Linux.
+      - name: Install JUCE's Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev libjack-jackd2-dev ladspa-sdk libcurl4-openssl-dev \
+            libfreetype-dev libfontconfig1-dev libx11-dev libxcomposite-dev \
+            libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev \
+            libxrender-dev libwebkit2gtk-4.1-dev libglu1-mesa-dev mesa-common-dev
+
+      # Pinned to match app/android/build-android.sh's own header comment
+      # and every other workflow in this repository that builds against JUCE
+      # (desktop-release.yml, vst-plugin.yml): 8.0.12 is the only version
+      # this app is developed and verified against.
+      - name: Fetch JUCE (pinned, matches this app's locally-verified checkout)
+        run: git clone --branch 8.0.12 --depth 1 https://github.com/juce-framework/JUCE.git "$HOME/JUCE"
+
+      # app/android/Frogg3rs.jucer's own EXPORTFORMATS comment records task
+      # 4.2's toolchain measurement: Gradle 9.1.0 with Android Gradle plugin
+      # 8.13.2, the first candidate pair that built on Java 25, is what the
+      # committed .jucer carries -- so this job installs the JDK that pair
+      # runs on, not the Java 17 / Gradle 8.11.1 fallback pair 4.2 never
+      # needed here.
+      - name: Setup Temurin JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      # Built the same way app/android/Frogg3rs.jucer's own header comment
+      # describes task 4.1 doing on the operator's Mac: JUCE's own CMake,
+      # JUCE_BUILD_EXTRAS, outside both repositories, at most two compile
+      # jobs at once, niced. The Projucer binary's exact path under the
+      # build tree is generator- and platform-dependent, so it is found
+      # rather than assumed. --set-global-search-path matches every MODULE
+      # in the .jucer having useGlobalPath="1".
+      - name: Build Projucer
+        run: |
+          cmake -S "$HOME/JUCE" -B "$HOME/juce-build" -DCMAKE_BUILD_TYPE=Release \
+            -DJUCE_BUILD_EXTRAS=ON -DJUCE_BUILD_EXAMPLES=OFF
+          nice cmake --build "$HOME/juce-build" --target Projucer --parallel 2
+          PROJUCER="$(find "$HOME/juce-build" -type f -name Projucer -perm -u+x | head -1)"
+          if [ -z "$PROJUCER" ]; then
+            echo "::error::Projucer binary not found under $HOME/juce-build" >&2
+            exit 1
+          fi
+          "$PROJUCER" --set-global-search-path linux defaultJuceModulePath "$HOME/JUCE/modules"
+          echo "PROJUCER=$PROJUCER" >> "$GITHUB_ENV"
+
+      # app/android/build-android.sh resaves the .jucer (substituting its
+      # own JUCE_CHECKOUT for the .jucer's @JUCE_CHECKOUT@ token -- see that
+      # script's and Frogg3rs.jucer's own header comments) and runs Gradle's
+      # assemble step, at most two Gradle compile jobs at once, niced, same
+      # as every build this repository runs on the operator's Mac. Debug
+      # first: its own applicationId assertion is the fastest real signal
+      # that the resaved project is sound before spending the release build.
+      - name: Build debug APK
+        run: app/android/build-android.sh debug
+
+      - name: Build release APK
+        run: app/android/build-android.sh release
+
+      - name: Locate built APKs
+        run: |
+          ANDROID_OUT="app/android/Builds/Android/app/build/outputs/apk"
+          DEBUG_APK="$(find "$ANDROID_OUT" -ipath '*debug*' -iname '*.apk' | head -1)"
+          RELEASE_APK="$(find "$ANDROID_OUT" -ipath '*release*' -iname '*.apk' | head -1)"
+          if [ -z "$DEBUG_APK" ] || [ -z "$RELEASE_APK" ]; then
+            echo "::error::debug APK ('$DEBUG_APK') or release APK ('$RELEASE_APK') not found under $ANDROID_OUT" >&2
+            exit 1
+          fi
+          echo "DEBUG_APK=$DEBUG_APK" >> "$GITHUB_ENV"
+          echo "RELEASE_APK=$RELEASE_APK" >> "$GITHUB_ENV"
+
+      # design.md, "Release": Projucer applies one signing config (the debug
+      # keystore) to both build types, so the release APK Gradle just built
+      # is still debug-signed. app/android/sign-apk.sh strips that
+      # signature and re-signs for real, from a keystore this job never
+      # commits to the repository: the release secrets below on the
+      # frogg3rs_android tag, a key generated for this run everywhere else
+      # (including this push, which is not that tag).
+      - name: Generate a throwaway release-signing key
+        if: "!startsWith(github.ref, 'refs/tags/frogg3rs_android')"
+        run: |
+          keytool -genkeypair -v -keystore "$RUNNER_TEMP/ci-release.keystore" \
+            -alias ci-release -keyalg RSA -keysize 2048 -validity 1 \
+            -storepass ci-release-passphrase -keypass ci-release-passphrase \
+            -dname "CN=frogg3rs CI, OU=CI, O=frogg3rs, L=CI, ST=CI, C=US"
+          echo "KEYSTORE=$RUNNER_TEMP/ci-release.keystore" >> "$GITHUB_ENV"
+          echo "KEY_ALIAS=ci-release" >> "$GITHUB_ENV"
+          echo "KEYSTORE_PASSWORD=ci-release-passphrase" >> "$GITHUB_ENV"
+
+      # Never reached on this push (it is not the frogg3rs_android tag), so
+      # FROGG3RS_RELEASE_KEYSTORE_B64 and FROGG3RS_RELEASE_KEYSTORE_PASSWORD
+      # are read only when the tag build actually needs them.
+      - name: Decode the release signing key
+        if: startsWith(github.ref, 'refs/tags/frogg3rs_android')
+        env:
+          FROGG3RS_RELEASE_KEYSTORE_B64: ${{ secrets.FROGG3RS_RELEASE_KEYSTORE_B64 }}
+          FROGG3RS_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.FROGG3RS_RELEASE_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$FROGG3RS_RELEASE_KEYSTORE_B64" ] || [ -z "$FROGG3RS_RELEASE_KEYSTORE_PASSWORD" ]; then
+            echo "::error::FROGG3RS_RELEASE_KEYSTORE_B64 and FROGG3RS_RELEASE_KEYSTORE_PASSWORD must both be set to sign the frogg3rs_android tag" >&2
+            exit 1
+          fi
+          KEYSTORE="$RUNNER_TEMP/release.keystore"
+          echo "$FROGG3RS_RELEASE_KEYSTORE_B64" | base64 -d > "$KEYSTORE"
+          # sign-apk.sh needs one alias, and this repository names no
+          # secret for it: the keystore this secret decodes to is read for
+          # its sole entry instead, which sign-apk.sh's own post-sign check
+          # already requires to exist (exactly one signer).
+          ENTRIES="$(keytool -list -keystore "$KEYSTORE" -storepass "$FROGG3RS_RELEASE_KEYSTORE_PASSWORD" \
+            | grep -E ', (PrivateKeyEntry|trustedCertEntry)' || true)"
+          ENTRY_COUNT="$(printf '%s\n' "$ENTRIES" | grep -c . || true)"
+          if [ "$ENTRY_COUNT" -ne 1 ]; then
+            echo "::error::expected exactly one entry in the release keystore, found $ENTRY_COUNT" >&2
+            exit 1
+          fi
+          echo "KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
+          echo "KEY_ALIAS=$(printf '%s\n' "$ENTRIES" | cut -d, -f1)" >> "$GITHUB_ENV"
+          echo "KEYSTORE_PASSWORD=$FROGG3RS_RELEASE_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Sign the release APK
+        run: |
+          mkdir -p dist
+          app/android/sign-apk.sh "$RELEASE_APK" dist/Frogg3rs-android.apk
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: frogg3rs-android-debug
+          path: ${{ env.DEBUG_APK }}
+          if-no-files-found: error
+
+      - name: Upload signed release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: frogg3rs-android-release
+          path: dist/Frogg3rs-android.apk
+          if-no-files-found: error
+
+  release:
+    # Publishes only for the release tag, the same guard desktop-release.yml
+    # and vst-plugin.yml use: without it a manual dispatch or the temporary
+    # android-app branch trigger above would reach `gh release create` and
+    # cut a release from whatever ref triggered the run.
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/frogg3rs_android')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download signed release APK
+        uses: actions/download-artifact@v4
+        with:
+          name: frogg3rs-android-release
+          path: dist
+
+      # MANUAL.md's "Installing the Android app" subsection (task 5.1):
+      # this release job only runs on the frogg3rs_android tag, pushed at
+      # task 6.6, after 5.1 has already written that subsection.
+      - name: Extract release notes from MANUAL.md
+        run: |
+          awk '/^### Installing the Android app$/{flag=1; next} /^##+ /{flag=0} flag' MANUAL.md > android-notes.md
+          {
+            echo "Frogg3rs Android app — $GITHUB_REF_NAME"
+            echo
+            cat android-notes.md
+          } > release-notes.md
+
+      # Create-or-update shape of desktop-release.yml's own publish step:
+      # this tag is fixed (not a pattern), so a re-point of it re-runs this
+      # job, and `gh release create` fails once a release for the tag
+      # already exists.
+      - name: Publish Android release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/Frogg3rs-android.apk \
+              --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Frogg3rs Android — $GITHUB_REF_NAME" \
+              --notes-file release-notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" dist/Frogg3rs-android.apk \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Frogg3rs Android — $GITHUB_REF_NAME" \
+              --notes-file release-notes.md
+          fi

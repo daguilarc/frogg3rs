@@ -16,6 +16,14 @@
 # the caller already set JAVA_HOME -- a CI workflow building this same
 # project sets its own Temurin JAVA_HOME before calling this script instead.
 #
+# JUCE_CHECKOUT: the JUCE checkout androidAdditionalJavaFolders' second line
+# must resolve into (see Frogg3rs.jucer's own header comment) -- defaults to
+# ~/JUCE, the checkout already built from on this Mac; a CI workflow
+# overrides it with wherever it cloned JUCE. This script substitutes it for
+# the .jucer's literal @JUCE_CHECKOUT@ token in place immediately before each
+# resave and restores the original file content on exit, so the committed
+# .jucer never ends up holding a real path.
+#
 # Parallelism: `nice` plus Gradle's own `--max-workers=2` caps GRADLE TASK
 # parallelism (at most two Gradle compile jobs, the rule this repository
 # holds every Gradle invocation on this Mac to) but does NOT cap the ninja
@@ -44,6 +52,7 @@ esac
 
 PROJUCER="${PROJUCER:-$HOME/.cache/frogg3rs-projucer/build/extras/Projucer/Projucer_artefacts/Release/Projucer.app/Contents/MacOS/Projucer}"
 JUCER_PROJECT="${JUCER_PROJECT:-$REPO_ROOT/app/android/Frogg3rs.jucer}"
+JUCE_CHECKOUT="${JUCE_CHECKOUT:-$HOME/JUCE}"
 export JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
 
 if [ ! -x "$PROJUCER" ]; then
@@ -54,6 +63,21 @@ if [ ! -x "$JAVA_HOME/bin/java" ]; then
   echo "build-android.sh: no java at \$JAVA_HOME/bin/java ($JAVA_HOME)" >&2
   exit 1
 fi
+if [ ! -d "$JUCE_CHECKOUT/modules" ]; then
+  echo "build-android.sh: no JUCE checkout at \$JUCE_CHECKOUT ($JUCE_CHECKOUT)" >&2
+  exit 1
+fi
+
+# Substitute the .jucer's literal @JUCE_CHECKOUT@ token for this caller's
+# real JUCE checkout path in place, resave, then restore the original
+# (tokenized) file content -- see the JUCE_CHECKOUT comment above and
+# Frogg3rs.jucer's own header comment. `cp`, not a shell-variable capture,
+# so the restore is byte-for-byte (a trailing newline survives).
+JUCER_BACKUP="$(mktemp)"
+cp "$JUCER_PROJECT" "$JUCER_BACKUP"
+trap 'cp "$JUCER_BACKUP" "$JUCER_PROJECT"; rm -f "$JUCER_BACKUP"' EXIT
+sed -i.bak "s#@JUCE_CHECKOUT@#$JUCE_CHECKOUT#g" "$JUCER_PROJECT"
+rm -f "$JUCER_PROJECT.bak"
 
 nice "$PROJUCER" --resave "$JUCER_PROJECT"
 
@@ -66,7 +90,18 @@ nice ./gradlew --max-workers=2 "$GRADLE_TASK"
 # applicationId, a stale APK left over from a different build, or an
 # aapt2/Projucer version mismatch mangling the manifest would otherwise
 # only surface much later (at install time on the emulator, or never, on CI).
-AAPT2="${AAPT2:-$HOME/Library/Android/sdk/build-tools/36.0.0/aapt2}"
+# The newest build-tools aapt2 under the Android SDK this build already used
+# (Gradle's own SDK download on a fresh machine, or the SDK already on this
+# Mac) -- portable across machines and SDK layouts instead of one build-tools
+# version's path, so a CI runner's own SDK location and installed version
+# need no separate override here. AAPT2 may still be set directly by the
+# caller to bypass this lookup.
+ANDROID_SDK_DIR="${ANDROID_SDK_DIR:-${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}}"
+AAPT2="${AAPT2:-$(find "$ANDROID_SDK_DIR/build-tools" -mindepth 2 -maxdepth 2 -type f -name aapt2 2>/dev/null | sort -V | tail -1)}"
+if [ -z "$AAPT2" ] || [ ! -x "$AAPT2" ]; then
+  echo "build-android.sh: no aapt2 found under $ANDROID_SDK_DIR/build-tools (set AAPT2 to override)" >&2
+  exit 1
+fi
 EXPECTED_PACKAGE="io.github.daguilarc.frogg3rs"
 APK_PATH="$(find "$ANDROID_PROJECT_DIR/app/build/outputs/apk" -iname "*${BUILD_TYPE}*.apk" | head -1)"
 if [ -z "$APK_PATH" ]; then
