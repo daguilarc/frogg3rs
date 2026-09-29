@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<JUCERPROJECT id="OhbVrpoi" name="Frogg3rs" projectType="guiapp" version="0.1.0"
+              bundleIdentifier="io.github.daguilarc.frogg3rs" companyName="frogg3rs"
+              cppLanguageStandard="20"
+              useAppConfig="0" addUsingNamespaceToJuceHeader="1" jucerFormatVersion="1">
+  <!--
+    Android build only. macOS keeps building through app/build-launcher.sh
+    and Windows through app/standalone/CMakeLists.txt: see those files' own
+    header comments. This project is resaved and built by
+    app/android/build-android.sh, never opened in the Projucer GUI on this
+    Mac (headless CLI only). The generated project (targetFolder below,
+    app/android/Builds/Android) is not committed: see app/android/.gitignore.
+
+    Sources: app/FroggersMain.cpp plus every file in
+    External/Sheaf/projects/synth/src/ and
+    External/Sheaf/projects/synth/runtime/HostDataPaths.cpp, the same set
+    app/check_android_sources_match.py checks against, wired into
+    `make -C app test`. JUCE module list: the eight modules
+    External/Sheaf/projects/synth/runtime/juce_build.mk compiles for every
+    other Sheaf synth app (JUCE_MODULE_SRC in that file), referenced here
+    through Projucer's global module path (each MODULE below has
+    useGlobalPath="1"; the ANDROIDSTUDIO exporter's own MODULEPATH entries
+    are left empty for the same reason) rather than a relative path, since
+    the worktree and the primary checkout sit at different depths and a
+    relative path would differ between them. Projucer's defaultJuceModulePath
+    global setting must point at ~/JUCE/modules for exactly this reason.
+
+    Header search paths (below, per CONFIGURATION): app/ itself (for
+    FroggersMain.cpp's own siblings and "dsp/..." includes) and Sheaf's
+    include/, runtime/ and juce/ (for "synth/...", "HostDataPaths.hpp",
+    "Shell.hpp" and the juce/ glue headers), the same four kinds of I path
+    External/Sheaf/projects/synth/runtime/juce_build.mk passes (minus
+    apps/miniapp, which nothing in this file's source list includes).
+
+    androidPushNotifications is left at JUCE's default (on): turning it off
+    also flips JUCE's own getActivityClassString() from
+    com.rmsl.juce.JuceActivity to plain android.app.Activity (JUCE couples
+    the two), which would break everything downstream that needs the real
+    JUCE activity class. Once androidCustomActivityClass names the custom
+    activity that extends it, that coupling no longer applies, which is the
+    right point to also turn this flag off per design.md's Lifecycle section
+    ("No POST_NOTIFICATIONS request"). Until then this build carries the
+    unused POST_NOTIFICATIONS permission JUCE's default adds.
+  -->
+  <MAINGROUP id="VgRV5IfL" name="Frogg3rs">
+    <GROUP id="BcbfnoGM" name="app">
+      <FILE id="ZkSBvrjn" name="FroggersMain.cpp" compile="1" resource="0" file="../FroggersMain.cpp"/>
+      <FILE id="oCLrZ3aW" name="Icon.png" compile="0" resource="0" file="../Resources/Icon.png"/>
+    </GROUP>
+    <GROUP id="bJmTPSIA" name="Sheaf synth">
+      <FILE id="Wvgfygw2" name="ButtonGrid.cpp" compile="1" resource="0"
+            file="../../External/Sheaf/projects/synth/src/ButtonGrid.cpp"/>
+      <FILE id="wMqZcUDI" name="ControllerWizard.cpp" compile="1" resource="0"
+            file="../../External/Sheaf/projects/synth/src/ControllerWizard.cpp"/>
+      <FILE id="h7yfJs1O" name="DspWavetable.cpp" compile="1" resource="0"
+            file="../../External/Sheaf/projects/synth/src/DspWavetable.cpp"/>
+      <FILE id="N43xKmTe" name="MasterClock.cpp" compile="1" resource="0"
+            file="../../External/Sheaf/projects/synth/src/MasterClock.cpp"/>
+      <FILE id="cQoXsf2o" name="MidiConfigBlocks.cpp" compile="1" resource="0"
+            file="../../External/Sheaf/projects/synth/src/MidiConfigBlocks.cpp"/>
+      <FILE id="gyrDO1xk" name="MidiConfigViewModel.cpp" compile="1" resource="0"
+            file="../../External/Sheaf/projects/synth/src/MidiConfigViewModel.cpp"/>
+      <FILE id="xwnQrS7R" name="MidiController.cpp" compile="1" resource="0"
+            file="../../External/Sheaf/projects/synth/src/MidiController.cpp"/>
+      <FILE id="PeMOkIUp" name="MidiDevicePoller.cpp" compile="1" resource="0"
+            file="../../External/Sheaf/projects/synth/src/MidiDevicePoller.cpp"/>
+      <FILE id="kDyr7OSJ" name="MidiReconcile.cpp" compile="1" resource="0"
+            file="../../External/Sheaf/projects/synth/src/MidiReconcile.cpp"/>
+      <FILE id="oRu1XXdo" name="Modules.cpp" compile="1" resource="0"
+            file="../../External/Sheaf/projects/synth/src/Modules.cpp"/>
+      <FILE id="cZuzren6" name="ParameterModulation.cpp" compile="1" resource="0"
+            file="../../External/Sheaf/projects/synth/src/ParameterModulation.cpp"/>
+      <FILE id="K4TunPFz" name="PatchPersistence.cpp" compile="1" resource="0"
+            file="../../External/Sheaf/projects/synth/src/PatchPersistence.cpp"/>
+      <FILE id="PDjqipVJ" name="HostDataPaths.cpp" compile="1" resource="0"
+            file="../../External/Sheaf/projects/synth/runtime/HostDataPaths.cpp"/>
+    </GROUP>
+  </MAINGROUP>
+  <EXPORTFORMATS>
+    <!--
+      Toolchain (task 4.2's measurement, on Android Studio's bundled JBR,
+      Java 25): the first candidate pair, Gradle 9.1.0 (the version
+      docs.gradle.org's compatibility table names as the first to add full
+      Java 25 support) with Android Gradle plugin 8.13.2 (the newest stable
+      8.x release on Google's Maven index, dl.google.com's
+      com/android/tools/build/gradle/maven-metadata.xml), built
+      assembleDebug successfully, so it is what is written below; the
+      "current" pair developer.android.com lists (Android Gradle plugin
+      9.4.0 with Gradle 9.6.0) was never tried, since the first pair already
+      worked. NOTE ON THE XML ATTRIBUTE NAME: this attribute is named
+      androidPluginVersion in Projucer's UI and in the C++ variable that
+      holds it (jucer_ProjectExport_Android.h), but the underlying
+      Identifier, and therefore the .jucer attribute Projucer actually
+      reads and writes, is "gradleWrapperVersion" (declared as
+      `const Identifier androidPluginVersion ("gradleWrapperVersion")`,
+      deliberately not through the DECLARE_ID(name) macro every
+      identically-named property elsewhere in that header uses, which
+      would have made the two names match). Writing `androidPluginVersion=`
+      here instead resaves silently into JUCE's own default AGP (8.10.0)
+      with no error, confirmed by resaving a copy with that wrong
+      attribute name and reading the classpath line it wrote into
+      Builds/Android/build.gradle.
+    -->
+    <ANDROIDSTUDIO targetFolder="Builds/Android" smallIcon="oCLrZ3aW" bigIcon="oCLrZ3aW"
+                   androidMinimumSDK="29" androidTargetSDK="35"
+                   microphonePermissionNeeded="1"
+                   androidReadMediaAudioPermission="0" androidReadMediaImagesPermission="0"
+                   androidReadMediaVideoPermission="0" androidExternalWriteNeeded="0"
+                   gradleVersion="9.1.0" gradleWrapperVersion="8.13.2">
+      <CONFIGURATIONS>
+        <CONFIGURATION name="Debug" isDebug="1" optimisation="1" linkTimeOptimisation="0"
+                       targetName="Frogg3rs" androidArchitectures="arm64-v8a"
+                       headerPath="../../../&#10;../../../../External/Sheaf/projects/synth/include&#10;../../../../External/Sheaf/projects/synth/runtime&#10;../../../../External/Sheaf/projects/synth/juce"/>
+        <CONFIGURATION name="Release" isDebug="0" optimisation="3" linkTimeOptimisation="1"
+                       targetName="Frogg3rs" androidArchitectures="arm64-v8a"
+                       headerPath="../../../&#10;../../../../External/Sheaf/projects/synth/include&#10;../../../../External/Sheaf/projects/synth/runtime&#10;../../../../External/Sheaf/projects/synth/juce"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_audio_basics" path=""/>
+        <MODULEPATH id="juce_audio_devices" path=""/>
+        <MODULEPATH id="juce_core" path=""/>
+        <MODULEPATH id="juce_data_structures" path=""/>
+        <MODULEPATH id="juce_events" path=""/>
+        <MODULEPATH id="juce_graphics" path=""/>
+        <MODULEPATH id="juce_gui_basics" path=""/>
+        <MODULEPATH id="juce_gui_extra" path=""/>
+      </MODULEPATHS>
+    </ANDROIDSTUDIO>
+  </EXPORTFORMATS>
+  <JUCEOPTIONS JUCE_WEB_BROWSER="0" JUCE_USE_CURL="0"/>
+  <MODULES>
+    <MODULE id="juce_audio_basics" useGlobalPath="1"/>
+    <MODULE id="juce_audio_devices" useGlobalPath="1"/>
+    <MODULE id="juce_core" useGlobalPath="1"/>
+    <MODULE id="juce_data_structures" useGlobalPath="1"/>
+    <MODULE id="juce_events" useGlobalPath="1"/>
+    <MODULE id="juce_graphics" useGlobalPath="1"/>
+    <MODULE id="juce_gui_basics" useGlobalPath="1"/>
+    <MODULE id="juce_gui_extra" useGlobalPath="1"/>
+  </MODULES>
+</JUCERPROJECT>
