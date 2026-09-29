@@ -27,12 +27,23 @@ public class TwisterMidiService extends MidiDeviceService {
     private static final Object INSTANCE_LOCK = new Object();
     private static TwisterMidiService activeInstance;
 
-    private MidiReceiver[] inputReceivers;
+    // MidiDeviceService.onCreate() (android-37.0 sources, AOSP) calls
+    // onGetInputPortReceivers() itself,
+    // synchronously, as part of super.onCreate() -- to build the
+    // MidiDeviceServer it registers with MidiService, once, for the life of
+    // this service instance. Assigning inputReceivers AFTER calling
+    // super.onCreate() (as this class used to) meant onGetInputPortReceivers()
+    // ran while the field was still null, so MidiService registered this
+    // device with no working input port receiver at all -- every
+    // openInputPort(0) from any client, in any process, failed silently and
+    // permanently for that instance, with no exception anywhere. A field
+    // initializer runs during construction, strictly before the system ever
+    // calls onCreate(), so onGetInputPortReceivers() always sees a real array.
+    private MidiReceiver[] inputReceivers = new MidiReceiver[] { new LoggingReceiver() };
 
     @Override
     public void onCreate() {
         super.onCreate();
-        inputReceivers = new MidiReceiver[] { new LoggingReceiver() };
         synchronized (INSTANCE_LOCK) {
             activeInstance = this;
         }

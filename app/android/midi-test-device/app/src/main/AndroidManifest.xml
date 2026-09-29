@@ -45,5 +45,20 @@
             </intent-filter>
         </receiver>
 
+        <!--
+          Positive control: `adb shell am broadcast --receiver-include-background
+          --include-stopped-packages -a io.github.daguilarc.frogg3rs.miditest.POKE_INPUT`
+          opens this device's own input port as an ordinary MidiManager client
+          (this process, not Frogg3rs) and writes one message to it, to show
+          the device's input port and TwisterMidiService's LoggingReceiver can
+          receive a message sent by something other than Frogg3rs.
+        -->
+        <receiver android:name=".PokeInputPortReceiver"
+                  android:exported="true">
+            <intent-filter>
+                <action android:name="io.github.daguilarc.frogg3rs.miditest.POKE_INPUT" />
+            </intent-filter>
+        </receiver>
+
     </application>
 </manifest>
