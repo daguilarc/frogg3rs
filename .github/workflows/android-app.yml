@@ -98,22 +98,33 @@ jobs:
       # as every build this repository runs on the operator's Mac. Debug
       # first: its own applicationId assertion is the fastest real signal
       # that the resaved project is sound before spending the release build.
+      #
+      # The built APK is copied out to dist/ before the next resave: a bare
+      # `Projucer --resave` (confirmed locally, no Gradle involved) deletes
+      # the whole app/build output directory as part of regenerating the
+      # module, so building release right after debug would otherwise erase
+      # the debug APK before this job ever uploads it -- task 4.6 never hit
+      # this because it checked each APK immediately after its own build
+      # and never needed both to coexist on disk afterward.
       - name: Build debug APK
-        run: app/android/build-android.sh debug
-
-      - name: Build release APK
-        run: app/android/build-android.sh release
-
-      - name: Locate built APKs
         run: |
-          ANDROID_OUT="app/android/Builds/Android/app/build/outputs/apk"
-          DEBUG_APK="$(find "$ANDROID_OUT" -ipath '*debug*' -iname '*.apk' | head -1)"
-          RELEASE_APK="$(find "$ANDROID_OUT" -ipath '*release*' -iname '*.apk' | head -1)"
-          if [ -z "$DEBUG_APK" ] || [ -z "$RELEASE_APK" ]; then
-            echo "::error::debug APK ('$DEBUG_APK') or release APK ('$RELEASE_APK') not found under $ANDROID_OUT" >&2
+          app/android/build-android.sh debug
+          DEBUG_APK="$(find app/android/Builds/Android/app/build/outputs/apk -ipath '*debug*' -iname '*.apk' | head -1)"
+          if [ -z "$DEBUG_APK" ]; then
+            echo "::error::debug APK not found under app/android/Builds/Android/app/build/outputs/apk" >&2
             exit 1
           fi
-          echo "DEBUG_APK=$DEBUG_APK" >> "$GITHUB_ENV"
+          mkdir -p dist
+          cp "$DEBUG_APK" dist/Frogg3rs-debug.apk
+
+      - name: Build release APK
+        run: |
+          app/android/build-android.sh release
+          RELEASE_APK="$(find app/android/Builds/Android/app/build/outputs/apk -ipath '*release*' -iname '*.apk' | head -1)"
+          if [ -z "$RELEASE_APK" ]; then
+            echo "::error::release APK not found under app/android/Builds/Android/app/build/outputs/apk" >&2
+            exit 1
+          fi
           echo "RELEASE_APK=$RELEASE_APK" >> "$GITHUB_ENV"
 
       # design.md, "Release": Projucer applies one signing config (the debug
@@ -173,7 +184,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: frogg3rs-android-debug
-          path: ${{ env.DEBUG_APK }}
+          path: dist/Frogg3rs-debug.apk
           if-no-files-found: error
 
       - name: Upload signed release APK
