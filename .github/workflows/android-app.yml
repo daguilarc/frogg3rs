@@ -73,6 +73,24 @@ jobs:
           "$PROJUCER" --set-global-search-path linux defaultJuceModulePath "$HOME/JUCE/modules"
           echo "PROJUCER=$PROJUCER" >> "$GITHUB_ENV"
 
+      # design.md, "Release": Projucer applies one signing config, default
+      # the debug keystore, to BOTH build types (the release APK is
+      # re-signed for real by sign-apk.sh later). That default keystore is
+      # the standard Android debug one at ~/.android/debug.keystore --
+      # normally created the first time Android Studio or the SDK tooling
+      # runs, which is why the operator's Mac already has one and a bare
+      # runner does not: Gradle's validateSigningDebug_Debug task fails
+      # outright ("Keystore file ... not found") without it. Generated here
+      # with the well-known, non-secret debug-keystore recipe every Android
+      # toolchain uses (alias androiddebugkey, password "android").
+      - name: Generate the Android debug keystore
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -v -keystore "$HOME/.android/debug.keystore" \
+            -storepass android -alias androiddebugkey -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
       # app/android/build-android.sh resaves the .jucer (substituting its
       # own JUCE_CHECKOUT for the .jucer's @JUCE_CHECKOUT@ token -- see that
       # script's and Frogg3rs.jucer's own header comments) and runs Gradle's
