@@ -1,0 +1,12 @@
+// Test-only virtual MIDI device (task 4.8): offers the emulator a fake USB
+// Midi Fighter Twister so 2.3's port-name aliases and the emulator's
+// screen-off MIDI round trip can be exercised without real hardware. Built
+// with the same Gradle (9.1.0, via the wrapper below) and Android Gradle
+// plugin (8.13.2, the pair app/android/Frogg3rs.jucer's own header comment
+// records as the one that builds on this Mac's Java 25) as the app under
+// test, so no second toolchain measurement is needed. Never shipped: not
+// referenced by app/android/build-android.sh, android-app.yml or the
+// .jucer, and its own build/ output is ignored (see this directory's
+// .gitignore).
+rootProject.name = 'Frogg3rsMidiTestDevice'
+include ':app'

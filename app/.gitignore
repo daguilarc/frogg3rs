@@ -26,3 +26,10 @@ android/Builds/
 # .jucer's own level, but it is exactly as reproducible and machine-specific
 # as Builds/ -- never tracked, same reasoning.
 android/JuceLibraryCode/
+
+# Task 4.8's test-only virtual MIDI device (android/midi-test-device/) is a
+# plain Gradle project, committed as source; only its own and Gradle's build
+# output, reproducible from that source, is never tracked.
+android/midi-test-device/**/build/
+android/midi-test-device/.gradle/
+android/midi-test-device/local.properties

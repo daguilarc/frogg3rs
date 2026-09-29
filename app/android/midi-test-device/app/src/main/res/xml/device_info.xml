@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  design.md, "The Twister's names on Android": the firmware's USB descriptor
+  gives manufacturer string "DJ TechTools" and product string "Midi Fighter
+  Twister", with JackStrIndex = NO_DESCRIPTOR on every jack (no port names).
+  This virtual device mirrors exactly that: one input port and one output
+  port, neither named, so Android and JUCE synthesize the same port names a
+  real USB Twister gets ("DJ TechTools Midi Fighter Twister Output/Input
+  Port 1", task 2.3's aliases).
+-->
+<devices>
+    <device manufacturer="DJ TechTools" product="Midi Fighter Twister">
+        <input-port />
+        <output-port />
+    </device>
+</devices>

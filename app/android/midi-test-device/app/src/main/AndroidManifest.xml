@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Test-only app (task 4.8): registers a virtual android.media.midi device
+  named after a USB Midi Fighter Twister, so the Controllers page's Twister
+  preset and the port-name aliases 2.3 added can be exercised on the
+  emulator without real hardware. Never built by app/android/build-android.sh
+  or CI, and never shipped; see ../settings.gradle.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-feature android:name="android.software.midi" android:required="true" />
+
+    <application android:label="Frogg3rs MIDI test device"
+                 android:allowBackup="false">
+
+        <!--
+          android.media.midi.MidiDeviceService: the system starts this
+          service's process and binds it once any client (Frogg3rs, or
+          `dumpsys media.midi`) opens the device named in device_info.xml,
+          and keeps it bound for as long as that client holds it open.
+        -->
+        <service android:name=".TwisterMidiService"
+                 android:exported="true"
+                 android:permission="android.permission.BIND_MIDI_DEVICE_SERVICE">
+            <intent-filter>
+                <action android:name="android.media.midi.MidiDeviceService" />
+            </intent-filter>
+            <meta-data android:name="android.media.midi.MidiDeviceService"
+                       android:resource="@xml/device_info" />
+        </service>
+
+        <!--
+          Test control surface: `adb shell am broadcast -a
+          io.github.daguilarc.frogg3rs.miditest.SEND_TURN` with an int extra
+          named delta sends one relative encoder-0 turn out the device's
+          output port (value 65 = one tick right, 63 = one tick left,
+          MidiController.hpp's Signed7Bit decode); the service logs every
+          byte it receives on its own input port under logcat tag
+          TwisterMidiTest regardless of whether this receiver ever fires.
+        -->
+        <receiver android:name=".SendTurnReceiver"
+                  android:exported="true">
+            <intent-filter>
+                <action android:name="io.github.daguilarc.frogg3rs.miditest.SEND_TURN" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+</manifest>
