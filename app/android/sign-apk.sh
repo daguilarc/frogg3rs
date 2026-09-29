@@ -46,7 +46,12 @@ if [ ! -f "$KEYSTORE" ]; then
   exit 1
 fi
 
-BUILD_TOOLS="${BUILD_TOOLS:-$HOME/Library/Android/sdk/build-tools/36.0.0}"
+# The newest build-tools directory under the Android SDK, the same
+# portable lookup app/android/build-android.sh uses for its own AAPT2
+# default (see that script's comment): works on this Mac's SDK layout and
+# on a CI runner's own, without one build-tools version's path baked in.
+ANDROID_SDK_DIR="${ANDROID_SDK_DIR:-${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}}"
+BUILD_TOOLS="${BUILD_TOOLS:-$(find "$ANDROID_SDK_DIR/build-tools" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -V | tail -1)}"
 ZIPALIGN="${ZIPALIGN:-$BUILD_TOOLS/zipalign}"
 APKSIGNER="${APKSIGNER:-$BUILD_TOOLS/apksigner}"
 KEYTOOL="${KEYTOOL:-keytool}"
