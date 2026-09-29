@@ -16,9 +16,17 @@
 # the caller already set JAVA_HOME -- a CI workflow building this same
 # project sets its own Temurin JAVA_HOME before calling this script instead.
 #
-# Parallelism: `nice` plus Gradle's own `--max-workers=2` -- one build at a
-# time, at most two Gradle compile jobs, the rule this repository holds
-# every Gradle invocation on this Mac to.
+# Parallelism: `nice` plus Gradle's own `--max-workers=2` caps GRADLE TASK
+# parallelism (at most two Gradle compile jobs, the rule this repository
+# holds every Gradle invocation on this Mac to) but does NOT cap the ninja
+# invocation AGP's CMake integration runs inside a single
+# buildCMake<Variant>[arm64-v8a] task -- confirmed empirically: with only
+# --max-workers=2 set, `ps` during a build showed 5 concurrent clang++
+# processes. CMAKE_BUILD_PARALLEL_LEVEL is CMake's own, generator-agnostic
+# parallelism cap (respected by the `cmake --build` driver AGP uses
+# regardless of Ninja vs Make, since CMake 3.12), set here to 2 for the
+# same reason: C++ builds run at -j2 under nice on this Mac.
+export CMAKE_BUILD_PARALLEL_LEVEL=2
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
@@ -52,3 +60,22 @@ nice "$PROJUCER" --resave "$JUCER_PROJECT"
 ANDROID_PROJECT_DIR="$(dirname "$JUCER_PROJECT")/Builds/Android"
 cd "$ANDROID_PROJECT_DIR"
 nice ./gradlew --max-workers=2 "$GRADLE_TASK"
+
+# task 4.6: assert the produced APK is actually this app, failing loudly on
+# a mismatch instead of trusting a successful Gradle exit alone -- a wrong
+# applicationId, a stale APK left over from a different build, or an
+# aapt2/Projucer version mismatch mangling the manifest would otherwise
+# only surface much later (at install time on the emulator, or never, on CI).
+AAPT2="${AAPT2:-$HOME/Library/Android/sdk/build-tools/36.0.0/aapt2}"
+EXPECTED_PACKAGE="io.github.daguilarc.frogg3rs"
+APK_PATH="$(find "$ANDROID_PROJECT_DIR/app/build/outputs/apk" -iname "*${BUILD_TYPE}*.apk" | head -1)"
+if [ -z "$APK_PATH" ]; then
+  echo "build-android.sh: no $BUILD_TYPE APK found under app/build/outputs/apk" >&2
+  exit 1
+fi
+ACTUAL_PACKAGE="$("$AAPT2" dump badging "$APK_PATH" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+if [ "$ACTUAL_PACKAGE" != "$EXPECTED_PACKAGE" ]; then
+  echo "build-android.sh: $APK_PATH package is '$ACTUAL_PACKAGE', expected '$EXPECTED_PACKAGE'" >&2
+  exit 1
+fi
+echo "build-android.sh: $APK_PATH package $ACTUAL_PACKAGE confirmed"
