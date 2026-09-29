@@ -101,9 +101,22 @@ nice "$APKSIGNER" sign \
 # Verification: exactly one signer, whose SHA-256 equals the keystore
 # certificate's. Any other result is a failure of this script, not a
 # warning -- a second signer or a mismatched key must never pass silently.
+#
+# apksigner's --print-certs line prefix is build-tools-version-dependent:
+# 36.0.0 (this Mac) prints "Signer #1 certificate SHA-256 digest: ...";
+# 37.0.0 (confirmed on a CI runner) prints "V3.0 Signer: certificate
+# SHA-256 digest: ..." per signature-scheme version instead. Matching
+# either prefix, then counting UNIQUE digest VALUES rather than matching
+# lines, handles both: a single physical signer verified under several
+# scheme versions prints several lines that all name the same digest (one
+# unique value, correctly one signer), while an actually mismatched or
+# multi-signed APK prints more than one distinct digest (correctly
+# rejected) regardless of which format produced the lines.
 VERIFY_OUTPUT="$("$APKSIGNER" verify --print-certs "$OUTPUT_APK")"
-SIGNER_SHA256_LINES="$(printf '%s\n' "$VERIFY_OUTPUT" | grep -E '^Signer #[0-9]+ certificate SHA-256 digest' || true)"
-SIGNER_COUNT="$(printf '%s\n' "$SIGNER_SHA256_LINES" | grep -c . || true)"
+SIGNER_SHA256_VALUES="$( (printf '%s\n' "$VERIFY_OUTPUT" \
+  | grep -E '^(Signer #[0-9]+|V[0-9]+\.[0-9]+ Signer):? certificate SHA-256 digest' \
+  | sed -E 's/^.*: *//' | tr 'A-F' 'a-f' | tr -d ':' | sort -u) || true)"
+SIGNER_COUNT="$(printf '%s\n' "$SIGNER_SHA256_VALUES" | grep -c . || true)"
 
 if [ "$SIGNER_COUNT" -ne 1 ]; then
   echo "sign-apk.sh: expected exactly one signer, found $SIGNER_COUNT" >&2
@@ -111,7 +124,7 @@ if [ "$SIGNER_COUNT" -ne 1 ]; then
   exit 1
 fi
 
-APK_SIGNER_SHA256="$(printf '%s\n' "$SIGNER_SHA256_LINES" | sed -E 's/^.*: *//' | tr 'A-F' 'a-f' | tr -d ':')"
+APK_SIGNER_SHA256="$SIGNER_SHA256_VALUES"
 
 KEYSTORE_CERT_SHA256="$("$KEYTOOL" -list -v -keystore "$KEYSTORE" -alias "$KEY_ALIAS" -storepass "$KEYSTORE_PASSWORD" \
   | grep -E '^[[:space:]]*SHA256:' | sed -E 's/^[[:space:]]*SHA256:[[:space:]]*//' | tr 'A-F' 'a-f' | tr -d ':')"
