@@ -85,11 +85,9 @@ jobs:
       # already-assembled dist/site (no rebuild) and runs both the
       # mobile-emulated and desktop-emulated projects. The mobile-emulated
       # stacking assertions (e2e/mobile-stacking.spec.mjs) are real, active
-      # tests, not `test.fixme`: Group 4c un-blocked the layout (per-block
-      # CSS transforms in app/browser/site/mobile-stack.mjs, gated on a
-      # small Sheaf drag-delta fix -- see that file's own header comment
-      # and the mobile-stacking suite's), and the full suite runs and
-      # passes. Chromium only, per the task's machine constraint.
+      # tests: the surface lays out its own phone arrangement from the width
+      # app/browser/site/viewport-width.mjs reports, and the full suite runs
+      # and passes. Chromium only.
       - name: Browser e2e (Playwright)
         run: |
           cd app/browser/e2e

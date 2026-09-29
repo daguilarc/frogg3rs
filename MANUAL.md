@@ -12,7 +12,7 @@ The same instrument core runs in five hosts:
 - **VST3** and **AU plugin** — the same core loaded inside a DAW, where the host owns audio
   devices, transport and tempo.
 
-Every parameter and every page below is identical across all four; what differs between them is covered
+Every parameter and every page below is identical across all five; what differs between them is covered
 in Audio configuration and MIDI controllers.
 
 A different instrument, the frozen **Daisy Field hardware firmware**, shares this repository and is
@@ -362,7 +362,7 @@ on the desktop (MIDI Fighter Twister, below).
 
 ### Overview
 
-The Controllers page exists in the standalone, browser and plugin builds; the Plugin subsection above
+The Controllers page exists in the standalone, browser, Android and plugin builds; the Plugin subsection above
 covers what differs there (a controller button mapped to Play, Stop or Record does nothing, and a
 controller reaches the instrument through its own ports, never the host's MIDI track). "Available
 controllers" lists each connected device that no row uses and that a preset recognizes
