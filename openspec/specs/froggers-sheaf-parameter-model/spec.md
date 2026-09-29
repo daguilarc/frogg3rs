@@ -809,6 +809,8 @@ Froggers' single `ParameterGroup` SHALL be configured with Sheaf's modulation bl
 
 The `manager.CreateGroup(...)` call in `FroggersParameters::Init` (`app/FroggersParameters.hpp`) sets that field, realizing one law for every source (ruled by the operator on 2026-09-28, replacing an earlier revision that scaled a resting envelope follower's full depth to `+1.0` instead of `+0.5`): `value = clamp(knob + Σ depth × signal × 0.5, range)`, where `signal` is that source decoded to its real signal, `0` meaning "doing nothing." Each of the 11 modulation sources whose own rest/neutral value sits at the middle of its `[0,1]` range — the six Random S&H lanes, the three VCO Audio sources, External Audio, and Noise — decodes to `signal = 2×source − 1 ∈ [−1,1]`, bipolar around that own midpoint. Each of the 4 modulation sources whose own rest/neutral value sits at the floor of its `[0,1]` range instead — VCO1, VCO2, and VCO3's own Envelope Follower, and the External Audio Envelope Follower, flagged by the registered `restsAtZero` (Sheaf's spm-93) — decodes to `signal = source ∈ [0,1]` unchanged. The SAME `× 0.5` then applies to every source regardless of category, so the target's own commanded knob value keeps full weight at every modulation depth; a bipolar source swings the target `±0.5` of its range at full depth and full signal; an envelope-follower source pushes the target up to `+0.5` — never `+1` — at full depth and full signal, and a resting (silent) envelope-follower source contributes nothing to its target regardless of depth; several sources on one parameter add their swings independently and the sum is clamped to the parameter's range, with no renormalization between sources; a negative depth inverts its source's contribution; and a modulation view opened on a depth parameter's own depth (a nested/recursive view) computes under the identical law, because Sheaf materializes a depth-of-a-depth `Parameter` into the same `ParameterGroup` as its parent (spm-92). The per-source rest-point distinction (which of the 15 sources is which) is read from each source's own registered `ModulatorMetadata::restsAtZero` (Sheaf's spm-93), never from a hardcoded source index inside Sheaf — `app/FroggersModulation.hpp`'s `RegisterSources()` is what sets it, per source. The depth knob's own centre-neutral exponential knob-to-depth curve (`ModulationDepthTargetFromKnob`), Randomize's draws (`RandomizeParameterModulationDepths`, `RandomizeVisibleValue`), Crispy and Crunchy's own resolution path (`mod-blend-semantics`'s "Modulation applied before fuegoization," unchanged by this requirement, and given no carve-out — also ruled by the operator on 2026-09-28), and patch persistence (`Parameter::ToValueJSON`/`LoadValuesFromJSON`) are unchanged by this requirement: a saved patch's depth-knob values load exactly as before, and any patch with a nonzero depth on any parameter sounds different after this change takes effect, with no version marker and no migration. `braid-4` and `miniapp` do not set this field and keep today's crossfade law unless their own owners opt in separately.
 
+UPDATE (`one-way-amount-modulation`, operator ruling 2026-09-28, superseding this requirement's own earlier text naming Crispy and Crunchy as having "no carve-out"): Crispy (all six banks) and Crunchy are now the ONE exception to this requirement's own law. They are amount controls, not signed (sound) parameters, and read `ParameterConfig`'s own new `modulationTargetKind` field as `kOneWayAmount` rather than this requirement's own default `kBipolar` (Sheaf's new spm-94); their full one-way law — `value = clamp(knob + Σ depth × u, [0,1])`, `depth ∈ [0,1]`, `u` the route's own stored source value read directly regardless of `restsAtZero`, `0` when disconnected — is stated in full, once, in this change's own `design.md` and in the ADDED requirement below, not restated here. Every clause above this paragraph continues to hold, unchanged, for every OTHER Froggers parameter (every page parameter on every bank, and every depth-of-a-depth nested under one of them).
+
 #### Scenario: Froggers' group opts into the attenuverter blend mode
 - **WHEN** `FroggersParameters::Init` creates its `ParameterGroup`
 - **THEN** the group's configuration reports modulation blend mode `kAttenuverter`
@@ -857,4 +859,66 @@ The `manager.CreateGroup(...)` call in `FroggersParameters::Init` (`app/Froggers
 - **WHEN** `braid-4` and `miniapp` build their own `ParameterGroup`s without setting modulation blend mode
 - **THEN** their modulation resolution is byte-for-byte unchanged (Sheaf spm-92's own "Existing groups are unaffected" scenario)
 - Check: Sheaf `External/Sheaf/projects/synth/tests/parameter_modulation_tests.cpp: modulation_normalization_under_one`, `overfull_negative_modulation_offset_uses_normalized_depths`, and the braid4 and miniapp system test binaries, all passing unchanged under the full Sheaf `test` target with this change applied.
+
+### Requirement: Crispy and Crunchy targets take one-way amount modulation, not the attenuverter's bipolar swing
+
+Crispy (all six banks) and Crunchy SHALL be registered with `ParameterConfig`'s `modulationTargetKind` set to `kOneWayAmount` (Sheaf's new spm-94), so every one of their modulation routes resolves as `value = clamp(knob + Σ_route depth[route] × u[route], [0, 1])`, where `depth[route] ∈ [0, 1]` (one-sided: off to full, with no negative half and no inverting position) and `u[route]` is that route's own registered source read as a plain amount — `u[route] = connected(route) ? modulatorSource[route] : 0` — REGARDLESS of that source's own `restsAtZero` registration: an LFO-like source's own stored value, which sweeps `[0,1]`, and an envelope follower's own stored value, which rises from `0`, are both read exactly as stored, with no bipolar recentring of either. This is a deliberate asymmetry from the requirement above, not an oversight: a bipolar-metadata source at its own rest (stored `0.5`) contributes `depth × 0.5` to a Crispy/Crunchy route at full depth, where the identical source at the identical rest value contributes exactly `0` to a real (sound) parameter under the requirement above. `design.md` states and proves this substitution in full; this requirement states the outcome the player and a future maintainer need, not the derivation.
+
+Every mechanism the requirement above shares with this one is unchanged by this requirement and is not restated here: the depth `Parameter`'s own storage (still raw `[0,1]`, still `RangeKind::Bipolar`, still defaulting to `kNeutralModulationDepthCenter`), `Parameter::ToValueJSON`/`LoadValuesFromJSON` (patch persistence), `Parameter::RevertToDefault`/`RevertAllToDefault` (Reset), and `ModulatorMetadata`/`RegisterSources()` (source registration) — `design.md`'s "What does not change" section traces each.
+
+This requirement's own depth knob cannot be turned below off: Sheaf's `Parameter::EnforceOneWayAmountFloor` (Sheaf's spm-94) floors the stored knob value at `kNeutralModulationDepthCenter` on every write path Sheaf has — encoder tick, absolute set (UI and MIDI), patch load, and Reset/default — so turning left from off stays at off, a legacy patch's negative-encoded value loads as off with no migration, and a value already at or above off loads unchanged. This requirement does NOT change the depth cell's own ring presentation away from Sheaf's generic bipolar-shaped display: with the floor in place, that ring only ever fills from its own centre (off) rightward to full, which is the shipped presentation, decided, not a placeholder (`design.md`'s own "Decisions applied" section).
+
+#### Scenario: A connected route adds reach on top of the knob, never subtracts
+- **WHEN** Crispy or Crunchy's own knob is at `0.3` and one connected route has depth `0.6` and source value `0.8`
+- **THEN** the resolved value is `0.3 + 0.6 × 0.8 = 0.78`
+- Check: not yet delivered by this change; frogg3rs task 1.2 adds this case to app/FroggersModulationTests.cpp, and Sheaf task S1.4 adds the underlying law's own case to External/Sheaf/projects/synth/tests/parameter_modulation_tests.cpp.
+
+#### Scenario: A disconnected source contributes nothing regardless of its own stored value or the assigned depth
+- **WHEN** a route's own source is registered `connected = false`
+- **THEN** that route's contribution is `0` at any depth, and Crispy/Crunchy's resolved value equals the knob's own value unchanged
+- Check: not yet delivered by this change; frogg3rs task 1.2 adds this case.
+
+#### Scenario: Several routes add independently and clamp at the top of the range
+- **WHEN** Crispy or Crunchy's own knob is at `0.2` and two connected routes each contribute at their own maximum, `0.5 × 1.0` and `0.4 × 1.0`
+- **THEN** the resolved value is `clamp(0.2 + 0.5 + 0.4, [0,1]) = 1.0`, and neither route's own depth is divided or rescaled by the other's presence
+- Check: not yet delivered by this change; Sheaf task S1.4 adds this case.
+
+#### Scenario: A bipolar-metadata source at its own rest still nudges the amount up by half depth
+- **WHEN** Crunchy's own knob is at `0.4` and one bipolar-metadata source (rest value `0.5`, e.g. External Audio connected with a silent input) is assigned full depth `1.0` and held at its own rest
+- **THEN** the resolved value is `0.4 + 1.0 × 0.5 = 0.9`, not `0.4` — the named asymmetry from the requirement above, substituted
+- Check: not yet delivered by this change; frogg3rs task 1.3 adds this case, and Sheaf task S1.4 adds the underlying law's own case.
+
+#### Scenario: An envelope-follower route is read directly, never halved
+- **WHEN** a route registered `restsAtZero = true` is assigned depth `1.0` and its own stored source value is `0.3`
+- **THEN** that route's contribution is `1.0 × 0.3 = 0.3`, not `0.15` — the requirement above's own `restsAtZero` halving does not apply to a one-way amount target
+- Check: not yet delivered by this change; Sheaf task S1.4 adds this case.
+
+#### Scenario: The depth knob's own curve keeps its positive-branch shape and floors the rest at off
+- **WHEN** the one-way depth curve is evaluated directly at raw input `0.75` (previously encoding a positive bipolar depth), `0.25` (previously negative), or `0.5` (previously neutral, and this change's own default)
+- **THEN** the resolved depth is, respectively, the SAME positive magnitude the old curve already produced at `0.75`, exactly `0` at `0.25`, and exactly `0` at `0.5`
+- **AND** no patch migration or version marker is introduced — the same raw input is read differently only because Crispy/Crunchy's own `modulationTargetKind` selects a different curve
+- Check: not yet delivered by this change; Sheaf task S1.2 adds the curve's own case.
+
+#### Scenario: The depth knob's own stored value cannot be turned or loaded below off
+- **WHEN** a Crispy/Crunchy depth is turned left past off with the encoder, set absolutely (UI or MIDI) to a value that would otherwise resolve below off, or loaded from a patch whose stored value is `0.25` (a legacy negative encoding)
+- **THEN** the depth's own stored raw value reads exactly `0.5` (off) in every one of the three cases, not merely its resolved depth
+- **AND** the same patch load with a stored value of `0.75` (a legacy positive encoding) leaves the stored value at `0.75`, unchanged
+- **AND** no patch migration or version marker is introduced — the same floor construct that governs the encoder and MIDI also governs patch load
+- Check: not yet delivered by this change; Sheaf task S1.5 adds the law's own case, and frogg3rs task 1.4 adds the patch-round-trip case.
+
+#### Scenario: Randomize still attaches a live (nonzero) depth at the rate the manual advertises
+- **WHEN** Randomize draws a fresh raw value for a newly-attached Crispy/Crunchy route
+- **THEN** that draw is biased into the upper half of raw storage (`[0.5, 1.0]`) before being interpreted, so the attached route resolves to a nonzero depth except at the single zero-probability draw that lands exactly on `0.5`
+- **AND** Crispy/Crunchy's own top-level VALUE (not a depth) is unaffected by this bias and still draws from the full range
+- Check: not yet delivered by this change; Sheaf task S1.6 adds the law's own case, and frogg3rs task 1.5 adds the end-to-end case.
+
+#### Scenario: Nested depth-of-a-depth inherits the one-way law
+- **WHEN** a modulation view is opened on one of Crispy or Crunchy's own depths' own depth (the existing three-level limit)
+- **THEN** that nested depth parameter resolves under the identical one-way law as its top-level ancestor, inherited by construction the same way the requirement above's own nested scenario is
+- Check: not yet delivered by this change; Sheaf task S1.3 adds this case.
+
+#### Scenario: Every other Sheaf app and every other Froggers parameter is unaffected
+- **WHEN** `braid-4`, `miniapp`, and every Froggers page parameter are inspected
+- **THEN** none of them sets `modulationTargetKind`, so all default to `kBipolar` and resolve exactly as the requirement above states, byte-for-byte unchanged by this requirement
+- Check: not yet delivered by this change; Sheaf task S1.7's full `test` target run is the literal proof.
 
