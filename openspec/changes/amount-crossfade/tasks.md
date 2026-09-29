@@ -13,8 +13,7 @@ a relative target name matches no rule and rebuilds nothing.
       `External/Sheaf/projects/synth/tests/parameter_modulation_tests.cpp`,
       `one_way_amount_target_adds_reach_and_ignores_disconnected_sources`
       expects `0.60` and `0.3`;
-      `one_way_amount_two_routes_add_independently_and_clamp_to_the_top`
-      (renamed to say crossfade) expects `0.56`, `0.92` with depths `0.5`
+      `one_way_amount_two_routes_crossfade_and_renormalize_past_the_top` expects `0.56`, `0.92` with depths `0.5`
       and `0.4`, and a new renormalized case `0.5714286` with depths
       `0.5714286` and `0.4285714`;
       `one_way_amount_ignores_restsatzero_and_reads_the_route_directly`
@@ -27,15 +26,17 @@ a relative target name matches no rule and rebuilds nothing.
       The full Sheaf `test` target passes apart from the two known reds.
       Commit on branch `attenuverter-blend-mode`.
 - [ ] 2 frogg3rs `app/FroggersModulationTests.cpp`:
-      `crispy_depth_only_ever_adds_scramble_never_subtracts` (renamed to say
-      what it checks now) expects `0.8` and, after the floor, `0.1`;
-      `crunchy_bipolar_source_at_its_own_rest_still_nudges_scramble_up`
-      (renamed) expects `0.5`. Needs: S1. Check: `make -C app test` green;
+      `crispy_depth_crossfades_toward_the_source_and_the_floor_disables_it` expects `0.8` and, after the floor, `0.1`;
+      `saved_crispy_depth_positive_keeps_depth_negative_and_neutral_load_off`
+      expects `0.5 * (1 - 0.25) + 0.25 * 1.0 = 0.625` for the saved positive
+      depth (knob `0.5`, depth knob `0.75`, source `1.0`) and `0.5` for the
+      floored and neutral ones;
+      `crunchy_full_depth_crossfades_to_the_source_at_its_own_rest` expects `0.5`. Needs: S1. Check: `make -C app test` green;
       red: with S1 reverted in the Sheaf working tree for the run and
-      restored after (never committed), the two read `0.9` and `0.9`.
+      restored after (never committed), the three read `0.9`, `0.9` and `0.75`.
 - [ ] 3 Specs and docs: restate, as MODIFIED requirements in this change's
       spec deltas, every promoted requirement in Sheaf
-      `openspec/specs/synth-parameter-modulation/spec.md` and frogg3rs
+      `External/Sheaf/openspec/specs/synth-parameter-modulation/spec.md` and frogg3rs
       `openspec/specs/froggers-sheaf-parameter-model/spec.md` that states
       the add-only law for a `kOneWayAmount` target, with the law above and
       the worked values; Sheaf's delta lives at

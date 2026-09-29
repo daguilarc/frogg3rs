@@ -705,7 +705,7 @@ TEST_CASE(crispy_and_crunchy_are_registered_as_one_way_amount_targets) {
     REQUIRE_TRUE(fx.model.Crunchy().TargetKind() == synth::ModulationTargetKind::kOneWayAmount);
 }
 
-TEST_CASE(crispy_depth_only_ever_adds_scramble_never_subtracts) {
+TEST_CASE(crispy_depth_crossfades_toward_the_source_and_the_floor_disables_it) {
     Fixture fx;
     synth::Parameter& crispy = fx.model.Crispy(FroggersBankId::Reverb);
     for (const synth::SceneState& pole : detail::kScenePoles) {
@@ -723,7 +723,10 @@ TEST_CASE(crispy_depth_only_ever_adds_scramble_never_subtracts) {
         depth->SceneCenter(pole.leftScene) = 1.0f;  // one-way raw depth == 1.0 (full)
     }
     fx.manager.ComputeAllParameters();
-    REQUIRE_NEAR(crispy.GetRaw(0), 0.9f, 1e-4f);  // 0.1 + 1.0*0.8 == 0.9 (the attenuverter law would read 0.4).
+    // Full depth (W == 1.0) crossfades the knob out entirely: the result is
+    // the source's own stored value, 0.8, not 0.1 + 1.0*0.8 == 0.9 (the
+    // add-only law) and not 0.4 (a real attenuverter target at this depth).
+    REQUIRE_NEAR(crispy.GetRaw(0), 0.8f, 1e-4f);
 
     // The SAME depth cell, driven with HandleSetAbsolute(scene, 0.1f) -- an
     // attempt to set it into what was, before this change, the negative
@@ -743,12 +746,13 @@ TEST_CASE(crispy_depth_only_ever_adds_scramble_never_subtracts) {
 }
 
 // The one clause most likely to read as a bug to a future maintainer who has
-// not read design.md: a bipolar-metadata source at ITS OWN rest still nudges
-// Crispy/Crunchy's amount up by half depth, where the same source contributes
-// exactly nothing to a real (sound) parameter's attenuverter law at the same
-// rest value (see connected_external_audio_modulation_reaches_a_destination_
-// end_to_end above for the contrast).
-TEST_CASE(crunchy_bipolar_source_at_its_own_rest_still_nudges_scramble_up) {
+// not read design.md: a bipolar-metadata source's own stored value at ITS OWN
+// rest (0.5, not 0.0) still reaches Crunchy's amount at full weight once
+// depth crosses W == 1, where the same source contributes exactly nothing to
+// a real (sound) parameter's attenuverter law at the same rest value (see
+// connected_external_audio_modulation_reaches_a_destination_end_to_end above
+// for the contrast).
+TEST_CASE(crunchy_full_depth_crossfades_to_the_source_at_its_own_rest) {
     Fixture fx;
     synth::Parameter& crunchy = fx.model.Crunchy();
     for (const synth::SceneState& pole : detail::kScenePoles) {
@@ -767,9 +771,11 @@ TEST_CASE(crunchy_bipolar_source_at_its_own_rest_still_nudges_scramble_up) {
         depth->SceneCenter(pole.leftScene) = 1.0f;
     }
     fx.manager.ComputeAllParameters();
-    // 0.4 + 1.0*0.5 == 0.9, NOT 0.4 (which is what a real attenuverter target
-    // would read at the same rest value).
-    REQUIRE_NEAR(crunchy.GetRaw(0), 0.9f, 1e-4f);
+    // Full depth (W == 1.0) crossfades the knob out entirely: the result is
+    // the source's own stored value, 0.5, NOT 0.4 + 1.0*0.5 == 0.9 (the
+    // add-only law) and NOT 0.4 (a real attenuverter target at this rest
+    // value).
+    REQUIRE_NEAR(crunchy.GetRaw(0), 0.5f, 1e-4f);
 }
 
 TEST_CASE(saved_crispy_depth_positive_keeps_depth_negative_and_neutral_load_off) {
@@ -804,13 +810,14 @@ TEST_CASE(saved_crispy_depth_positive_keeps_depth_negative_and_neutral_load_off)
     };
 
     // 0.75 (a patch saved with the depth knob turned right of centre): the
-    // stored raw value is unchanged (S1.5's floor is a no-op at or above
-    // 0.5), and it resolves to the SAME magnitude a pre-change build would
-    // have shown as +m.
+    // stored raw value is unchanged (the floor is a no-op at or above 0.5),
+    // it keeps the same depth m a pre-change build showed as +m, and Crispy
+    // (knob 0.5) crossfades toward the fully driven source (1.0) by that
+    // depth: 0.5 * (1 - m) + m * 1.0.
     const auto [storedPositive, resolvedPositive] = loadAndResolve(0.75f);
     REQUIRE_NEAR(storedPositive, 0.75f, 1e-4f);
     const float expectedMagnitude = synth::ModulationDepthTargetFromKnob(0.75f);
-    REQUIRE_NEAR(resolvedPositive, 0.5f + expectedMagnitude, 1e-4f);
+    REQUIRE_NEAR(resolvedPositive, 0.5f * (1.0f - expectedMagnitude) + expectedMagnitude * 1.0f, 1e-4f);
 
     // 0.25 (a legacy negative encoding): the stored raw value lands at
     // exactly 0.5 (S1.5's floor, not 0.25), no migration, and resolves off.
