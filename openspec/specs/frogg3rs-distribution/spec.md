@@ -21,16 +21,31 @@ build. It SHALL reference its own assets relatively, so that the page survives
 being served from any base path, and SHALL NOT carry a repository or product
 name that no longer resolves.
 
+On an Android phone the site SHALL offer the Android app in place of the
+desktop application, and on an iPhone it SHALL offer no application download,
+while the audio plugin link stays on every device.
+
 #### Scenario: The site survives a repository rename
 - **WHEN** the repository or its published base path changes
 - **THEN** the site's stylesheet, scripts and images still resolve
 - **AND** the page renders styled, with its interactive parts running
 
+<!-- RESTATES-EXCEPT
+an operator opens the published site
+  keeps: opens the published site
+-->
+
 #### Scenario: The site offers both downloads
-- **WHEN** an operator opens the published site
+- **WHEN** an operator on a desktop computer or an iPad opens the published site
 - **THEN** the desktop application and the audio plugin are both offered
 - **AND** each link resolves to that artifact's own release, not to whichever
   release happened to be published most recently
+
+#### Scenario: A phone is offered what runs on it
+- **WHEN** an operator opens the published site on an Android phone, then on an iPhone
+- **THEN** the Android phone is offered the Android app and the audio plugin
+- **AND** the iPhone is offered the audio plugin and no application
+- Check: `app/browser/e2e/download-link.spec.mjs`, `resolves for this project's device class` and `the separator after the download link is removed together with it`.
 
 ### Requirement: Each artifact has its own release, named for what it is
 The desktop application and the audio plugin SHALL be released independently,

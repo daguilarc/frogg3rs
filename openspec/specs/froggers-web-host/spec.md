@@ -61,12 +61,13 @@ share of the block width, so that four of them fit in the space beside the
 sliders.
 
 Widening the chrome block SHALL NOT push the encoder grid off the first
-screen. The shell stacks the blocks vertically and scales them together, so a
-chrome block that keeps its full-page height while doubling in width takes half
-again as much vertical space and carries the grid down with it. The narrow
-chrome block SHALL therefore declare a height that keeps its rows at the density
-they were laid out for, so that the encoder grid still begins above the fold and
-a full row of encoders is reachable without scrolling.
+screen. The surface stacks the blocks vertically in its own narrow tree and the
+host scales that tree as one, so a chrome block that keeps its full-page height
+while doubling in width takes half again as much vertical space and carries the
+grid down with it. The narrow chrome block SHALL therefore declare a height
+that keeps its rows at the density they were laid out for, so that the encoder
+grid still begins above the fold and a full row of encoders is reachable
+without scrolling.
 
 #### Scenario: Phone-width layout stacks
 - **WHEN** the site loads at a phone-width viewport
@@ -117,12 +118,34 @@ THE published site SHALL present the same operator-facing link roles the
 legacy site presents (desktop downloads, license, manual), each pointing
 at the current product's equivalent: URLs minted under the renamed
 origin, release links referencing the release being published, and the
-manual link pointing at the manual that documents the published app.
+manual link pointing at the manual that documents the published app. The
+download role SHALL follow the visitor's device: on an Android phone it SHALL
+read "Download Android app" and point at the Android app's release, and on an
+iPhone it SHALL be absent, because neither the desktop app nor the Android app
+runs there. Desktops and iPads SHALL keep the desktop download.
+
+<!-- RESTATES-EXCEPT
+the published site is compared to the legacy site
+  keeps: compared to the legacy site
+-->
 
 #### Scenario: Link roles preserved, references renewed
-- **WHEN** the published site is compared to the legacy site
+- **WHEN** the published site, opened on a desktop computer, is compared to the legacy site
 - **THEN** every legacy link role is present and resolves
 - **THEN** no link target carries the old repository name
+- Check: `app/browser/e2e/link-roles.spec.mjs`, `every non-download link role is present exactly once` and `the download role resolves per project`.
+
+#### Scenario: An Android phone is offered the Android app
+- **WHEN** the site loads with an Android phone's user agent
+- **THEN** the download link reads "Download Android app" and points at https://github.com/daguilarc/frogg3rs/releases/tag/frogg3rs_android
+- **AND** the plugin, license and manual links are unchanged
+- Check: `app/browser/e2e/download-link.spec.mjs`, `resolves for this project's device class` and `the separator after the download link is removed together with it`.
+
+#### Scenario: An iPhone is offered no app download
+- **WHEN** the site loads with an iPhone's user agent
+- **THEN** no download-app link is present
+- **AND** the plugin, license and manual links are unchanged
+- Check: `app/browser/e2e/download-link.spec.mjs`, `resolves for this project's device class` and `the separator after the download link is removed together with it`.
 
 ### Requirement: Playwright layout regression for the published site
 THE repository SHALL provide a Playwright suite for the new site — its
@@ -171,4 +194,40 @@ demonstrated to fail against a build carrying the defect it guards.
 - **WHEN** a regression clips or blanks the rendered surface while
   leaving element geometry intact
 - **THEN** the automated checks fail
+
+### Requirement: A phone keeps its screen on while the site's audio runs
+On an Android phone or an iPhone, THE published site SHALL hold a screen wake
+lock while its audio context is running and the page is visible, and SHALL
+ask for it again whenever the page becomes visible with the context running.
+It SHALL release the lock when the context stops running. It SHALL NOT hold one
+before audio starts, SHALL NOT hold one on any other device, and a refused
+request SHALL leave the page running without reporting a failure. Locking the
+phone with the power button hides the page, which releases the lock.
+
+#### Scenario: Audio start keeps the screen on
+- **WHEN** audio starts on a phone
+- **THEN** a screen wake lock is requested
+- **AND** none was requested before audio started
+- Check: `app/browser/e2e/screen-wake.spec.mjs`, `one request once the context runs, a new one after a simulated hide and show`.
+
+#### Scenario: Returning to the page asks again
+- **WHEN** the page is hidden and shown again while audio runs
+- **THEN** a new screen wake lock is requested
+- Check: `app/browser/e2e/screen-wake.spec.mjs`, `one request once the context runs, a new one after a simulated hide and show`.
+
+#### Scenario: A desktop is left alone
+- **WHEN** audio starts on a desktop browser
+- **THEN** no screen wake lock is requested
+- Check: `app/browser/e2e/screen-wake.spec.mjs`, `one request once the context runs, a new one after a simulated hide and show`.
+
+#### Scenario: A refused lock is not a failure
+- **WHEN** the browser refuses the wake lock
+- **THEN** the page keeps running and shows no boot-failure notice
+- Check: `app/browser/e2e/screen-wake.spec.mjs`, `a refused wake lock never surfaces a boot-error notice`.
+
+#### Scenario: The screen stays on in Chrome for Android
+- **WHEN** the site runs audio in Chrome on the Android emulator with a 15-second screen timeout
+- **THEN** the device is still awake 40 seconds later
+- **AND** with audio not started it is asleep 40 seconds later
+- Check: operator step — pass, frogg3rs-android-app task 3.5: with the plugged-in keep-awake setting turned off and a 15 s screen timeout, 46 s after a CDP-dispatched Play touch the device was awake; the no-Play control showed it asleep 54 s after load; a power-key press slept the device immediately even while audio ran, and after waking it the device was awake again 52 s later.
 
