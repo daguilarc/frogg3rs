@@ -91,9 +91,7 @@ jobs:
             -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=Android Debug,O=Android,C=US"
 
-      # app/android/build-android.sh resaves the .jucer (substituting its
-      # own JUCE_CHECKOUT for the .jucer's @JUCE_CHECKOUT@ token -- see that
-      # script's and Frogg3rs.jucer's own header comments) and runs Gradle's
+      # app/android/build-android.sh resaves the .jucer and runs Gradle's
       # assemble step, at most two Gradle compile jobs at once, niced, same
       # as every build this repository runs on the operator's Mac. Debug
       # first: its own applicationId assertion is the fastest real signal

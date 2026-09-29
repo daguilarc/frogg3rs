@@ -33,50 +33,27 @@
     External/Sheaf/projects/synth/runtime/juce_build.mk passes (minus
     apps/miniapp, which nothing in this file's source list includes).
 
-    androidPushNotifications is turned off below (task 4.4): with no custom
-    activity class set, turning it off would also flip JUCE's own
-    getActivityClassString() from com.rmsl.juce.JuceActivity to plain
-    android.app.Activity (JUCE couples the two), breaking everything
-    downstream that needs the real JUCE activity class, but
-    androidActivitySubClassName below (Projucer's UI and its own C++
-    variable both call this property androidCustomActivityClass, but per
-    jucer_PresetIDs.h its Identifier, and therefore its actual .jucer XML
-    attribute, is the old name androidActivitySubClassName, confirmed the
-    same way as gradleWrapperVersion above: the wrong name resaves with no
-    error and no custom activity in the generated manifest) now names
-    Frogg3rsActivity (which itself extends com.rmsl.juce.JuceActivity
-    directly), so getActivityClassString() returns that name regardless of
-    this flag, and the coupling no longer applies. Off is what design.md's
-    Lifecycle section asks for ("No POST_NOTIFICATIONS request"): the
-    service runs
-    without that permission and its notice appears in the task manager.
-
-    androidAdditionalJavaFolders below carries a SECOND line naming the
-    folder where com.rmsl.juce.JuceActivity.java itself lives inside a JUCE
-    checkout (<JUCE checkout>/modules/juce_gui_basics/native/javaopt/app).
-    This is required, not optional: getAndroidJavaSourceSets() in
-    jucer_ProjectExport_Android.h only auto-adds that folder to the Gradle
-    sourceSet "if (isUsingDefaultActivityClass() || isContentSharingEnabled())",
-    true until this project named a custom activity class, false now
-    (confirmed empirically: compileDebugJavaWithJavac failed with "cannot
-    find symbol com.rmsl.juce.JuceActivity" the first time
-    androidActivitySubClassName was set, with this second line absent).
-    Frogg3rsActivity.java extends that class, so its source must be
-    compiled alongside it regardless.
-
-    Unlike the C++ MODULEPATH entries above (useGlobalPath="1", resolved
-    fresh on whatever machine runs Projucer from ITS OWN global module-path
-    setting), androidAdditionalJavaFolders has no such per-machine
-    indirection in Projucer, only a literal absolute path or one relative
-    to this .jucer's own folder, and the JUCE checkout it must name
-    (task 4.1's ~/JUCE on this Mac, task 4.11's fresh clone in CI) lives
-    outside both repositories, at a different absolute path on every
-    machine that builds this project. So this file names no absolute path
-    itself: the second line is the literal token @JUCE_CHECKOUT@, and
-    app/android/build-android.sh substitutes the caller's JUCE checkout
-    path (JUCE_CHECKOUT, default ~/JUCE) for that token in a scratch copy
-    of this attribute immediately before every resave, restoring the token
-    afterward so the committed file never carries a real path.
+    androidPushNotifications is turned off below (task 4.4): design.md's
+    Lifecycle section asks for it ("No POST_NOTIFICATIONS request"), so the
+    service runs without that permission and its notice appears in the task
+    manager. androidActivitySubClassName below (Projucer's UI and its own
+    C++ variable both call this property androidCustomActivityClass, but
+    per jucer_PresetIDs.h its Identifier, and therefore its actual .jucer
+    XML attribute, is the old name androidActivitySubClassName, confirmed
+    the same way as gradleWrapperVersion above: the wrong name resaves with
+    no error and no custom activity in the generated manifest) names
+    Frogg3rsActivity, which extends android.app.Activity directly -- the
+    same class getActivityClassString() in jucer_ProjectExport_Android.h
+    returns itself for an app with no custom activity and no push
+    notifications. JUCE's own com.rmsl.juce.JuceActivity is not used: its
+    onResume calls the native appOnResume, which JUCE compiles only when
+    JUCE_PUSH_NOTIFICATIONS_ACTIVITY is defined (juce_Windowing_android.cpp),
+    true only with push notifications enabled, so the app crashed on its
+    first resume with that class. Because Frogg3rsActivity no longer extends
+    JuceActivity, androidAdditionalJavaFolders below names only this
+    project's own java/ folder (Frogg3rsActivity.java and
+    PlaybackService.java); no JUCE checkout folder is added to the build,
+    and this file names no absolute path.
   -->
   <MAINGROUP id="VgRV5IfL" name="Frogg3rs">
     <GROUP id="BcbfnoGM" name="app">
@@ -143,7 +120,7 @@
                    androidReadMediaAudioPermission="0" androidReadMediaImagesPermission="0"
                    androidReadMediaVideoPermission="0" androidExternalWriteNeeded="0"
                    androidActivitySubClassName="io.github.daguilarc.frogg3rs.Frogg3rsActivity"
-                   androidAdditionalJavaFolders="java&#10;@JUCE_CHECKOUT@/modules/juce_gui_basics/native/javaopt/app"
+                   androidAdditionalJavaFolders="java"
                    androidPushNotifications="0"
                    androidManifestCustomXmlElements="&lt;manifest&gt;&lt;uses-permission android:name=&quot;android.permission.FOREGROUND_SERVICE&quot;/&gt;&lt;uses-permission android:name=&quot;android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK&quot;/&gt;&lt;uses-permission android:name=&quot;android.permission.FOREGROUND_SERVICE_MICROPHONE&quot;/&gt;&lt;uses-permission android:name=&quot;android.permission.WAKE_LOCK&quot;/&gt;&lt;application&gt;&lt;service android:name=&quot;io.github.daguilarc.frogg3rs.PlaybackService&quot; android:foregroundServiceType=&quot;mediaPlayback|microphone&quot; android:exported=&quot;false&quot;/&gt;&lt;/application&gt;&lt;/manifest&gt;"
                    gradleVersion="9.1.0" gradleWrapperVersion="8.13.2">

@@ -16,14 +16,6 @@
 # the caller already set JAVA_HOME -- a CI workflow building this same
 # project sets its own Temurin JAVA_HOME before calling this script instead.
 #
-# JUCE_CHECKOUT: the JUCE checkout androidAdditionalJavaFolders' second line
-# must resolve into (see Frogg3rs.jucer's own header comment) -- defaults to
-# ~/JUCE, the checkout already built from on this Mac; a CI workflow
-# overrides it with wherever it cloned JUCE. This script substitutes it for
-# the .jucer's literal @JUCE_CHECKOUT@ token in place immediately before each
-# resave and restores the original file content on exit, so the committed
-# .jucer never ends up holding a real path.
-#
 # Parallelism: `nice` plus Gradle's own `--max-workers=2` caps Gradle's own
 # parallelism (at most two Gradle compile jobs, the rule this repository
 # holds every Gradle invocation on this Mac to) but does NOT cap the ninja
@@ -52,7 +44,6 @@ esac
 
 PROJUCER="${PROJUCER:-$HOME/.cache/frogg3rs-projucer/build/extras/Projucer/Projucer_artefacts/Release/Projucer.app/Contents/MacOS/Projucer}"
 JUCER_PROJECT="${JUCER_PROJECT:-$REPO_ROOT/app/android/Frogg3rs.jucer}"
-JUCE_CHECKOUT="${JUCE_CHECKOUT:-$HOME/JUCE}"
 export JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
 
 if [ ! -x "$PROJUCER" ]; then
@@ -63,21 +54,6 @@ if [ ! -x "$JAVA_HOME/bin/java" ]; then
   echo "build-android.sh: no java at \$JAVA_HOME/bin/java ($JAVA_HOME)" >&2
   exit 1
 fi
-if [ ! -d "$JUCE_CHECKOUT/modules" ]; then
-  echo "build-android.sh: no JUCE checkout at \$JUCE_CHECKOUT ($JUCE_CHECKOUT)" >&2
-  exit 1
-fi
-
-# Substitute the .jucer's literal @JUCE_CHECKOUT@ token for this caller's
-# real JUCE checkout path in place, resave, then restore the original
-# (tokenized) file content -- see the JUCE_CHECKOUT comment above and
-# Frogg3rs.jucer's own header comment. `cp`, not a shell-variable capture,
-# so the restore is byte-for-byte (a trailing newline survives).
-JUCER_BACKUP="$(mktemp)"
-cp "$JUCER_PROJECT" "$JUCER_BACKUP"
-trap 'cp "$JUCER_BACKUP" "$JUCER_PROJECT"; rm -f "$JUCER_BACKUP"' EXIT
-sed -i.bak "s#@JUCE_CHECKOUT@#$JUCE_CHECKOUT#g" "$JUCER_PROJECT"
-rm -f "$JUCER_PROJECT.bak"
 
 nice "$PROJUCER" --resave "$JUCER_PROJECT"
 
