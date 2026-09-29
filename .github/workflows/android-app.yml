@@ -2,12 +2,9 @@ name: Android App
 
 on:
   push:
-    # main: same paths-ignore as pages.yml, so an openspec/README-only push
-    # does not trigger this build. android-app: task 4.11 verifies this
-    # workflow from its own branch before it can exist on main (GitHub only
-    # dispatches a workflow from the default branch) -- task 6.4 removes
-    # this branch from the list once the workflow has merged there.
-    branches: [main, android-app]
+    # Same paths-ignore as pages.yml, so an openspec/README-only push does
+    # not trigger this build.
+    branches: [main]
     tags: ['frogg3rs_android']
     paths-ignore: ['openspec/**', 'README.md']
   workflow_dispatch:
@@ -54,7 +51,7 @@ jobs:
           java-version: '25'
 
       # Built the same way app/android/Frogg3rs.jucer's own header comment
-      # describes task 4.1 doing on the operator's Mac: JUCE's own CMake,
+      # describes for a local build: JUCE's own CMake,
       # JUCE_BUILD_EXTRAS, outside both repositories, at most two compile
       # jobs at once, niced. The Projucer binary's exact path under the
       # build tree is generator- and platform-dependent, so it is found
@@ -101,9 +98,8 @@ jobs:
       # `Projucer --resave` (confirmed locally, no Gradle involved) deletes
       # the whole app/build output directory as part of regenerating the
       # module, so building release right after debug would otherwise erase
-      # the debug APK before this job ever uploads it -- task 4.6 never hit
-      # this because it checked each APK immediately after its own build
-      # and never needed both to coexist on disk afterward.
+      # the debug APK before this job ever uploads it; the debug APK is
+      # copied out right after its own build.
       - name: Build debug APK
         run: |
           app/android/build-android.sh debug
@@ -209,9 +205,8 @@ jobs:
           name: frogg3rs-android-release
           path: dist
 
-      # MANUAL.md's "Installing the Android app" subsection:
-      # this release job only runs on the frogg3rs_android tag, pushed at
-      # task 6.6, after 5.1 has already written that subsection.
+      # MANUAL.md's "Installing the Android app" subsection; this release
+      # job only runs on the frogg3rs_android tag.
       - name: Extract release notes from MANUAL.md
         run: |
           awk '/^### Installing the Android app$/{flag=1; next} /^##+ /{flag=0} flag' MANUAL.md > android-notes.md
