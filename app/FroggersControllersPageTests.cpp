@@ -678,9 +678,10 @@ TEST_CASE(twister_preset_pairs_with_the_android_port_names) {
 // aliases require comes from a DIFFERENT device (its own PROPERTY_NAME),
 // never from the port name alone. Enumerates a device that is NOT the
 // Twister but presents those same bare names (the one string every
-// unnamed-port device shares) and asserts it is offered nothing: the whole-
-// string alias match (MatchesAnyAlias, ControllerWizard.cpp) requires the
-// full "DJ TechTools Midi Fighter Twister ..." prefix, which this other
+// unnamed-port device shares) and asserts it is offered nothing: F5's own
+// port-suffix stripping (MatchesAnyAlias, ControllerWizard.cpp) still needs
+// what is left after stripping to end with " Midi Fighter Twister", which
+// requires the full "DJ TechTools Midi Fighter Twister" prefix -- this other
 // device's own PROPERTY_NAME never supplies, so it stays unmatched rather
 // than being mistaken for a Twister.
 TEST_CASE(a_second_unnamed_port_device_is_not_offered_the_twister_preset) {

@@ -108,14 +108,19 @@ inline synth::MidiAppDeviceDefault TwisterDeviceDefault() {
     // i.e. FROM the device, which is this application's INPUT) or "...
     // Input Port N" (INTO the device, this application's OUTPUT); "DJ
     // TechTools" is the Twister's own USB manufacturer string, "Midi
-    // Fighter Twister" its product string. Matching stays whole-string
-    // equality (case insensitive, MatchesAnyAlias) -- see
+    // Fighter Twister" its product string. That direction-suffix handling
+    // lives in MatchesAnyAlias itself (ControllerWizard.cpp), which also
+    // accepts a reported name that, after removing a trailing " Output Port
+    // N"/" Input Port N", ends with " " followed by one of these aliases --
+    // so the single desktop-shaped alias below is enough for every preset in
+    // this catalog, including this one, on Android too; no device needs its
+    // own Android-specific alias string added here. See
     // FroggersControllersPageTests.cpp's own
     // launchpad_presets_pair_with_the_port_names_a_host_reports for the
     // same direction-flip rule applied to every other class-compliant
     // controller this catalog offers.
-    device.inputAliases = {"Midi Fighter Twister", "DJ TechTools Midi Fighter Twister Output Port 1"};
-    device.outputAliases = {"Midi Fighter Twister", "DJ TechTools Midi Fighter Twister Input Port 1"};
+    device.inputAliases = {"Midi Fighter Twister"};
+    device.outputAliases = {"Midi Fighter Twister"};
 
     synth::MidiControllerProfileConfig config;
     config.encoderInput = synth::EncoderMidiInConfig::TwisterDefault(0);
