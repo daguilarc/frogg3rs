@@ -2,11 +2,13 @@
 
 This is the manual for **Frogg3rs**, a modular synthesizer program running on the Sheaf design platform.
 
-The same instrument core runs in four hosts:
+The same instrument core runs in five hosts:
 
 - **Standalone** — a self-contained desktop app, with its own audio-device and
   MIDI-controller configuration (see MIDI controllers, below).
 - **Browser build** — the same core running in web browser.
+- **Android app** — the same core as an app on an Android phone (see Installing the Android
+  app, below).
 - **VST3** and **AU plugin** — the same core loaded inside a DAW, where the host owns audio
   devices, transport and tempo.
 
