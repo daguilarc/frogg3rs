@@ -211,7 +211,7 @@ jobs:
           name: frogg3rs-android-release
           path: dist
 
-      # MANUAL.md's "Installing the Android app" subsection (task 5.1):
+      # MANUAL.md's "Installing the Android app" subsection:
       # this release job only runs on the frogg3rs_android tag, pushed at
       # task 6.6, after 5.1 has already written that subsection.
       - name: Extract release notes from MANUAL.md

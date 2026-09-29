@@ -24,11 +24,11 @@
 # resave and restores the original file content on exit, so the committed
 # .jucer never ends up holding a real path.
 #
-# Parallelism: `nice` plus Gradle's own `--max-workers=2` caps GRADLE TASK
+# Parallelism: `nice` plus Gradle's own `--max-workers=2` caps Gradle's own
 # parallelism (at most two Gradle compile jobs, the rule this repository
 # holds every Gradle invocation on this Mac to) but does NOT cap the ninja
 # invocation AGP's CMake integration runs inside a single
-# buildCMake<Variant>[arm64-v8a] task -- confirmed empirically: with only
+# buildCMake<Variant>[arm64-v8a] step -- confirmed empirically: with only
 # --max-workers=2 set, `ps` during a build showed 5 concurrent clang++
 # processes. CMAKE_BUILD_PARALLEL_LEVEL is CMake's own, generator-agnostic
 # parallelism cap (respected by the `cmake --build` driver AGP uses
@@ -85,7 +85,7 @@ ANDROID_PROJECT_DIR="$(dirname "$JUCER_PROJECT")/Builds/Android"
 cd "$ANDROID_PROJECT_DIR"
 nice ./gradlew --max-workers=2 "$GRADLE_TASK"
 
-# task 4.6: assert the produced APK is actually this app, failing loudly on
+# Assert the produced APK is actually this app, failing loudly on
 # a mismatch instead of trusting a successful Gradle exit alone -- a wrong
 # applicationId, a stale APK left over from a different build, or an
 # aapt2/Projucer version mismatch mangling the manifest would otherwise
