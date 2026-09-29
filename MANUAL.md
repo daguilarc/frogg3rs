@@ -26,6 +26,8 @@ disk image and a Windows zip holding the standalone executable.
 The VST3 plugin releases for macOS and Windows. The Audio Unit releases for macOS only, because
 the format exists only there.
 
+The Android app releases as a signed APK, on its own GitHub release tagged `frogg3rs_android`.
+
 ### Opening a downloaded build
 
 The first time you open Frogg3rs, your computer will refuse and warn you it cannot check the app for
@@ -61,6 +63,12 @@ then **Run anyway**. Windows remembers this for that copy of the file; later lau
 Removing these prompts takes an Apple Developer Program membership on macOS and an Authenticode
 code-signing certificate on Windows. This project has neither, so expect these steps on every
 release.
+
+### Installing the Android app
+
+On your phone, open the [Android release page](https://github.com/daguilarc/frogg3rs/releases/tag/frogg3rs_android)
+and download `Frogg3rs-android.apk`. Open the downloaded file: Android asks whether to let your
+browser install apps, and you allow it, then install. A newer APK installs over the old one.
 
 ---
 
@@ -324,6 +332,27 @@ The transport runs on its own internal clock, the same as the standalone (Play, 
 editable BPM slider). Audio input requires the browser's own microphone permission, granted through a
 **Retry Input** action; nothing is captured, and External Audio stays silent, until that permission is
 granted. A stopped recording downloads as `YYYY-MM-DD.wav`.
+
+On a phone, the screen stays on while the sound is running, so it does not fall asleep on you mid-patch;
+the power button still locks it.
+
+### Android app
+
+The app fills the phone's screen and hides the status and navigation bars while it's in front, the way
+a full-screen instrument does — swipe in from the top or bottom edge to see them again, and they hide
+themselves again a few seconds later. There is no menu bar.
+
+While the app is open it shows a notification and keeps playing and answering a Twister connected over
+USB even with the screen off; swiping the app away from recent apps stops it.
+
+Choosing an input on the Audio I/O page (Standalone, above) asks for the microphone; refusing it leaves
+the output running and the page reports "Microphone access was not granted."
+
+A finished recording is saved through Android's own save screen, into whatever folder you choose there
+each time — unlike the standalone, whose save dialog (Record, above) opens on the Documents folder.
+
+Connecting a MIDI Fighter Twister over USB, the Controllers page offers its preset the same way it does
+on the desktop (MIDI Fighter Twister, below).
 
 ---
 

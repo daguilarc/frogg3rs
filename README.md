@@ -3,13 +3,14 @@
 This is a synthesizer designed for experimental noise; it probably won't make regular music super easily. It has three oscillators, an envelope per oscillator, a
 filter, a distortion stage, a delay and a reverb. It can be run as: 
 * a desktop app, 
-* as a VST3 or Audio Unit plugin in a Digital Audio Workstation (DAW), and 
-* in a web browser. 
+* as a VST3 or Audio Unit plugin in a Digital Audio Workstation (DAW), 
+* in a web browser, and 
+* as a native Android app. 
 
 Personally, I recommend using the web browser version or the plugin versions in a DAW. Since I won't bother paying for an Apple Developer account, and I don't have a computer running Windows, the desktop versions will not appear as automatically "trusted" by Mac or Windows operating systems. Apple now makes you go into System Settings to give permission to this un-trusted software to run on your computer, rather than in a pop-up window, which is kind of annoying. The plugins run on DAW software that was made by professional software developers so you won't need to deal with this janky stuff. Reaper is a free DAW that works pretty darn well, so no need to worry about breaking the bank with Ableton Live.
 
 Two instruments share this repository. **Frogg3rs**, the app this README describes, lives under
-[`app/`](app/README.md) and runs as the desktop app, the plugins and the browser build. The original
+[`app/`](app/README.md) and runs as the desktop app, the plugins, the browser build and the Android app. The original
 **Froggers** firmware for the Daisy Field semi-modular synth lives under `src/`, is frozen, and has its own
 [`DAISY_MANUAL.md`](DAISY_MANUAL.md). They differ in more than where they run: the firmware runs an
 external input through the oscillators as a ring mod (Solo outputs only that ring mod while input is
@@ -106,7 +107,7 @@ Parameter reference: [`MANUAL.md`](MANUAL.md) (global controls, then all six pag
 Audio, Envelope, Filter, Drive, Delay, Reverb — parameter by parameter) and [`QUICK_DICT.md`](QUICK_DICT.md)
 (the same six pages, one line per parameter).
 
-MIDI controllers: the standalone and browser builds have a Controllers page where every front-screen
+MIDI controllers: the standalone, browser and Android builds have a Controllers page where every front-screen
 control can be mapped, with ready-made presets for the MIDI Fighter Twister, the Akai APC40 mkII, and
 three Launchpad models. The manual's [MIDI controllers](MANUAL.md#midi-controllers) section describes
 the page, the presets and the device settings each controller needs.
