@@ -47,6 +47,14 @@ public:
             dataRoot_ = synth_runtime::SheafUserApplicationDataRoot();
 
             window_ = std::make_unique<MainWindow>("Frogg3rs");
+#if JUCE_ANDROID
+            // Wired before LaunchRegisteredApp below runs: its own first
+            // ApplySafeAreaBounds() call (inside MainWindow::ShowContent)
+            // fires this same resize callback, and activeSession_ is set
+            // before that call for exactly this reason (see
+            // LaunchRegisteredApp's own comment).
+            window_->onViewportWidthChanged = [this](int width) { DispatchViewportWidth(width); };
+#endif
 
             // Operator documentation ships with the app (froggers-sheaf-
             // runtime-app spec, "Operator documentation ships with the
@@ -120,17 +128,56 @@ private:
             : DocumentWindow(std::move(name), juce::Colours::black, DocumentWindow::allButtons) {
             setUsingNativeTitleBar(true);
             setResizable(true, true);
+#if JUCE_ANDROID
+            // Target SDK 35 draws edge to edge: fill the display's user area
+            // (design.md, "Window, docs, Record"), then pull in the
+            // safe-area insets so the surface never sits under a system bar.
+            // `config.uiWidth`/`uiHeight` (used elsewhere, see ShowContent
+            // below) name a DESKTOP window size and are not applied here.
+            setFullScreen(true);
+            ApplySafeAreaBounds();
+#endif
             setVisible(true);
         }
 
         void ShowContent(juce::Component& component, int width, int height) {
             setContentNonOwned(&component, false);
+#if JUCE_ANDROID
+            juce::ignoreUnused(width, height);
+            ApplySafeAreaBounds();
+#else
             setSize(width, height);
             centreWithSize(width, height);
+#endif
             setVisible(true);
         }
 
         void closeButtonPressed() override { juce::JUCEApplication::getInstance()->systemRequestedQuit(); }
+
+#if JUCE_ANDROID
+        // Fires on every resize (rotation, insets changing, multi-window),
+        // not just the two explicit ApplySafeAreaBounds() call sites above:
+        // whatever the window's own width ends up being, the running app's
+        // surface hears about it. `onViewportWidthChanged` is wired by
+        // FroggersMainApplication once `activeSession_` exists (see
+        // LaunchRegisteredApp below), so it is set before either
+        // ApplySafeAreaBounds() call above can fire it.
+        void resized() override {
+            DocumentWindow::resized();
+            if (onViewportWidthChanged) {
+                onViewportWidthChanged(getWidth());
+            }
+        }
+
+        std::function<void(int)> onViewportWidthChanged;
+
+    private:
+        void ApplySafeAreaBounds() {
+            if (const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()) {
+                setBounds(display->safeAreaInsets.subtractedFrom(display->userArea));
+            }
+        }
+#endif
     };
 
     template <synth::SynthApplication App>
@@ -164,8 +211,17 @@ private:
             // bounds the same way and is correct. Read the component's own size and both stay right even
             // if the sidebar width changes upstream.
             juce::Component& content = session->Component();
-            window_->ShowContent(content, content.getWidth(), content.getHeight());
+            // activeSession_ is set BEFORE ShowContent, not after: under
+            // JUCE_ANDROID, ShowContent's own ApplySafeAreaBounds() call
+            // resizes the window immediately and, through
+            // MainWindow::resized(), fires onViewportWidthChanged() before
+            // ShowContent returns -- DispatchViewportWidth needs
+            // activeSession_ already set to reach the surface for that very
+            // first width. Moving `session` does not invalidate `content`:
+            // it is a reference to the component the session OWNS, not to
+            // the session object itself.
             activeSession_ = std::move(session);
+            window_->ShowContent(content, content.getWidth(), content.getHeight());
             // activeSession_'s declared type is concretely
             // RuntimeShellSession<synth_froggers::FroggersApp> (see this
             // method's own comment above), regardless of this method's own
@@ -178,6 +234,26 @@ private:
             INFO("FroggersMainApplication::LaunchRegisteredApp failed: %s", e.what());
         }
     }
+
+#if JUCE_ANDROID
+    // The running app's surface, reached the same way
+    // RegisterFileExportHandler above reaches the engine
+    // (activeSession_->GetRuntime().GetEngine()), one step further to the
+    // App instance Engine::Application() returns and its own
+    // PortableSurface() (synth::ui::Surface&, Froggers.hpp) -- the same
+    // accessor RuntimeMainComponent::DispatchAction and
+    // PortableJuceBackend::DispatchBackendAction call to reach it. A resize
+    // that fires before activeSession_ exists (there is none: see
+    // LaunchRegisteredApp's own comment on ordering) is ignored rather than
+    // crashing.
+    void DispatchViewportWidth(int width) {
+        if (activeSession_ == nullptr) {
+            return;
+        }
+        activeSession_->GetRuntime().GetEngine().Application().PortableSurface().DispatchAction(
+            synth::ui::Action::WithValue(synth_froggers::FroggersActions::kViewportWidth, std::to_string(width)));
+    }
+#endif
 
     // Registers the JUCE-side behaviour for the engine's file-export seam
     // (Engine::SetFileExportHandler -- see that method's own comment). This
@@ -204,22 +280,39 @@ private:
             // produced this call has gone out of scope, and nothing here
             // reads the outer `fileExport` again once the chooser launches.
             chooser->launchAsync(flags, [chooser, fileExport = std::move(fileExport)](const juce::FileChooser& fc) {
-                const juce::File file = fc.getResult();
-                if (file == juce::File{}) {
+                // getResult() (a juce::File) is empty on Android: its save
+                // screen (JUCE_ANDROID's CREATE_DOCUMENT chooser,
+                // juce_FileChooser_android.cpp) returns a content URL, and
+                // FileChooser::getResults() keeps only local files -- so
+                // getURLResult() is read instead everywhere, and every
+                // platform's own chooser result (a plain file:// URL off
+                // macOS/Windows/Linux) still satisfies isLocalFile() below.
+                const juce::URL url = fc.getURLResult();
+                if (url.isEmpty()) {
                     return;  // Cancelled.
                 }
 
-                // Streamed to disk via
-                // juce::FileOutputStream (not std::ofstream): the target
-                // came back as a juce::File from the FileChooser, and this
-                // stays in the same JUCE idiom as everything else in this
-                // file rather than round-tripping through a raw path.
-                file.deleteFile();
-                juce::FileOutputStream stream(file);
-                bool ok = stream.openedOk();
+                // A local file is written as before (delete, then
+                // juce::FileOutputStream). Anything else -- the content URL
+                // Android's save screen hands back -- is written through
+                // juce::URL::createOutputStream, which JUCE implements on
+                // Android through AndroidDocument for content URLs.
+                std::unique_ptr<juce::OutputStream> stream;
+                bool ok = false;
+                if (url.isLocalFile()) {
+                    const juce::File file = url.getLocalFile();
+                    file.deleteFile();
+                    auto fileStream = std::make_unique<juce::FileOutputStream>(file);
+                    ok = fileStream->openedOk();
+                    stream = std::move(fileStream);
+                } else {
+                    stream = url.createOutputStream();
+                    ok = stream != nullptr;
+                }
+
                 if (ok) {
-                    ok = stream.write(fileExport.bytes.data(), fileExport.bytes.size());
-                    stream.flush();
+                    ok = stream->write(fileExport.bytes.data(), fileExport.bytes.size());
+                    stream->flush();
                 }
 
                 juce::String message =
