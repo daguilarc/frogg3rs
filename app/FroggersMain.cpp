@@ -17,11 +17,18 @@
 // saved patches under ~/Library/Sheaf/synth/sheaf-patch/patches/frogg3rs/
 // are not orphaned.
 
+// PaintActivityBackground (Android) uses JUCE's JNI helpers, which
+// juce_core.h includes only when this is set before its first include.
+#if defined(__ANDROID__)
+#define JUCE_CORE_INCLUDE_JNI_HELPERS 1
+#endif
+
 #include "FroggersBundledDocs.hpp"
 #include "FroggersRegistration.hpp"
 #include "HostDataPaths.hpp"
 #include "Shell.hpp"
 #include "synth/AppRegistry.hpp"
+#include "synth/Color.hpp"
 #include "synth/ThreadId.hpp"
 
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -167,6 +174,11 @@ private:
             // naming is inverted: true keeps them).
             juce::Desktop::getInstance().setKioskModeComponent(this, false);
 
+            // The strip ApplySafeAreaBounds() below leaves above a display
+            // cutout shows the activity's own window background, white in
+            // Android's default theme; paint it the surface's background.
+            PaintActivityBackground(synth::kSurfaceBackground);
+
             // Pulls in the safe-area insets so the surface never sits under
             // the display CUTOUT specifically -- hiding the status/
             // navigation bars above does not move content out of a cutout
@@ -241,6 +253,23 @@ private:
         std::function<void(int)> onViewportWidthChanged;
 
     private:
+        // Sets the Android activity's decor view background, the colour
+        // shown wherever this window does not cover the screen.
+        static void PaintActivityBackground(synth::Color color) {
+            JNIEnv* env = juce::getEnv();
+            juce::LocalRef<jobject> activity(juce::getMainActivity());
+            juce::LocalRef<jclass> activityClass(env->GetObjectClass(activity.get()));
+            juce::LocalRef<jobject> window(env->CallObjectMethod(
+                activity.get(), env->GetMethodID(activityClass.get(), "getWindow", "()Landroid/view/Window;")));
+            juce::LocalRef<jclass> windowClass(env->GetObjectClass(window.get()));
+            juce::LocalRef<jobject> decor(env->CallObjectMethod(
+                window.get(), env->GetMethodID(windowClass.get(), "getDecorView", "()Landroid/view/View;")));
+            juce::LocalRef<jclass> viewClass(env->GetObjectClass(decor.get()));
+            const auto argb = static_cast<jint>(0xff000000u | (std::uint32_t{color.r} << 16)
+                                                | (std::uint32_t{color.g} << 8) | std::uint32_t{color.b});
+            env->CallVoidMethod(decor.get(), env->GetMethodID(viewClass.get(), "setBackgroundColor", "(I)V"), argb);
+        }
+
         void ApplySafeAreaBounds() {
             if (const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()) {
                 setBounds(display->safeAreaInsets.subtractedFrom(display->userArea));
@@ -400,9 +429,6 @@ private:
                 if (ok) {
                     ok = stream->write(fileExport.bytes.data(), fileExport.bytes.size());
                     stream->flush();
-#if JUCE_ANDROID
-                    INFO("F2diag: write ok=%d bytes=%zu", (int)ok, fileExport.bytes.size());
-#endif
                 }
 
                 juce::String message =
