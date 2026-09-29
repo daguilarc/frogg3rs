@@ -33,15 +33,51 @@
     External/Sheaf/projects/synth/runtime/juce_build.mk passes (minus
     apps/miniapp, which nothing in this file's source list includes).
 
-    androidPushNotifications is left at JUCE's default (on): turning it off
-    also flips JUCE's own getActivityClassString() from
-    com.rmsl.juce.JuceActivity to plain android.app.Activity (JUCE couples
-    the two), which would break everything downstream that needs the real
-    JUCE activity class. Once androidCustomActivityClass names the custom
-    activity that extends it, that coupling no longer applies, which is the
-    right point to also turn this flag off per design.md's Lifecycle section
-    ("No POST_NOTIFICATIONS request"). Until then this build carries the
-    unused POST_NOTIFICATIONS permission JUCE's default adds.
+    androidPushNotifications is turned off below (task 4.4): with no custom
+    activity class set, turning it off would also flip JUCE's own
+    getActivityClassString() from com.rmsl.juce.JuceActivity to plain
+    android.app.Activity (JUCE couples the two), breaking everything
+    downstream that needs the real JUCE activity class, but
+    androidActivitySubClassName below (Projucer's UI and its own C++
+    variable both call this property androidCustomActivityClass, but per
+    jucer_PresetIDs.h its Identifier, and therefore its actual .jucer XML
+    attribute, is the old name androidActivitySubClassName, confirmed the
+    same way as gradleWrapperVersion above: the wrong name resaves with no
+    error and no custom activity in the generated manifest) now names
+    Frogg3rsActivity (which itself extends com.rmsl.juce.JuceActivity
+    directly), so getActivityClassString() returns that name regardless of
+    this flag, and the coupling no longer applies. Off is what design.md's
+    Lifecycle section asks for ("No POST_NOTIFICATIONS request"): the
+    service runs
+    without that permission and its notice appears in the task manager.
+
+    androidAdditionalJavaFolders below carries a SECOND line, an absolute
+    path into this operator's own ~/JUCE checkout (~/JUCE/modules/juce_gui_
+    basics/native/javaopt/app, where com.rmsl.juce.JuceActivity.java itself
+    lives). This is required, not optional: getAndroidJavaSourceSets() in
+    jucer_ProjectExport_Android.h only auto-adds that folder to the Gradle
+    sourceSet "if (isUsingDefaultActivityClass() || isContentSharingEnabled())",
+    true until this project named a custom activity class, false now
+    (confirmed empirically: compileDebugJavaWithJavac failed with "cannot
+    find symbol com.rmsl.juce.JuceActivity" the first time
+    androidActivitySubClassName was set, with this second line absent).
+    Frogg3rsActivity.java extends that class, so its source must be
+    compiled alongside it regardless.
+
+    Unlike the C++ MODULEPATH entries above (useGlobalPath="1", resolved
+    fresh on whatever machine runs Projucer from ITS OWN global module-path
+    setting), androidAdditionalJavaFolders has no such per-machine
+    indirection in Projucer, only a literal absolute path or one relative
+    to this .jucer's own folder. An absolute path is the only way to add a
+    folder that lives outside both repositories (as ~/JUCE, task 4.1, does)
+    to this list, so it is exactly as machine-specific as ~/JUCE itself:
+    it works on any worktree on THIS Mac (the same reasoning 4.2's own
+    global-module-path choice already accepts, since ~/JUCE sits outside
+    every worktree at a fixed absolute location), but not unmodified on a
+    different operator's machine or in CI (task 4.11, not yet built), which
+    will need its own JUCE checkout at this same path, or a resave-time
+    rewrite of this one attribute, before a custom-activity build like this
+    one can compile there.
   -->
   <MAINGROUP id="VgRV5IfL" name="Frogg3rs">
     <GROUP id="BcbfnoGM" name="app">
@@ -107,6 +143,10 @@
                    microphonePermissionNeeded="1"
                    androidReadMediaAudioPermission="0" androidReadMediaImagesPermission="0"
                    androidReadMediaVideoPermission="0" androidExternalWriteNeeded="0"
+                   androidActivitySubClassName="io.github.daguilarc.frogg3rs.Frogg3rsActivity"
+                   androidAdditionalJavaFolders="java&#10;/Users/diegoaguilar-canabal/JUCE/modules/juce_gui_basics/native/javaopt/app"
+                   androidPushNotifications="0"
+                   androidManifestCustomXmlElements="&lt;manifest&gt;&lt;uses-permission android:name=&quot;android.permission.FOREGROUND_SERVICE&quot;/&gt;&lt;uses-permission android:name=&quot;android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK&quot;/&gt;&lt;uses-permission android:name=&quot;android.permission.FOREGROUND_SERVICE_MICROPHONE&quot;/&gt;&lt;uses-permission android:name=&quot;android.permission.WAKE_LOCK&quot;/&gt;&lt;application&gt;&lt;service android:name=&quot;io.github.daguilarc.frogg3rs.PlaybackService&quot; android:foregroundServiceType=&quot;mediaPlayback|microphone&quot; android:exported=&quot;false&quot;/&gt;&lt;/application&gt;&lt;/manifest&gt;"
                    gradleVersion="9.1.0" gradleWrapperVersion="8.13.2">
       <CONFIGURATIONS>
         <CONFIGURATION name="Debug" isDebug="1" optimisation="1" linkTimeOptimisation="0"
