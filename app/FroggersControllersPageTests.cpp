@@ -668,6 +668,49 @@ TEST_CASE(twister_preset_pairs_with_the_android_port_names) {
     REQUIRE_TRUE(candidate->output.name == androidOut);
 }
 
+// ---------------------------------------------------------------------------
+// a_second_unnamed_port_device_is_not_offered_the_twister_preset
+// ---------------------------------------------------------------------------
+// F3 (openspec/changes/frogg3rs-android-app/tasks.md): Android gives every
+// MIDI 1.0 device with no name of its own the SAME bare per-port fallback
+// ("Output Port 1"/"Input Port 1", juce_Midi_android.cpp), whatever the
+// device -- the manufacturer/product prefix TwisterDeviceDefault()'s
+// aliases require comes from a DIFFERENT device (its own PROPERTY_NAME),
+// never from the port name alone. Enumerates a device that is NOT the
+// Twister but presents those same bare names (the one string every
+// unnamed-port device shares) and asserts it is offered nothing: the whole-
+// string alias match (MatchesAnyAlias, ControllerWizard.cpp) requires the
+// full "DJ TechTools Midi Fighter Twister ..." prefix, which this other
+// device's own PROPERTY_NAME never supplies, so it stays unmatched rather
+// than being mistaken for a Twister.
+TEST_CASE(a_second_unnamed_port_device_is_not_offered_the_twister_preset) {
+    const char* bareIn = "Output Port 1";
+    const char* bareOut = "Input Port 1";
+
+    synth::MidiDeviceList devices;
+    devices.inputs.push_back({"some.other.unnamed.device.in", bareIn});
+    devices.outputs.push_back({"some.other.unnamed.device.out", bareOut});
+
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+    const std::vector<synth::ControllerWizardDescriptor> registry =
+        synth::MakeControllerWizardRegistry(catalog);
+    const synth::MidiInstrumentConfig instrument;
+    const synth::WizardDiscovery discovery =
+        synth::DiscoverControllerWizards(devices, instrument, registry);
+
+    for (const synth::WizardCandidate& available : discovery.available) {
+        if (available.wizardId == "froggers.twister") {
+            std::cout << "  [froggers.twister] wrongly paired with \"" << bareIn << "\"\n";
+        }
+        REQUIRE_TRUE(available.wizardId != "froggers.twister");
+    }
+    bool inputUnmatched = false;
+    for (const synth::MidiDeviceInfoRef& unmatched : discovery.unmatchedInputs) {
+        inputUnmatched = inputUnmatched || unmatched.name == bareIn;
+    }
+    REQUIRE_TRUE(inputUnmatched);
+}
+
 }  // namespace
 
 int main() {

@@ -3,14 +3,39 @@
   design.md, "The Twister's names on Android": the firmware's USB descriptor
   gives manufacturer string "DJ TechTools" and product string "Midi Fighter
   Twister", with JackStrIndex = NO_DESCRIPTOR on every jack (no port names).
-  This virtual device mirrors exactly that: one input port and one output
-  port, neither named, so Android and JUCE synthesize the same port names a
-  real USB Twister gets ("DJ TechTools Midi Fighter Twister Output/Input
-  Port 1", task 2.3's aliases).
+  A real USB MIDI 1.0 device gets those two strings concatenated into
+  android.media.midi.MidiDeviceInfo's own PROPERTY_NAME by the framework's
+  USB-MIDI registration path (MidiDeviceInfo.java's own PROPERTY_NAME
+  javadoc: "For USB devices, this is a concatenation of the manufacturer
+  and product names") - confirmed empirically too (a real Twister's ports
+  reach JUCE as "DJ TechTools Midi Fighter Twister Output/Input Port 1",
+  task 2.3's aliases, via juce_MidiDeviceListConnectionBroadcaster.cpp's
+  `endpoint->getName() + " " + blockName`).
+
+  A MidiDeviceService-declared virtual device never gets that PROPERTY_NAME
+  concatenation: it is a USB-only framework behaviour, not something this
+  file's schema (device manufacturer/product attributes, read by
+  MidiService for PROPERTY_MANUFACTURER/PROPERTY_PRODUCT only) or the public
+  MidiDeviceService API can set (confirmed by dumpsys media.midi on this
+  device: its MidiDeviceInfo Bundle carries manufacturer/product but no name
+  key at all). With no device-level name, JUCE's endpoint name is empty and
+  the concatenation above degenerates to the bare per-port fallback
+  ("Output Port 1"/"Input Port 1", juce_Midi_android.cpp's own
+  `portName.isNotEmpty() ? portName : "..." + index`) - not what 2.3's
+  aliases expect, and the F3 bug this file existed to catch.
+
+  Fixed here at the one layer this virtual device CAN set: each port's own
+  name (this schema's input-port/output-port name attribute, which JUCE
+  reads as that same `portName` above). Naming the ports with the full
+  manufacturer-prefixed string reaches the identical final JUCE name a real
+  Twister produces, even though, unlike the real device, these two
+  ports are not really nameless at the Android layer any more; there is no
+  other public way for a virtual MidiDeviceService to present the same
+  string a real USB device's PROPERTY_NAME concatenation produces.
 -->
 <devices>
     <device manufacturer="DJ TechTools" product="Midi Fighter Twister">
-        <input-port />
-        <output-port />
+        <input-port name="DJ TechTools Midi Fighter Twister Input Port 1" />
+        <output-port name="DJ TechTools Midi Fighter Twister Output Port 1" />
     </device>
 </devices>
