@@ -355,20 +355,38 @@ private:
                 // FileChooser::getResults() keeps only local files -- so
                 // getURLResult() is read instead everywhere, and every
                 // platform's own chooser result (a plain file:// URL off
-                // macOS/Windows/Linux) still satisfies isLocalFile() below.
+                // macOS/Windows/Linux) still satisfies the scheme=="file"
+                // check below.
                 const juce::URL url = fc.getURLResult();
                 if (url.isEmpty()) {
                     return;  // Cancelled.
                 }
 
-                // A local file is written as before (delete, then
-                // juce::FileOutputStream). Anything else -- the content URL
-                // Android's save screen hands back -- is written through
-                // juce::URL::createOutputStream, which JUCE implements on
-                // Android through AndroidDocument for content URLs.
+                // Branch on the URL's SCHEME, not juce::URL::isLocalFile():
+                // on Android, isLocalFile() also returns true for a
+                // content:// URI when juce_Files_android.cpp's
+                // AndroidContentUriResolver::getLocalFileFromContentUri can
+                // GUESS a raw filesystem path from it -- for
+                // com.android.externalstorage.documents (the Documents save
+                // screen's own provider) that guess is
+                // "/storage/emulated/0/<subpath>", a path this app has no
+                // write access to under scoped storage (target SDK 29+):
+                // file.deleteFile() and FileOutputStream's open both fail
+                // silently against it, leaving the save screen's own 0-byte
+                // placeholder document untouched and producing exactly
+                // "Failed to write recording." -- traced with a temporary
+                // diagnostic build that logged url.isLocalFile()==true and
+                // url.getScheme()=="content" side by side for this same
+                // save. A local save dialog's result is always a file://
+                // URL (this file's own header comment on getURLResult, and
+                // juce::URL's File constructor, juce_URL.cpp), so
+                // scheme=="file" is exactly the platforms this branch
+                // already ran on, and content:// (Android's save screen)
+                // now always takes the createOutputStream() branch instead
+                // of JUCE's local-path guess.
                 std::unique_ptr<juce::OutputStream> stream;
                 bool ok = false;
-                if (url.isLocalFile()) {
+                if (url.getScheme() == "file") {
                     const juce::File file = url.getLocalFile();
                     file.deleteFile();
                     auto fileStream = std::make_unique<juce::FileOutputStream>(file);
