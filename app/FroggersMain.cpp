@@ -32,6 +32,9 @@
 #include "synth/ThreadId.hpp"
 
 #include <juce_gui_extra/juce_gui_extra.h>
+#if defined(__ANDROID__)
+#include <juce_opengl/juce_opengl.h>
+#endif
 
 #include <cstdint>
 #include <exception>
@@ -189,6 +192,14 @@ private:
             ApplySafeAreaBounds();
 #endif
             setVisible(true);
+#if JUCE_ANDROID
+            // Draw with the GPU. JUCE's software renderer on Android redraws
+            // and re-uploads the whole window whenever anything in it changes;
+            // an attached OpenGL context keeps the window as a texture and
+            // re-renders only the regions that were repainted, which leaves
+            // the audio callback the CPU it needs.
+            openGLContext_.attachTo(*this);
+#endif
         }
 
         void ShowContent(juce::Component& component, int width, int height) {
@@ -275,6 +286,9 @@ private:
                 setBounds(display->safeAreaInsets.subtractedFrom(display->userArea));
             }
         }
+
+        // Detaches itself when destroyed, before this window's Component base.
+        juce::OpenGLContext openGLContext_;
 #endif
     };
 

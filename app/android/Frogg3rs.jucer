@@ -141,6 +141,7 @@
         <MODULEPATH id="juce_graphics" path=""/>
         <MODULEPATH id="juce_gui_basics" path=""/>
         <MODULEPATH id="juce_gui_extra" path=""/>
+        <MODULEPATH id="juce_opengl" path=""/>
       </MODULEPATHS>
     </ANDROIDSTUDIO>
   </EXPORTFORMATS>
@@ -154,5 +155,6 @@
     <MODULE id="juce_graphics" useGlobalPath="1"/>
     <MODULE id="juce_gui_basics" useGlobalPath="1"/>
     <MODULE id="juce_gui_extra" useGlobalPath="1"/>
+    <MODULE id="juce_opengl" useGlobalPath="1"/>
   </MODULES>
 </JUCERPROJECT>
