@@ -393,7 +393,16 @@ public:
         // a larger one), which is a stronger guarantee than a cross-check
         // ever was -- the old test could never fail even when wrong.
         config.uiHeight = 712;
+#if defined(__ANDROID__)
+        // JUCE's software renderer on Android redraws the whole window on
+        // every UI frame that changes anything, and at 30 Hz that starves the
+        // audio callback (DSP pinned at 100%). OpenGL avoided it on the
+        // emulator but hung a real phone's GPU, so Android ticks the UI
+        // slower instead.
+        config.uiFrameHz = 10;
+#else
         config.uiFrameHz = 30;
+#endif
         return config;
     }
 
