@@ -173,8 +173,8 @@ struct Vco
     float ringCarrierPhase = 0.0f;
 
     // The running count of consecutive seconds this unit's state has stayed
-    // over kMaxUnitStateMagnitude (app/FroggersAppCore.hpp's
-    // RecoverUnitIfNeeded), owned HERE rather than in FroggersAppCore -- it
+    // over dsp::kMaxUnitStateMagnitude (dsp/RecoveryTier.hpp; checked by
+    // app/FroggersAppCore.hpp's RecoverUnitIfNeeded), owned HERE rather than in FroggersAppCore -- it
     // is this unit's own recovery bookkeeping, not shared state, so it
     // belongs with the rest of this struct's state rather than in a
     // parallel member on the enumerating parent, which would need a second,

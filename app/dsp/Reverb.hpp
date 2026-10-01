@@ -88,6 +88,7 @@
 #include "Drive.hpp"     // reuse dsp::DigitalReorganizer AS-IS for the Grit knob (same reuse Delay.hpp makes of dsp::SampleRateReducer).
 #include "FilterFx.hpp"  // reuse dsp::PadeSaturator (same reuse Delay.hpp makes).
 #include "Limiter.hpp"
+#include "RecoveryTier.hpp"  // dsp::FixedWatchedBuffer, the tank and pre-delay lines.
 #include "StereoField.hpp"  // dsp::CrossFeedPair, shared with dsp::StereoDelay::Process (dsp/Delay.hpp).
 
 #include <algorithm>
@@ -242,9 +243,9 @@ struct Reverb
     // carrying a second copy of the literal.
     static constexpr float kDensityCoeffScale = 0.7f;
 
-    float lineA[kSize]{};
-    float lineB[kSize]{};
-    float preLine[kSize]{};
+    FixedWatchedBuffer<kSize> lineA;
+    FixedWatchedBuffer<kSize> lineB;
+    FixedWatchedBuffer<kSize> preLine;
     size_t indexA = 0;
     size_t indexB = 0;
     size_t preIndex = 0;
@@ -394,9 +395,9 @@ struct Reverb
     // carrying over an arbitrary phase from the previous run.
     void Reset()
     {
-        std::fill(lineA, lineA + kSize, 0.0f);
-        std::fill(lineB, lineB + kSize, 0.0f);
-        std::fill(preLine, preLine + kSize, 0.0f);
+        lineA.Clear();
+        lineB.Clear();
+        preLine.Clear();
         indexA = 0;
         indexB = 0;
         preIndex = 0;
@@ -473,14 +474,9 @@ struct Reverb
         {
             return false;
         }
-        for (size_t i = 0; i < kSize; ++i)
-        {
-            if (!std::isfinite(lineA[i]) || !std::isfinite(lineB[i]) || !std::isfinite(preLine[i]))
-            {
-                return false;
-            }
-        }
-        return true;
+        // The lines' own counts, not a walk: see dsp::WatchedBuffer
+        // (dsp/RecoveryTier.hpp).
+        return lineA.AllFinite() && lineB.AllFinite() && preLine.AllFinite();
     }
 
     // Read-only diagnostic,
@@ -623,7 +619,7 @@ struct Reverb
         // tank -- at Send's default-closed 0.0f this write is exactly 0.0f
         // every call, the same "no signal in the tank" starting point
         // `StereoDelay`'s own closed Send leaves its delay line at.
-        preLine[preIndex] = send * 0.5f * (input.l + input.r);
+        preLine.Write(preIndex, send * 0.5f * (input.l + input.r));
         const size_t preRead = (preIndex + kSize - preDelay) % kSize;
         const float preOut = preLine[preRead];
         preIndex = (preIndex + 1) % kSize;
@@ -798,8 +794,8 @@ struct Reverb
         const float aOut = dampFilterA.Process(valA);
         const float bOut = dampFilterB.Process(valB);
 
-        lineA[indexA] = aIn;
-        lineB[indexB] = bIn;
+        lineA.Write(indexA, aIn);
+        lineB.Write(indexB, bIn);
         indexA = (indexA + 1) % kSize;
         indexB = (indexB + 1) % kSize;
 

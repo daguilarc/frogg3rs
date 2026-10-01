@@ -164,16 +164,16 @@ PINNED_REGIONS = [
     (
         "read-at-function",
         "anchor",
-        "float ReadAt(float seconds, const std::vector<float>& line) const",
+        "float ReadAt(float seconds, const DynamicWatchedBuffer& line) const",
         "return line[idx0] * (1.0f - frac) + line[idx1] * frac;",
-        "72e427aa653eee63b30acd42e303a8891004fa19c9c2c87fd1adb315de8d9b8d",
+        "544c8b0fe3ff2ba587207053fbc061f185d7d05c647ecfe2842910be35f8cdb6",
     ),
     (
         "set-sample-rate",
         "brace",
         "void SetSampleRate(",
         None,
-        "cede9e1c8f1445d08e2f648cc9d7d81925993306611f41ed794aba4ad773ba0c",
+        "f4e0e335932c827a92cefcecfc998a9c4238a559755f03e00b8fcaea95b7f166",
     ),
     (
         "set-width-balance",
@@ -297,8 +297,8 @@ BREAKS = [
     ),
     (
         "lines-allocated-short",
-        "lineL.assign(capacity, 0.0f);",
-        "lineL.assign(capacity - 64, 0.0f);",
+        "lineL.Resize(capacity);",
+        "lineL.Resize(capacity - 64);",
     ),
     (
         "off-grid-width-balance-headroom",

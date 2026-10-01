@@ -8314,13 +8314,13 @@ TEST_CASE(stereo_delay_diffusion_at_default_zero_is_bit_identical_to_no_diffusio
     dsp::StereoDelay delayClean;
     delayClean.SetSampleRate(sr);
 
-    delayDirty.diffuserL.section1.xHistory[0] = 0.73f;
-    delayDirty.diffuserL.section1.yHistory[0] = -0.41f;
-    delayDirty.diffuserL.section2.xHistory[5] = 0.29f;
-    delayDirty.diffuserL.section3.yHistory[10] = -0.55f;
-    delayDirty.diffuserR.section1.xHistory[0] = -0.62f;
-    delayDirty.diffuserR.section2.yHistory[3] = 0.18f;
-    delayDirty.diffuserR.section3.xHistory[7] = 0.37f;
+    delayDirty.diffuserL.section1.xHistory.Write(0, 0.73f);
+    delayDirty.diffuserL.section1.yHistory.Write(0, -0.41f);
+    delayDirty.diffuserL.section2.xHistory.Write(5, 0.29f);
+    delayDirty.diffuserL.section3.yHistory.Write(10, -0.55f);
+    delayDirty.diffuserR.section1.xHistory.Write(0, -0.62f);
+    delayDirty.diffuserR.section2.yHistory.Write(3, 0.18f);
+    delayDirty.diffuserR.section3.xHistory.Write(7, 0.37f);
 
     const dsp::DelayParams p = dsp::MapRowsToDelayParams(
         /*time=*/0.35f, /*send=*/0.9f, /*feedback=*/0.4f, /*width=*/0.25f,

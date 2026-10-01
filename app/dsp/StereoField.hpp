@@ -12,6 +12,8 @@
 //     from dsp/Delay.hpp so this header does not depend back on it -- see
 //     each struct's own comment below).
 
+#include "RecoveryTier.hpp"  // dsp::FixedWatchedBuffer, the allpass histories.
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -63,8 +65,8 @@ struct SchroederAllpassSection
     // StereoDelay's own ReadAt/WriteSample pair uses on lineL/lineR in
     // dsp/Delay.hpp, just backed by a fixed-capacity array instead of a
     // heap vector).
-    std::array<float, Capacity> xHistory{};
-    std::array<float, Capacity> yHistory{};
+    FixedWatchedBuffer<Capacity> xHistory;
+    FixedWatchedBuffer<Capacity> yHistory;
     std::size_t pos = 0;
     std::size_t m = 1;  // current delay length in samples; set by Configure(), clamped to [1, Capacity].
 
@@ -101,37 +103,22 @@ struct SchroederAllpassSection
         const float xDelayed = xHistory[pos];
         const float yDelayed = yHistory[pos];
         const float y = -a * x + xDelayed + a * yDelayed;
-        xHistory[pos] = x;
-        yHistory[pos] = y;
+        xHistory.Write(pos, x);
+        yHistory.Write(pos, y);
         pos = (pos + 1 >= m) ? 0 : pos + 1;
         return y;
     }
 
     void Reset()
     {
-        std::fill(xHistory.begin(), xHistory.end(), 0.0f);
-        std::fill(yHistory.begin(), yHistory.end(), 0.0f);
+        xHistory.Clear();
+        yHistory.Clear();
         pos = 0;
     }
 
-    bool StateFinite() const
-    {
-        for (const float v : xHistory)
-        {
-            if (!std::isfinite(v))
-            {
-                return false;
-            }
-        }
-        for (const float v : yHistory)
-        {
-            if (!std::isfinite(v))
-            {
-                return false;
-            }
-        }
-        return true;
-    }
+    // The histories' own counts, not a walk: see dsp::WatchedBuffer
+    // (dsp/RecoveryTier.hpp).
+    bool StateFinite() const { return xHistory.AllFinite() && yHistory.AllFinite(); }
 
     float StateMagnitude() const
     {

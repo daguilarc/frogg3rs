@@ -475,3 +475,24 @@ The Controllers page's add row SHALL offer, in this order, MIDI Fighter Twister,
 - **THEN** its ports are listed under "Other inputs" and "Other outputs", like any port no preset recognizes
 - Check: operator step: connect a WRLD.Bldr and open the Controllers page
 
+### Requirement: Fault recovery costs the same at any callback size
+The app's once-per-callback fault recovery SHALL decide whether a unit's
+sample memory holds a non-finite or over-ceiling sample without reading that
+memory, so its cost does not grow with the callback rate, and SHALL reach the
+same decision a full read of the memory would.
+
+#### Scenario: A buffer's counts follow its contents
+- **WHEN** a non-finite sample and an over-ceiling sample are written into a watched buffer and later overwritten with ordinary samples
+- **THEN** the buffer reports not finite and over the ceiling while they are held, and finite and under the ceiling once both are overwritten
+- Check: `app/FroggersAudioRoutingTests.cpp`, `watched_buffer_counts_follow_what_it_holds`.
+
+#### Scenario: Recovery decisions are unchanged
+- **WHEN** a unit's memory is poisoned, briefly over the ceiling, or over it for the sustained window
+- **THEN** recovery resets only that unit, ignores the transient, and resets after the window, as before
+- Check: `app/FroggersAudioRoutingTests.cpp`, `finiteness_recovery_resets_only_the_poisoned_unit_and_audio_recovers`, `magnitude_recovery_ignores_a_single_block_transient`, `magnitude_recovery_resets_after_sustained_over_ceiling_window`.
+
+#### Scenario: Every watched buffer is recovered when poisoned
+- **WHEN** a non-finite sample is written into the delay's `lineL`, its left diffuser, the reverb's `lineA`, its `preLine`, its `inputDiffuser`, or the comb's line
+- **THEN** that unit reads non-finite, and one block later it is reset and reads finite again
+- Check: `app/FroggersAudioRoutingTests.cpp`, `finiteness_recovery_resets_every_watched_buffer`.
+

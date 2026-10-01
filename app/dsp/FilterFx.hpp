@@ -398,7 +398,7 @@ struct Comb
     };
 
     OnePoleLowPass filter;
-    float delayLine[kSize]{};
+    FixedWatchedBuffer<kSize> delayLine;
     size_t index = 0;
     // Fractional: Process() below reads between the two adjacent integer
     // taps by this value's fractional part (PureDelay's own frac/idx0/idx1
@@ -490,7 +490,7 @@ struct Comb
         const float tapped = delayLine[idx0] * (1.0f - frac) + delayLine[idx1] * frac;
         const float x = filter.Process(tapped);
         const float output = input + feedback * (PadeSaturator::Saturate(combDrive * x) / combDrive);
-        delayLine[index] = output;
+        delayLine.Write(index, output);
         index = (index + 1) % kSize;
         return output;
     }
@@ -537,30 +537,22 @@ struct Comb
     void Reset()
     {
         filter.output = 0.0f;
-        std::fill(delayLine, delayLine + kSize, 0.0f);
+        delayLine.Clear();
         index = 0;
         overCeilingSeconds = 0.0f;
     }
 
-    // (Tier 1/Tier 2 recovery). O(kSize) per call by
-    // necessity (the entire recirculating delay line is state a poisoned
-    // sample could be sitting in) -- called once per block (not per
-    // sample), so this is 8192 float compares per block per Comb instance,
-    // negligible next to a typical audio block's own per-sample DSP cost.
-    bool StateFinite() const
+    // (Tier 1/Tier 2 recovery). The whole recirculating line is state a
+    // poisoned sample could sit in; its own counts answer for it in constant
+    // time (dsp::WatchedBuffer, dsp/RecoveryTier.hpp), where a walk of all
+    // 8192 samples once per audio callback cost a phone most of its budget.
+    bool StateFinite() const { return std::isfinite(filter.output) && delayLine.AllFinite(); }
+
+    // Tier 2's question for this unit (dsp::StateOverCeiling): exactly
+    // StateMagnitude() > dsp::kMaxUnitStateMagnitude, from the line's counts.
+    bool StateOverCeiling() const
     {
-        if (!std::isfinite(filter.output))
-        {
-            return false;
-        }
-        for (size_t i = 0; i < kSize; ++i)
-        {
-            if (!std::isfinite(delayLine[i]))
-            {
-                return false;
-            }
-        }
-        return true;
+        return std::fabs(filter.output) > kMaxUnitStateMagnitude || delayLine.AnyOverCeiling();
     }
 
     float StateMagnitude() const

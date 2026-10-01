@@ -56,6 +56,7 @@
 #include "Drive.hpp"    // reuse dsp::SampleRateReducer AS-IS for the Crush knob (see StereoDelay::SetCrush below).
 #include "FilterFx.hpp"
 #include "Limiter.hpp"
+#include "RecoveryTier.hpp"  // dsp::DynamicWatchedBuffer, the delay lines.
 #include "StereoField.hpp"  // dsp::CrossFeedPair, shared with dsp::Reverb::Process (dsp/Reverb.hpp).
 
 #include <algorithm>
@@ -391,8 +392,8 @@ struct StereoDelay
     // f236915^:sim/StereoDelay.hpp:33-40 (clearBuffers).
     void ClearBuffers()
     {
-        std::fill(lineL.begin(), lineL.end(), 0.0f);
-        std::fill(lineR.begin(), lineR.end(), 0.0f);
+        lineL.Clear();
+        lineR.Clear();
         writePos = 0;
         lfoPhase = 0.0f;
         lastWet = {};
@@ -479,21 +480,9 @@ struct StereoDelay
         {
             return false;
         }
-        for (const float sample : lineL)
-        {
-            if (!std::isfinite(sample))
-            {
-                return false;
-            }
-        }
-        for (const float sample : lineR)
-        {
-            if (!std::isfinite(sample))
-            {
-                return false;
-            }
-        }
-        return true;
+        // The lines' own counts, not a walk of seconds of buffer: see
+        // dsp::WatchedBuffer (dsp/RecoveryTier.hpp).
+        return lineL.AllFinite() && lineR.AllFinite();
     }
 
     // Read-only diagnostic,
@@ -554,8 +543,8 @@ struct StereoDelay
     {
         sampleRate = hz;
         capacity = CapacityForSampleRate(sampleRate);
-        lineL.assign(capacity, 0.0f);
-        lineR.assign(capacity, 0.0f);
+        lineL.Resize(capacity);
+        lineR.Resize(capacity);
         writePos = 0;
         lfoPhase = 0.0f;
         lfoInc = 2.0f * 3.14159265f * 0.25f / sampleRate;
@@ -985,7 +974,7 @@ private:
     // is unchanged), so behavior is bit-for-bit identical there; only the
     // negative case, previously UB, is newly defined (floor-mod wraps into
     // the buffer, reading back the zero it was cleared to).
-    float ReadAt(float seconds, const std::vector<float>& line) const
+    float ReadAt(float seconds, const DynamicWatchedBuffer& line) const
     {
         const float delaySamples = seconds * sampleRate;
         const float readPos = static_cast<float>(writePos) - delaySamples;
@@ -1013,12 +1002,12 @@ private:
     }
 
     // f236915^:sim/StereoDelay.hpp:126-129 (writeSample).
-    void WriteSample(float sample, std::vector<float>& line)
+    void WriteSample(float sample, DynamicWatchedBuffer& line)
     {
 #if defined(FROGGERS_DSP_CHECKS)
         assert(writePos < line.size());
 #endif
-        line[writePos] = sample;
+        line.Write(writePos, sample);
     }
 
     // f236915^:sim/StereoDelay.hpp:131-138 (wrapIndex).
@@ -1080,7 +1069,7 @@ private:
     // the seconds/writePos arithmetic around it, is what makes this read
     // travel backward through history instead of tracking writePos the way
     // the forward tap's roughly-constant-seconds ReadAt call does.
-    float ApplyReverse(DelayReverser& rev, float timeSeconds, const std::vector<float>& line)
+    float ApplyReverse(DelayReverser& rev, float timeSeconds, const DynamicWatchedBuffer& line)
     {
         const float delaySamplesWindow = timeSeconds * sampleRate;
         const float fadeSamples = std::min(kReverseWrapCrossfadeSeconds * sampleRate, delaySamplesWindow * 0.5f);
@@ -1138,8 +1127,8 @@ private:
     float sampleRate = 44100.0f;
     size_t capacity = 0;
     size_t writePos = 0;
-    std::vector<float> lineL;
-    std::vector<float> lineR;
+    DynamicWatchedBuffer lineL;
+    DynamicWatchedBuffer lineR;
     DelayWetPair lastWet{};
     float lfoPhase = 0.0f;
     float lfoInc = 0.0f;

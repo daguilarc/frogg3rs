@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <functional>
 #include <cstddef>
 #include <exception>
 #include <filesystem>
@@ -1479,7 +1480,7 @@ TEST_CASE(finiteness_recovery_resets_only_the_poisoned_unit_and_audio_recovers) 
     dsp::Comb& comb = rig.Application().TestFilterComb();
     constexpr float kSentinel = 12345.6789f;
     constexpr std::size_t kSentinelIndex = 4000;  // << dsp::Comb::kSize (8192); far past any write cursor here.
-    comb.delayLine[kSentinelIndex] = kSentinel;
+    comb.delayLine.Write(kSentinelIndex, kSentinel);
 
     // Poison the peak ResonantBump's own recursive state directly.
     dsp::ResonantBump& peak = rig.Application().TestFilterPeak();
@@ -1511,10 +1512,81 @@ TEST_CASE(finiteness_recovery_resets_only_the_poisoned_unit_and_audio_recovers) 
     REQUIRE_TRUE(PeakAbs(output) > 1.0e-4f);
 }
 
+// A watched buffer's counts follow exactly what it holds: a non-finite and an
+// over-ceiling sample are reported while held and forgotten once overwritten.
+TEST_CASE(watched_buffer_counts_follow_what_it_holds) {
+    dsp::FixedWatchedBuffer<8> buffer;
+    REQUIRE_TRUE(buffer.AllFinite());
+    REQUIRE_TRUE(!buffer.AnyOverCeiling());
+
+    buffer.Write(2, std::numeric_limits<float>::quiet_NaN());
+    buffer.Write(5, 2.0f * dsp::kMaxUnitStateMagnitude);
+    REQUIRE_TRUE(!buffer.AllFinite());
+    REQUIRE_TRUE(buffer.AnyOverCeiling());
+
+    buffer.Write(2, 0.25f);
+    REQUIRE_TRUE(buffer.AllFinite());
+    REQUIRE_TRUE(buffer.AnyOverCeiling());
+
+    buffer.Write(5, dsp::kMaxUnitStateMagnitude);  // at the ceiling is not over it.
+    REQUIRE_TRUE(buffer.AllFinite());
+    REQUIRE_TRUE(!buffer.AnyOverCeiling());
+
+    buffer.Write(0, std::numeric_limits<float>::infinity());  // infinite: both.
+    REQUIRE_TRUE(!buffer.AllFinite());
+    REQUIRE_TRUE(buffer.AnyOverCeiling());
+    buffer.Clear();
+    REQUIRE_TRUE(buffer.AllFinite());
+    REQUIRE_TRUE(!buffer.AnyOverCeiling());
+}
+
+// Every buffer whose finiteness recovery now reads from counts, poisoned in
+// turn: the owning unit reads non-finite, and one block later
+// RecoverPoisonedUnitState() has reset it.
+TEST_CASE(finiteness_recovery_resets_every_watched_buffer) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("finiteness_recovery_every_buffer"));
+    rig.StartAt(0);
+    rig.RunBlocks(1);
+    dsp::StereoDelay& delay = rig.Application().TestDelay();
+    dsp::Reverb& reverb = rig.Application().TestReverb();
+    dsp::Comb& comb = rig.Application().TestFilterComb();
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    constexpr std::size_t kIndex = 3;
+
+    struct Case {
+        const char* name;
+        std::function<void()> poison;
+        std::function<bool()> finite;
+    };
+    const Case cases[] = {
+        {"delay lines (a NaN through Process, the only writer)", [&] {
+             dsp::DelayParams open;
+             open.dsnd = 1.0f;  // a closed Send bypasses the delay entirely.
+             delay.Process(nan, open);
+         },
+         [&] { return delay.StateFinite(); }},
+        {"delay diffuserL", [&] { delay.diffuserL.section1.xHistory.Write(kIndex, nan); },
+         [&] { return delay.StateFinite(); }},
+        {"reverb lineA", [&] { reverb.lineA.Write(kIndex, nan); }, [&] { return reverb.StateFinite(); }},
+        {"reverb preLine", [&] { reverb.preLine.Write(kIndex, nan); }, [&] { return reverb.StateFinite(); }},
+        {"reverb inputDiffuser", [&] { reverb.inputDiffuser.section1.yHistory.Write(kIndex, nan); },
+         [&] { return reverb.StateFinite(); }},
+        {"comb delayLine", [&] { comb.delayLine.Write(kIndex, nan); }, [&] { return comb.StateFinite(); }},
+    };
+    for (const Case& c : cases) {
+        REQUIRE_TRUE(c.finite());
+        c.poison();
+        REQUIRE_TRUE(!c.finite());
+        rig.RunBlocks(1);
+        REQUIRE_TRUE(c.finite());
+        std::cout << "  [recovery] " << c.name << ": poisoned, then reset after one block.\n";
+    }
+}
+
 // -----------------------------------------------------------------------
 // Tier 2, magnitude recovery -- "sustained" defined and
 // justified: a unit's state magnitude must exceed kMaxUnitStateMagnitude
-// (100.0, derived beside the constant in FroggersAppCore.hpp) for at least
+// (100.0, derived beside the constant in dsp/RecoveryTier.hpp) for at least
 // kSustainedOverCeilingSeconds (0.01s == 10ms) of continuous real time,
 // checked once per block, before Tier 2 resets it -- so a single block's
 // transient excursion must NOT fire it, but two-or-more consecutive
@@ -1531,7 +1603,7 @@ TEST_CASE(magnitude_recovery_ignores_a_single_block_transient) {
     // does not fire (it IS finite), so only Tier 2's sustained-window logic
     // is under test here.
     constexpr std::size_t kIndex = 4000;
-    comb.delayLine[kIndex] = 500.0f;
+    comb.delayLine.Write(kIndex, 500.0f);
     REQUIRE_TRUE(comb.StateFinite());
     REQUIRE_TRUE(comb.StateMagnitude() > 100.0f);
 
@@ -1543,7 +1615,7 @@ TEST_CASE(magnitude_recovery_ignores_a_single_block_transient) {
     // The transient subsides (as a real one-sample spike would, decaying
     // within its own block) -- drop back under the ceiling before the
     // sustained window would have elapsed.
-    comb.delayLine[kIndex] = 50.0f;  // finite, well under the 100.0 ceiling.
+    comb.delayLine.Write(kIndex, 50.0f);  // finite, well under the 100.0 ceiling.
     rig.RunBlocks(4);
     // Still exactly 50.0f: the counter reset to 0 the instant magnitude
     // dropped back under the ceiling, so no amount of further (now-normal)
@@ -1556,7 +1628,7 @@ TEST_CASE(magnitude_recovery_resets_after_sustained_over_ceiling_window) {
     dsp::Comb& comb = rig.Application().TestFilterComb();
 
     constexpr std::size_t kIndex = 4000;
-    comb.delayLine[kIndex] = 500.0f;
+    comb.delayLine.Write(kIndex, 500.0f);
 
     // Block 1: ~5.33ms elapsed, still < 10ms -- not yet reset.
     rig.RunBlocks(1);
