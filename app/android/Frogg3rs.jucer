@@ -124,11 +124,22 @@
                    androidPushNotifications="0"
                    androidManifestCustomXmlElements="&lt;manifest&gt;&lt;uses-permission android:name=&quot;android.permission.FOREGROUND_SERVICE&quot;/&gt;&lt;uses-permission android:name=&quot;android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK&quot;/&gt;&lt;uses-permission android:name=&quot;android.permission.FOREGROUND_SERVICE_MICROPHONE&quot;/&gt;&lt;uses-permission android:name=&quot;android.permission.WAKE_LOCK&quot;/&gt;&lt;application&gt;&lt;service android:name=&quot;io.github.daguilarc.frogg3rs.PlaybackService&quot; android:foregroundServiceType=&quot;mediaPlayback|microphone&quot; android:exported=&quot;false&quot;/&gt;&lt;/application&gt;&lt;/manifest&gt;"
                    gradleVersion="9.1.0" gradleWrapperVersion="8.13.2">
+      <!--
+      Release's extraCompilerFlags/extraLinkerFlags repeat optimisation="3" and
+      linkTimeOptimisation="1" on purpose. Android Gradle builds the release
+      variant with CMake's RelWithDebInfo build type, whose -O2 comes after the
+      gradle -O3, and JUCE writes -flto only into the *_RELEASE flag variables,
+      which RelWithDebInfo never reads: without these two attributes the app is
+      compiled -O2 with no LTO (measured on a Galaxy S20 FE: the audio thread
+      saturated a core). These go into target_compile_options and the shared
+      library link flags, after -O2, keyed on JUCE_BUILD_CONFIGURATION.
+      -->
       <CONFIGURATIONS>
         <CONFIGURATION name="Debug" isDebug="1" optimisation="1" linkTimeOptimisation="0"
                        targetName="Frogg3rs" androidArchitectures="arm64-v8a"
                        headerPath="../../../&#10;../../../../External/Sheaf/projects/synth/include&#10;../../../../External/Sheaf/projects/synth/runtime&#10;../../../../External/Sheaf/projects/synth/juce"/>
         <CONFIGURATION name="Release" isDebug="0" optimisation="3" linkTimeOptimisation="1"
+                       extraCompilerFlags="-O3 -flto" extraLinkerFlags="-O3 -flto"
                        targetName="Frogg3rs" androidArchitectures="arm64-v8a"
                        headerPath="../../../&#10;../../../../External/Sheaf/projects/synth/include&#10;../../../../External/Sheaf/projects/synth/runtime&#10;../../../../External/Sheaf/projects/synth/juce"/>
       </CONFIGURATIONS>
