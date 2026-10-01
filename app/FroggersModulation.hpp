@@ -904,6 +904,24 @@ public:
         }
     }
 
+    // Rebuilds the open drill-down at its current level by replaying the same
+    // presses Back() replays. Sheaf decides which depth cells a modulation
+    // view shows when the view opens (Bank::OpenModulationView), so a source
+    // whose `connected` changed while the view was open -- External Audio,
+    // when an input is chosen or dropped -- appears or disappears only after
+    // this.
+    void Refresh() {
+        const std::size_t target = level_;
+        if (target == 0) {
+            return;
+        }
+        bank_->Deselect();
+        level_ = 0;
+        for (std::size_t i = 0; i < target; ++i) {
+            PressEncoder(levelEncoders_[i]);
+        }
+    }
+
 private:
     synth::Bank* bank_;
     std::size_t level_ = 0;

@@ -958,7 +958,12 @@ public:
         // per sample, and always before ProcessBlock() reads it below.
         const int routedRequest = pendingExternalAudioRouted_.exchange(-1, std::memory_order_acq_rel);
         if (routedRequest >= 0) {
-            modulation_.SetExternalAudioConnected(routedRequest != 0);
+            const bool connected = routedRequest != 0;
+            const bool changed = connected != modulation_.ExternalAudioConnected();
+            modulation_.SetExternalAudioConnected(connected);
+            if (changed) {
+                drillIn_->Refresh();
+            }
         }
 
         // One release-and-recompute per block, however many of the commands
