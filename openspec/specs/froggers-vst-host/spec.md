@@ -318,3 +318,27 @@ WHEN a Controllers page commit, a File page New, Save As or Load is accepted, TH
 - **THEN** the processor's listeners receive a change carrying the non-parameter-state flag after each
 - Check: not yet delivered: NEW controller_commit_and_file_actions_mark_non_parameter_state_changed in app/vst/FroggersVstHostTests.cpp (task 2.6); operator step, task 2.7 (the save prompt)
 
+### Requirement: The input bus presents as an aux, not main, to a VST3 host
+THE plugin SHALL report its optional audio input bus to a VST3 host as an
+auxiliary (sidechain) bus, never as the host's designated main input, so
+that a host offering audio to an instrument only through an aux/sidechain
+bus can route a track's output into it. This changes only how the bus is
+categorized to the host; the bus's presence, channel layout, default-off
+state, and opt-in consent semantics are unchanged.
+
+#### Scenario: The host queries the input bus's designation
+- **WHEN** a VST3 host queries bus info for the plugin's input bus at index 0
+- **THEN** the reported bus type is aux, not main
+- Check: `app/vst/FroggersVstHostTests.cpp`, `processor_reports_the_input_bus_as_aux_not_main`.
+
+#### Scenario: A track routes into the plugin through a sidechain input
+- **WHEN** the operator, in Ableton Live 12 or Bitwig, routes another
+  track's output into the plugin's input bus
+- **THEN** the bus is offered and selectable as a sidechain/aux routing
+  target, and the routed signal reaches External Audio and External EF once
+  the operator opts the input in
+- Check: operator step — pass, 2026-09-30, Ableton Live 12: the Frogg3rs
+  device's sidechain chooser routed a playing track in, and with the
+  transport running and IN: on, External Audio and External Audio EF moved
+  with it (task 3).
+
