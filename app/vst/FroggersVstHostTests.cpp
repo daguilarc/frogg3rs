@@ -2958,7 +2958,8 @@ TEST_CASE(input_bus_selected_channel_signal_reaches_the_external_audio_source) {
     REQUIRE_TRUE(hostInputView.getNumChannels() == 2);  // stereo -- the bus's own declared default layout.
     constexpr float kDrivenSample = 0.6f;
     for (int s = 0; s < hostInputView.getNumSamples(); ++s) {
-        hostInputView.setSample(0, s, kDrivenSample);
+        hostInputView.setSample(0, s, kDrivenSample);  // the same signal on both sides: the
+        hostInputView.setSample(1, s, kDrivenSample);  // mono downmix is that signal itself.
     }
     processor.processBlock(buffer, midi);
 
@@ -2971,12 +2972,11 @@ TEST_CASE(input_bus_selected_channel_signal_reaches_the_external_audio_source) {
               << " -> external-audio source=" << sourceValue << " (expected 0.8).\n";
 }
 
-// ResolveSelectedInputChannel()'s own generality -- Sum and "one specific
-// channel of several" -- exercised directly against synthetic 2-channel
-// arrays, isolating the resolution algorithm itself from bus/processBlock
-// plumbing (the section below drives the same paths through a real stereo
-// bus and a real processBlock() call instead).
-TEST_CASE(resolve_selected_input_channel_sums_two_channels_when_sum_is_selected) {
+// ResolveSelectedInputChannel() driven directly with synthetic arrays,
+// isolated from bus/processBlock plumbing: On is the per-sample mean of every
+// channel, a one-channel bus passes through unchanged, and None resolves
+// nothing.
+TEST_CASE(resolve_selected_input_channel_on_averages_two_channels) {
     constexpr int kNumSamples = 8;
     std::array<float, kNumSamples> channel0{};
     std::array<float, kNumSamples> channel1{};
@@ -2987,38 +2987,30 @@ TEST_CASE(resolve_selected_input_channel_sums_two_channels_when_sum_is_selected)
     const std::array<const float*, 2> channels{channel0.data(), channel1.data()};
     std::array<float, kNumSamples> out{};
 
-    // Sum is index numChannels+1 == 3 (ComputeInputOptionLabels()'s own
-    // scheme: 0 None, 1..2 one per channel, 3 Sum).
-    const bool resolved = frogg3rs_vst::FroggersPluginProcessor::ResolveSelectedInputChannel(
-        channels.data(), 2, /*selection=*/3, kNumSamples, out.data());
-    REQUIRE_TRUE(resolved);
-    for (int s = 0; s < kNumSamples; ++s) {
-        REQUIRE_TRUE(std::fabs(out[static_cast<std::size_t>(s)] - 0.3f) < 1.0e-6f);  // 0.1 + 0.2.
-    }
-    std::cout << "  [resolve] Sum over a synthetic 2-channel array: 0.1 + 0.2 = " << out[0] << ".\n";
-}
-
-TEST_CASE(resolve_selected_input_channel_selecting_the_other_channel_reads_the_other_one) {
-    constexpr int kNumSamples = 4;
-    std::array<float, kNumSamples> channel0{0.11f, 0.12f, 0.13f, 0.14f};
-    std::array<float, kNumSamples> channel1{0.21f, 0.22f, 0.23f, 0.24f};
-    const std::array<const float*, 2> channels{channel0.data(), channel1.data()};
-    std::array<float, kNumSamples> out{};
-
-    // Selection 1 -> channel0, selection 2 -> channel1 (ComputeInputOptionLabels()'s
-    // own 1-based scheme).
     REQUIRE_TRUE(frogg3rs_vst::FroggersPluginProcessor::ResolveSelectedInputChannel(
         channels.data(), 2, /*selection=*/1, kNumSamples, out.data()));
     for (int s = 0; s < kNumSamples; ++s) {
-        REQUIRE_TRUE(out[static_cast<std::size_t>(s)] == channel0[static_cast<std::size_t>(s)]);
+        REQUIRE_TRUE(std::fabs(out[static_cast<std::size_t>(s)] - 0.15f) < 1.0e-6f);  // (0.1 + 0.2) / 2.
     }
+    std::cout << "  [resolve] On over a synthetic 2-channel array: (0.1 + 0.2) / 2 = " << out[0] << ".\n";
+}
+
+TEST_CASE(resolve_selected_input_channel_passes_one_channel_through_and_none_resolves_nothing) {
+    constexpr int kNumSamples = 4;
+    std::array<float, kNumSamples> channel0{0.11f, 0.12f, 0.13f, 0.14f};
+    const std::array<const float*, 1> channels{channel0.data()};
+    std::array<float, kNumSamples> out{9.0f, 9.0f, 9.0f, 9.0f};
+
+    REQUIRE_TRUE(!frogg3rs_vst::FroggersPluginProcessor::ResolveSelectedInputChannel(
+        channels.data(), 1, /*selection=*/0, kNumSamples, out.data()));
+    REQUIRE_TRUE(out[0] == 9.0f);  // None leaves `out` untouched.
 
     REQUIRE_TRUE(frogg3rs_vst::FroggersPluginProcessor::ResolveSelectedInputChannel(
-        channels.data(), 2, /*selection=*/2, kNumSamples, out.data()));
+        channels.data(), 1, /*selection=*/1, kNumSamples, out.data()));
     for (int s = 0; s < kNumSamples; ++s) {
-        REQUIRE_TRUE(out[static_cast<std::size_t>(s)] == channel1[static_cast<std::size_t>(s)]);
+        REQUIRE_TRUE(out[static_cast<std::size_t>(s)] == channel0[static_cast<std::size_t>(s)]);
     }
-    std::cout << "  [resolve] selection 1 read channel0 verbatim, selection 2 read channel1 verbatim.\n";
+    std::cout << "  [resolve] one channel passes through verbatim; None resolves nothing.\n";
 }
 
 // The bus was widened from mono-only to mono-or-stereo (isBusesLayoutSupported()'s
@@ -3064,7 +3056,7 @@ TEST_CASE(input_bus_mono_and_disabled_are_still_accepted) {
     std::cout << "  [input bus] mono() and disabled() both still accepted after the stereo widening.\n";
 }
 
-TEST_CASE(input_bus_stereo_options_are_none_both_channels_and_sum) {
+TEST_CASE(input_bus_stereo_options_are_none_and_on) {
     frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("input_bus_stereo_options"));
     processor.setRateAndBufferSizeDetails(48000.0, 256);
     processor.prepareToPlay(48000.0, 256);
@@ -3074,23 +3066,19 @@ TEST_CASE(input_bus_stereo_options_are_none_both_channels_and_sum) {
     REQUIRE_TRUE(inputBus->setCurrentLayout(juce::AudioChannelSet::stereo()));
     REQUIRE_TRUE(inputBus->getNumberOfChannels() == 2);
 
-    // Asserting the actual contents, not just the count -- a bug that
-    // dropped or reordered an entry (e.g. Sum before the second channel)
-    // would pass a length-only check.
+    // External Audio is one mono signal: a stereo bus offers no per-channel
+    // choice, only None and On.
     const std::vector<std::string> labels = processor.InputOptionLabelsForTest();
-    REQUIRE_TRUE(labels.size() == 4);
+    REQUIRE_TRUE(labels.size() == 2);
     REQUIRE_TRUE(labels[0] == "None");
-    REQUIRE_TRUE(labels[1] == "L");
-    REQUIRE_TRUE(labels[2] == "R");
-    REQUIRE_TRUE(labels[3] == "Sum");
+    REQUIRE_TRUE(labels[1] == "On");
 
     processor.releaseResources();
-    std::cout << "  [input bus] stereo option labels: [" << labels[0] << ", " << labels[1] << ", " << labels[2]
-              << ", " << labels[3] << "].\n";
+    std::cout << "  [input bus] stereo option labels: [" << labels[0] << ", " << labels[1] << "].\n";
 }
 
-TEST_CASE(input_bus_stereo_second_channel_and_sum_reach_the_external_audio_source) {
-    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("input_bus_stereo_second_and_sum"));
+TEST_CASE(input_bus_stereo_on_reads_the_mono_downmix_and_a_second_tap_returns_to_none) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("input_bus_stereo_on_downmix"));
     processor.setRateAndBufferSizeDetails(48000.0, 256);
     processor.prepareToPlay(48000.0, 256);
 
@@ -3103,62 +3091,35 @@ TEST_CASE(input_bus_stereo_second_channel_and_sum_reach_the_external_audio_sourc
 
     juce::AudioBuffer<float> buffer(2, 256);
     juce::MidiBuffer midi;
+    // Unequal sides, so reading either one alone (0.8 or 0.4 normalized)
+    // cannot pass for the mean: (0.6 + -0.2) / 2 == 0.2, normalized 0.6.
+    constexpr float kChannel0Sample = 0.6f;
+    constexpr float kChannel1Sample = -0.2f;
+    auto runDrivenBlock = [&] {
+        buffer.clear();
+        juce::AudioBuffer<float> view = processor.getBusBuffer(buffer, true, 0);
+        for (int s = 0; s < view.getNumSamples(); ++s) {
+            view.setSample(0, s, kChannel0Sample);
+            view.setSample(1, s, kChannel1Sample);
+        }
+        processor.processBlock(buffer, midi);
+    };
 
-    // Driven values deliberately UNEQUAL -- the positive control below (the
-    // second channel's read must differ from the first's) cannot pass by
-    // coincidence.
-    constexpr float kChannel0Sample = 0.6f;   // NormalizeBipolarToUnit(0.6f) == 0.8f.
-    constexpr float kChannel1Sample = -0.2f;  // NormalizeBipolarToUnit(-0.2f) == 0.4f.
-    REQUIRE_TRUE(kChannel0Sample != kChannel1Sample);
-
-    // None -> L (index 1): read directly ahead of the real target below, as
-    // a positive control that a passing read of index 2 is actually reading
-    // the SECOND channel and not just re-reading the first.
-    DispatchInputSelect(processor);
+    DispatchInputSelect(processor);  // None -> On.
     REQUIRE_TRUE(processor.InputSelectionForTest() == 1);
-    buffer.clear();
-    juce::AudioBuffer<float> firstChannelView = processor.getBusBuffer(buffer, true, 0);
-    for (int s = 0; s < firstChannelView.getNumSamples(); ++s) {
-        firstChannelView.setSample(0, s, kChannel0Sample);
-        firstChannelView.setSample(1, s, kChannel1Sample);
-    }
-    processor.processBlock(buffer, midi);
-    const float firstChannelValue = processor.ApplicationForTest().Modulation().ExternalAudioSourceForTest();
-    REQUIRE_TRUE(std::fabs(firstChannelValue - 0.8f) < 1.0e-4f);
+    runDrivenBlock();
+    REQUIRE_TRUE(processor.ApplicationForTest().Modulation().ExternalAudioConnected());
+    const float onValue = processor.ApplicationForTest().Modulation().ExternalAudioSourceForTest();
+    REQUIRE_TRUE(std::fabs(onValue - 0.6f) < 1.0e-4f);
 
-    // L -> R (index 2): must read the SECOND channel's signal, not the
-    // first's.
-    DispatchInputSelect(processor);
-    REQUIRE_TRUE(processor.InputSelectionForTest() == 2);
-    buffer.clear();
-    juce::AudioBuffer<float> secondChannelView = processor.getBusBuffer(buffer, true, 0);
-    for (int s = 0; s < secondChannelView.getNumSamples(); ++s) {
-        secondChannelView.setSample(0, s, kChannel0Sample);
-        secondChannelView.setSample(1, s, kChannel1Sample);
-    }
-    processor.processBlock(buffer, midi);
-    const float secondChannelValue = processor.ApplicationForTest().Modulation().ExternalAudioSourceForTest();
-    REQUIRE_TRUE(std::fabs(secondChannelValue - 0.4f) < 1.0e-4f);
-    // Positive control: cannot pass by coincidentally reading channel 0.
-    REQUIRE_TRUE(std::fabs(secondChannelValue - firstChannelValue) > 1.0e-3f);
-
-    // R -> Sum (index 3): must read the sum of BOTH channels.
-    DispatchInputSelect(processor);
-    REQUIRE_TRUE(processor.InputSelectionForTest() == 3);
-    buffer.clear();
-    juce::AudioBuffer<float> sumView = processor.getBusBuffer(buffer, true, 0);
-    for (int s = 0; s < sumView.getNumSamples(); ++s) {
-        sumView.setSample(0, s, kChannel0Sample);
-        sumView.setSample(1, s, kChannel1Sample);
-    }
-    processor.processBlock(buffer, midi);
-    const float sumValue = processor.ApplicationForTest().Modulation().ExternalAudioSourceForTest();
-    // Raw sum 0.6 + (-0.2) == 0.4, normalized: 0.5 + 0.5 * 0.4 == 0.7.
-    REQUIRE_TRUE(std::fabs(sumValue - 0.7f) < 1.0e-4f);
+    DispatchInputSelect(processor);  // On -> None: only two options.
+    REQUIRE_TRUE(processor.InputSelectionForTest() == 0);
+    runDrivenBlock();
+    REQUIRE_TRUE(!processor.ApplicationForTest().Modulation().ExternalAudioConnected());
 
     processor.releaseResources();
-    std::cout << "  [input bus] stereo: channel1=" << firstChannelValue << " (expected 0.8), channel2="
-              << secondChannelValue << " (expected 0.4), sum=" << sumValue << " (expected 0.7).\n";
+    std::cout << "  [input bus] stereo On: mean of 0.6 and -0.2 -> " << onValue
+              << " (expected 0.6); a second tap returns to None.\n";
 }
 
 // -- 7. Plugin data paths -----------------------------------------------
