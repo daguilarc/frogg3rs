@@ -307,11 +307,12 @@ plugin's own controller rows are the only route a controller reaches the instrum
 MIDI buffer is accepted but never read for this.
 
 **Input audio** is opt-in. The plugin has one optional stereo input bus, disabled until the host routes
-into it. On the plugin's own surface, an **IN:** button beside Freeze cycles through **None** (the
-default), each channel the host's bus currently provides, and, once the bus carries two or more channels,
-their **Sum**. Selecting anything other than None is what connects External Audio and External Audio EF
-(Global controls, above) — routing the DAW's bus into the plugin is not itself enough; you must
-select an input here.
+into it. On the plugin's own surface, an **IN:** button beside Freeze switches between **None** (the
+default) and **On**, which mixes whatever the host routes in down to mono. Turning it On is what connects
+External Audio and External Audio EF (Global controls, above) — routing the DAW's bus into the plugin is
+not itself enough. In Ableton Live, the input appears as the plug-in's sidechain: pick the source track in
+the sidechain section on the left of the Frogg3rs device. Like every modulation source, External Audio
+moves only while the transport is playing.
 
 **File** works on the standalone's own patches folder: the patches listed here, and any patch saved here,
 are the standalone's. Load applies a patch's sound and controller setup to this instance only, and no

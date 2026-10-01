@@ -411,22 +411,13 @@ public:
     // given live bus shape.
     std::vector<std::string> InputOptionLabelsForTest() const { return ComputeInputOptionLabels(); }
 
-    // Resolves one block's operator-selected input into exactly ONE logical
-    // channel -- FroggersAppCore::Config()'s own numAudioInputs==1, so the
-    // core must never see, let alone choose among, the raw bus's own
-    // channels. Mirrors ComputeInputOptionLabels()'s own index scheme:
-    // `selection` <= 0 or `numChannels` <= 0 is None (nothing resolved,
-    // returns false, `out` untouched); 1..numChannels picks that one
-    // channel verbatim (a straight copy, no mixing); numChannels+1 is Sum,
-    // the per-sample total across every channel -- present in the option
-    // list (and therefore reachable here) only when numChannels > 1. `out`
-    // must hold at least `numSamples` floats. processBlock() (below) is the
-    // one production caller, feeding it the real bus's channel pointers and
-    // `inputSelection_`; public and static (stateless, no `this`) so
-    // FroggersVstHostTests.cpp can also drive it directly with synthetic
-    // multi-channel arrays. Stays general (never special-cased to a fixed
-    // channel count) so it keeps matching ComputeInputOptionLabels()'s own
-    // generality across whatever width the bus negotiates.
+    // Resolves one block's input into exactly ONE logical channel --
+    // FroggersAppCore::Config()'s own numAudioInputs==1. `selection` <= 0 or
+    // `numChannels` <= 0 is None (returns false, `out` untouched); any other
+    // selection is On, the mono downmix (the per-sample mean) of every
+    // channel the bus provides. `out` must hold at least `numSamples` floats.
+    // processBlock() is the one production caller; public and static so
+    // FroggersVstHostTests.cpp can drive it with synthetic arrays.
     static bool ResolveSelectedInputChannel(const float* const* channels, int numChannels, int selection,
                                              int numSamples, float* out);
 

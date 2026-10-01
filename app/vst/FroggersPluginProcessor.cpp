@@ -522,36 +522,16 @@ bool FroggersPluginProcessor::isBusesLayoutSupported(const BusesLayout& layouts)
 }
 
 std::vector<std::string> FroggersPluginProcessor::ComputeInputOptionLabels() const {
-    // Index 0 is always "None" -- the only option when the bus is disabled
-    // or (defensively) reports zero channels, and required as the first
-    // entry regardless of bus shape ("the only option is None, and the
-    // control reads as unavailable rather than pretending to offer
-    // something").
+    // None, then On whenever the host's input bus is enabled and carries at
+    // least one channel. External Audio is one mono signal, so there is no
+    // per-channel choice to make: On mixes every channel the bus provides
+    // down to mono (ResolveSelectedInputChannel()).
     std::vector<std::string> labels{"None"};
     const juce::AudioProcessor::Bus* inputBus = getBus(true, 0);
-    if (inputBus == nullptr || !inputBus->isEnabled()) {
+    if (inputBus == nullptr || !inputBus->isEnabled() || inputBus->getNumberOfChannels() <= 0) {
         return labels;
     }
-    const int numChannels = inputBus->getNumberOfChannels();
-    if (numChannels <= 0) {
-        return labels;
-    }
-    // One entry per channel the bus CURRENTLY provides -- read from the
-    // live layout (getCurrentLayout()), never assumed from the bus's
-    // declared type, so this stays correct whichever layout the host
-    // negotiates. Named via juce::AudioChannelSet's own
-    // channel-type vocabulary, not an
-    // invented "Ch<N>" scheme.
-    const juce::AudioChannelSet layout = inputBus->getCurrentLayout();
-    for (int channel = 0; channel < numChannels; ++channel) {
-        labels.push_back(
-            juce::AudioChannelSet::getAbbreviatedChannelTypeName(layout.getTypeOfChannel(channel)).toStdString());
-    }
-    // Sum, only when the bus provides more than one channel: two or more
-    // means None, each channel, and their sum.
-    if (numChannels > 1) {
-        labels.push_back("Sum");
-    }
+    labels.push_back("On");
     return labels;
 }
 
@@ -564,7 +544,9 @@ void FroggersPluginProcessor::ApplyInputSelection(int selectionIndex) {
     // had) falls back to index 0 ("None") rather than reading a channel
     // that is gone. Never trusts `selectionIndex` merely because a caller
     // (the surface's tap handler, or a restored session blob) named it.
-    inputSelection_ = (selectionIndex >= 0 && selectionIndex < optionCount) ? selectionIndex : 0;
+    // Any non-zero selection means On while the bus offers it; a session
+    // saved when IN: listed each channel and Sum (indices 1-3) restores as On.
+    inputSelection_ = (selectionIndex > 0 && optionCount > 1) ? 1 : 0;
     // Pushes the freshly-derived option list and the (possibly just
     // fallen-back) selection into the portable surface -- the ONLY writer
     // of the surface's rendered copy, so what the operator sees can never
@@ -592,27 +574,10 @@ bool FroggersPluginProcessor::ResolveSelectedInputChannel(const float* const* ch
     if (selection <= 0 || numChannels <= 0 || numSamples <= 0) {
         return false;  // "None," or nothing to read from.
     }
-    if (selection <= numChannels) {
-        const float* source = channels[selection - 1];
-        if (source == nullptr) {
-            return false;
-        }
-        std::copy(source, source + numSamples, out);
-        return true;
-    }
-    if (selection != numChannels + 1) {
-        // Out of range for both "one specific channel" and "Sum" -- cannot
-        // happen in production (ApplyInputSelection() re-validates
-        // `inputSelection_` against a freshly-computed option list every
-        // time either could have changed), but a test driving this
-        // function directly with an inconsistent selection gets "nothing
-        // resolved" rather than a read past `channels`.
-        return false;
-    }
-    // Sum: ComputeInputOptionLabels() only ever appends this option once
-    // numChannels > 1 -- reachable once a host enables the input bus at
-    // stereo() -- kept general rather than special-cased to N==1, matching
-    // that method's own generality.
+    // On: the mono downmix of every channel the bus provides, (L+R)/2 for a
+    // stereo bus, so a track carrying the same signal on both sides arrives
+    // at its own level.
+    const float scale = 1.0f / static_cast<float>(numChannels);
     for (int s = 0; s < numSamples; ++s) {
         float sum = 0.0f;
         for (int ch = 0; ch < numChannels; ++ch) {
@@ -620,7 +585,7 @@ bool FroggersPluginProcessor::ResolveSelectedInputChannel(const float* const* ch
                 sum += channels[ch][s];
             }
         }
-        out[s] = sum;
+        out[s] = sum * scale;
     }
     return true;
 }
