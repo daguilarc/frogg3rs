@@ -252,17 +252,14 @@ jobs:
           name: plugin-bundles-windows
           path: dist
 
-      # Release notes come from MANUAL.md's own "Release platforms" section,
-      # the same extraction desktop-release.yml uses -- one source for the
-      # opening-a-download step instead of a second hand-written copy that
-      # can drift from it. Everything else in the body (install paths,
-      # Windows-VST3 absence) is plugin-specific and stays inline here.
-      - name: Extract release notes from MANUAL.md
+      # The opening steps come from MANUAL.md's "Opening a downloaded build"
+      # and "Why the extra step is permanent" subsections, the same extraction
+      # desktop-release.yml uses, so they have one source. The install paths
+      # are plugin-specific and stay inline here.
+      - name: Write release notes
         run: |
-          awk '/^## Release platforms$/{flag=1; next} /^## /{flag=0} /^---$/{flag=0} flag' MANUAL.md > platform-notes.md
+          awk '/^### Opening a downloaded build$/{flag=1} /^### Installing the Android app$/{flag=0} /^## /{flag=0} /^---$/{flag=0} flag' MANUAL.md > opening-notes.md
           {
-            echo "Frogg3rs as an audio plugin — $GITHUB_REF_NAME"
-            echo
             echo "Contains VST3 and Audio Unit builds for macOS, and a VST3 for Windows."
             echo "The Audio Unit is macOS-only because the format is."
             echo
@@ -275,7 +272,9 @@ jobs:
             echo "this project, exactly as for the Windows standalone. Windows may warn on"
             echo "first load."
             echo
-            cat platform-notes.md
+            cat opening-notes.md
+            echo
+            echo "How to use Frogg3rs: [MANUAL.md](https://github.com/$GITHUB_REPOSITORY/blob/main/MANUAL.md)."
           } > release-notes.md
 
       # gh is preinstalled on the runner, so the release needs no third-party

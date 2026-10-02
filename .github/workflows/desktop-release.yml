@@ -125,17 +125,20 @@ jobs:
           name: windows-zip
           path: dist
 
-      # Release notes come straight from MANUAL.md's own "Release platforms"
-      # section, so the statement of platform coverage and the Windows
-      # caveat live in one place instead of being duplicated into the
-      # workflow.
-      - name: Extract release notes from MANUAL.md
+      # What is attached, how to open an unsigned build, and where the manual
+      # is. The opening steps come from MANUAL.md's "Opening a downloaded
+      # build" and "Why the extra step is permanent" subsections, so they have
+      # one source; the rest of its "Release platforms" section describes the
+      # other releases and does not belong on this page.
+      - name: Write release notes
         run: |
-          awk '/^## Release platforms$/{flag=1; next} /^## /{flag=0} /^---$/{flag=0} flag' MANUAL.md > platform-notes.md
+          awk '/^### Opening a downloaded build$/{flag=1} /^### Installing the Android app$/{flag=0} /^## /{flag=0} /^---$/{flag=0} flag' MANUAL.md > opening-notes.md
           {
-            echo "Frogg3rs desktop application — $GITHUB_REF_NAME"
+            echo "\`Frogg3rs-macOS.dmg\` (macOS) and \`Frogg3rs-windows.zip\` (Windows) are attached below."
             echo
-            cat platform-notes.md
+            cat opening-notes.md
+            echo
+            echo "How to use Frogg3rs: [MANUAL.md](https://github.com/$GITHUB_REPOSITORY/blob/main/MANUAL.md)."
           } > release-notes.md
 
       - name: Publish desktop release
