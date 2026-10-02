@@ -1,6 +1,6 @@
 # Frogg3rs
 
-This is a synthesizer designed for experimental noise; it probably won't make regular music super easily. It has three oscillators, an envelope per oscillator, a
+This is a synthesizer designed for experimental noise; it probably won't make regular music super easily. It is dedicated to the students of the Indonesia Art Institute of Padangpanjang, who inspired its design. The sound is comprised of three oscillators, an envelope per oscillator, a
 filter, a distortion stage, a delay and a reverb. It can be run as: 
 * a desktop app, 
 * as a VST3 or Audio Unit plugin in a Digital Audio Workstation (DAW), 
