@@ -205,15 +205,17 @@ jobs:
           name: frogg3rs-android-release
           path: dist
 
-      # MANUAL.md's "Installing the Android app" subsection; this release
-      # job only runs on the frogg3rs_android tag.
-      - name: Extract release notes from MANUAL.md
+      # Written for the release page itself: how to install the APK attached
+      # below it, and where the manual is. MANUAL.md's own install section
+      # links to this page, which reads wrong on this page, and extracting it
+      # ran on into the manual's next section.
+      - name: Write release notes
         run: |
-          awk '/^### Installing the Android app$/{flag=1; next} /^##+ /{flag=0} flag' MANUAL.md > android-notes.md
           {
-            echo "Frogg3rs Android app — $GITHUB_REF_NAME"
+            echo "Download \`Frogg3rs-android.apk\` below on your phone and open it. Android asks whether to let"
+            echo "your browser install apps: allow it, then install. A newer APK installs over the old one."
             echo
-            cat android-notes.md
+            echo "How to use Frogg3rs: [MANUAL.md](https://github.com/$GITHUB_REPOSITORY/blob/main/MANUAL.md)."
           } > release-notes.md
 
       # Create-or-update shape of desktop-release.yml's own publish step:
