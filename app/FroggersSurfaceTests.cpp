@@ -2591,6 +2591,57 @@ TEST_CASE(randomize_reset_sit_beside_the_sliders_in_a_narrow_viewport) {
 // chrome block stacked above the grid block, and BuildTree() actually
 // builds that stack -- the two can never disagree since both read
 // FroggersPageLayout::RootBounds()/ComputeNarrowBlockHeights().
+TEST_CASE(mobile_web_carousel_gaps_match_without_resizing_encoders_or_desktop) {
+    using namespace synth_froggers;
+    for(float width : {390.f,412.f,720.f,721.f,1280.f}) {
+        synth::RuntimeConfig config=FroggersApp::Config();
+        synth::AppContext context; context.config=&config;
+        const auto build = [&](int mobile) {
+            FroggersUiSurface surface; surface.Attach(&context,nullptr);
+            if(mobile>=0) surface.DispatchAction(synth::ui::Action::WithValue(
+                FroggersActions::kViewportMobileWeb,mobile?"true":"false"));
+            surface.DispatchAction(synth::ui::Action::WithValue(FroggersActions::kViewportWidth,std::to_string(width)));
+            return surface.BuildTree();
+        };
+        const auto before=build(-1), desktop=build(0), mobile=build(1);
+        REQUIRE_TRUE(before.nodes.size()==desktop.nodes.size());
+        for(const auto& node : before.nodes) {
+            const auto x=AbsoluteBounds(before,node.id.value), y=AbsoluteBounds(desktop,node.id.value);
+            REQUIRE_TRUE(std::fabs(x.x-y.x)<.01f && std::fabs(x.y-y.y)<.01f);
+            REQUIRE_TRUE(std::fabs(x.width-y.width)<.01f && std::fabs(x.height-y.height)<.01f);
+            if(width>FroggersPageLayout::kNarrowMaxWidth) {
+                const auto z=AbsoluteBounds(mobile,node.id.value);
+                REQUIRE_TRUE(std::fabs(x.x-z.x)<.01f && std::fabs(x.y-z.y)<.01f);
+                REQUIRE_TRUE(std::fabs(x.width-z.width)<.01f && std::fabs(x.height-z.height)<.01f);
+            }
+        }
+        if(width>FroggersPageLayout::kNarrowMaxWidth) continue;
+        const auto button=AbsoluteBounds(mobile,FroggersNodeIds::PageButton(0));
+        const auto arrow=AbsoluteBounds(mobile,FroggersNodeIds::kPagePrevArrow);
+        const auto row=AbsoluteBounds(mobile,FroggersNodeIds::EncoderRow(0));
+        const auto oldButton=AbsoluteBounds(before,FroggersNodeIds::PageButton(0));
+        const auto oldArrow=AbsoluteBounds(before,FroggersNodeIds::kPagePrevArrow);
+        REQUIRE_TRUE(button.height>0 && arrow.height>0 && row.height>0);
+        const float upper=arrow.y-(button.y+button.height),lower=row.y-(arrow.y+arrow.height);
+        const float oldUpper=oldArrow.y-(oldButton.y+oldButton.height);
+        REQUIRE_TRUE(std::fabs(upper-lower)<.01f);
+        REQUIRE_TRUE(std::fabs(lower-FroggersPageLayout::kGap)<.01f);
+        REQUIRE_TRUE(oldUpper-lower>1); // Missing mobile identity must fail equality.
+        for(std::size_t i=0;i<4;++i) {
+            const auto x=AbsoluteBounds(before,FroggersNodeIds::EncoderRow(i));
+            const auto y=AbsoluteBounds(mobile,FroggersNodeIds::EncoderRow(i));
+            REQUIRE_TRUE(std::fabs(x.x-y.x)<.01f && std::fabs(x.width-y.width)<.01f);
+            REQUIRE_TRUE(std::fabs(x.height-y.height)<.01f);
+        }
+        const auto oldChrome=AbsoluteBounds(before,FroggersNodeIds::kLeftBlock);
+        const auto chrome=AbsoluteBounds(mobile,FroggersNodeIds::kLeftBlock);
+        REQUIRE_TRUE(std::fabs(oldChrome.height-chrome.height)<.01f);
+        REQUIRE_TRUE(std::fabs(oldChrome.y-chrome.y)<.01f);
+        REQUIRE_TRUE(button.height==oldButton.height && arrow.height==oldArrow.height);
+        std::cout<<"mobile gap width="<<width<<" before="<<oldUpper<<" upper="<<upper<<" lower="<<lower<<"\n";
+    }
+}
+
 TEST_CASE(narrow_layout_stacks_chrome_above_the_grid) {
     for (float width : {320.0f, 390.0f, 412.0f, 720.0f}) {
         synth::RuntimeConfig config = synth_froggers::FroggersApp::Config();

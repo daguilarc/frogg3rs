@@ -145,15 +145,9 @@ struct FroggersBankLayout {
 inline const std::array<FroggersBankLayout, kFroggersPageCount>& FroggersBankLayouts() {
     static const std::array<FroggersBankLayout, kFroggersPageCount> layouts{{
         {FroggersBankId::Audio, "Audio", synth::Color::Red, {{
-            // The ordinary 0.0f default maps (via
-            // Vco::PitchToPhaseIncrement, app/dsp/Vco.hpp,
-            // f = kPitchMinHz * (kPitchMaxHz/kPitchMinHz)^knob) to
-            // kPitchMinHz Hz (20 Hz) -- inaudible on laptop speakers.
-            // 0.3087/0.4343/0.5077 = ln(f/kPitchMinHz)/ln(kPitchMaxHz/kPitchMinHz)
-            // for f = 109.97/220.02/329.96 Hz (verified against
-            // PitchToPhaseIncrement above). Sustain specs below set the
-            // precedent for a nonzero `defaultValue` at this same call site.
-            {"VCO1", "VCO1", 0.3087f}, {"VCO2", "VCO2", 0.4343f}, {"VCO3", "VCO3", 0.5077f},
+            // The six-octave A0-A6 exponential pitch map places these
+            // normalized defaults at 110, 220 and 330 Hz respectively.
+            {"VCO1", "VCO1", 1.0f / 3.0f}, {"VCO2", "VCO2", 0.5f}, {"VCO3", "VCO3", 0.5974937501f},
             {"Shape 1", "Shp1"}, {"Shape 2", "Shp2"}, {"Shape 3", "Shp3"},
             // Named "Ph.mod N", not "Phase mod N": three whitespace-separated
             // tokens don't compress

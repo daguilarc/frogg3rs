@@ -80,6 +80,7 @@
 #include "synth/ParameterModulation.hpp"
 #include "synth/PortableUI.hpp"
 #include "synth/PortableUIBuilders.hpp"
+#include "synth/PortableUIMetrics.hpp"
 
 #include <algorithm>
 #include <array>
@@ -273,6 +274,8 @@ inline constexpr const char* kInputSelect = "froggers.transport.input";
 // chrome block rather than below the encoder grid. Zero (never reported)
 // or a width above the narrow limit keeps the wide, side-by-side layout.
 inline constexpr const char* kViewportWidth = "froggers.viewport.width";
+// Browser-only device identity; width alone must not alter desktop spacing.
+inline constexpr const char* kViewportMobileWeb = "froggers.viewport.mobile-web";
 
 }  // namespace FroggersActions
 
@@ -398,11 +401,13 @@ struct FroggersPageLayout {
         float chrome;
         float grid;
     };
-    static NarrowBlockHeights ComputeNarrowBlockHeights(float rootWidth) {
-        const float blockContentWidth = rootWidth - 2.0f * kMargin;
-        const float grid = blockContentWidth / kNarrowGridAspectRatio;
-        return {grid * kNarrowChromeHeightFraction, grid};
+    static constexpr float kModulationHeaderRowHeight = 26.0f;
+    static float PageButtonHeight() {
+        synth::ui::Node button;
+        button.kind = synth::ui::NodeKind::Button;
+        return synth::ui::metrics::IntrinsicFor(button).height;
     }
+    static NarrowBlockHeights ComputeNarrowBlockHeights(float rootWidth, bool mobileWeb = false);
 
     // The one definition of the surface's root. `reportedWidth` is what a
     // browser shell reports through FroggersActions::kViewportWidth (0,
@@ -411,7 +416,7 @@ struct FroggersPageLayout {
     // FroggersUiSurface::BuildTree() call this, so the bounds the runtime
     // validates the built tree against and the bounds BuildTree() actually
     // resolves against can never independently disagree.
-    static synth::ui::Bounds RootBounds(const synth::AppContext* context, float reportedWidth = 0.0f) {
+    static synth::ui::Bounds RootBounds(const synth::AppContext* context, float reportedWidth = 0.0f, bool mobileWeb = false) {
         if (!(reportedWidth > 0.0f) || reportedWidth > kNarrowMaxWidth) {
             const float width = context != nullptr && context->config != nullptr
                                      ? static_cast<float>(context->config->uiWidth)
@@ -422,7 +427,7 @@ struct FroggersPageLayout {
             return {0.0f, 0.0f, width, height};
         }
         const float rootWidth = std::max(reportedWidth, kNarrowMinWidth);
-        const NarrowBlockHeights heights = ComputeNarrowBlockHeights(rootWidth);
+        const NarrowBlockHeights heights = ComputeNarrowBlockHeights(rootWidth, mobileWeb);
         const float rootHeight = 2.0f * kMargin + heights.chrome + kGap + heights.grid;
         return {0.0f, 0.0f, rootWidth, rootHeight};
     }
@@ -477,6 +482,22 @@ struct FroggersEncoderGridLayout {
     // comment for how this feeds the ring's byte-identical sub-extent.
     static constexpr float kGrownRowHeight = kUnchangedRowHeight + kLabelBandHeight;
 };
+
+// Compact only the unused tab-row slack; leave chrome and encoder heights
+// at their original narrow-layout sizes. Root and tree share this result.
+inline FroggersPageLayout::NarrowBlockHeights FroggersPageLayout::ComputeNarrowBlockHeights(
+    float rootWidth, bool mobileWeb) {
+    const float originalGrid = (rootWidth - 2.0f * kMargin) / kNarrowGridAspectRatio;
+    float grid = originalGrid;
+    if (mobileWeb) {
+        const float available = originalGrid - 5.0f * kGap - kModulationHeaderRowHeight;
+        const float tabs = available * FroggersEncoderGridLayout::kUnchangedRowHeight /
+            (FroggersEncoderGridLayout::kUnchangedRowHeight +
+             FroggersEncoderGridLayout::kRows * FroggersEncoderGridLayout::kGrownRowHeight);
+        grid -= tabs - PageButtonHeight();
+    }
+    return {originalGrid * kNarrowChromeHeightFraction, grid};
+}
 
 static_assert(FroggersEncoderGridLayout::kEncoderCount == kFroggersSlotsPerBank,
               "the grid must render exactly the 16 physical encoder slots FroggersParameterModel wires up");
@@ -1055,10 +1076,10 @@ public:
     }
 
     synth::ui::NodeTree BuildTree() override {
-        const synth::ui::Bounds root = FroggersPageLayout::RootBounds(context_, viewportWidth_);
+        const synth::ui::Bounds root = FroggersPageLayout::RootBounds(context_, viewportWidth_, viewportMobileWeb_);
         const bool narrow = IsNarrowViewport();
         const FroggersPageLayout::NarrowBlockHeights heights =
-            narrow ? FroggersPageLayout::ComputeNarrowBlockHeights(root.width)
+            narrow ? FroggersPageLayout::ComputeNarrowBlockHeights(root.width, viewportMobileWeb_)
                    : FroggersPageLayout::NarrowBlockHeights{0.0f, 0.0f};
 
         synth::ui::Builder builder;
@@ -1117,7 +1138,7 @@ public:
     // viewport.
 
     synth::ui::Bounds RootBounds() const override {
-        return FroggersPageLayout::RootBounds(context_, viewportWidth_);
+        return FroggersPageLayout::RootBounds(context_, viewportWidth_, viewportMobileWeb_);
     }
 
     std::optional<synth::ui::NodeId> SidebarSlot() const override {
@@ -1746,7 +1767,9 @@ private:
         // 4 encoder rows alone grow by kLabelBandHeight. See
         // FroggersEncoderGridLayout's own comment for the exact-division
         // property this relies on.
-        rowLayout.main = synth::ui::Extent::Weight(FroggersEncoderGridLayout::kUnchangedRowHeight);
+        rowLayout.main = viewportMobileWeb_ && IsNarrowViewport()
+            ? synth::ui::Extent::Px(FroggersPageLayout::PageButtonHeight())
+            : synth::ui::Extent::Weight(FroggersEncoderGridLayout::kUnchangedRowHeight);
         rowLayout.cross = synth::ui::Extent::Weight(1.0f);
         rowLayout.padding = 0.0f;
         rowLayout.gap = FroggersPageLayout::kGap;
@@ -1797,7 +1820,7 @@ private:
     // method's own comment) -- entering/exiting a drilldown never reflows
     // the page tabs or the parameter grid by even one pixel; only this
     // row's own content changes.
-    static constexpr float kModulationHeaderRowHeight = 26.0f;
+    static constexpr float kModulationHeaderRowHeight = FroggersPageLayout::kModulationHeaderRowHeight;
     static constexpr synth::Color kModulationHeaderBandColor = synth::Color::Rgb(32, 38, 44);
     // Centered: a full-width title bar reads as a header when its text is
     // centered, rather than as a label squeezed into a corner.
@@ -2312,6 +2335,10 @@ private:
         // convention, e.g. BuildFroggersTreeAt()) still has to resolve
         // narrow layouts, since the layout is exactly what those tests
         // check.
+        if (action.name == FroggersActions::kViewportMobileWeb) {
+            viewportMobileWeb_ = action.value == "true";
+            return;
+        }
         if (action.name == FroggersActions::kViewportWidth) {
             viewportWidth_ = FroggersParseFloat(action.value, 0.0f);
             return;
@@ -2586,6 +2613,7 @@ private:
     // existing construction of this class (default constructed, no such
     // action ever dispatched) renders exactly as before.
     float viewportWidth_ = 0.0f;
+    bool viewportMobileWeb_ = false;
     // The refusal text shown in the transport row until a recording arms or
     // the transport starts. Set by HandleAction's kRecord branch and
     // cleared by StartTransport() (the kPlay branch, and the Freeze release

@@ -2806,8 +2806,8 @@ TEST_CASE(app_commands_apply_every_press_in_bus_order_within_one_tick) {
 // either way. VCO1's
 // pitch is pinned near the top of its kPitchMinHz-kPitchMaxHz exponential
 // map (dsp/Vco.hpp's `PitchToPhaseIncrement`): at 48 kHz and pitch==1.0 that
-// is kPitchMaxHz/48000 ~= 0.104 cycles/sample, so a handful of `Step()`
-// calls sweeps the source's full excursion -- the same live-modulation shape
+// is kPitchMaxHz/48000 ~= 0.0367 cycles/sample; repeated `Step()`
+// calls traverse the source's waveform -- the same live-modulation shape
 // a whole running instrument would show, built here from public API instead.
 // `fx.manager.ComputeAllParameters()` is the
 // immediate (non-smoothed) resync -- see that method's own comment -- so

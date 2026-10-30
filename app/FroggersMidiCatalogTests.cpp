@@ -385,7 +385,7 @@ TEST_CASE(catalog_names_every_front_screen_action) {
         catalogActionNames.insert(entry.action);
     }
 
-    // Every FroggersActions constant, minus the five that are not
+    // Every FroggersActions constant, minus the six that are not
     // MIDI-mappable actions -- each with the reason it is excluded:
     std::set<std::string> screenActionNames = {
         synth_froggers::FroggersActions::kPlay,          synth_froggers::FroggersActions::kStop,
@@ -401,11 +401,13 @@ TEST_CASE(catalog_names_every_front_screen_action) {
     // kEncoderDrag     -- the screen's mouse route into the library's ParamIncDec.
     // kInputSelect     -- the plugin host's input picker, not offered.
     // kViewportWidth   -- the browser shell's reported viewport width, not a control.
+    // kViewportMobileWeb -- browser phone identity, not a MIDI control.
     REQUIRE_TRUE(screenActionNames.count(synth_froggers::FroggersActions::kSceneBlend) == 0);
     REQUIRE_TRUE(screenActionNames.count(synth_froggers::FroggersActions::kEncoderPress) == 0);
     REQUIRE_TRUE(screenActionNames.count(synth_froggers::FroggersActions::kEncoderDrag) == 0);
     REQUIRE_TRUE(screenActionNames.count(synth_froggers::FroggersActions::kInputSelect) == 0);
     REQUIRE_TRUE(screenActionNames.count(synth_froggers::FroggersActions::kViewportWidth) == 0);
+    REQUIRE_TRUE(screenActionNames.count(synth_froggers::FroggersActions::kViewportMobileWeb) == 0);
 
     REQUIRE_TRUE(catalogActionNames == screenActionNames);
     REQUIRE_TRUE(catalog.encoderPressAction == synth_froggers::FroggersActions::kEncoderPress);

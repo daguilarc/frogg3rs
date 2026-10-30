@@ -111,19 +111,32 @@ float ReverbMono(synth_froggers::dsp::Reverb& rv, float input, Args... args)
     return 0.5f * (out.l + out.r);
 }
 
+// Independent physical-frequency fixtures protect the requested six-octave range.
 TEST_CASE(vco_pitch_exp_map_matches_named_range) {
-    const float sr = 48000.0f;
-    // knob=0 -> kPitchMinHz, expressed as phase increment -- bit-exact:
-    // ExpMapCompute's std::pow(ratio, 0.0f) is exactly 1.0, so this holds
-    // regardless of the ceiling (unchanged: 20 Hz before and after).
-    REQUIRE_TRUE(dsp::Vco::PitchToPhaseIncrement(0.0f, sr) == dsp::Vco::kPitchMinHz / sr);
-    // knob=1 -> kPitchMaxHz (was 20000 Hz, now 5000 Hz).
-    REQUIRE_NEAR(dsp::Vco::PitchToPhaseIncrement(1.0f, sr), dsp::Vco::kPitchMaxHz / sr, 1e-6);
-    // Midpoint is geometric (exponential map), not arithmetic:
-    // sqrt(kPitchMinHz*kPitchMaxHz)/sr -- was sqrt(20*20000)/sr =~ 632 Hz,
-    // now sqrt(20*5000)/sr = 316 Hz.
-    const float expectedMid = std::sqrt(dsp::Vco::kPitchMinHz * dsp::Vco::kPitchMaxHz) / sr;
-    REQUIRE_NEAR(dsp::Vco::PitchToPhaseIncrement(0.5f, sr), expectedMid, 1e-6);
+    const float expectedHz[] = {27.5f, 55.0f, 110.0f, 220.0f, 440.0f, 880.0f, 1760.0f};
+    for (const float sr : {44100.0f, 48000.0f, 96000.0f}) {
+        for (int octave = 0; octave < 7; ++octave) {
+            const float knob = static_cast<float>(octave) / 6.0f;
+            const float mappedHz = dsp::Vco::PitchToPhaseIncrement(knob, sr) * sr;
+            REQUIRE_TRUE(std::isfinite(mappedHz));
+            REQUIRE_NEAR(mappedHz, expectedHz[octave], 0.001);
+            dsp::Vco vco;
+            double travel = 0.0;
+            double energy = 0.0;
+            for (int sample = 0; sample < static_cast<int>(sr); ++sample) {
+                const float before = vco.carrierPhase;
+                const float output = vco.Process(knob, 0.0f, 0.0f, 0.0f, 0.0f, sr);
+                REQUIRE_TRUE(std::isfinite(output));
+                double advance = static_cast<double>(vco.carrierPhase) - before;
+                if (advance < 0.0) advance += 1.0;
+                travel += advance;
+                energy += static_cast<double>(output) * output;
+            }
+            const double rms = std::sqrt(energy / sr);
+            REQUIRE_TRUE(rms > 0.01);
+            REQUIRE_NEAR(travel, expectedHz[octave], 0.02);
+        }
+    }
 }
 
 TEST_CASE(vco_pm_depth_scale_zero_off_gate_and_smoothstep) {
@@ -169,21 +182,102 @@ TEST_CASE(dsp_true_zero_depth_taper_monotonic_smoothstep_and_pm_parity) {
     }
 }
 
+// Full convolution reference deliberately does not use the runtime sparse
+// symmetric-pair evaluator. Both stages emit on their second input sample.
+std::vector<double> ReferenceOversampledUnmodulated(float pitch, float morph, float sr, int count) {
+    std::array<double, 47> coefficients{};
+    coefficients[23]=.5;
+    for (std::size_t i=0;i<12;++i) {
+        coefficients[2*i]=dsp::HalfbandDecimator2x::kEvenCoefficients[i];
+        coefficients[46-2*i]=coefficients[2*i];
+    }
+    std::array<std::array<double,47>,2> history{};
+    const auto convolve = [&](std::size_t stage,double x) {
+        auto& z=history[stage];
+        for (std::size_t i=46;i>0;--i) z[i]=z[i-1];
+        z[0]=x; double y=0;
+        for (std::size_t i=0;i<47;++i) y+=coefficients[i]*z[i];
+        return y;
+    };
+    float phase=0;
+    std::vector<double> result;
+    for(int n=0;n<count;++n) {
+        double output=0;
+        for(int step=0;step<4;++step) {
+            const float raw=dsp::EvalWaveMorph(phase,morph);
+            phase=dsp::WrapPhase(phase+dsp::Vco::PitchToPhaseIncrement(pitch,sr*4));
+            const double middle=convolve(0,raw);
+            if(step%2==1) output=convolve(1,static_cast<float>(middle));
+        }
+        result.push_back(output);
+    }
+    return result;
+}
+
+TEST_CASE(halfband_pair_decimator_matches_both_impulse_phases_and_rejects_stopband) {
+    for(int phase=0;phase<2;++phase) {
+        dsp::HalfbandDecimator2x filter;
+        for(int n=0;n<48;++n) {
+            const float y=filter.Process(n==0&&phase==0?1.f:0.f,n==0&&phase==1?1.f:0.f);
+            const int tap=2*n+1-phase;
+            float expected=0;
+            if(tap==23) expected=.5f;
+            else if(tap>=0&&tap<47&&tap%2==0)
+                expected=dsp::HalfbandDecimator2x::kEvenCoefficients[static_cast<std::size_t>(std::min(tap,46-tap)/2)];
+            REQUIRE_NEAR(y,expected,1e-7);
+        }
+    }
+    // A known stopband sine stays loud if filtering is bypassed.
+    for(double frequency : {.1,.4}) {
+        dsp::HalfbandDecimator2x filter;
+        double filtered=0,bypass=0;
+        for(int n=0;n<8192;++n) {
+            const float first=static_cast<float>(std::sin(2*3.14159265358979323846*frequency*(2*n)));
+            const float second=static_cast<float>(std::sin(2*3.14159265358979323846*frequency*(2*n+1)));
+            const float y=filter.Process(first,second);
+            if(n>=128) {filtered+=double(y)*y; bypass+=double(second)*second;}
+        }
+        REQUIRE_TRUE(bypass>100);
+        if(frequency<.25) REQUIRE_TRUE(std::fabs(10*std::log10(filtered/bypass))<.01);
+        else {REQUIRE_TRUE(10*std::log10(filtered/bypass)<-60); REQUIRE_TRUE(!(bypass/bypass<1e-6));}
+    }
+}
+
 TEST_CASE(vco_pm_zero_at_or_below_floor_leaves_carrier_unmodulated) {
-    // At pmKnob <= floor, PmDepthScale == 0, so the depth multiply
-    // (08b5fd3:src/core/FroggersEngine.hpp:741-743) must zero the PM offset entirely --
-    // output must equal EvalWaveMorph of the bare carrier phase.
-    dsp::Vco vco;
-    const float sr = 48000.0f;
-    const float pitchKnob = 0.3f;
-    const float morphKnob = 0.4f;
-    float refPhase = 0.0f;
-    for (int i = 0; i < 32; ++i) {
-        const float out =
-            vco.Process(pitchKnob, morphKnob, /*pmKnob=*/0.0f, /*pmRateKnob=*/0.0f, /*ringModKnob=*/0.0f, sr);
-        const float expected = dsp::EvalWaveMorph(refPhase, morphKnob);
-        REQUIRE_NEAR(out, expected, 1e-5);
-        refPhase = dsp::WrapPhase(refPhase + dsp::Vco::PitchToPhaseIncrement(pitchKnob, sr));
+    for (float sr : {44100.f, 48000.f}) {
+        dsp::Vco zero, floor;
+        const auto reference = ReferenceOversampledUnmodulated(.3f, .4f, sr, 256);
+        for (int i=0; i<256; ++i) {
+            const float y = zero.Process(.3f,.4f,0,0,0,sr);
+            REQUIRE_NEAR(y, reference[i], 3e-5);
+            REQUIRE_TRUE(y == floor.Process(.3f,.4f,dsp::Vco::kPmLfoFloor,1,0,sr));
+        }
+    }
+}
+
+TEST_CASE(vco_oversampling_filter_state_is_reset_and_observed_by_recovery) {
+    for (float sr : {44100.f,48000.f}) {
+        dsp::Vco vco, fresh;
+        for (int n=0;n<256;++n) vco.Process(.5f,1,1,1,1,sr);
+        REQUIRE_TRUE(vco.StateMagnitude()>0);
+        vco.Reset();
+        REQUIRE_TRUE(vco.StateFinite());
+        REQUIRE_TRUE(vco.StateMagnitude()==0);
+        for (int n=0;n<128;++n)
+            REQUIRE_TRUE(vco.Process(.5f,1,1,1,1,sr)==fresh.Process(.5f,1,1,1,1,sr));
+        for (auto& section : vco.antiAliasFilter) {
+            for (float& sample : section.history) {
+                float* history = &sample;
+                *history=std::numeric_limits<float>::quiet_NaN();
+                REQUIRE_TRUE(!vco.StateFinite());
+                vco.Reset();
+                REQUIRE_TRUE(vco.StateFinite());
+                *history=7.f;
+                REQUIRE_TRUE(vco.StateMagnitude()==7.f);
+                vco.Reset();
+                REQUIRE_TRUE(vco.StateMagnitude()==0);
+            }
+        }
     }
 }
 
@@ -9380,25 +9474,18 @@ TEST_CASE(ring_mod_phase_increment_uses_its_own_range_not_pitch_range) {
 }
 
 TEST_CASE(ring_mod_at_default_zero_is_bit_identical_to_no_ring_mod_at_all) {
-    // Ring Mod's default (0.0f, FroggersParameters.hpp, at/below
-    // kRingModFloor) must leave a fresh launch sounding exactly as it did
-    // before Ring Mod existed -- same structure as
-    // vco_pm_zero_at_or_below_floor_leaves_carrier_unmodulated above.
-    dsp::Vco vco;
-    const float sr = 48000.0f;
-    const float pitchKnob = 0.4f;
-    const float morphKnob = 0.3f;
-    float refPhase = 0.0f;
-    for (int i = 0; i < 32; ++i) {
-        const float out =
-            vco.Process(pitchKnob, morphKnob, /*pmKnob=*/0.0f, /*pmRateKnob=*/0.0f, /*ringModKnob=*/0.0f, sr);
-        const float expected = dsp::EvalWaveMorph(refPhase, morphKnob);
-        REQUIRE_NEAR(out, expected, 1e-5);
-        refPhase = dsp::WrapPhase(refPhase + dsp::Vco::PitchToPhaseIncrement(pitchKnob, sr));
+    for (float sr : {44100.f, 48000.f}) {
+        dsp::Vco zero, floor;
+        const auto reference = ReferenceOversampledUnmodulated(.4f,.3f,sr,256);
+        for (int i=0; i<256; ++i) {
+            const float y=zero.Process(.4f,.3f,0,0,0,sr);
+            REQUIRE_NEAR(y,reference[i],3e-5);
+            REQUIRE_TRUE(y == floor.Process(.4f,.3f,0,0,dsp::Vco::kRingModFloor,sr));
+        }
     }
 }
 
-TEST_CASE(ring_mod_above_floor_actually_modulates_and_stays_within_unit_bound) {
+TEST_CASE(ring_mod_above_floor_actually_modulates_and_stays_finite) {
     dsp::Vco withRingMod;
     dsp::Vco withoutRingMod;
     const float sr = 48000.0f;
@@ -9406,7 +9493,7 @@ TEST_CASE(ring_mod_above_floor_actually_modulates_and_stays_within_unit_bound) {
     for (int i = 0; i < 64; ++i) {
         const float a = withRingMod.Process(0.3f, 0.4f, 0.0f, 0.0f, /*ringModKnob=*/1.0f, sr);
         const float b = withoutRingMod.Process(0.3f, 0.4f, 0.0f, 0.0f, /*ringModKnob=*/0.0f, sr);
-        REQUIRE_TRUE(a >= -1.0f - 1e-5f && a <= 1.0f + 1e-5f);  // convex-blend bound.
+        REQUIRE_TRUE(std::isfinite(a));  // Causal filtering can overshoot the dry-wave bound.
         if (std::fabs(a - b) > 1e-4f) {
             sawDifference = true;
         }

@@ -158,7 +158,11 @@ test.describe("mobile stacking (phone-width layout)", () => {
     //
     // Asserted after several animation frames, not immediately: a
     // single-frame check passes against the bug.
-    const target = 200;
+    // The compact page can have less than 200px of scroll range. Choose a
+    // reachable nonzero offset so this checks persistence, not page length.
+    const target = await page.evaluate(() => Math.min(200,
+      Math.floor((document.documentElement.scrollHeight - window.innerHeight) / 2)));
+    expect(target).toBeGreaterThan(0);
     await page.evaluate((y) => window.scrollTo(0, y), target);
     const offsets = await page.evaluate(async () => {
       const seen = [];
@@ -360,4 +364,42 @@ test.describe("mobile stacking (phone-width layout)", () => {
       expect(lostCaptureIndex).toBeGreaterThan(eventOrder.indexOf("pointerup"));
     }
   });
+});
+
+
+test("mobile carousel has equal visible gaps and working page buttons", async ({ page }) => {
+  await page.goto("/");
+  await waitForSurfaceReady(page);
+  for (const width of [390, 412, 720]) {
+    await page.setViewportSize({ width, height: 1000 });
+    const measure = () => page.evaluate(() => {
+      const box = (id) => {
+        const node = document.querySelector(`[data-synth-node-id="${id}"]`);
+        if (!node) return null;
+        const r = node.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      };
+      const buttons = Array.from({ length: 6 }, (_, i) => box(`froggers.bank.${i}`));
+      const prev = box("froggers.bank.prev"), next = box("froggers.bank.next");
+      const row = box("froggers.layout.right.row.0");
+      if ([...buttons, prev, next, row].some((x) => !x || x.width <= 0 || x.height <= 0)) return null;
+      return { buttons, prev, next, row,
+        upper: Math.min(prev.y, next.y) - Math.max(...buttons.map((b) => b.y + b.height)),
+        lower: row.y - Math.max(prev.y + prev.height, next.y + next.height) };
+    });
+    await expect.poll(async () => {
+      const m = await measure();
+      return m ? Math.abs(m.upper - m.lower) : 999;
+    }).toBeLessThan(.1);
+    const m = await measure();
+    expect(m.prev.width).toBeGreaterThan(0);
+    expect(m.prev.height).toBeGreaterThan(0);
+    expect(m.upper).toBeGreaterThan(0);
+    console.log("mobile carousel geometry", width, JSON.stringify(m));
+  }
+  for (let i = 0; i < 6; i++) {
+    const button = page.locator(`[data-synth-node-id="froggers.bank.${i}"]`);
+    await button.click();
+    await expect.poll(() => button.evaluate((el) => Boolean(el.synthNode?.selected))).toBe(true);
+  }
 });

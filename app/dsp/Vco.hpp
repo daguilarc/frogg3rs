@@ -52,12 +52,14 @@
 // throughout, not silently dropped.
 
 #include "DspMath.hpp"
+#include "HalfbandDecimator.hpp"
 
 #include "synth/AtomicColor.hpp"
 #include "synth/Color.hpp"
 #include "synth/DspScope.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
@@ -134,22 +136,14 @@ struct Vco
     static constexpr float kPmLfoFloor = 0.02f;
     static constexpr float kPmLfoRampWidth = 0.08f;
 
-    // pitchKnob01 in [0,1] maps exponentially across [kPitchMinHz,
-    // kPitchMaxHz] (PitchToPhaseIncrement below). kPitchMinHz matches the
-    // firmware reference's floor exactly (08b5fd3:src/core/FroggersEngine.hpp:439-441, 20 Hz);
-    // kPitchMaxHz does not: the reference's ceiling is 20000 Hz, the
-    // textbook audibility limit -- a display-axis number, not an
-    // oscillator-pitch one, that spent roughly the knob's top third on a
-    // shrill-to-inaudible pitch. 5000 Hz instead clears the top of the
-    // piano (C8, ~4186 Hz) with headroom, deliberately excluding that
-    // shrill-to-inaudible top.
-    static constexpr float kPitchMinHz = 20.0f;
-    static constexpr float kPitchMaxHz = 5000.0f;
+    // Pitch spans six octaves continuously from A0 (27.5 Hz) to A6 (1760 Hz),
+    // with equal knob movements producing equal frequency ratios.
+    static constexpr float kPitchMinHz = 27.5f;
+    static constexpr float kPitchMaxHz = 1760.0f;
 
     // The internal ring-mod carrier's own frequency range (Ring Mod, Audio
     // slots 9-11) -- its own named constants, not a reuse of
-    // kPitchMinHz/kPitchMaxHz above, even though the two pairs now share
-    // the same numbers. 20 Hz-5000 Hz covers sub-audio "throb" through the
+    // kPitchMinHz/kPitchMaxHz above. 20 Hz-5000 Hz covers sub-audio "throb" through the
     // classic clangy ring-mod register while staying well below Nyquist at
     // every sample rate this app supports, so the carrier itself never
     // folds into noise before the ring-modulated product does.
@@ -164,6 +158,11 @@ struct Vco
     // forgiving.
     static constexpr float kRingModFloor = 0.05f;
     static constexpr float kRingModRampWidth = 0.10f;
+
+    static constexpr int kOversampleFactor = 4;
+    // Two 2:1 stages: 4x -> 2x -> base rate. Physical FIR group delay is
+    // 23/4 + 23/2 = 17.25 base samples; output is not latency-compensated.
+    std::array<HalfbandDecimator2x, 2> antiAliasFilter;
 
     float carrierPhase = 0.0f;
     float pmLfoPhase = 0.0f;
@@ -240,30 +239,41 @@ struct Vco
     float Process(float pitchKnob01, float morphKnob01, float pmKnob01, float pmRateKnob01, float ringModKnob01,
                   float sampleRate)
     {
-        const float phaseIncrement = PitchToPhaseIncrement(pitchKnob01, sampleRate);
-        // 08b5fd3:src/core/FroggersEngine.hpp:741-743 -- the depth multiply is at the caller of
-        // StepIndependentPmLfo, not inside it; ported the same way.
-        const float pmOffset = kPmLfoDepth * PmDepthScale(pmKnob01) * StepPmLfo(pmRateKnob01, sampleRate);
-        const float modulatedPhase = WrapPhase(carrierPhase + pmOffset);
-        const float dry = EvalWaveMorph(modulatedPhase, morphKnob01);
+        const float internalSampleRate = sampleRate * kOversampleFactor;
+        std::array<float, kOversampleFactor> internalOutput{};
+        // Hold all five normalized controls through four complete oscillator
+        // steps. Decimate the complete PM/ring result through two halfbands.
+        for (int substep = 0; substep < kOversampleFactor; ++substep)
+        {
+            const float phaseIncrement = PitchToPhaseIncrement(pitchKnob01, internalSampleRate);
+            // 08b5fd3:src/core/FroggersEngine.hpp:741-743 -- the depth multiply is at the caller of
+            // StepIndependentPmLfo, not inside it; ported the same way.
+            const float pmOffset = kPmLfoDepth * PmDepthScale(pmKnob01) * StepPmLfo(pmRateKnob01, internalSampleRate);
+            const float modulatedPhase = WrapPhase(carrierPhase + pmOffset);
+            const float dry = EvalWaveMorph(modulatedPhase, morphKnob01);
 
-        // This SAME VCO's own internal ring-mod carrier -- stepped
-        // every sample regardless of depth (same practice as pmLfoPhase
-        // above, so raising the knob never causes a phase jump), multiplied
-        // against `dry` (the pre-ASR-gate wave-morph output -- this struct
-        // has no ASR gate of its own; that happens later in
-        // dsp::MixOscVoices/VcoAdsrState::apply, so "pre-gate" is the only
-        // choice available here and the one this port makes). Blended by
-        // RingModDepthScale's taper amount so the bottom of the knob is an
-        // exact identity and the top is a full ring-mod product; convex
-        // blend of two values already in [-1,1] (dry, and dry*carrier, whose
-        // magnitude is <= |dry| since |carrier| <= 1) stays in [-1,1].
-        const float ringCarrier = Sine01(ringCarrierPhase);
-        ringCarrierPhase = WrapPhase(ringCarrierPhase + RingModPhaseIncrement(ringModKnob01, sampleRate));
-        const float ringAmount = RingModDepthScale(ringModKnob01);
-        const float output = dry * (1.0f - ringAmount) + dry * ringCarrier * ringAmount;
+            // This SAME VCO's own internal ring-mod carrier -- stepped
+            // every sample regardless of depth (same practice as pmLfoPhase
+            // above, so raising the knob never causes a phase jump), multiplied
+            // against `dry` (the pre-ASR-gate wave-morph output -- this struct
+            // has no ASR gate of its own; that happens later in
+            // dsp::MixOscVoices/VcoAdsrState::apply, so "pre-gate" is the only
+            // choice available here and the one this port makes). Blended by
+            // RingModDepthScale's taper amount so the bottom of the knob is an
+            // exact identity and the top is a full ring-mod product; convex
+            // blend is bounded before filtering. The causal lowpass can overshoot;
+            // do not clip its output, which would create new harmonics.
+            const float ringCarrier = Sine01(ringCarrierPhase);
+            ringCarrierPhase = WrapPhase(ringCarrierPhase + RingModPhaseIncrement(ringModKnob01, internalSampleRate));
+            const float ringAmount = RingModDepthScale(ringModKnob01);
+            const float mixed = dry * (1.0f - ringAmount) + dry * ringCarrier * ringAmount;
 
-        carrierPhase = WrapPhase(carrierPhase + phaseIncrement);
+            carrierPhase = WrapPhase(carrierPhase + phaseIncrement);
+            internalOutput[static_cast<std::size_t>(substep)] = mixed;
+        }
+        const float middleFirst = antiAliasFilter[0].Process(internalOutput[0], internalOutput[1]);
+        const float middleSecond = antiAliasFilter[0].Process(internalOutput[2], internalOutput[3]);
+        const float output = antiAliasFilter[1].Process(middleFirst, middleSecond);
 
         // This struct does not write to the scope. The `output` returned
         // here is pre-gate: it is nonzero whatever the ASR gate is doing,
@@ -301,8 +311,8 @@ struct Vco
         state.scopeChannel.store(connected ? scopeWriterHolder_->FlatChan() : 0);
     }
 
-    // Per-unit recovery (see app/FroggersAppCore.hpp): zeros only this
-    // VCO's own recursive state (the two running phases) -- does NOT touch
+    // Per-unit recovery (see app/FroggersAppCore.hpp): zeros this
+    // VCO's three running phases and both FIR histories -- does NOT touch
     // scopeWriterHolder_/scopeColor_ (wiring, not signal state) or any knob
     // input, since those are recomputed fresh from the caller's arguments on
     // the very next Process() call regardless. Both phases are ordinarily
@@ -317,18 +327,40 @@ struct Vco
         pmLfoPhase = 0.0f;
         ringCarrierPhase = 0.0f;
         overCeilingSeconds = 0.0f;
+        for (HalfbandDecimator2x& section : antiAliasFilter)
+        {
+            section.Reset();
+        }
     }
 
-    // Read by Tier 1/Tier 2 recovery: all three are pure recursive state
-    // (ringCarrierPhase included, from Ring Mod), no coefficients to
-    // exclude.
+    // Read by Tier 1/Tier 2 recovery: phases and filter histories are
+    // recursive state; immutable coefficients are excluded.
     bool StateFinite() const
     {
-        return std::isfinite(carrierPhase) && std::isfinite(pmLfoPhase) && std::isfinite(ringCarrierPhase);
+        if (!std::isfinite(carrierPhase) || !std::isfinite(pmLfoPhase) || !std::isfinite(ringCarrierPhase))
+        {
+            return false;
+        }
+        for (const HalfbandDecimator2x& section : antiAliasFilter)
+        {
+            for (float sample : section.history)
+            {
+                if (!std::isfinite(sample)) return false;
+            }
+        }
+        return true;
     }
     float StateMagnitude() const
     {
-        return std::max({std::fabs(carrierPhase), std::fabs(pmLfoPhase), std::fabs(ringCarrierPhase)});
+        float magnitude = std::max({std::fabs(carrierPhase), std::fabs(pmLfoPhase), std::fabs(ringCarrierPhase)});
+        for (const HalfbandDecimator2x& section : antiAliasFilter)
+        {
+            for (float sample : section.history)
+            {
+                magnitude = std::max(magnitude, std::fabs(sample));
+            }
+        }
+        return magnitude;
     }
 
 private:

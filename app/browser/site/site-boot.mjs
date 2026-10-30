@@ -60,12 +60,11 @@ const APP_ID = "frogg3rs";
 // Installs before the app boots so the very first render frame already
 // reports the mount's width. See viewport-width.mjs's own header comment for
 // the full mechanism.
-installViewportWidth(BrowserUiBackend);
-
 // Read once at module start: the user agent does not change over the page's
 // lifetime, and both the footer treatment below and the wake lock wiring in
 // boot() key off the same classification.
 const deviceClass = classifyDevice();
+installViewportWidth(BrowserUiBackend, deviceClass === ANDROID_PHONE || deviceClass === IPHONE);
 
 // Footer: on an Android phone the desktop-app download link becomes the
 // Android release link; on an iPhone there is no APK to offer, so the link

@@ -126,3 +126,16 @@ test.describe("desktop layout sanity", () => {
     expect(leftAfter).toEqual(leftBefore);
   });
 });
+
+
+test("narrow desktop retains the original carousel spacing", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await waitForSurfaceReady(page);
+  await expect.poll(async () => page.evaluate(() => {
+    const box = (id) => document.querySelector(`[data-synth-node-id="${id}"]`)?.getBoundingClientRect();
+    const button = box("froggers.bank.0"), arrow = box("froggers.bank.prev"), row = box("froggers.layout.right.row.0");
+    if ([button, arrow, row].some((x) => !x || x.width <= 0 || x.height <= 0)) return 0;
+    return arrow.top - button.bottom - (row.top - arrow.bottom);
+  })).toBeGreaterThan(10);
+});

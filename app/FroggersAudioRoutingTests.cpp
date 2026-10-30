@@ -276,19 +276,9 @@ TEST_CASE(default_patch_produces_non_silent_finite_audio) {
 }
 
 // -----------------------------------------------------------------------
-// The default patch must be audible on laptop speakers,
-// not merely nonzero. If All three Audio-bank pitch knobs (Audio bank slots
-// 0-2) registered at the ordinary 0.0f default (FroggersParameters.hpp's own
-// FroggersBankLayouts(), Audio row), then, since
-// Vco::PitchToPhaseIncrement(0, sr) = ExpMapCompute(Vco::kPitchMinHz/sr, Vco::kPitchMaxHz/sr, 0)
-// (app/dsp/Vco.hpp), every VCO would free-run at 20 Hz --
-// inaudible on a MacBook Air, and NOT caught by a plain RMS/PeakAbs
-// check (a 20 Hz tone is nonzero-RMS). This test instead asserts Goertzel
-// power at the EXPECTED audible fundamentals (110/220/330 Hz) dominates
-// power at the inaudible ones a 0.0f default would give (20/40/60 Hz) -- a
-// ratio check needing
-// no calibrated magic constant
-// (see the assertion's own comment below for a prior, more fragile version).
+// The default patch must carry its expected 110/220/330-Hz fundamentals.
+// The fixed 20/40/60-Hz probes diagnose excess low-frequency energy;
+// they do not represent the current zero-pitch mapping.
 // -----------------------------------------------------------------------
 TEST_CASE(default_patch_has_audible_band_energy_above_150hz) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("default_patch_band_energy"));
@@ -317,18 +307,10 @@ TEST_CASE(default_patch_has_audible_band_energy_above_150hz) {
     // (`SynthRig::SynthRig`, External/Sheaf/projects/synth/tests/support/SynthRig.hpp).
     constexpr double kSampleRateHz = 48000.0;
 
-    // The prior version summed Goertzel power over a
-    // 150 Hz-2000 Hz sweep and compared it to a calibrated constant
-    // (1.0e5, ~5x margin from measured pre-fix/post-fix runs of ~2.0e4/
-    // ~5.1e5) -- fragile because a future change to the Shape/Drive
-    // defaults could drift the absolute figure with only a thin margin to
-    // catch it. This version instead sums Goertzel power at the three
-    // EXPECTED post-fix fundamentals (110/220/330 Hz, the Audio bank's
-    // three VCOs at their ordinary 0.0f pitch default) and at the three
-    // BROKEN pre-fix ones (20/40/60 Hz, what `Vco::PitchToPhaseIncrement`
-    // collapses to without the fix) and asserts the expected fundamentals
-    // dominate by a ratio, not an absolute threshold -- true regardless of
-    // exactly how much total energy either patch config carries.
+    // Sum Goertzel power at the registered 110/220/330-Hz starting-frequency
+    // probes and contrast it with the fixed 20/40/60-Hz low-frequency
+    // diagnostic probes. The expected starting frequencies must dominate
+    // by a ratio rather than an absolute power threshold.
 
     constexpr std::array<double, 3> kBrokenFundamentalsHz = {20.0, 40.0, 60.0};
 
@@ -341,18 +323,8 @@ TEST_CASE(default_patch_has_audible_band_energy_above_150hz) {
         brokenPower += GoertzelPower(left, freqHz, kSampleRateHz);
     }
 
-    // Ratio, not a magic constant: the previously measured ~25x separation
-    // between pre-fix and post-fix band energy (see the comment this one
-    // replaced) was over a whole 150 Hz-2000 Hz sweep, which includes
-    // considerable harmonic leakage from the broken 20 Hz fundamentals
-    // (saw/square harmonics from Audio bank slots 4-5's Shape defaults,
-    // the default patch); measuring directly AT the fundamentals themselves (rather than
-    // a swept band that partially captures both) should separate them by
-    // at least as much. 10x is picked as a threshold comfortably inside
-    // that ~25x figure -- large enough to unambiguously distinguish
-    // "VCOs at 110/220/330 Hz" from "VCOs at 20/40/60 Hz", small enough to
-    // leave real margin against incidental drift from future Shape/Drive
-    // default changes (default-patch-tuned parameters this test does not own).
+    // Expected starting fundamentals must dominate the fixed low-frequency
+    // diagnostic probes by at least this ratio.
     constexpr double kMinimumFundamentalToBrokenRatio = 10.0;
     REQUIRE_TRUE(expectedPower > brokenPower * kMinimumFundamentalToBrokenRatio);
 }

@@ -388,16 +388,17 @@ $(CONTROLLERS_PAGE_BIN): $(CONTROLLERS_PAGE_SOURCES) $(SHEAF_LIB) | $(BUILD_DIR)
 
 # --- catalog-covers-every-screen-action check -----------------------------
 # Every FroggersActions constant (FroggersUiSurface.hpp) must be both
-# offered by the MIDI catalog and routed by HandleAction, except the five
+# offered by the MIDI catalog and routed by HandleAction, except the six
 # that are not MIDI-mappable actions:
 #   kSceneBlend      -- offered as the library's own analog Scene Blend kind.
 #   kEncoderPress    -- the catalog's own encoderPressAction, not a listed action.
 #   kEncoderDrag     -- the screen's mouse route into the library's ParamIncDec.
 #   kInputSelect     -- the plugin host's input picker, not offered.
 #   kViewportWidth   -- the browser shell's reported viewport width, not a control.
+#   kViewportMobileWeb -- browser phone identity, not a MIDI control.
 check-catalog-covers-screen-actions:
 	@bash $(APP_DIR)/check_catalog_covers_screen_actions.sh "$(APP_DIR)" \
-	    kSceneBlend kEncoderPress kEncoderDrag kInputSelect kViewportWidth
+	    kSceneBlend kEncoderPress kEncoderDrag kInputSelect kViewportWidth kViewportMobileWeb
 
 # Projucer lists files; it has no glob. app/android/Frogg3rs.jucer's own
 # <FILE> entries under External/Sheaf/ are therefore a second, hand-written

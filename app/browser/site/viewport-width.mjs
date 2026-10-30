@@ -63,10 +63,15 @@ function dispatchViewportWidth(backend, mount) {
  * before booting the app -- see this file's own header comment for why the
  * shared prototype is patched rather than a specific instance.
  */
-export function installViewportWidth(BrowserUiBackend) {
+export function installViewportWidth(BrowserUiBackend, mobileWeb = false) {
+  let mobileWebReported = false;
   const originalRenderFrame = BrowserUiBackend.prototype.renderFrame;
   BrowserUiBackend.prototype.renderFrame = function patchedRenderFrame(...args) {
     const result = originalRenderFrame.apply(this, args);
+    if (!mobileWebReported) {
+      this.dispatchBrowserAction({ name: "froggers.viewport.mobile-web", value: String(mobileWeb) });
+      mobileWebReported = true;
+    }
     lastBackend = this;
     const mount = document.querySelector(MOUNT_SELECTOR);
     if (mount) dispatchViewportWidth(this, mount);

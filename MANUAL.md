@@ -598,7 +598,7 @@ three-way balance. Cross-oscillator routing lives in the modulation view, where 
 output is a source (Modulation assignment, above).
 
 **VCO1 / VCO2 / VCO3** (slots 0–2) — each VCO's pitch, mapped exponentially from
-20 Hz to 5 kHz. Default values land on 110 Hz, 220 Hz, and 330 Hz respectively, so a freshly launched app
+27.5 Hz (A0) to 1.76 kHz (A6), continuously across six octaves. Default values land on 110 Hz, 220 Hz, and 330 Hz respectively, so a freshly launched app
 already makes an audible chord. Each VCO's pitch also launches with a small
 modulation depth from each of the other two VCOs' audio-rate output — six depths in all, each ±0.01 —
 adding a light cross-VCO drift from the start.

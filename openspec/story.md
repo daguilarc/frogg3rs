@@ -235,9 +235,9 @@ Unless a step says otherwise, **Start** is the default patch, running, with the 
 
 ### Audio page
 
-- **AUD-00** `[SWEEP]` (A:AUD-00; B:AU-00) VCO1 (slot 0). **Result:** pitch sweeps 20 Hz to 5 kHz
+- **AUD-00** `[SWEEP]` (A:AUD-00; B:AU-00) VCO1 (slot 0). **Result:** pitch sweeps 27.5 Hz (A0) to 1.76 kHz (A6)
   exponentially, from the 110 Hz default. **CODE** (A's OTR-1 and B's OTR-1): `Vco::kPitchMaxHz =
-  5000.0f` (`app/dsp/Vco.hpp`).
+  1760.0f` (`app/dsp/Vco.hpp`).
 - **AUD-01** `[SWEEP]` (A:AUD-01; B:AU-01) VCO2, as AUD-00, from 220 Hz.
 - **AUD-02** `[SWEEP]` (A:AUD-02; B:AU-02) VCO3, as AUD-00, from 330 Hz.
 - **AUD-03** `[SWEEP]` (A:AUD-03; B:AU-03) Shape 1. **Result:** VCO1 morphs continuously from sine to
@@ -1125,7 +1125,7 @@ and OP's 30-minute cap (REC-07).
 
 | # | Drafts | Main does | Evidence | Text to correct |
 |---|---|---|---|---|
-| 1 | A:OTR-1, B:OTR-1 | pitch 20 Hz–5 kHz | `Vco::kPitchMaxHz` | spec froggers-vco-topology ("20 kHz") |
+| 1 | A:OTR-1, B:OTR-1 | pitch 27.5 Hz–1.76 kHz (A0–A6) | `Vco::kPitchMaxHz` | spec froggers-vco-topology (27.5–1760 Hz) |
 | 2 | A:OTR-2 | Fold has no true zero | `SetFold` `ExpMapCompute(16,1,·)` | spec froggers-vco-topology (fold "true zero") |
 | 3 | A:OTR-3 | Freeze drones while stopped | `setGate(gateOpen \|\| FreezeLatched())` | spec froggers-vco-topology "silent regardless" |
 | 4 | A:OTR-4, B:OTR-2 | Randomize All uses floor 1 at every view level and descends one level | `RandomizeAll` | spec froggers-modulation-slate (level 2 = Randomize Page) |

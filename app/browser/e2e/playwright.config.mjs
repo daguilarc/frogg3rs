@@ -38,7 +38,7 @@ const DESKTOP_SPECS = [/link-roles\.spec\.mjs$/, /desktop-layout\.spec\.mjs$/, /
 // behaviour is actually gated on the Android-phone device class, plus the
 // narrow-viewport runtime pages coverage that already runs at phone widths
 // under "mobile" and applies just as well here.
-const ANDROID_SPECS = [/link-roles\.spec\.mjs$/, /download-link\.spec\.mjs$/, /screen-wake\.spec\.mjs$/, /runtime-pages-narrow\.spec\.mjs$/];
+const ANDROID_SPECS = [/mobile-stacking\.spec\.mjs$/, /link-roles\.spec\.mjs$/, /download-link\.spec\.mjs$/, /screen-wake\.spec\.mjs$/, /runtime-pages-narrow\.spec\.mjs$/];
 const PAGES_SPECS = [/blank-frame\.spec\.mjs$/, /first-visit-race\.spec\.mjs$/];
 // Measured on this machine's Playwright Chromium (audio-devices.spec.mjs's
 // own header comment carries the numbers): a plain launch's

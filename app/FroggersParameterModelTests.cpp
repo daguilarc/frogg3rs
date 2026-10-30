@@ -27,6 +27,7 @@
 #include "Froggers.hpp"
 #include "FroggersParameters.hpp"
 #include "dsp/Fuegoize.hpp"
+#include "dsp/Vco.hpp"
 #include "support/SynthRig.hpp"
 
 #include "synth/EncoderDraw.hpp"
@@ -100,6 +101,29 @@ synth::RuntimeDataPaths UseScratchRuntimeDataPaths(const char* testName) {
     synth::RuntimeDataPaths paths = synth::RuntimeDataPaths::FromDataRoot(dataRoot);
     std::filesystem::create_directories(paths.patchesRoot);
     return paths;
+}
+
+// Registered defaults must preserve the three audible starting pitches at launch
+// and after restoring every scene through the public parameter default API.
+TEST_CASE(vco_registered_pitch_defaults_preserve_110_220_330_hz) {
+    synth::ParameterManager manager;
+    synth_froggers::FroggersParameterModel model;
+    model.Init(manager);
+    const float expectedHz[] = {110.0f, 220.0f, 330.0f};
+    for (int restored = 0; restored < 2; ++restored) {
+        for (std::size_t voice = 0; voice < 3; ++voice) {
+            auto& pitch = model.PageParameter(synth_froggers::FroggersBankId::Audio, voice);
+            for (std::size_t scene = 0; scene < pitch.Group().Config().numScenes; ++scene) {
+                for (const float sr : {44100.0f, 48000.0f, 96000.0f}) {
+                    const float hz = synth_froggers::dsp::Vco::PitchToPhaseIncrement(pitch.SceneCenter(scene), sr) * sr;
+                    REQUIRE_TRUE(std::isfinite(hz));
+                    REQUIRE_NEAR(hz, expectedHz[voice], 0.001f);
+                }
+                if (restored == 0) pitch.SceneCenter(scene) = 0.9f;
+            }
+        }
+        if (restored == 0) manager.RevertAllToDefaults();
+    }
 }
 
 // --- 4.5 check 1: parameter count/identity per bank ------------------------
