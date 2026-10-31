@@ -16,10 +16,10 @@ permissions:
 jobs:
   build-and-test:
     # AU is Apple-only and app/vst/CMakeLists.txt requests FORMATS VST3 AU,
-    # so this needs a macOS runner. Pinned to macos-14 (not "-latest") to
+    # so this needs a macOS runner. Pinned to macos-15 (not "-latest") to
     # match desktop-release.yml's own macOS job and avoid silent drift when
     # GitHub moves the "latest" label.
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with:
