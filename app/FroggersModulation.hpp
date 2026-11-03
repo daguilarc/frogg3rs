@@ -1490,8 +1490,8 @@ inline void RestoreAudioPitchDetentsFor(FroggersParameterModel& model, synth::Pa
 
 // Scene 1 (pole 0) keeps sine/saw/square = 0.0/0.5/1.0 -- Audio bank slots
 // 3-5, confirmed against EvalWaveMorph's sine->saw (0-0.5) / saw->square
-// (0.5-1.0) crossfade (app/dsp/Vco.hpp's EvalWaveMorph, ported from
-// 08b5fd3:src/core/VcoWaveEval.hpp:7-23). Scene 2 (pole 1) gets the MIRROR of that
+// (0.5-1.0) crossfade (app/dsp/Vco.hpp's EvalWaveMorph; Shape follows
+// 08b5fd3:src/core/VcoWaveEval.hpp:7-23, with Sheaf mipmapped saw/square). Scene 2 (pole 1) gets the MIRROR of that
 // same value, `1.0 - shape` -- written as an expression of the scene-1
 // value, not as three more hardcoded literals, so the mirror relationship is
 // what the reader sees. VCO2's 0.5 (saw) is its own mirror and is therefore

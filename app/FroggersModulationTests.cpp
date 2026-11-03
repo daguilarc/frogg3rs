@@ -179,51 +179,40 @@ TEST_CASE(slate_registers_fifteen_sources_in_the_expected_order_by_name) {
     }
 }
 
-// "By identity, not by count": prove each VCO-audio/EF slot is wired to ITS
-// OWN VCO, not aliased to a sibling's, by varying only ONE VCO's drive and
-// confirming ONLY that VCO's audio+EF sources (and none of the other ten
-// non-VCO sources) move away from the neutral baseline they'd otherwise
-// settle at.
+// Audio identity: change only VCO1's drive and compare against a lockstep
+// reference with unchanged drives. Natural phase advance is shared by both;
+// only the requested pitch change may separate VCO1's audio source. Sibling
+// audio sources must remain exactly equal to their same-time references.
 TEST_CASE(vco_audio_and_ef_sources_are_wired_to_the_correct_identity_not_just_present) {
-    Fixture fx;
-    FroggersModulationSlate::VcoDrive silent{0.5f, 0.5f, 0.0f};  // pitch=mid, shape=mid, no PM
+    Fixture fx, reference;
+    FroggersModulationSlate::VcoDrive silent{0.5f, 0.5f, 0.0f};  // neutral drive, no PM
     FroggersModulationSlate::VcoDrive driven{0.9f, 0.5f, 0.0f};  // a different, higher pitch
 
-    // Baseline: all three VCOs identical (silent) drive for a few samples so
-    // their audio-rate outputs and EFs settle into a comparable state.
-    // SourceValue() reads Modulators::Value(), a CACHE that only refreshes
-    // via Modulators::UpdateModValues() (normally called from
-    // FroggersParameterModel::ProcessSample) -- call it directly here since
-    // this test drives the slate standalone, without the full parameter
-    // model's per-sample loop.
-    for (int i = 0; i < 8; ++i) {
+    // Advance beyond the FIR startup transient before comparing changed
+    // drives. SourceValue is cached; refresh both caches after every Step.
+    for (int i = 0; i < synth_froggers::dsp::HalfbandDecimator2x::kTaps; ++i) {
         fx.slate.Step(silent, silent, silent, std::nullopt);
+        reference.slate.Step(silent, silent, silent, std::nullopt);
         fx.model.Group().UpdateModValues();
+        reference.model.Group().UpdateModValues();
     }
-    const float base6 = fx.slate.SourceValue(kModSlotVco1Audio);
     const float base7 = fx.slate.SourceValue(kModSlotVco2Audio);
     const float base8 = fx.slate.SourceValue(kModSlotVco3Audio);
 
-    // Now drive ONLY VCO1 differently; VCO2/VCO3 stay at the same silent
-    // drive as the baseline loop above.
     bool vco1Moved = false;
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < synth_froggers::dsp::HalfbandDecimator2x::kTaps; ++i) {
         fx.slate.Step(driven, silent, silent, std::nullopt);
+        reference.slate.Step(silent, silent, silent, std::nullopt);
         fx.model.Group().UpdateModValues();
-        if (std::fabs(fx.slate.SourceValue(kModSlotVco1Audio) - base6) > 0.02f) {
+        reference.model.Group().UpdateModValues();
+        if (std::fabs(fx.slate.SourceValue(kModSlotVco1Audio) -
+                      reference.slate.SourceValue(kModSlotVco1Audio)) > 0.02f) {
             vco1Moved = true;
         }
+        REQUIRE_TRUE(fx.slate.SourceValue(kModSlotVco2Audio) == reference.slate.SourceValue(kModSlotVco2Audio));
+        REQUIRE_TRUE(fx.slate.SourceValue(kModSlotVco3Audio) == reference.slate.SourceValue(kModSlotVco3Audio));
     }
     REQUIRE_TRUE(vco1Moved);
-    // VCO2/VCO3 audio sources must be UNAFFECTED by VCO1's drive change
-    // (zero cross-VCO terms) -- their inputs never changed, so
-    // their periodic (already-oscillating) values should still land within
-    // the same excursion range as the baseline, not systematically shifted.
-    // A precise no-op check: re-running the identical silent/silent inputs
-    // for VCO2/VCO3 reproduces base7/base8 exactly is too strict (VCO phase
-    // has advanced), so instead confirm VCO2/VCO3 stay in [0,1] (sanity) and
-    // that changing VCO1 alone did not blow either of them outside the
-    // normal oscillation envelope a silent-driven VCO produces.
     REQUIRE_TRUE(base7 >= 0.0f && base7 <= 1.0f);
     REQUIRE_TRUE(base8 >= 0.0f && base8 <= 1.0f);
 }

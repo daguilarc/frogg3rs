@@ -1,7 +1,7 @@
 // FroggersDspParityTests.cpp -- parity test suite for the DSP port. Each
-// TEST_CASE pins one ported unit to its cited Froggers formula. This TU
-// includes ONLY app/dsp/*.hpp (no Sheaf, no JUCE, no firmware-tree headers) --
-// the DSP port is dependency-free, and check_no_firmware_includes.sh
+// TEST_CASE pins a DSP contract, including Sheaf mipmapped VCO sources. This
+// TU includes app/dsp/*.hpp (transitively Sheaf, no JUCE or firmware headers);
+// check_no_firmware_includes.sh
 // mechanically enforces that no file under app/ includes src/.
 //
 // Harness mirrors FroggersHeadlessTests.cpp's self-registering TEST_CASE /
@@ -111,6 +111,19 @@ float ReverbMono(synth_froggers::dsp::Reverb& rv, float input, Args... args)
     return 0.5f * (out.l + out.r);
 }
 
+TEST_CASE(vco_construction_prepares_one_shared_bank) {
+    std::array<dsp::Vco,6> voices;
+    const auto* bank=voices[0].waveforms;
+    REQUIRE_TRUE(bank!=nullptr);
+    for (auto& voice : voices) {
+        REQUIRE_TRUE(voice.waveforms==bank);
+        REQUIRE_TRUE(voice.waveforms->saw.m_levelsReady==synth::AdaptiveWavetable<12>::kMaxLevels);
+        REQUIRE_TRUE(voice.waveforms->square.m_levelsReady==synth::AdaptiveWavetable<12>::kMaxLevels);
+        voice.Reset();
+        REQUIRE_TRUE(voice.waveforms==bank);
+    }
+}
+
 // Independent physical-frequency fixtures protect the requested six-octave range.
 TEST_CASE(vco_pitch_exp_map_matches_named_range) {
     const float expectedHz[] = {27.5f, 55.0f, 110.0f, 220.0f, 440.0f, 880.0f, 1760.0f};
@@ -184,7 +197,8 @@ TEST_CASE(dsp_true_zero_depth_taper_monotonic_smoothstep_and_pm_parity) {
 
 // Full convolution reference deliberately does not use the runtime sparse
 // symmetric-pair evaluator. Both stages emit on their second input sample.
-std::vector<double> ReferenceOversampledUnmodulated(float pitch, float morph, float sr, int count) {
+std::vector<double> ReferenceOversampled(float pitch, float morph, float sr, int count,
+                                         float pm = 0, float pmRate = 0, float ring = 0) {
     std::array<double, 47> coefficients{};
     coefficients[23]=.5;
     for (std::size_t i=0;i<12;++i) {
@@ -199,13 +213,25 @@ std::vector<double> ReferenceOversampledUnmodulated(float pitch, float morph, fl
         for (std::size_t i=0;i<47;++i) y+=coefficients[i]*z[i];
         return y;
     };
-    float phase=0;
+    const auto& bank = dsp::PreparedVcoWaveforms();
+    const float internalRate = sr * 4;
+    const float increment = dsp::Vco::PitchToPhaseIncrement(pitch, internalRate);
+    const float pmHz = dsp::ExpMapCompute(dsp::Vco::kPmLfoMinHz, dsp::Vco::kPmLfoMaxHz, pmRate);
+    float phase=0, pmPhase=0, ringPhase=0;
     std::vector<double> result;
     for(int n=0;n<count;++n) {
         double output=0;
         for(int step=0;step<4;++step) {
-            const float raw=dsp::EvalWaveMorph(phase,morph);
-            phase=dsp::WrapPhase(phase+dsp::Vco::PitchToPhaseIncrement(pitch,sr*4));
+            const float pmValue = dsp::Sine01(pmPhase) * (dsp::Vco::kPmLfoMaxHz / pmHz);
+            pmPhase = dsp::WrapPhase(pmPhase + pmHz / internalRate);
+            const float offset = dsp::Vco::kPmLfoDepth * dsp::Vco::PmDepthScale(pm) * pmValue;
+            const float dry = dsp::EvalWaveMorph(bank, dsp::WrapPhase(phase + offset), morph,
+                                                increment * internalRate, internalRate * .5f);
+            const float ringCarrier = dsp::Sine01(ringPhase);
+            ringPhase = dsp::WrapPhase(ringPhase + dsp::Vco::RingModPhaseIncrement(ring, internalRate));
+            const float amount = dsp::Vco::RingModDepthScale(ring);
+            const float raw = dry * (1.0f - amount) + dry * ringCarrier * amount;
+            phase=dsp::WrapPhase(phase+increment);
             const double middle=convolve(0,raw);
             if(step%2==1) output=convolve(1,static_cast<float>(middle));
         }
@@ -246,7 +272,7 @@ TEST_CASE(halfband_pair_decimator_matches_both_impulse_phases_and_rejects_stopba
 TEST_CASE(vco_pm_zero_at_or_below_floor_leaves_carrier_unmodulated) {
     for (float sr : {44100.f, 48000.f}) {
         dsp::Vco zero, floor;
-        const auto reference = ReferenceOversampledUnmodulated(.3f, .4f, sr, 256);
+        const auto reference = ReferenceOversampled(.3f, .4f, sr, 256);
         for (int i=0; i<256; ++i) {
             const float y = zero.Process(.3f,.4f,0,0,0,sr);
             REQUIRE_NEAR(y, reference[i], 3e-5);
@@ -326,12 +352,63 @@ TEST_CASE(vco_zero_cross_vco_terms_independent_of_other_instances) {
 }
 
 TEST_CASE(vco_eval_wave_morph_sine_saw_square_endpoints) {
-    // 08b5fd3:src/core/VcoWaveEval.hpp:7-23.
-    const float phase = 0.25f;
-    REQUIRE_NEAR(dsp::EvalWaveMorph(phase, 0.0f), dsp::Sine01(phase), 1e-6);
-    REQUIRE_NEAR(dsp::EvalWaveMorph(phase, 1.0f), (phase < 0.5f) ? 1.0f : -1.0f, 1e-6);
-    const float saw = 2.0f * phase - 1.0f;
-    REQUIRE_NEAR(dsp::EvalWaveMorph(phase, 0.5f), saw, 1e-6);
+    const auto& bank = dsp::PreparedVcoWaveforms();
+    // Independent base generation catches wrong bank polarity or endpoint order.
+    static synth::AdaptiveWavetable<12> saw, square;
+    saw.m_waveTable = synth::BasicWavetable<12>::Generate([](float p) { return 2*p-1; });
+    square.m_waveTable = synth::BasicWavetable<12>::Square();
+    saw.Generate(); square.Generate();
+    float ceilingDifference=0, pitchDifference=0;
+    for (float sr : {44100.f, 96000.f}) {
+        for (float hz : {27.5f, 1760.f}) {
+            for (float phase : {.137f, .25f, .731f}) {
+                const float sine = dsp::Sine01(phase);
+                const float sa = saw.Evaluate(phase,hz,2*sr);
+                const float sq = square.Evaluate(phase,hz,2*sr);
+                const std::array<float,5> expected{sine,(sine+sa)*.5f,sa,(sa+sq)*.5f,sq};
+                for (std::size_t i=0;i<expected.size();++i) {
+                    const float actual=dsp::EvalWaveMorph(bank,phase,.25f*i,hz,2*sr);
+                    REQUIRE_TRUE(std::isfinite(actual));
+                    REQUIRE_NEAR(actual,expected[i],1e-6);
+                }
+                ceilingDifference=std::max(ceilingDifference,std::fabs(sa-saw.Evaluate(phase,hz,.5f*sr)));
+                pitchDifference=std::max(pitchDifference,std::fabs(sa-saw.Evaluate(phase,440,2*sr)));
+            }
+        }
+    }
+    REQUIRE_TRUE(ceilingDifference>1e-4f);
+    REQUIRE_TRUE(pitchDifference>1e-4f);
+}
+
+TEST_CASE(vco_active_modulation_matches_full_convolution) {
+    for (float sr : {44100.f,96000.f}) {
+        for (float morph : {.25f,.75f,1.f}) {
+            dsp::Vco voice;
+            const auto reference=ReferenceOversampled(.83f,morph,sr,512,.72f,.37f,.61f);
+            for (std::size_t i=0;i<reference.size();++i) {
+                const float actual=voice.Process(.83f,morph,.72f,.37f,.61f,sr);
+                REQUIRE_TRUE(std::isfinite(actual));
+                REQUIRE_NEAR(actual,reference[i],3e-5);
+            }
+        }
+    }
+}
+
+TEST_CASE(vco_nonfinite_lookup_preserves_reset_recovery) {
+    dsp::Vco voice,fresh;
+    const auto& bank=*voice.waveforms;
+    const float nan=std::numeric_limits<float>::quiet_NaN();
+    for (auto args : {std::array<float,3>{nan,440,96000}, { .25f,nan,96000},
+                      {.25f,440,nan}, {.25f,std::numeric_limits<float>::min(),96000}}) {
+        REQUIRE_TRUE(!std::isfinite(dsp::EvalWaveMorph(bank,args[0],.75f,args[1],args[2])));
+    }
+    voice.carrierPhase=nan;
+    REQUIRE_TRUE(!std::isfinite(voice.Process(.5f,.75f,1,.5f,1,48000)));
+    REQUIRE_TRUE(!voice.StateFinite());
+    voice.Reset();
+    REQUIRE_TRUE(voice.StateFinite());
+    for (int n=0;n<128;++n)
+        REQUIRE_TRUE(voice.Process(.5f,.75f,1,.5f,1,48000)==fresh.Process(.5f,.75f,1,.5f,1,48000));
 }
 
 // =========================================================================
@@ -9476,7 +9553,7 @@ TEST_CASE(ring_mod_phase_increment_uses_its_own_range_not_pitch_range) {
 TEST_CASE(ring_mod_at_default_zero_is_bit_identical_to_no_ring_mod_at_all) {
     for (float sr : {44100.f, 48000.f}) {
         dsp::Vco zero, floor;
-        const auto reference = ReferenceOversampledUnmodulated(.4f,.3f,sr,256);
+        const auto reference = ReferenceOversampled(.4f,.3f,sr,256);
         for (int i=0; i<256; ++i) {
             const float y=zero.Process(.4f,.3f,0,0,0,sr);
             REQUIRE_NEAR(y,reference[i],3e-5);

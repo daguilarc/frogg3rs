@@ -1,7 +1,8 @@
 #pragma once
 
 // synth_froggers::dsp::Vco -- a DSP port of Froggers' VCO, exposing Sheaf's
-// VCO UIState. A **copy**, not an include, of the cited Froggers formulas --
+// VCO UIState. Pitch/modulation follow the cited Froggers formulas; saw and
+// square now use Sheaf mipmapped tables. The original provenance follows --
 // see the per-block citations below, each read directly from the firmware
 // source before porting.
 //
@@ -33,13 +34,14 @@
 // file/class, rather than through a separate wrapper -- this port mirrors
 // that placement exactly (same reasoning as FilterFx.hpp's ResonantBump/Comb
 // UIState), which is why this otherwise-pure DSP file takes on a deliberate,
-// minimal Sheaf dependency: `synth/DspScope.hpp` (ScopeWriter/
+// Sheaf dependency: `synth/DspScope.hpp` (ScopeWriter/
 // ScopeWriterHolder, header-only, no link dependency) and `synth/Color.hpp`/
 // `synth/AtomicColor.hpp` (also header-only). This widens app/dsp/*.hpp's
 // usual no-Sheaf-dependency convention deliberately, not incidentally;
 // `app/Makefile`'s DSP_TEST_BIN rule gains Sheaf's -I include path
 // accordingly (no link-time dependency: everything reached here is
-// header-only inline).
+// header-only inline). Mipmapped saw/square additionally reuse the header-only
+// `synth/DspWavetable.hpp` generator and evaluator, prepared at construction.
 //
 // Deliberately NOT ported: `WavetableVco::Process`'s cycle-boundary
 // RecordStart/marker bookkeeping, inside `WavetableVco::Process`
@@ -57,25 +59,68 @@
 #include "synth/AtomicColor.hpp"
 #include "synth/Color.hpp"
 #include "synth/DspScope.hpp"
+#include "synth/DspWavetable.hpp"
 
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 
 namespace synth_froggers::dsp {
 
-// 08b5fd3:src/core/VcoWaveEval.hpp:7-23, verbatim formula.
-inline float EvalWaveMorph(float phaseWrapped01, float morph)
+// Prepared once during Vco construction, before any audio processing. Generate
+// directly into static storage: the bank is large, while FFT scratch is local.
+struct VcoWaveformBank
+{
+    synth::AdaptiveWavetable<12> saw;
+    synth::AdaptiveWavetable<12> square;
+
+    VcoWaveformBank()
+    {
+        for (std::size_t i = 0; i < synth::BasicWavetable<12>::kTableSize; ++i)
+        {
+            const float phase = static_cast<float>(i) / synth::BasicWavetable<12>::kTableSize;
+            saw.m_waveTable.m_table[i] = 2.0f * phase - 1.0f;
+            square.m_waveTable.m_table[i] = phase < 0.5f ? 1.0f : -1.0f;
+        }
+        for (auto* table : {&saw, &square}) table->Generate();
+    }
+};
+
+inline const VcoWaveformBank& PreparedVcoWaveforms()
+{
+    static const VcoWaveformBank bank;
+    return bank;
+}
+
+// Shape retains the firmware's sine->saw->square crossfades; the saw/square
+// samples are now normalized, frequency-adaptive Sheaf waveforms.
+inline float EvalWaveMorph(const VcoWaveformBank& bank, float phaseWrapped01, float morph,
+                           float carrierHz, float maxHz)
 {
     if (!std::isfinite(morph))
     {
         morph = 0.0f;
     }
+    // Corrupted recursive phases must remain visible to recovery, without
+    // reaching Sheaf's floating-to-index conversion. Its early frequency
+    // rejection handles nonpositive carrier and ceilings below the carrier.
+    if (!std::isfinite(phaseWrapped01) || !std::isfinite(carrierHz) || !std::isfinite(maxHz))
+        return std::numeric_limits<float>::quiet_NaN();
+    if (carrierHz > 0.0f && maxHz >= carrierHz)
+    {
+        const float ratio = maxHz / carrierHz;
+        // size_t's exclusive upper bound is exactly a power of two; comparing
+        // in long double avoids rounding SIZE_MAX upward before conversion.
+        const long double indexLimit = std::ldexp(1.0L, std::numeric_limits<std::size_t>::digits);
+        if (!std::isfinite(ratio) || static_cast<long double>(ratio) >= indexLimit)
+            return std::numeric_limits<float>::quiet_NaN();
+    }
     const float sine = Sine01(phaseWrapped01);
-    const float saw = 2.0f * phaseWrapped01 - 1.0f;
-    const float square = (phaseWrapped01 < 0.5f) ? 1.0f : -1.0f;
+    const float saw = bank.saw.Evaluate(phaseWrapped01, carrierHz, maxHz);
+    const float square = bank.square.Evaluate(phaseWrapped01, carrierHz, maxHz);
     if (morph <= 0.5f)
     {
         const float t = morph * 2.0f;
@@ -91,6 +136,11 @@ inline float EvalWaveMorph(float phaseWrapped01, float morph)
 // the ported topology with zero cross-VCO terms.
 struct Vco
 {
+    Vco() : waveforms(&PreparedVcoWaveforms()) {}
+
+    // Const pointee, shared across every audio/modulation VCO. Construction
+    // eagerly prepares it; Process never acquires a function-local static.
+    const VcoWaveformBank* waveforms;
     // Verbatim member names and types, matching Sheaf's own `UIState` shape
     // (External/Sheaf/projects/synth/include/synth/DspOscillators.hpp).
 
@@ -250,7 +300,8 @@ struct Vco
             // StepIndependentPmLfo, not inside it; ported the same way.
             const float pmOffset = kPmLfoDepth * PmDepthScale(pmKnob01) * StepPmLfo(pmRateKnob01, internalSampleRate);
             const float modulatedPhase = WrapPhase(carrierPhase + pmOffset);
-            const float dry = EvalWaveMorph(modulatedPhase, morphKnob01);
+            const float dry = EvalWaveMorph(*waveforms, modulatedPhase, morphKnob01,
+                                            phaseIncrement * internalSampleRate, 0.5f * internalSampleRate);
 
             // This SAME VCO's own internal ring-mod carrier -- stepped
             // every sample regardless of depth (same practice as pmLfoPhase
