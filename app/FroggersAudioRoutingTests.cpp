@@ -38,6 +38,7 @@
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -905,93 +906,184 @@ TEST_CASE(randomize_all_storm_test_never_blows_out_or_permanently_silences) {
     }
 }
 
-// A re-roll redraws every value from a clean slate but never releases the
-// depth storage for the sources the new roll did not pick, so repeated presses
-// accumulate depth parameters no current source assignment accounts for. Cost
-// is proportional to that live count, through the recursive Compute() descent,
-// so the accumulation is what eventually spends the whole audio-callback
-// budget on the browser build.
-//
-// ASSERTS THE PEAK ACROSS THE STORM, NOT THE FINAL VALUE. The release runs
-// inside the same ProcessFrame as the randomize, so the count read after a
-// press is a post-release trough and carries almost no information: measured,
-// a release firing only every Kth press gives a final count of 140 for
-// K = 1, 2, 5, 10 and 25 alike, because the verdict turns on whether the last
-// press happened to release rather than on how much release survived. The peak
-// separates those cases cleanly -- 214 when every press releases, against 284
-// at K=2, 441 at K=5, 652 at K=10, 962 at K=25, and 1072 with no release at
-// all.
-//
-// Bounds are counts, not timings: the count is deterministic while per-block
-// cost on this hardware varies by more than 2x with machine load.
-//
-// The ceiling of 250 is set from the measured distribution rather than from
-// one run. The correct system's peak over fifty presses is 190-214 across
-// twelve different randomizer stream offsets, and 220 is the widest value seen
-// over a thousand presses; the tightest regression above is 284. So 250 sits
-// about 14% above the widest correct peak and about 14% below the closest
-// failure, and it does not depend on which stream offset a future change
-// happens to leave the randomizer on.
-//
-// The ceiling carries two positive controls, both run: with the release
-// removed the peak is 1072, and with it firing only every second press the
-// peak is 284; both go red here. The floor carries NONE, and that is stated
-// rather than implied. An attempt to induce over-collection -- reverting every
-// parameter to its default before releasing, so in-use depths would read as
-// neutral -- did not move the peak off 214, because CanRecycleLocal also
-// requires activeRouteCount_ == 0 and route state protects a depth
-// independently of its value. So the floor is an unproven guard against a
-// release that frees depths the current roll still uses; the case that does
-// cover that direction is the pinned-or-sounding scenario, which is a separate
-// check. The floor is kept because it also catches a randomize that stops
-// materializing depths at all, which would otherwise leave the ceiling passing
-// on a dead instrument.
-//
-// It is deliberately NOT placed on the first press, which cannot distinguish
-// anything -- press one reads 71 whether the release is present or removed.
-//
-// Randomize All only. Randomize Page, Reset All and Reset Page never move the
-// live depth count off its baseline of six, measured over fifty presses each,
-// with and without the release.
+namespace density_draws {
+
+using RouteKey = std::pair<std::size_t, std::size_t>;
+using RouteSet = std::set<RouteKey>;
+
+RouteSet PageRoutes(synth_froggers::FroggersParameterModel& model, bool assignedOnly) {
+    RouteSet routes;
+    for (std::size_t bank = 0; bank < synth_froggers::kFroggersPageCount; ++bank) {
+        for (std::size_t slot = 0; slot < synth_froggers::kFroggersParamsPerBank; ++slot) {
+            synth::Parameter& parameter = model.PageParameter(static_cast<synth_froggers::FroggersBankId>(bank), slot);
+            for (std::size_t source = 0; source < synth_froggers::FroggersParameterModel::kNumModulators; ++source) {
+                const synth::Parameter* depth = parameter.ModulationDepthParameter(source);
+                if (depth != nullptr && (!assignedOnly || synth_froggers::detail::DepthIsModulating(*depth))) {
+                    routes.emplace(bank * synth_froggers::kFroggersParamsPerBank + slot, source);
+                }
+            }
+        }
+    }
+    return routes;
+}
+
+std::size_t ConnectedSources(synth_froggers::FroggersParameterModel& model) {
+    const auto metadata = model.Group().GetModulators().Metadata();
+    return static_cast<std::size_t>(std::count_if(metadata.begin(), metadata.end(),
+        [](const synth::ModulatorMetadata& source) { return source.connected; }));
+}
+
+void RequireWholeDraw(const RouteSet& assigned, std::size_t expectedPerTarget) {
+    std::array<std::size_t, synth_froggers::kFroggersPageCount * synth_froggers::kFroggersParamsPerBank> counts{};
+    for (const RouteKey& route : assigned) {
+        ++counts[route.first];
+    }
+    for (const std::size_t count : counts) {
+        REQUIRE_TRUE(count == expectedPerTarget);
+    }
+}
+
+// Audio storage checks bound each entropy channel independently. Index roles
+// are fixed by script position: face, each target's count, source pick and
+// two signs, then salt. Equal ranges never identify a role.
+struct Feed {
+    std::vector<std::size_t> ranges;
+    std::size_t index = 0;
+    std::size_t coins = 0;
+    std::size_t values = 0;
+    std::size_t expectedCoins = 0;
+    std::size_t expectedValues = 0;
+};
+
+std::shared_ptr<Feed> feed;
+
+void SetFace(Rig& rig, std::size_t face) {
+    synth::ParameterManager& manager = rig.Engine().Manager();
+    REQUIRE_TRUE(manager.SelectedGestureMask() == 0);
+    for (std::size_t gesture = 0; gesture < manager.GestureCount(); ++gesture) {
+        REQUIRE_TRUE(manager.GestureValue(gesture) == 0.0f);
+    }
+    feed = std::make_shared<Feed>();
+    const auto scripted = feed;
+    const std::size_t connected = ConnectedSources(rig.Application().Parameters());
+    const std::size_t count = (face * (connected + 1) + connected) / 4;
+    scripted->expectedValues = synth_froggers::kFroggersPageCount * synth_froggers::kFroggersParamsPerBank;
+    scripted->ranges.push_back(4);
+    for (std::size_t target = 0; target < scripted->expectedValues; ++target) {
+        scripted->ranges.push_back(connected + 1);
+        for (std::size_t source = 0; source < count; ++source) {
+            scripted->ranges.push_back(connected - source);
+            scripted->ranges.push_back(2);
+            scripted->ranges.push_back(2);
+        }
+    }
+    scripted->ranges.push_back(std::size_t{1} << 32);
+    scripted->expectedCoins = 1 + 2 * count * scripted->expectedValues;
+    manager.SetRandomSource(
+        [scripted] {
+            REQUIRE_TRUE(++scripted->values <= scripted->expectedValues);
+            return 0.9f;
+        },
+        [scripted] {
+            REQUIRE_TRUE(++scripted->coins <= scripted->expectedCoins);
+            return 0.1f;
+        },
+        [scripted, face](std::size_t maximum) {
+            REQUIRE_TRUE(scripted->index < scripted->ranges.size());
+            REQUIRE_TRUE(maximum == scripted->ranges[scripted->index]);
+            return scripted->index++ == 0 ? face : maximum - 1;
+        });
+}
+
+void Exhaust() {
+    REQUIRE_TRUE(feed->index == feed->ranges.size());
+    REQUIRE_TRUE(feed->coins == feed->expectedCoins);
+    REQUIRE_TRUE(feed->values == feed->expectedValues);
+}
+
+// Dense selection is independently every connected metadata source. Retained
+// descendants may leave extra materialized routes, so require selected pointers
+// and nominal G0-positive values rather than center-filtered membership.
+void RequireDense(Rig& rig) {
+    Exhaust();
+    auto& model = rig.Application().Parameters();
+    const auto metadata = model.Group().GetModulators().Metadata();
+    const std::size_t connected = ConnectedSources(model);
+    REQUIRE_TRUE(connected > 0);
+    const std::size_t expected = connected * synth_froggers::kFroggersPageCount
+        * synth_froggers::kFroggersParamsPerBank;
+    std::size_t observed = 0;
+    for (std::size_t bank = 0; bank < synth_froggers::kFroggersPageCount; ++bank) {
+        for (std::size_t slot = 0; slot < synth_froggers::kFroggersParamsPerBank; ++slot) {
+            auto& parameter = model.PageParameter(static_cast<synth_froggers::FroggersBankId>(bank), slot);
+            std::size_t targetSources = 0;
+            for (std::size_t source = 0; source < metadata.size(); ++source) {
+                if (!metadata[source].connected) {
+                    continue;
+                }
+                const synth::Parameter* depth = parameter.ModulationDepthParameter(source);
+                REQUIRE_TRUE(depth != nullptr);
+                for (const auto& pole : synth_froggers::detail::kScenePoles) {
+                    REQUIRE_TRUE(depth->SceneCenter(pole.leftScene) == 1.0f);
+                    REQUIRE_TRUE(synth::ModulationDepthTargetFromKnob(depth->SceneCenter(pole.leftScene)) == 1.0f);
+                }
+                ++targetSources;
+                ++observed;
+            }
+            REQUIRE_TRUE(targetSources == connected);
+        }
+    }
+    REQUIRE_TRUE(observed == expected);
+    std::cout << "  [selected pointers+nominal centers+curve] " << observed << " complete\n";
+}
+
+} // namespace density_draws
+
+// Diego needs dense routes retained while unused ones are collected. The
+// independent experiment established this cadence's one-press release lag:
+// the collection precedes recompute, which clears the outgoing cached route.
+// Green means exact current/previous assigned-route union at every sample,
+// not merely a broad count cap. Dense/sparse/sparse exposes a skipped or
+// delayed release on the second sparse press; per-target counts reject a
+// dead draw that would otherwise satisfy an upper bound.
 TEST_CASE(randomize_storm_holds_its_depth_working_set) {
     constexpr int kPresses = 50;
-    constexpr std::size_t kPeakFloor = 120;
-    constexpr std::size_t kPeakCeiling = 250;
-
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("randomize_working_set"));
     rig.StartAt(0);
     rig.RunBlocks(8);
-
+    auto& model = rig.Application().Parameters();
+    const std::size_t connected = density_draws::ConnectedSources(model);
+    REQUIRE_TRUE(connected > 0);
+    density_draws::RouteSet previousAssigned = density_draws::PageRoutes(model, true);
     std::size_t peak = 0;
-    std::size_t afterFirst = 0;
-    for (int press = 1; press <= kPresses; ++press) {
-        rig.Application().PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
+    std::size_t retainedPeak = 0;
+    for (int press = 0; press < kPresses; ++press) {
+        const std::size_t face = press % 3 == 0 ? 3 : 0;
+        density_draws::SetFace(rig, face);
+        rig.Application().PortableSurface().DispatchAction(
+            synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
         rig.RunBlocks(4);
-        const std::size_t live = rig.Application().Parameters().Group().LiveLocalParameterCount();
-        if (press == 1) {
-            afterFirst = live;
-        }
+        REQUIRE_TRUE(!rig.Application().LastRandomizePartial());
+        density_draws::Exhaust();
+        density_draws::RouteSet assigned = density_draws::PageRoutes(model, true);
+        density_draws::RequireWholeDraw(assigned, face == 3 ? connected : connected / 4);
+        density_draws::RouteSet retained = previousAssigned;
+        retained.insert(assigned.begin(), assigned.end());
+        const density_draws::RouteSet materialized = density_draws::PageRoutes(model, false);
+        REQUIRE_TRUE(materialized == retained);
+        const std::size_t live = model.Group().LiveLocalParameterCount();
+        REQUIRE_TRUE(live == retained.size());
         peak = std::max(peak, live);
+        retainedPeak = std::max(retainedPeak, retained.size());
+        if (press < 3) {
+            std::cout << "  [working set] press " << press + 1 << ": assigned=" << assigned.size()
+                      << " retained=" << retained.size() << " live=" << live << "\n";
+        }
+        previousAssigned = std::move(assigned);
     }
-    const std::size_t afterLast = rig.Application().Parameters().Group().LiveLocalParameterCount();
-
+    REQUIRE_TRUE(peak == retainedPeak);
     std::cout << "  [working set] peak across " << kPresses << " presses: " << peak
-              << " live local depths (first press " << afterFirst << ", last " << afterLast << ")\n";
-
-    if (peak > kPeakCeiling) {
-        std::ostringstream oss;
-        oss << __FILE__ << ":" << __LINE__ << " randomize_storm_holds_its_depth_working_set: peak of "
-            << peak << " live local depths across " << kPresses << " presses, above the ceiling of "
-            << kPeakCeiling << " -- the re-roll is banking storage it does not use";
-        throw std::runtime_error(oss.str());
-    }
-    if (peak < kPeakFloor) {
-        std::ostringstream oss;
-        oss << __FILE__ << ":" << __LINE__ << " randomize_storm_holds_its_depth_working_set: peak of only "
-            << peak << " live local depths across " << kPresses << " presses, below the floor of "
-            << kPeakFloor << " -- the release is taking depths the current roll still uses";
-        throw std::runtime_error(oss.str());
-    }
+              << " live local depths; retained-route peak=" << retainedPeak << "\n";
 }
 
 // ============================================================================
@@ -1149,6 +1241,10 @@ TEST_CASE(page_randomize_reports_no_partial_draw_after_a_drill_session_grows_dep
     storage_watermark::DrillAndRandomizePages(rig, cadence);
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
 
+    // The densest count must be written whole, not merely reported whole.
+    const std::size_t expectedSources = density_draws::ConnectedSources(rig.Application().Parameters());
+    REQUIRE_TRUE(expectedSources > 0);
+    density_draws::SetFace(rig, 3);
     rig.Application().PortableSurface().DispatchAction(
         synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
     storage_watermark::RunProductionBlocks(rig, cadence, 1);
@@ -1159,6 +1255,7 @@ TEST_CASE(page_randomize_reports_no_partial_draw_after_a_drill_session_grows_dep
               << availableSlots << " available slots; page Randomize All partial draw = "
               << rig.Application().LastRandomizePartial() << ".\n";
     REQUIRE_TRUE(!rig.Application().LastRandomizePartial());
+    density_draws::RequireDense(rig);
 }
 
 // QR-01/QR-04: a relaunch on the same data paths -- Initialize() (run
@@ -1267,7 +1364,7 @@ TEST_CASE(a_small_patch_loaded_in_the_same_block_as_a_randomize_all_press_leaves
         // never touches, so its saved depths are new to the target rather
         // than already live there.
         storage_watermark::DrillAndRandomizePages(builder, builderCadence, /*firstPageIx=*/4, /*pageCount=*/1,
-                                                          /*slotsPerPage=*/6, /*descendIntoLanes=*/true);
+                                                          /*slotsPerPage=*/1, /*descendIntoLanes=*/true);
         patchLiveDepths = builder.Application().Parameters().Group().LiveLocalParameterCount();
         patchDepthPaths = storage_watermark::LiveDepthPathsForPage(builder.Application().Parameters(), 4);
         REQUIRE_TRUE(builder.SavePatchAs(patchDir) == synth_rig::RigPatchStatus::Written);
@@ -1297,6 +1394,7 @@ TEST_CASE(a_small_patch_loaded_in_the_same_block_as_a_randomize_all_press_leaves
 
     const std::size_t availableBeforeLoad = rig.Application().Parameters().Group().AvailableParameterSlots();
     const std::size_t onePress = synth_froggers::FroggersModulationSlate::kDepthParameterStorageCapacity;
+    REQUIRE_TRUE(availableBeforeLoad > patchLiveDepths);
     std::cout << "  [watermark] same-block target: " << availableBeforeLoad << " available, patch needs "
               << patchLiveDepths << ", leaving " << (availableBeforeLoad - patchLiveDepths)
               << " against one press's " << onePress << ".\n";
@@ -1304,12 +1402,14 @@ TEST_CASE(a_small_patch_loaded_in_the_same_block_as_a_randomize_all_press_leaves
     // covers its need) but what is left over afterward is close to one
     // press -- within its own plateau, not the many thousands of slack
     // the original fixture left.
-    REQUIRE_TRUE(availableBeforeLoad > patchLiveDepths);
     REQUIRE_TRUE(availableBeforeLoad - patchLiveDepths < onePress + onePress / 10);
 
     // Both messages queued before either is popped: one block applies both.
     const synth::PatchCommandResult loadResult = rig.Engine().Patches().LoadPatch(*versionFile);
     REQUIRE_TRUE(loadResult.status == synth::PatchCommandStatus::Ok);
+    const std::size_t expectedSources = density_draws::ConnectedSources(rig.Application().Parameters());
+    REQUIRE_TRUE(expectedSources > 0);
+    density_draws::SetFace(rig, 3);
     rig.Application().PortableSurface().DispatchAction(
         synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
     storage_watermark::RunProductionBlocks(rig, cadence, 1);
@@ -1320,6 +1420,7 @@ TEST_CASE(a_small_patch_loaded_in_the_same_block_as_a_randomize_all_press_leaves
     std::cout << "  [watermark] Load and Randomize All in the same block: partial draw = "
               << rig.Application().LastRandomizePartial() << ".\n";
     REQUIRE_TRUE(!rig.Application().LastRandomizePartial());
+    density_draws::RequireDense(rig);
 
     // The Load applied whole: every depth the patch carries -- on the page
     // it alone touches -- is present on the target now, not just some of

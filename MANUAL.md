@@ -204,15 +204,15 @@ further — a hard floor, not a dead zone that merely stops having an effect onc
 
 ### Randomize
 
-Two randomize controls, both scoped to what is on screen.
+Two randomize controls with different scopes.
 
 **Randomize All** randomizes every page parameter in every page, plus their first-level modulation
 depths, and randomizes the Crispy value of zero, one or two of the six pages per press — never all six
 at once, because scrambling all six together lands where randomizing Crunchy would. It never touches
 Crunchy, and it does not descend into a depth's own sub-depths. Pressed while a modulation view is
-open, it instead randomizes that parameter's depths and materializes and randomizes their second
-level; every such press attaches at least one source, so every press moves something, except while a
-gesture's Hold Gesture Select button is held, when the depths it draws stay neutral (see Gestures).
+open, it instead randomizes that parameter's depths and, where another level is available, the
+depths inside those that are nonzero. In this view, each reached parameter draws at least one source when any source is connected.
+Holding a gesture's Hold Gesture Select button gives the randomization to that gesture (see Gestures).
 
 **Randomize Page** randomizes exactly what is on screen: on a parameter page, that page's values
 including its own Crispy and no depths; in a modulation view, that view's depths only.
@@ -222,25 +222,54 @@ pressing twice does not accumulate more modulation than pressing once.
 
 #### How many sources a randomize attaches
 
-A randomized parameter does not get a depth on all 15 sources; how many it gets is a weighted draw.
-Randomize All on a parameter page, and Randomize Page at any level, both draw from a floor of zero:
+Each **Randomize All** press rolls a fair four-sided density die. Repeats are allowed: two
+successive presses can land on the same density. Every parameter reached by that press shares the
+density, while each independently draws how many sources to attach within it.
+
+On a parameter page with all fifteen sources connected, the four equally likely densities are:
+
+| density | sparse | light | full | dense |
+|---|---|---|---|---|
+| sources per parameter | 0–3 | 4–7 | 8–11 | 12–15 |
+
+Each count within one of these bands is equally likely. With fewer connected sources, the bands
+adjust to the available counts; neighboring densities can share a boundary count. In a modulation
+view, Randomize All keeps a minimum of one source when any source is connected, and shares its die
+with the deeper depths it reaches. A held gesture still receives the randomization, so selecting a
+source does not guarantee a change to its ordinary depth or an audible change.
+
+**Randomize Page** uses a sparse draw from zero:
 
 | sources attached | 0 | 1 | 2 | 3 | 4 | 5 or more |
 |---|---|---|---|---|---|---|
 | chance | 50% | 25% | 12.5% | 6.25% | 3.125% | 3.125% |
 
-Each count is half as likely as the one before it. Half of all parameters come out carrying no
-modulation at all, a quarter get one source, and four or more lands on roughly one draw in sixteen.
+Each next count is half as likely, up to the number of connected sources. The remaining probability
+lands on that maximum count. Sources are always distinct, and only currently connected sources are
+eligible — an unconnected External Audio source is never drawn.
 
-Randomize All pressed inside a modulation view draws from a floor of one instead, so every such press
-moves something:
+#### How strong the depths are
 
-| sources attached | 1 | 2 | 3 | 4 or more |
-|---|---|---|---|---|
-| chance | 50% | 25% | 12.5% | about 1 in 16 |
+**Randomize All** chooses a base depth amount for each attached source:
 
-Whatever the gesture or the floor, the sources chosen are always distinct, and only sources that are
-currently connected are eligible — an unconnected External Audio source is never drawn.
+| amount of full depth | 1 | 1/2 | 1/4 | 1/8 | … |
+|---|---|---|---|---|---|
+| chance | 50% | 25% | 12.5% | 6.25% | … |
+
+Each further halving is half as likely. These are modulation amounts: half depth means half the
+full modulation amount, rather than halfway along the depth knob's travel. Each source in each scene
+gets a fresh, independent draw, independent of the press's density. Ordinary parameter depths also
+choose positive or inverted direction with equal chance. Depths for Crispy and Crunchy, including
+further depths inside them, use positive amounts only.
+
+These are the base amounts before further modulation. Gestures keep their usual behavior: while
+Hold Gesture Select is held, the first draw of a depth not yet in that gesture adds it at neutral;
+already assigned depths receive edits through their gesture settings. Gesture blending and
+modulation of the depth itself can change the live amount.
+
+**Randomize Page** draws continuous depth-control values across the available range, rather than
+these halving steps: both directions for ordinary depths, and the positive range for Crispy and
+Crunchy depths.
 
 ### Reset
 
@@ -491,8 +520,8 @@ knob in the gesture, with the button held or not, is shared between the knob's o
 setting the gesture takes it to, by the gesture control's position: at the top it moves only that
 setting, at the bottom only the knob. Moving the gesture's control takes every knob in the gesture
 from its own value toward its setting. A Randomize pressed while the button is held adds every knob
-it re-sets to the gesture, and the depths it draws on that press stay neutral, since the first
-write to a depth only adds it to the gesture.
+it re-sets to the gesture. A depth not yet in the gesture is added at neutral on its first draw;
+already assigned depths receive edits through their gesture settings.
 
 The gesture's mappings are saved with the row's other mappings. Which knobs belong to the gesture,
 and the setting it takes each one to, are part of the patch: saving a patch keeps them, opening a

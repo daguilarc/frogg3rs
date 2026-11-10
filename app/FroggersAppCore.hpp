@@ -975,9 +975,8 @@ public:
         // sources the new roll did not pick are left neutral -- but their
         // depth parameters stay materialized, and every live depth costs a
         // recursive Compute() descent at control rate from then on. Without
-        // this, fifty Randomize All presses carry 1072 live depths where the
-        // current roll uses about 80, and per-block cost rises with the
-        // count until the audio callback has spent its whole budget. Reset
+        // this, unused routes accumulate across presses, and per-block
+        // traversal cost rises with the retained depth count. Reset
         // leaves a depth it clears in the same near-default, zero-route
         // state `Parameter::RevertAllToDefault`/`detail::
         // ZeroExistingModulationDepths` (FroggersModulation.hpp) put it in,

@@ -130,6 +130,82 @@ struct Fixture {
     }
 };
 
+// Diego loses the requested depth law if amounts are sampled in knob space,
+// or entropy is shared. Green: every finite script is consumed in order and
+// independent long-double coordinates reach the existing public curve.
+struct RandomEvents {
+    struct Event { char kind; std::size_t maximum; double value; };
+    std::vector<Event> events;
+    std::size_t cursor = 0;
+    void Coin(float value) { events.push_back({'c', 0, value}); }
+    void Index(std::size_t maximum, std::size_t value) { events.push_back({'i', maximum, double(value)}); }
+    void Value(float value) { events.push_back({'v', 0, value}); }
+    double Take(char kind, std::size_t maximum = 0) {
+        REQUIRE_TRUE(cursor < events.size());
+        const auto event = events[cursor++];
+        REQUIRE_TRUE(event.kind == kind);
+        REQUIRE_TRUE(event.maximum == maximum);
+        REQUIRE_TRUE(kind != 'i' || event.value < maximum);
+        return event.value;
+    }
+    void Bind(synth::ParameterManager& manager) {
+        manager.SetRandomSource([this] { return float(Take('v')); },
+            [this] { return float(Take('c')); },
+            [this](std::size_t maximum) { return std::size_t(Take('i', maximum)); });
+    }
+    void Done() const { REQUIRE_TRUE(cursor == events.size()); }
+    void Target(std::size_t eligible, std::size_t minimum, std::size_t within, std::size_t count,
+                synth::ModulationTargetKind kind = synth::ModulationTargetKind::kBipolar) {
+        if (eligible == 0) return;
+        Index(eligible - std::min(minimum, eligible) + 1, within);
+        for (std::size_t source = 0; source < count; ++source) {
+            Index(eligible - source, eligible - source - 1);
+            Depth(0, kind, 1);
+            Depth(0, kind, 1);
+        }
+    }
+    void PageAll(std::size_t face, std::size_t eligible, const std::vector<std::size_t>& counts,
+                 std::size_t crispyCount = 0) {
+        Index(4, face);
+        for (std::size_t i = 0; i < crispyCount; ++i) Coin(0.9f);
+        if (crispyCount < detail::kMaxRandomizedCrispy) Coin(0.1f);
+        for (std::size_t i = 0; i < crispyCount; ++i) Index(kFroggersPageCount - i, 0);
+        std::size_t target = 0;
+        for (std::size_t bank = 0; bank < kFroggersPageCount; ++bank) {
+            for (std::size_t slot = 0; slot < kFroggersParamsPerBank; ++slot) Value(0.3f);
+            if (bank < crispyCount) Value(0.3f);
+            for (std::size_t slot = 0; slot < kFroggersParamsPerBank; ++slot) {
+                const std::size_t count = counts.at(target++);
+                Target(eligible, 0, count % 4 == 0 ? 0 : eligible, count);
+            }
+        }
+        Index(std::size_t{1} << 32, (std::size_t{1} << 32) - 1);
+    }
+
+    void Depth(std::size_t exponent, synth::ModulationTargetKind kind, std::size_t sign) {
+        for (std::size_t i = 0; i < exponent; ++i) Coin(0.9f);
+        Coin(0.1f);
+        if (kind == synth::ModulationTargetKind::kBipolar) Index(2, sign);
+    }
+};
+
+float ReferenceDepthInput(std::size_t exponent, synth::ModulationTargetKind kind, std::size_t sign) {
+    const long double magnitude = std::ldexp(1.0L, -int(exponent));
+    const long double base = synth::kModulationDepthTargetBase;
+    const long double a = std::log1p((base - 1) * magnitude) / std::log(base);
+    return float(kind == synth::ModulationTargetKind::kBipolar
+        ? (1 + (sign == 0 ? -a : a)) / 2 : a);
+}
+
+void RequireFloatNeighbor(float actual, float expected) {
+    if (!(actual >= std::nextafter(expected, -INFINITY) && actual <= std::nextafter(expected, INFINITY))) {
+        std::ostringstream message;
+        message.precision(12);
+        message << "float-neighbor actual=" << actual << " expected=" << expected;
+        throw std::runtime_error(message.str());
+    }
+}
+
 // Fresh scratch runtime data paths per test, mirroring
 // FroggersSurfaceTests.cpp's own UseScratchRuntimeDataPaths -- only used by
 // this file's SynthRig-based Reset All checks, below.
@@ -980,23 +1056,16 @@ TEST_CASE(randomize_all_on_parameter_page_never_creates_level_two_depths) {
     });
 }
 
-TEST_CASE(randomize_all_with_every_coin_forced_fills_every_reached_parameter_from_every_connected_source) {
+TEST_CASE(randomize_all_with_the_densest_count_fills_every_reached_parameter_from_every_connected_source) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/false);  // 13 connected sources (15 total, 2 external-audio slots null)
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
 
-    // Force every coin flip to keep drawing: DrawGeometricCount's own loop
-    // is `while (count < maximum && NextRandomCoin() >= 0.5f) ++count;`, so a
-    // coin that always returns 1.0f runs it to `maximum` -- every connected
-    // source, for every parameter Randomize All reaches -- rather than
-    // stopping early. NextRandomIndex only decides WHICH sources the partial
-    // Fisher-Yates picks first, never how many; since every connected source
-    // ends up picked either way, always returning index 0 of the shrinking
-    // range is as valid a permutation as any other for this count assertion.
-    fx.manager.SetRandomSource(
-        []() { return 0.3f; },       // NextRandomValue -- irrelevant to which/how-many
-        []() { return 1.0f; },       // NextRandomCoin -- always keep drawing
-        [](std::size_t) { return std::size_t{0}; });  // NextRandomIndex -- irrelevant to the count
+    // Highest face and highest within-face draw select every connected source.
+    RandomEvents feed;
+    feed.PageAll(3, 13, std::vector<std::size_t>(84, 13), 2);
+    feed.PageAll(3, 13, std::vector<std::size_t>(84, 13), 2);
+    feed.Bind(fx.manager);
 
     // The ceiling this test computes from the code's own counts, not a
     // hand-typed constant: every non-null Bank::VisibleParameter slot across
@@ -1051,6 +1120,7 @@ TEST_CASE(randomize_all_with_every_coin_forced_fills_every_reached_parameter_fro
     // full-coverage press re-randomizes the same set's VALUES (through the
     // zero-then-redraw in RandomizeParameterModulationDepths), never grows it.
     REQUIRE_TRUE(after2 == after1);
+    feed.Done();
 }
 
 TEST_CASE(randomize_all_on_level_one_grid_materializes_that_parameters_own_level_two_depths_and_no_others) {
@@ -1109,7 +1179,7 @@ TEST_CASE(randomize_all_on_level_one_grid_never_ejects_and_still_reaches_level_t
     // own comment: true when "the MOST RECENT Randomize All/Page operation
     // left FroggersRandomizeResult.partial true"), and is this file's own
     // established idiom for the same check -- see
-    // randomize_all_with_every_coin_forced_fills_every_reached_parameter_from_every_connected_source
+    // randomize_all_with_the_densest_count_fills_every_reached_parameter_from_every_connected_source
     // above.
     const auto result = RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
 
@@ -1194,7 +1264,7 @@ TEST_CASE(randomize_all_moves_at_most_two_of_six_banks_crispy_but_randomize_page
 
     // The count is 0 on roughly half of presses -- the common case, not a
     // rare one. A [38%, 62%] band is the same sample-size-appropriate margin
-    // RequireGeometricCountDistribution uses elsewhere in this file.
+    // the geometric source-count draw uses.
     REQUIRE_TRUE(countHistogram[0] > kTrials * 0.38);
     REQUIRE_TRUE(countHistogram[0] < kTrials * 0.62);
 
@@ -1269,17 +1339,7 @@ TEST_CASE(randomize_page_on_mod_detail_grid_changes_only_that_parameters_own_dep
 // ============================================================================
 // randomize-depth count distribution
 // ============================================================================
-// Sheaf's own private Bank::RandomizeModulationDepths coin loop is geometric
-// FROM ZERO (P(0)=50%), so a single call is a no-op half the time.
-// detail::RandomizeParameterModulationDepths (FroggersModulation.hpp)
-// replaces the count/source selection app-side with the same geometric
-// shape, drawn from a per-gesture floor -- zero everywhere except a
-// drilled-in Randomize All press, which floors at one and so is never a
-// no-op there. Every other gesture, including RandomizePage at any level,
-// keeps the zero floor and stays a no-op exactly half the time. Sheaf still
-// performs every write. All three properties below are statistical, not
-// single-sample: a probability distribution cannot be verified from one
-// draw.
+// Page retains the geometric count; All shares a fair density face.
 
 // The drill-in knob's display value (`UIDisplayCenter`) is populated only
 // by a smoothed one-shot nudge inside RandomizeVisibleValue itself, and is
@@ -1373,288 +1433,569 @@ TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial
     REQUIRE_TRUE(touchedCount == 4);
 }
 
-// Non-additive randomize is why either histogram test below can measure a
-// call's draw count as "how many depths are non-neutral immediately after
-// it," with no round-to-round diffing: RandomizeParameterModulationDepths
-// zeroes the target's existing depths (both scene poles) BEFORE every draw,
-// so each call starts from a known, exact baseline (`SceneCenter(0) == 0.5`)
-// regardless of what any previous call did. No `ComputeAllParameters()` call
-// is needed here for the same reason (contrast the no-op/display test above,
-// which needs it for `UIDisplayCenter`, not `SceneCenter`).
-//
-// Shared assertions for a count histogram against the geometric draw from a
-// per-gesture floor -- reused by the level-0 test (floor 0, Randomize All on
-// a parameter page) and the level-1/level-2 test below (floor 1, Randomize
-// All at a drilled-in level), so the four properties (buckets below the
-// floor, the floor bucket's rate, mode, rare floor+4+) are pinned exactly
-// once rather than duplicated per level. Asserts on the resulting COUNT
-// DISTRIBUTION, not on call counts -- the predecessor's version of this test
-// (median-based, one vector of samples) is the sixth green-while-wrong guard
-// on record for pinning the wrong layer; this one pins the actual observable
-// shape.
-void RequireGeometricCountDistribution(const std::array<int, FroggersParameterModel::kNumModulators + 1>& histogram,
-                                        int trials, const char* label, std::size_t floor) {
-    // Every bucket below the floor is exactly zero: the draw never returns a
-    // count under its own floor.
-    for (std::size_t count = 0; count < floor; ++count) {
-        REQUIRE_TRUE(histogram[count] == 0);
-    }
-
-    // histogram[floor] is 50% under the geometric draw. A [38%, 62%] band is
-    // roughly 3.4 standard errors wide even at `trials` as low as 200, where
-    // the binomial standard error at p=0.50 is ~3.5 points -- a wide,
-    // sample-size-appropriate margin.
-    REQUIRE_TRUE(histogram[floor] > trials * 0.38);
-    REQUIRE_TRUE(histogram[floor] < trials * 0.62);
-
-    std::size_t mode = floor;
-    for (std::size_t count = floor + 1; count < histogram.size(); ++count) {
-        if (histogram[count] > histogram[mode]) {
-            mode = count;
+TEST_CASE(geometric_depth_prefix_probabilities_signs_and_threshold_are_exact) {
+    Fixture fx;
+    for (auto kind : {synth::ModulationTargetKind::kBipolar, synth::ModulationTargetKind::kOneWayAmount}) {
+        std::array<std::size_t, 9> bins{};
+        for (std::size_t prefix = 0; prefix < 256; ++prefix) {
+            std::size_t exponent = 0;
+            while (exponent < 8 && (prefix & (std::size_t{1} << exponent))) ++exponent;
+            ++bins[exponent];
+            for (std::size_t sign : {0u, 1u}) {
+                RandomEvents feed;
+                feed.Depth(exponent, kind, sign);
+                feed.Bind(fx.manager);
+                const float actual = detail::DrawGeometricDepthRandomizeInput(fx.manager, kind);
+                RequireFloatNeighbor(actual, ReferenceDepthInput(exponent, kind, sign));
+                feed.Done();
+            }
         }
-    }
-    REQUIRE_TRUE(mode == floor);  // 50% > 25% > 12.5% > ..., strictly decreasing from the floor.
-
-    int atLeastFloorPlusFour = 0;
-    int atLeastFour = 0;
-    int atLeastSeven = 0;
-    double sum = 0.0;
-    for (std::size_t count = 0; count < histogram.size(); ++count) {
-        if (count >= floor + 4) {
-            atLeastFloorPlusFour += histogram[count];
+        REQUIRE_TRUE((bins == std::array<std::size_t, 9>{128,64,32,16,8,4,2,1,1}));
+        for (float boundary : {std::nextafter(0.5f, 0.0f), 0.5f}) {
+            RandomEvents feed;
+            feed.Coin(boundary);
+            const std::size_t exponent = boundary < 0.5f ? 0 : 1;
+            if (exponent) feed.Coin(0.1f);
+            if (kind == synth::ModulationTargetKind::kBipolar) feed.Index(2, 0);
+            feed.Bind(fx.manager);
+            RequireFloatNeighbor(detail::DrawGeometricDepthRandomizeInput(fx.manager, kind),
+                                 ReferenceDepthInput(exponent, kind, 0));
+            feed.Done();
         }
-        if (count >= 4) {
-            atLeastFour += histogram[count];
-        }
-        if (count >= 7) {
-            atLeastSeven += histogram[count];
-        }
-        sum += static_cast<double>(count) * static_cast<double>(histogram[count]);
+        // A numerically neutral tail still consumes every continuation coin.
+        RandomEvents tail;
+        tail.Depth(1100, kind, 1);
+        tail.Bind(fx.manager);
+        REQUIRE_TRUE(detail::DrawGeometricDepthRandomizeInput(fx.manager, kind)
+                     == (kind == synth::ModulationTargetKind::kBipolar ? 0.5f : 0.0f));
+        tail.Done();
     }
-    // P(>=floor+4) is 6.25% under the geometric draw (0.5^4), measured from
-    // the floor. "Materially below 13%" leaves a wide, sample-size-appropriate
-    // margin rather than one tightened until it happens to pass: even at
-    // `trials` as low as 200 the binomial standard error at p=0.0625 is ~1.7
-    // points, so 13% sits roughly 4 standard errors above the true rate.
-    REQUIRE_TRUE(atLeastFloorPlusFour < trials * 0.13);
-
-    // [OBSERVED] -- not a pass condition (matches this file's own convention
-    // for recording a measurement alongside its pass condition, e.g. the
-    // level-three drill-in test's own peak-count print): the actual sampled
-    // shape, for a human to compare against the geometric draw in
-    // FroggersModulation.hpp.
-    std::cout << "[OBSERVED] " << label << " count histogram over " << trials << " trials:";
-    for (std::size_t count = 0; count <= 4 && count < histogram.size(); ++count) {
-        std::cout << " P(" << count << ")=" << (100.0 * histogram[count] / trials) << "%";
-    }
-    std::cout << " P(>=4)=" << (100.0 * atLeastFour / trials) << "%"
-              << " P(>=7)=" << (100.0 * atLeastSeven / trials) << "%"
-              << " mode=" << mode << " mean=" << (sum / trials) << "\n";
 }
 
-TEST_CASE(randomize_depth_helper_level_zero_count_distribution_is_geometric_from_a_floor_of_zero_across_1000_trials) {
-    Fixture fx;
-    fx.StepOnce(/*externalConnected=*/true);  // 15 connected sources -- N for the tail
-    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));  // default: Level()==0
-    synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
-
-    constexpr int kTrials = 1000;
-    std::array<int, FroggersParameterModel::kNumModulators + 1> histogram{};
-    for (int trial = 0; trial < kTrials; ++trial) {
-        RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);  // Level()==0: the level-0 draw.
-        int nonNeutral = 0;
-        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
-            synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
-            if (depth != nullptr && detail::DepthIsModulating(*depth)) {
-                ++nonNeutral;
+TEST_CASE(geometric_all_writes_independent_route_scene_and_kind_coordinates) {
+    for (bool oneWay : {false, true}) {
+        for (std::size_t face = 0; face < 4; ++face) {
+            Fixture fx;
+            fx.StepOnce(true);
+            for (std::size_t i = 0; i < 15; ++i)
+                fx.model.Group().GetModulators().Metadata(i).connected = i < 2;
+            auto& parameter = oneWay ? fx.model.Crispy(FroggersBankId::Reverb)
+                                     : fx.model.PageParameter(FroggersBankId::Reverb, 0);
+            const auto kind = oneWay ? synth::ModulationTargetKind::kOneWayAmount
+                                     : synth::ModulationTargetKind::kBipolar;
+            RandomEvents feed;
+            feed.Index(1, 0); // floor two fixes count independently of q
+            for (std::size_t route = 0; route < 2; ++route) {
+                feed.Index(2 - route, 0);
+                for (std::size_t pole = 0; pole < 2; ++pole)
+                    feed.Depth(route * 2 + pole, kind, (route + pole) % 2);
             }
-        }
-        ++histogram[static_cast<std::size_t>(nonNeutral)];
-    }
-
-    RequireGeometricCountDistribution(histogram, kTrials, "level-0", /*floor=*/0);
-}
-
-// The drilled-in Randomize All press's floor of one -- a REGRESSION PIN for
-// that specific gesture, not a fix, since all four RandomMod dispatch sites
-// already share the one `detail::RandomizeParameterModulationDepths`
-// definition and its `minimumSources` parameter. Traced structurally in
-// FroggersModulation.hpp: RandomizeAll's Level()==1 branch calls that shared
-// helper TWICE per press, both floored at one -- once on the selected
-// parameter itself (its own, level-1 depths) and once more on each of that
-// parameter's now-materialized depth parameters (each one's own, level-2
-// sub-depths) -- so a single press exercises both nesting depths at once,
-// both floored, and this test histograms both.
-TEST_CASE(randomize_all_level_one_press_gives_its_own_depths_and_each_depths_subdepths_the_geometric_from_a_floor_of_one_distribution) {
-    Fixture fx;
-    fx.StepOnce(/*externalConnected=*/true);  // 15 connected sources
-    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
-    drillIn.PressEncoder(0);  // -> level 1
-    synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
-
-    auto countNonNeutral = [&](synth::Parameter& parameter) {
-        int count = 0;
-        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
-            synth::Parameter* depth = parameter.ModulationDepthParameter(modIx);
-            if (depth != nullptr && detail::DepthIsModulating(*depth)) {
-                ++count;
-            }
-        }
-        return count;
-    };
-
-    // Counts materialized depth-parameter slots in the focused parameter's
-    // subtree: its own (up to kNumModulators) depth slots, plus, for each
-    // materialized depth, its own materialized sub-depth slots. Storage is
-    // never freed, so calling this before and after a press isolates what
-    // that one press newly allocated.
-    auto countMaterialized = [](synth::Parameter& parameter) {
-        int count = 0;
-        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
-            synth::Parameter* depthParam = parameter.ModulationDepthParameter(modIx);
-            if (depthParam == nullptr) {
-                continue;
-            }
-            ++count;
-            for (std::size_t subModIx = 0; subModIx < FroggersParameterModel::kNumModulators; ++subModIx) {
-                if (depthParam->ModulationDepthParameter(subModIx) != nullptr) {
-                    ++count;
+            feed.Bind(fx.manager);
+            REQUIRE_TRUE(!detail::RandomizeParameterModulationDepths(fx.manager, parameter, 2, face));
+            feed.Done();
+            for (std::size_t route = 0; route < 2; ++route) {
+                auto* depth = parameter.ModulationDepthParameter(route);
+                REQUIRE_TRUE(depth != nullptr);
+                REQUIRE_TRUE(depth->TargetKind() == kind);
+                for (std::size_t pole = 0; pole < 2; ++pole) {
+                    const float input = ReferenceDepthInput(route * 2 + pole, kind, (route + pole) % 2);
+                    const float center = oneWay ? 0.5f + 0.5f * input : input;
+                    RequireFloatNeighbor(depth->SceneCenter(pole), center);
+                    RequireFloatNeighbor(synth::ModulationDepthTargetFromKnob(depth->SceneCenter(pole)),
+                                         synth::ModulationDepthTargetFromKnob(center));
+                    std::cout << "[DEPTH] kind=" << oneWay << " G=" << route * 2 + pole
+                              << " pole=" << pole << " deviation="
+                              << std::fabs(synth::ModulationDepthTargetFromKnob(depth->SceneCenter(pole)))
+                                 - std::ldexp(1.0f, -int(route * 2 + pole)) << "\n";
                 }
             }
         }
-        return count;
-    };
-
-    constexpr int kTrials = 500;
-    std::array<int, FroggersParameterModel::kNumModulators + 1> level1Histogram{};
-    std::array<int, FroggersParameterModel::kNumModulators + 1> level2Histogram{};
-    int level2Samples = 0;
-    int partialPresses = 0;
-    long long newlyMaterializedTotal = 0;
-    int cumulativeAtEnd = 0;
-    for (int trial = 0; trial < kTrials; ++trial) {
-        const int materializedBefore = countMaterialized(focused);
-        // Level()==1: own depths + each depth's own sub-depths.
-        const FroggersRandomizeResult result = RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);
-        if (result.partial) {
-            ++partialPresses;
-        }
-        cumulativeAtEnd = countMaterialized(focused);
-        newlyMaterializedTotal += (cumulativeAtEnd - materializedBefore);
-        ++level1Histogram[static_cast<std::size_t>(countNonNeutral(focused))];
-        // The descent visits only depths that are ACTUALLY MODULATING, not
-        // every materialized one: a neutral depth must carry ZERO
-        // sub-depths, so a loop that samples all materialized depths
-        // (including neutral ones) would feed `histogram[0]`, which the
-        // shared "count is never 0" assertion rejects -- sampling a
-        // population the code deliberately does not touch measures the
-        // wrong thing.
-        //
-        // So: modulating depths feed the distribution histogram, and neutral
-        // ones get the STRONGER assertion -- they must carry no sub-depths at
-        // all. That second branch is the badge fix pinned directly. Sheaf's
-        // ModulatorsAffectingMask counts a depth that merely HAS sub-modulation
-        // (`Parameter::ModulatorsAffectingMask`,
-        // External/Sheaf/projects/synth/src/ParameterModulation.cpp, via HasNonZeroState), so a neutral
-        // depth with sub-depths would light up as a badge for a source that is
-        // modulating nothing -- measured at 13 badges against 1 live source.
-        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
-            synth::Parameter* depthParam = focused.ModulationDepthParameter(modIx);
-            if (depthParam == nullptr) {
-                continue;
-            }
-            if (detail::DepthIsModulating(*depthParam)) {
-                ++level2Histogram[static_cast<std::size_t>(countNonNeutral(*depthParam))];
-                ++level2Samples;
-            } else {
-                REQUIRE_TRUE(countNonNeutral(*depthParam) == 0);
-            }
-        }
     }
-
-    // Sanity floor: proves the level-2 loop actually fired repeatedly rather
-    // than the histogram being near-empty from a wiring regression.
-    REQUIRE_TRUE(level2Samples >= 200);
-
-    RequireGeometricCountDistribution(level1Histogram, kTrials, "level-1", /*floor=*/1);
-    RequireGeometricCountDistribution(level2Histogram, level2Samples, "level-2", /*floor=*/1);
-
-    // [OBSERVED] -- the allocation cost of the floor of one at this level:
-    // mean count of depth-parameter slots newly materialized per press (the
-    // focused parameter's own depths plus their own sub-depths, counted
-    // before and after each press since storage is never freed), the
-    // cumulative materialized count in that subtree after the final press,
-    // and the fraction of presses that came back partial (storage
-    // exhausted).
-    std::cout << "[OBSERVED] level-1 newly-materialized-depths-per-press mean="
-              << (static_cast<double>(newlyMaterializedTotal) / kTrials)
-              << " cumulative-at-end=" << cumulativeAtEnd
-              << " partial-fraction=" << (100.0 * partialPresses / kTrials) << "%\n";
 }
 
-// Dedicated coverage for the zero bucket the geometric draw carries: a
-// fraction of RandomizeAll draws must leave a parameter with NO modulation
-// sources at all (count=0), not merely "rarely one source." This is
-// distinct from RequireGeometricCountDistribution's zero-rate band above --
-// that helper's job is the whole-shape regression pin; this test's job is
-// to state the zero and four-or-more rates as their own named properties,
-// plus a positive control that a broken always-zero randomizer could not
-// pass.
-TEST_CASE(randomize_depth_helper_zero_and_four_plus_rates_match_the_geometric_draw_across_2000_trials) {
-    Fixture fx;
-    fx.StepOnce(/*externalConnected=*/true);  // 15 connected sources -- N for the tail
-    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));  // default: Level()==0
-    synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
-
-    constexpr int kTrials = 2000;
-    int zeroCount = 0;
-    int fourPlusCount = 0;
-    int nonZeroCount = 0;
-    for (int trial = 0; trial < kTrials; ++trial) {
-        RandomizeAll(fx.manager, drillIn, fx.model, fx.slate);  // Level()==0: the level-0 draw, uses the fixture's own seeded RNG.
-        int nonNeutral = 0;
-        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
-            synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
-            if (depth != nullptr && detail::DepthIsModulating(*depth)) {
-                ++nonNeutral;
+TEST_CASE(geometric_depth_numerical_boundaries_keep_center_and_effective_categories_separate) {
+    for (auto kind : {synth::ModulationTargetKind::kBipolar, synth::ModulationTargetKind::kOneWayAmount}) {
+        for (std::size_t sign : {0u, 1u}) {
+            for (std::size_t exponent : {0u, 2u, 19u, 20u, 21u, 26u, 27u}) {
+                Fixture fx;
+                RandomEvents feed;
+                feed.Depth(exponent, kind, sign);
+                feed.Bind(fx.manager);
+                const float input = detail::DrawGeometricDepthRandomizeInput(fx.manager, kind);
+                feed.Done();
+                RequireFloatNeighbor(input, ReferenceDepthInput(exponent, kind, sign));
+                auto& parameter = kind == synth::ModulationTargetKind::kOneWayAmount
+                    ? fx.model.Crispy(FroggersBankId::Reverb)
+                    : fx.model.PageParameter(FroggersBankId::Reverb, 0);
+                auto* depth = parameter.EnsureModulationDepth(0);
+                REQUIRE_TRUE(depth != nullptr);
+                const float writeCenter = kind == synth::ModulationTargetKind::kOneWayAmount
+                    ? 0.5f + 0.5f * input : input;
+                for (auto pole : detail::kScenePoles) depth->HandleSetAbsolute(pole, writeCenter);
+                const float reference = ReferenceDepthInput(exponent, kind, sign);
+                const float center = kind == synth::ModulationTargetKind::kOneWayAmount
+                    ? 0.5f + 0.5f * reference : reference;
+                RequireFloatNeighbor(depth->SceneCenter(0), center);
+                const float effective = synth::ModulationDepthTargetFromKnob(depth->SceneCenter(0));
+                RequireFloatNeighbor(effective, synth::ModulationDepthTargetFromKnob(center));
+                if (exponent == 0) REQUIRE_TRUE(std::fabs(effective) == 1.0f);
+                if (exponent == 2) REQUIRE_TRUE(std::fabs(effective) == 0.25f);
+                if (exponent >= 19 && exponent <= 21) {
+                    REQUIRE_TRUE((std::fabs(center - 0.5f) > 1e-6f) == (exponent <= 20));
+                    REQUIRE_TRUE((std::fabs(effective) > 1e-6f) == (exponent == 19));
+                }
+                if (exponent == 26) REQUIRE_TRUE((center < 0.5f)
+                    == (kind == synth::ModulationTargetKind::kBipolar && sign == 0));
+                if (exponent == 27) REQUIRE_TRUE(center == 0.5f);
+                std::cout << "[BOUNDARY] G=" << exponent << " kind=" << int(kind)
+                          << " sign=" << sign << " center=" << center << " effective=" << effective
+                          << " deviation=" << std::fabs(effective) - std::ldexp(1.0f, -int(exponent)) << "\n";
             }
         }
-        if (nonNeutral == 0) {
-            ++zeroCount;
-        } else {
-            ++nonZeroCount;
+    }
+}
+
+// Diego's rerolls must land nominal commands without erasing child routes.
+// Green: retained +/- child modulation changes live output, not base centers;
+// an active unheld gesture projects the same nominal target; held edits remain
+// identical to the established first-arm and already-armed mutator.
+TEST_CASE(geometric_all_retains_children_and_separates_nominal_from_live_and_gesture_projection) {
+    for (bool oneWay : {false, true}) {
+        for (float childCenter : {0.25f, 0.75f}) {
+            for (bool activeGesture : {false, true}) {
+                Fixture fx;
+                auto& parameter = oneWay ? fx.model.Crispy(FroggersBankId::Reverb)
+                    : fx.model.PageParameter(FroggersBankId::Reverb, 0);
+                auto* depth = parameter.EnsureModulationDepth(0);
+                REQUIRE_TRUE(depth != nullptr);
+                auto* child = depth->EnsureModulationDepth(1);
+                REQUIRE_TRUE(child != nullptr);
+                // One-way children accept only upper-half amount storage;
+                // vary their source polarity instead of asking for a forbidden negative amount.
+                const float childKnob = oneWay ? 0.75f : childCenter;
+                const float sourceValue = oneWay && childCenter < 0.5f ? 0.1f : 0.9f;
+                for (auto pole : detail::kScenePoles) child->HandleSetAbsolute(pole, childKnob);
+                for (std::size_t source = 0; source < 15; ++source)
+                    fx.model.Group().GetModulators().Metadata(source).connected = source < 2;
+                fx.model.Group().GetModulators().Value(0, 1) = sourceValue;
+                if (activeGesture) {
+                    fx.manager.SetGestureValue(0, 0.5f);
+                    for (std::size_t pole = 0; pole < 2; ++pole) {
+                        depth->SetGestureActive(pole, 0, true);
+                        depth->GestureValue(pole, 0) = 0.8f;
+                    }
+                }
+                const auto kind = depth->TargetKind();
+                RandomEvents feed;
+                feed.Index(2, 0); // q0, floor1, range2 -> one selected source
+                feed.Index(2, 0);
+                feed.Depth(2, kind, 1);
+                feed.Depth(1, kind, 1);
+                feed.Bind(fx.manager);
+                REQUIRE_TRUE(!detail::RandomizeParameterModulationDepths(fx.manager, parameter, 1, 0));
+                feed.Done();
+                REQUIRE_TRUE(parameter.ModulationDepthParameter(0) == depth);
+                REQUIRE_TRUE(depth->ModulationDepthParameter(1) == child);
+                bool liveMoved = false;
+                for (std::size_t pole = 0; pole < 2; ++pole) {
+                    const float input = ReferenceDepthInput(pole == 0 ? 2 : 1, kind, 1);
+                    const float center = oneWay ? 0.5f + 0.5f * input : input;
+                    if (!activeGesture) RequireFloatNeighbor(depth->SceneCenter(pole), center);
+                    RequireFloatNeighbor(child->SceneCenter(pole), childKnob);
+                    parameter.Compute(detail::kScenePoles[pole]);
+                    RequireFloatNeighbor(depth->TargetCenter(), center);
+                    const float raw = depth->GetRaw(0);
+                    liveMoved = liveMoved || std::fabs(raw - center) > 1e-5f;
+                    const float effective = oneWay ? synth::OneWayModulationDepthTargetFromKnob(raw)
+                                                   : synth::ModulationDepthTargetFromKnob(raw);
+                    std::cout << "[NOMINAL-LIVE] oneWay=" << oneWay << " child=" << childCenter
+                              << " source=" << sourceValue << " gestureWeight=" << (activeGesture ? 0.5f : 0.0f)
+                              << " pole=" << pole << " center=" << depth->SceneCenter(pole)
+                              << " nominal=" << depth->TargetCenter() << " raw=" << raw
+                              << " effective=" << effective << "\n";
+                }
+                REQUIRE_TRUE(liveMoved);
+            }
         }
-        if (nonNeutral >= 4) {
-            ++fourPlusCount;
+    }
+}
+
+TEST_CASE(geometric_all_held_edits_match_first_arm_and_already_armed_legacy_mutator) {
+    for (bool oneWay : {false, true}) {
+        for (bool alreadyArmed : {false, true}) {
+            Fixture actual;
+            Fixture reference;
+            auto& parameter = oneWay ? actual.model.Crispy(FroggersBankId::Reverb)
+                : actual.model.PageParameter(FroggersBankId::Reverb, 0);
+            auto& referenceParameter = oneWay ? reference.model.Crispy(FroggersBankId::Reverb)
+                : reference.model.PageParameter(FroggersBankId::Reverb, 0);
+            auto* depth = parameter.EnsureModulationDepth(0);
+            auto* expected = referenceParameter.EnsureModulationDepth(0);
+            REQUIRE_TRUE(depth != nullptr && expected != nullptr);
+            for (Fixture* fx : {&actual, &reference}) {
+                for (std::size_t source = 0; source < 15; ++source)
+                    fx->model.Group().GetModulators().Metadata(source).connected = source == 0;
+                fx->manager.SelectGesture(0);
+                fx->manager.SetGestureValue(0, 0.5f);
+            }
+            if (alreadyArmed) {
+                for (std::size_t pole = 0; pole < 2; ++pole) {
+                    depth->SetGestureActive(pole, 0, true);
+                    expected->SetGestureActive(pole, 0, true);
+                    depth->GestureValue(pole, 0) = expected->GestureValue(pole, 0) = 0.7f;
+                }
+            }
+            RandomEvents feed;
+            feed.Index(1, 0);
+            feed.Index(1, 0);
+            feed.Depth(2, depth->TargetKind(), 0);
+            feed.Depth(1, depth->TargetKind(), 1);
+            feed.Bind(actual.manager);
+            REQUIRE_TRUE(!detail::RandomizeParameterModulationDepths(actual.manager, parameter, 1, 0));
+            feed.Done();
+            detail::ZeroExistingModulationDepths(referenceParameter);
+            for (std::size_t pole = 0; pole < 2; ++pole) {
+                const float input = ReferenceDepthInput(pole == 0 ? 2 : 1, expected->TargetKind(), pole);
+                expected->RandomizeVisibleValue(detail::kScenePoles[pole], input);
+                RequireFloatNeighbor(depth->SceneCenter(pole), expected->SceneCenter(pole));
+                RequireFloatNeighbor(depth->GestureValue(pole, 0), expected->GestureValue(pole, 0));
+                REQUIRE_TRUE(depth->GestureActive(pole, 0) == expected->GestureActive(pole, 0));
+                if (!alreadyArmed) {
+                    REQUIRE_TRUE(depth->GestureActive(pole, 0));
+                    REQUIRE_TRUE(depth->SceneCenter(pole) == 0.5f);
+                    REQUIRE_TRUE(depth->GestureValue(pole, 0) == 0.5f);
+                }
+                std::cout << "[HELD] oneWay=" << oneWay << " alreadyArmed=" << alreadyArmed
+                          << " pole=" << pole << " center=" << depth->SceneCenter(pole)
+                          << " gesture=" << depth->GestureValue(pole, 0) << "\n";
+            }
+        }
+    }
+}
+
+TEST_CASE(geometric_all_drilled_one_way_descendants_inherit_positive_only_depth_law) {
+    Fixture fx;
+    for (std::size_t source = 0; source < 15; ++source)
+        fx.model.Group().GetModulators().Metadata(source).connected = source == 0;
+    FroggersModulationDrillIn view(fx.model.BankAt(FroggersBankId::Reverb));
+    view.PressEncoder(kFroggersCrispySlot);
+    auto* selected = view.BankRef().SelectedParameter();
+    REQUIRE_TRUE(selected == &fx.model.Crispy(FroggersBankId::Reverb));
+    RandomEvents feed;
+    feed.Index(4, 3);
+    for (int target = 0; target < 2; ++target) {
+        feed.Index(1, 0);
+        feed.Index(1, 0);
+        feed.Depth(2 + target, synth::ModulationTargetKind::kOneWayAmount, 0);
+        feed.Depth(3 + target, synth::ModulationTargetKind::kOneWayAmount, 0);
+    }
+    feed.Bind(fx.manager);
+    REQUIRE_TRUE(!RandomizeAll(fx.manager, view, fx.model, fx.slate).partial);
+    feed.Done();
+    for (int level = 0; level < 2; ++level) {
+        selected = selected->ModulationDepthParameter(0);
+        REQUIRE_TRUE(selected != nullptr);
+        REQUIRE_TRUE(selected->TargetKind() == synth::ModulationTargetKind::kOneWayAmount);
+        for (std::size_t pole = 0; pole < 2; ++pole)
+            RequireFloatNeighbor(selected->SceneCenter(pole), 0.5f + 0.5f * ReferenceDepthInput(
+                2 + level + pole, synth::ModulationTargetKind::kOneWayAmount, 0));
+    }
+}
+
+// Diego must keep Page's old value law and top-level All's uniform values.
+// Green: neither path consumes any geometric depth coin/sign events.
+TEST_CASE(geometric_depth_sampling_excludes_page_depths_and_top_level_values) {
+    Fixture page;
+    Fixture reference;
+    for (Fixture* fx : {&page, &reference})
+        for (std::size_t source = 0; source < 15; ++source)
+            fx->model.Group().GetModulators().Metadata(source).connected = source == 0;
+    FroggersModulationDrillIn view(page.model.BankAt(FroggersBankId::Reverb));
+    view.PressEncoder(0);
+    RandomEvents feed;
+    feed.Coin(0.9f); // Page count reaches its one-source cap
+    feed.Index(1, 0);
+    feed.Value(0.2f);
+    feed.Value(0.8f);
+    feed.Bind(page.manager);
+    REQUIRE_TRUE(!RandomizePage(page.manager, view).partial);
+    feed.Done();
+    auto* expected = reference.model.PageParameter(FroggersBankId::Reverb, 0).EnsureModulationDepth(0);
+    REQUIRE_TRUE(expected != nullptr);
+    auto* actual = view.BankRef().SelectedParameter()->ModulationDepthParameter(0);
+    REQUIRE_TRUE(actual != nullptr);
+    expected->RandomizeVisibleValue(detail::kScenePole0, 0.2f);
+    expected->RandomizeVisibleValue(detail::kScenePole1, 0.8f);
+    for (std::size_t pole = 0; pole < 2; ++pole)
+        RequireFloatNeighbor(actual->SceneCenter(pole), expected->SceneCenter(pole));
+
+    Fixture top;
+    for (std::size_t source = 0; source < 15; ++source)
+        top.model.Group().GetModulators().Metadata(source).connected = false;
+    FroggersModulationDrillIn topView(top.model.BankAt(FroggersBankId::Reverb));
+    RandomEvents values;
+    values.Index(4, 2);
+    values.Coin(0.1f); // no Crispy banks
+    for (std::size_t target = 0; target < 84; ++target) values.Value(0.37f);
+    values.Index(std::size_t{1} << 32, 17);
+    values.Bind(top.manager);
+    REQUIRE_TRUE(!RandomizeAll(top.manager, topView, top.model, top.slate).partial);
+    values.Done();
+    for (std::size_t bank = 0; bank < 6; ++bank)
+        for (std::size_t slot = 0; slot < 14; ++slot)
+            for (std::size_t pole = 0; pole < 2; ++pole)
+                RequireFloatNeighbor(top.model.PageParameter(static_cast<FroggersBankId>(bank), slot).SceneCenter(pole), 0.37f);
+}
+
+// Diego must see an incomplete draw instead of silently accepting missing routes.
+// Green: a genuinely exhausted group reports partial and consumes no missing
+// depth's amount/sign draw; the exact event feed still selects that route.
+TEST_CASE(geometric_all_reports_real_allocation_failure_before_sampling_missing_depth) {
+    Fixture fx(1);
+    auto& occupied = fx.model.PageParameter(FroggersBankId::Filter, 0);
+    for (std::size_t source = 0; source < 15 && fx.model.Group().CanAllocate(); ++source)
+        REQUIRE_TRUE(occupied.EnsureModulationDepth(source) != nullptr);
+    REQUIRE_TRUE(!fx.model.Group().CanAllocate());
+    for (std::size_t source = 0; source < 15; ++source)
+        fx.model.Group().GetModulators().Metadata(source).connected = source == 0;
+    auto& target = fx.model.PageParameter(FroggersBankId::Reverb, 0);
+    RandomEvents feed;
+    feed.Index(1, 0);
+    feed.Index(1, 0);
+    feed.Bind(fx.manager);
+    const bool partial = detail::RandomizeParameterModulationDepths(fx.manager, target, 1, 0);
+    REQUIRE_TRUE(partial);
+    REQUIRE_TRUE(target.ModulationDepthParameter(0) == nullptr);
+    feed.Done();
+}
+
+// These checks serve Diego's shared-density control. Controlled non-neutral
+// writes expose selected source counts without confusing held-gesture writes
+// with ordinary scene-center writes.
+std::size_t CountModulatingSources(const synth::Parameter& parameter) {
+    std::size_t count = 0;
+    for (std::size_t source = 0; source < FroggersParameterModel::kNumModulators; ++source) {
+        const synth::Parameter* depth = parameter.ModulationDepthParameter(source);
+        if (depth != nullptr && detail::DepthIsModulating(*depth)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+TEST_CASE(quartile_counts_cover_every_eligible_set_and_floor_without_bias) {
+    // Missing observable: finite sets must never draw outside eligibility or
+    // bias their marginal counts. Green: every allowed count appears four
+    // times, in ordered quartile intervals, using the actual route writer.
+    for (std::size_t eligible = 0; eligible <= FroggersParameterModel::kNumModulators; ++eligible) {
+        for (std::size_t floor : {std::size_t{0}, std::size_t{1}}) {
+            Fixture fx;
+            fx.StepOnce(true);
+            for (std::size_t source = 0; source < FroggersParameterModel::kNumModulators; ++source) {
+                fx.model.Group().GetModulators().Metadata(source).connected = source < eligible;
+            }
+            synth::Parameter& parameter = fx.model.PageParameter(FroggersBankId::Reverb, 0);
+            const std::size_t minimum = std::min(floor, eligible);
+            const std::size_t range = eligible - minimum + 1;
+            std::array<std::size_t, FroggersParameterModel::kNumModulators + 1> histogram{};
+            std::size_t orderedCount = minimum;
+            std::size_t multiplicity = 0;
+            for (std::size_t face = 0; face < 4; ++face) {
+                for (std::size_t within = 0; within < range; ++within) {
+                    RandomEvents feed;
+                    feed.Target(eligible, floor, within, orderedCount);
+                    feed.Bind(fx.manager);
+                    REQUIRE_TRUE(!detail::RandomizeParameterModulationDepths(fx.manager, parameter, floor, face));
+                    feed.Done();
+                    const std::size_t count = CountModulatingSources(parameter);
+                    if (eligible == 0) {
+                        REQUIRE_TRUE(count == 0);
+                        continue;
+                    }
+                    REQUIRE_TRUE(count >= minimum && count <= eligible);
+                    // Independent rank oracle: each count occupies four
+                    // successive cells of the flattened quantile grid.
+                    REQUIRE_TRUE(count == orderedCount);
+                    if (++multiplicity == 4) {
+                        ++orderedCount;
+                        multiplicity = 0;
+                    }
+                    ++histogram[count];
+                }
+            }
+            if (eligible > 0) {
+                for (std::size_t count = minimum; count <= eligible; ++count) {
+                    REQUIRE_TRUE(histogram[count] == 4);
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE(randomize_all_shares_one_entry_face_across_banks_and_allows_repeats) {
+    // Missing observable: a face must survive target traversal and repeated
+    // presses. Green: all 84 targets follow the scripted entry face while
+    // alternating independent within-face draws give distinct counts.
+    Fixture fx;
+    fx.StepOnce(true);
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    for (std::size_t face : {3u, 3u, 0u, 2u, 1u, 1u}) {
+        std::vector<std::size_t> counts;
+        for (std::size_t target = 0; target < 84; ++target)
+            counts.push_back(face * 4 + (target % 2 == 0 ? 0 : 3));
+        RandomEvents feed;
+        feed.PageAll(face, 15, counts);
+        feed.Bind(fx.manager);
+        REQUIRE_TRUE(!RandomizeAll(fx.manager, drillIn, fx.model, fx.slate).partial);
+        std::size_t target = 0;
+        for (std::size_t bank = 0; bank < kFroggersPageCount; ++bank) {
+            for (std::size_t slot = 0; slot < kFroggersParamsPerBank; ++slot) {
+                REQUIRE_TRUE(CountModulatingSources(fx.model.PageParameter(static_cast<FroggersBankId>(bank), slot))
+                             == face * 4 + (target++ % 2 == 0 ? 0 : 3));
+            }
+        }
+        REQUIRE_TRUE(target == counts.size());
+        feed.Done();
+    }
+    // An empty eligible set still consumes the operation's face, but no
+    // target count. The only later index is the existing bag reseed.
+    for (std::size_t source = 0; source < FroggersParameterModel::kNumModulators; ++source) {
+        fx.model.Group().GetModulators().Metadata(source).connected = false;
+    }
+    RandomEvents empty;
+    empty.PageAll(0, 0, std::vector<std::size_t>(84, 0));
+    empty.Bind(fx.manager);
+    REQUIRE_TRUE(!RandomizeAll(fx.manager, drillIn, fx.model, fx.slate).partial);
+    empty.Done();
+
+}
+
+TEST_CASE(randomize_all_shares_its_face_at_every_drill_level_and_keeps_the_floor) {
+    // Missing observable: every supported view must share the die across
+    // selected/deeper targets. Green: literal upper counts {4,8,12,15}
+    // for fifteen sources and floor one, without changing view or level.
+    constexpr std::array<std::size_t, 4> upperCounts{4, 8, 12, 15};
+    for (std::size_t level = 1; level <= FroggersModulationDrillIn::kMaxDrillLevel; ++level) {
+        Fixture fx;
+        fx.StepOnce(true);
+        FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+        for (std::size_t entered = 0; entered < level; ++entered) {
+            drillIn.PressEncoder(0);
+        }
+        synth::Parameter* selected = drillIn.BankRef().SelectedParameter();
+        REQUIRE_TRUE(selected != nullptr);
+        for (std::size_t face : {3u, 0u, 0u, 2u, 1u}) {
+            RandomEvents feed;
+            feed.Index(4, face);
+            const std::size_t calls = level < FroggersModulationDrillIn::kMaxDrillLevel ? 1 + upperCounts[face] : 1;
+            for (std::size_t target = 0; target < calls; ++target)
+                feed.Target(15, 1, 14, upperCounts[face]);
+            feed.Bind(fx.manager);
+            REQUIRE_TRUE(!RandomizeAll(fx.manager, drillIn, fx.model, fx.slate).partial);
+            feed.Done();
+            REQUIRE_TRUE(drillIn.Level() == level);
+            REQUIRE_TRUE(drillIn.BankRef().SelectedParameter() == selected);
+            REQUIRE_TRUE(CountModulatingSources(*selected) == upperCounts[face]);
+            if (level < FroggersModulationDrillIn::kMaxDrillLevel) {
+                std::size_t descended = 0;
+                for (std::size_t source = 0; source < FroggersParameterModel::kNumModulators; ++source) {
+                    synth::Parameter* depth = selected->ModulationDepthParameter(source);
+                    if (depth == nullptr) continue;
+                    if (detail::DepthIsModulating(*depth)) {
+                        ++descended;
+                        REQUIRE_TRUE(CountModulatingSources(*depth) == upperCounts[face]);
+                    } else {
+                        REQUIRE_TRUE(CountModulatingSources(*depth) == 0);
+                    }
+                }
+                REQUIRE_TRUE(descended == upperCounts[face]);
+            }
+        }
+    }
+    // Diego must not acquire routes beyond the supported cap. The earlier
+    // selected-count check could pass even if the descent guard admitted
+    // one extra level. A fresh cap view makes those forbidden children
+    // observable: the densest press fills the selected parameter's own
+    // depths, and every one of their depth slots must remain null.
+    Fixture capped;
+    capped.StepOnce(true);
+    FroggersModulationDrillIn capView(capped.model.BankAt(FroggersBankId::Reverb));
+    for (std::size_t entered = 0; entered < FroggersModulationDrillIn::kMaxDrillLevel; ++entered) {
+        capView.PressEncoder(0);
+    }
+    synth::Parameter* capSelected = capView.BankRef().SelectedParameter();
+    REQUIRE_TRUE(capSelected != nullptr);
+    RandomEvents capFeed;
+    capFeed.Index(4, 3);
+    capFeed.Target(15, 1, 14, 15);
+    capFeed.Bind(capped.manager);
+    REQUIRE_TRUE(!RandomizeAll(capped.manager, capView, capped.model, capped.slate).partial);
+    capFeed.Done();
+    REQUIRE_TRUE(capView.Level() == FroggersModulationDrillIn::kMaxDrillLevel);
+    REQUIRE_TRUE(capView.BankRef().SelectedParameter() == capSelected);
+    REQUIRE_TRUE(CountModulatingSources(*capSelected) == FroggersParameterModel::kNumModulators);
+    for (std::size_t source = 0; source < FroggersParameterModel::kNumModulators; ++source) {
+        const synth::Parameter* depth = capSelected->ModulationDepthParameter(source);
+        REQUIRE_TRUE(depth != nullptr);
+        for (std::size_t inner = 0; inner < FroggersParameterModel::kNumModulators; ++inner) {
+            REQUIRE_TRUE(depth->ModulationDepthParameter(inner) == nullptr);
         }
     }
 
-    // P(0) is 50% under the geometric draw. At 2000 trials the binomial
-    // standard error at p=0.50 is ~1.1 points, so a [44%, 56%] band (roughly
-    // 5.4 standard errors wide) is a wide, sample-size-appropriate margin.
-    REQUIRE_TRUE(zeroCount > kTrials * 0.44);
-    REQUIRE_TRUE(zeroCount < kTrials * 0.56);
+}
 
-    // P(>=4) is 1-in-16 (6.25%) under the geometric draw (0.5^4) -- the same
-    // rate the tuned table it replaced happened to land on. At 2000
-    // trials the binomial standard error at p=0.0625 is ~0.54 points, so a
-    // [3.5%, 9.5%] band (roughly 5.5 standard errors wide either side) is a
-    // wide, sample-size-appropriate margin.
-    REQUIRE_TRUE(fourPlusCount > kTrials * 0.035);
-    REQUIRE_TRUE(fourPlusCount < kTrials * 0.095);
+TEST_CASE(randomize_page_retains_geometric_counts_without_a_quartile_draw) {
+    // Missing observable: All's optional mode must not leak into Page.
+    // Green: exact scripted geometric counts 0..15, and only source picks
+    // use the index feed (a zero draw uses none).
+    Fixture fx;
+    fx.StepOnce(true);
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    drillIn.PressEncoder(0);
+    synth::Parameter& selected = *drillIn.BankRef().SelectedParameter();
+    for (std::size_t desired = 0; desired <= 15; ++desired) {
+        std::size_t coins = 0;
+        std::size_t picks = 0;
+        fx.manager.SetRandomSource([] { return 0.3f; },
+            [&] { return coins++ < desired ? 0.9f : 0.1f; },
+            [&](std::size_t maximum) {
+                REQUIRE_TRUE(maximum == 15 - picks++);
+                return maximum - 1;
+            });
+        REQUIRE_TRUE(!RandomizePage(fx.manager, drillIn).partial);
+        REQUIRE_TRUE(CountModulatingSources(selected) == desired);
+        REQUIRE_TRUE(picks == desired);
+    }
+}
 
-    // POSITIVE CONTROL: a substantial fraction of draws must be non-zero --
-    // a randomizer that regressed to always-zero would otherwise satisfy
-    // "some fraction is zero" trivially. P(count>=1) is 50% under the
-    // geometric draw, so the threshold sits well clear of it: a third rules
-    // out an always-zero (or mostly-zero) regression without pinning the
-    // exact rate twice, which the band above already does.
-    REQUIRE_TRUE(nonZeroCount > kTrials * 0.33);
-
-    std::cout << "[OBSERVED] zero-and-four-plus-rates count histogram over " << kTrials
-              << " trials: P(0)=" << (100.0 * zeroCount / kTrials) << "%"
-              << " P(>=4)=" << (100.0 * fourPlusCount / kTrials) << "%"
-              << " P(>=1)=" << (100.0 * nonZeroCount / kTrials) << "%\n";
+TEST_CASE(randomize_all_does_not_override_a_held_gestures_scene_centers) {
+    // Missing observable: selected routes may write a held gesture instead
+    // of scene centers. The first write arms the gesture at its current
+    // value and returns; the density die must preserve that framework path.
+    Fixture fx;
+    fx.StepOnce(true);
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    synth::Parameter& parameter = fx.model.PageParameter(FroggersBankId::Reverb, 0);
+    fx.manager.SelectGesture(0);
+    RandomEvents feed;
+    feed.PageAll(3, 15, std::vector<std::size_t>(84, 15));
+    feed.Bind(fx.manager);
+    REQUIRE_TRUE(!RandomizeAll(fx.manager, drillIn, fx.model, fx.slate).partial);
+    feed.Done();
+    std::size_t heldRoutes = 0;
+    for (std::size_t source = 0; source < 15; ++source) {
+        const synth::Parameter* depth = parameter.ModulationDepthParameter(source);
+        REQUIRE_TRUE(depth != nullptr);
+        REQUIRE_NEAR(depth->SceneCenter(0), detail::kNeutralModulationDepthCenter, 1e-6f);
+        REQUIRE_NEAR(depth->SceneCenter(1), detail::kNeutralModulationDepthCenter, 1e-6f);
+        REQUIRE_TRUE(depth->GestureActive(0, 0));
+        REQUIRE_TRUE(depth->GestureActive(1, 0));
+        REQUIRE_NEAR(depth->GestureValue(0, 0), detail::kNeutralModulationDepthCenter, 1e-6f);
+        REQUIRE_NEAR(depth->GestureValue(1, 0), detail::kNeutralModulationDepthCenter, 1e-6f);
+        ++heldRoutes;
+    }
+    REQUIRE_TRUE(heldRoutes == 15);
+    REQUIRE_TRUE((fx.manager.SelectedGestureMask() & synth::GestureMask{1}) != 0);
 }
 
 // ============================================================================

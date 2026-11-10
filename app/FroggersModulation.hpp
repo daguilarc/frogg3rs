@@ -114,11 +114,11 @@
 //
 // Randomize All/Page's bulk depth randomization below does not go through
 // this mechanism: `RandomizeParameterModulationDepths` draws its own count
-// (`DrawGeometricCount`, this app's own reimplementation of the same
-// coin-flip shape, redone as a distinct-source draw) and calls the PUBLIC
-// `Parameter::EnsureModulationDepth`/`Parameter::RandomizeVisibleValue`
-// directly -- no press, no `Bank::HandlePress` dispatch. This app is the
-// mutator there; see that function's own comment for why.
+// (a shared density quartile for All, geometric for Page) and calls the PUBLIC
+// `Parameter::EnsureModulationDepth` directly, then uses `HandleSetAbsolute`
+// for All without a selected gesture or `RandomizeVisibleValue` for held
+// gestures and Page -- no press or `Bank::HandlePress` dispatch. The app
+// chooses the draws; the framework performs the writes.
 //
 // `Bank::ApplyModifierToTopLevel` (public) is deliberately NOT used for the
 // parameter-page cases below: it applies to every cell in `topLevel_`
@@ -137,10 +137,11 @@
 // presses). `PressBankWithRandomValue` below does not press through
 // `Bank::HandlePress`/`Modifier::Random` at all for the value write: it draws
 // its own uniform value and commits it directly via `HandleSetAbsolute`
-// (see that function's own comment). Depth randomization differs --
-// `RandomizeParameterModulationDepths` above still calls Sheaf's
-// `RandomizeVisibleValue` directly, which is correct because a freshly
-// zeroed depth has no live modulation of its own to resolve against.
+// (see that function's own comment). All depth randomization without a
+// selected gesture also uses `HandleSetAbsolute`, so nominal commands do
+// not depend on retained child modulation. Clearing a depth's base centers
+// does not clear its children. Held-gesture and Page depth edits retain
+// `RandomizeVisibleValue` and its existing gesture behavior.
 
 #include "FroggersParameters.hpp"
 #include "FroggersRandomShVisualizer.hpp"
@@ -948,29 +949,16 @@ private:
 // `detail::RandomizeParameterModulationDepths` below (used by all four call
 // sites: RandomizeBankLevel1Depths, RandomizePage's drill-in branch, and
 // both RandomizeAll drill-in branches) replaces this with an APP-SIDE count/
-// source selection -- a geometric draw from a per-gesture floor (zero for
-// Randomize All on a parameter page and for Randomize Page at any level; one
-// for Randomize All at a drilled-in level -- see DrawGeometricCount's and
-// that function's own comments) -- while Sheaf
-// still performs every actual write (`Parameter::EnsureModulationDepth` +
-// `Parameter::RandomizeVisibleValue`, the same two calls
-// `Bank::RandomizeModulationDepths` itself makes internally). This is an
-// "app chooses the target set, Sheaf does every write" split, not a
-// violation of Sheaf's ownership of the actual writes -- see that function's
-// own header comment for the full
-// derivation. NEVER a no-op at a drilled-in Randomize All press (the floor of
-// one guarantees at least 1 connected source is touched when one exists);
-// every other gesture keeps its own zero floor, so a no-op stays possible and
-// common there. Never re-draws the same source twice (Sheaf's own
-// loop could; this one uses a partial Fisher-Yates over the connected set).
-//
-// The OTHER knob this app owns: Randomize All's aggregate
-// reach also comes from how many PARAMETERS it presses (84 page parameters --
-// six banks of fourteen -- for the parameter-page case) -- a future
-// maintainer who wants Randomize All to feel like "more" or "fewer" changes
-// has two independent levers (the per-gesture floor and cap the geometric
-// draw above uses, or the parameter set
-// RandomizeAll/RandomizeBankLevel1Depths iterates over).
+// source selection -- a shared density quartile for All, geometric for
+// Page, with a zero floor except for drilled-in All (floor one) -- while Sheaf
+// still performs every actual write through its public APIs: EnsureModulationDepth
+// allocates the chosen depth, then HandleSetAbsolute edits unheld All nominal
+// commands, while RandomizeVisibleValue handles selected gestures and Page.
+// The app chooses the draws and Sheaf performs the writes; see that function's
+// own header comment. Drilled-in All selects at least one connected source when
+// one exists; selected routes still follow held-gesture semantics. A zero
+// floor permits no-source draws. Source picks are always distinct.
+// Parameter-page All reaches 84 page parameters across six banks.
 struct FroggersRandomizeResult {
     // EnsureModulationDepthParameter's CanAllocate() failure must
     // surface as a detectable partial randomize, not fail silently. True
@@ -987,13 +975,9 @@ namespace detail {
 // (also in External/Sheaf/projects/synth/src/ParameterModulation.cpp) is ABOUT to fire for the next press:
 // `ParameterGroup::CanAllocate()` (public) is already false. Checking a
 // per-parameter "does every connected modulator have a materialized depth"
-// count instead would be wrong -- the draw below is geometric from a
-// per-gesture floor (zero everywhere except a drilled-in Randomize All
-// press, which floors at one), so a HEALTHY randomize leaves a parameter with
-// no depths at all half the time wherever the floor is zero, and most of its
-// 15 possible depths untouched nearly always regardless of the floor; that is
-// normal, not a partial randomize. Only "no more storage was available to
-// give" is.
+// count instead would be wrong: both count laws can leave eligible sources
+// unselected, and a zero-floor draw can legitimately select no sources.
+// Allocation failure, rather than an unfilled source set, is partial.
 inline bool CapacityExhausted(const synth::ParameterGroup& group) {
     return !group.CanAllocate();
 }
@@ -1141,14 +1125,8 @@ inline void ZeroExistingModulationDepths(synth::Parameter& parameter, bool clear
     }
 }
 
-// Two independent geometric-coin draws share this one loop shape --
-// RandomizeParameterModulationDepths' own source-count draw below and
-// RandomizeAll's Crispy-bank-count draw further down this file -- but they
-// differ on BOTH bounds: the source draw's floor is 0 for every gesture
-// except a drilled-in Randomize All press (floor 1) and has no cap besides
-// the connected-source count, while the Crispy draw floors at 0 always and
-// caps at kMaxRandomizedCrispy. Neither caller's bound may be borrowed from
-// the other's, so both are required arguments with no default.
+// Page's source count and All's separate Crispy-bank count use this
+// geometric draw. Their independently supplied bounds preserve each scope.
 inline std::size_t DrawGeometricCount(synth::ParameterManager& manager, std::size_t minimum,
                                        std::size_t maximum) {
     std::size_t count = minimum;
@@ -1156,6 +1134,30 @@ inline std::size_t DrawGeometricCount(synth::ParameterManager& manager, std::siz
         ++count;
     }
     return count;
+}
+
+// One quantile interval of the allowed finite source-count distribution.
+// The caller supplies a nonempty eligible range and the press's face 0..3.
+inline constexpr std::size_t kDensityQuartileCount = 4;
+inline std::size_t DrawQuartileCount(synth::ParameterManager& manager, std::size_t minimum,
+                                     std::size_t maximum, std::size_t quartile) {
+    const std::size_t range = maximum - minimum + 1;
+    return minimum + (quartile * range + manager.NextRandomIndex(range)) / kDensityQuartileCount;
+}
+
+// Convert a geometric effective magnitude to the existing mutator's input.
+inline float DrawGeometricDepthRandomizeInput(synth::ParameterManager& manager,
+                                               synth::ModulationTargetKind kind) {
+    double magnitude = 1.0;
+    while (manager.NextRandomCoin() >= 0.5f) {
+        magnitude *= 0.5;
+    }
+    const double sign = kind == synth::ModulationTargetKind::kBipolar
+        ? (manager.NextRandomIndex(2) == 0 ? -1.0 : 1.0) : 1.0;
+    const double base = static_cast<double>(synth::kModulationDepthTargetBase);
+    const double amount = std::log1p((base - 1.0) * magnitude) / std::log(base);
+    return static_cast<float>(kind == synth::ModulationTargetKind::kBipolar
+        ? (1.0 + sign * amount) / 2.0 : amount);
 }
 
 // The partial-Fisher-Yates step RandomizeParameterModulationDepths' own
@@ -1174,16 +1176,17 @@ inline std::size_t SwapInRandomPick(synth::ParameterManager& manager, std::span<
 // four RandomMod dispatch sites in this file (RandomizeBankLevel1Depths,
 // RandomizePage's drill-in branch, and both RandomizeAll drill-in branches).
 // Chooses a COUNT of `parameter`'s connected modulation sources using the
-// geometric draw below (see its own comment, right above it), draws that
-// many DISTINCT sources
+// press's density quartile for All or the geometric law for Page, draws
+// that many DISTINCT sources
 // (partial Fisher-Yates -- Sheaf's
 // own private Bank::RandomizeModulationDepths loop can independently redraw
 // the same source twice, which this does not reproduce), and
-// for each chosen source calls the exact same two public calls Sheaf's own
-// loop makes internally: `Parameter::EnsureModulationDepth` then
-// `Parameter::RandomizeVisibleValue` (External/Sheaf/projects/synth/src/ParameterModulation.cpp).
-// Sheaf performs every write; only the count and the source set are chosen
-// here. Does NOT dispatch through Bank::HandlePress at
+// for each chosen source calls `Parameter::EnsureModulationDepth`, then
+// edits both poles through the framework. All without a selected gesture
+// uses `HandleSetAbsolute` to land nominal base amounts independently of
+// live submodulation; Page and selected-gesture edits retain
+// `RandomizeVisibleValue`. Sheaf performs every write; count, source set
+// and All nominal depth inputs are chosen here. Does NOT dispatch through Bank::HandlePress at
 // all -- no press, no modifier-hold, no selection/level state touched -- so
 // callers do not need `parameter` to be the bank's currently selected/open
 // one.
@@ -1195,7 +1198,8 @@ inline std::size_t SwapInRandomPick(synth::ParameterManager& manager, std::span<
 // report partial" convention `ApplyAudioPitchDetent`
 // already uses for the identical null-return case.
 inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager, synth::Parameter& parameter,
-                                                std::size_t minimumSources) {
+                                                std::size_t minimumSources,
+                                                std::optional<std::size_t> densityQuartile = std::nullopt) {
     synth::ParameterGroup& group = parameter.Group();
     bool partial = CapacityExhausted(group);
 
@@ -1229,34 +1233,16 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
         return partial;
     }
 
-    // How many sources this parameter gets: a geometric draw from a
-    // per-gesture floor (`minimumSources`, supplied by the caller -- see
-    // DrawGeometricCount's own comment on why neither this bound nor the
-    // Crispy-bank draw's may be borrowed from the other). From a floor of
-    // zero it is 50% none, 25% one, 12.5% two, and so on; from a floor of one
-    // it is 50% one, 25% two, 12.5% three, and so on. Keep flipping while the
-    // coin says keep going; the count is how many times it said so, added to
-    // the floor.
-    //
-    // This is Sheaf's own distribution rather than a table tuned on top of
-    // it. A hand-tuned ladder used to sit here, and the arithmetic justifying
-    // its six thresholds was longer than the code it explained. What the app
-    // still needs from this function is the DISTINCT-source draw below, which
-    // Sheaf's own loop does not give -- it can redraw one source twice, and a
-    // count means nothing if the draw can collapse it. The count itself needed
-    // no opinion of its own.
-    //
-    // Most parameters getting nothing is the point: at 84 parameters a
-    // Randomize All materializes about 84 depths rather than the ~151 the old
-    // mean of 1.80 produced, which is both sparser to listen to and half the
-    // pressure on the storage a partial randomize reports running out of.
-    const std::size_t count = DrawGeometricCount(manager, std::min(minimumSources, eligible.size()), eligible.size());
+    // All shares one face across the press; Page/direct callers keep their
+    // geometric draw. Connected eligibility and the gesture floor bound both.
+    const std::size_t minimum = std::min(minimumSources, eligible.size());
+    const std::size_t count = densityQuartile
+        ? DrawQuartileCount(manager, minimum, eligible.size(), *densityQuartile)
+        : DrawGeometricCount(manager, minimum, eligible.size());
 
     // Partial Fisher-Yates over `eligible`: draws `count` DISTINCT source
     // indices (see this function's header comment on why "distinct" matters
-    // here, unlike Sheaf's own loop). The materialize-and-break body stays
-    // here unchanged; only the swap-and-pick step moves into the shared
-    // helper, so the RNG call order is unaffected.
+    // here, unlike Sheaf's own loop).
     for (std::size_t i = 0; i < count; ++i) {
         synth::Parameter* depth = parameter.EnsureModulationDepth(SwapInRandomPick(manager, eligible, i));
         if (depth == nullptr) {
@@ -1273,7 +1259,16 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
         // kScenePoles rather than naming each pole in its own statement --
         // see that array's own comment.
         for (const synth::SceneState& pole : kScenePoles) {
-            depth->RandomizeVisibleValue(pole, manager.NextRandomValue());
+            const float input = densityQuartile
+                ? DrawGeometricDepthRandomizeInput(manager, depth->TargetKind())
+                : manager.NextRandomValue();
+            if (densityQuartile && manager.SelectedGestureMask() == 0) {
+                const float center = depth->TargetKind() == synth::ModulationTargetKind::kOneWayAmount
+                    ? 0.5f + 0.5f * input : input;
+                depth->HandleSetAbsolute(pole, center);
+            } else {
+                depth->RandomizeVisibleValue(pole, input);
+            }
         }
     }
     return partial;
@@ -1385,7 +1380,7 @@ inline void RandomizeBankValues(synth::ParameterManager& manager, synth::Bank& b
 // the parameter's group itself via `parameter.Group()`, which is every page
 // parameter's SAME group -- FroggersParameterModel's one mono
 // ParameterGroup -- so no separate group parameter is needed here anymore).
-inline bool RandomizeBankLevel1Depths(synth::ParameterManager& manager, synth::Bank& bank) {
+inline bool RandomizeBankLevel1Depths(synth::ParameterManager& manager, synth::Bank& bank, std::size_t densityQuartile) {
     bool partial = false;
     // Each call's result is hoisted into its own named local BEFORE
     // combining (the same short-circuit hazard FroggersAppCore::ProcessFrame()
@@ -1400,12 +1395,8 @@ inline bool RandomizeBankLevel1Depths(synth::ParameterManager& manager, synth::B
         if (param == nullptr) {
             continue;  // defensive: every page-parameter slot is always registered in practice.
         }
-        // Floor 0: this runs once per top-level parameter across all six
-        // banks from Randomize All's level-0 branch, and a floor here
-        // roughly doubles the whole press's materialized-depth allocation
-        // (see RandomizeParameterModulationDepths' own count comment) --
-        // level 0 keeps the zero floor deliberately.
-        const bool paramPartial = RandomizeParameterModulationDepths(manager, *param, /*minimumSources=*/0);
+        // Parameter-page All retains its zero-source floor.
+        const bool paramPartial = RandomizeParameterModulationDepths(manager, *param, /*minimumSources=*/0, densityQuartile);
         partial = partial || paramPartial;
     }
     // Crispy's DEPTHS stay excluded here regardless of whether this press
@@ -1670,6 +1661,7 @@ inline FroggersRandomizeResult RandomizePage(synth::ParameterManager& manager, F
 //     See detail::DepthIsModulating's own comment.
 inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, FroggersModulationDrillIn& drillIn,
                                             FroggersParameterModel& model, FroggersModulationSlate& slate) {
+    const std::size_t densityQuartile = manager.NextRandomIndex(detail::kDensityQuartileCount);
     if (drillIn.Level() == 0) {
         bool partial = false;
         // Draw how many of the six banks' Crispy this press randomizes (0 to
@@ -1678,9 +1670,8 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
         // pool of bank indices, the same distinct-pick idiom
         // RandomizeParameterModulationDepths' own source draw uses, reused
         // here via the same SwapInRandomPick step rather than reimplemented.
-        // Drawn before the six-bank loop below so every bank's own
-        // NextRandomCoin()/NextRandomIndex() sequence inside that loop is
-        // unaffected by how many banks this press's Crispy draw touches.
+        // Choose the Crispy banks before traversing page parameters. Its
+        // geometric count is independent of the density face.
         const std::size_t crispyCount = detail::DrawGeometricCount(manager, 0, detail::kMaxRandomizedCrispy);
         std::array<std::size_t, kFroggersPageCount> crispyPool{};
         for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
@@ -1702,7 +1693,7 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
             // Randomize All: this bank's Crispy VALUE is randomized only if
             // this press drew it above; Crunchy stays excluded regardless.
             detail::RandomizeBankValues(manager, bank, /*includeCrispy=*/crispyDrawn[bankIx]);
-            const bool bankPartial = detail::RandomizeBankLevel1Depths(manager, bank);
+            const bool bankPartial = detail::RandomizeBankLevel1Depths(manager, bank, densityQuartile);
             partial = partial || bankPartial;
         }
         // The gesture that re-rolls the whole patch also re-rolls the five
@@ -1746,8 +1737,8 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
     // written, so avoiding the round trip leaves the steady-state count
     // unchanged; what it avoids is the wasted allocate-then-prune churn.)
     synth::Parameter& selectedParam = *drillIn.BankRef().SelectedParameter();
-    // Floor 1: a drilled-in Randomize All press must never be a no-op.
-    bool partial = detail::RandomizeParameterModulationDepths(manager, selectedParam, /*minimumSources=*/1);
+    // Drilled-in All retains a one-source floor; held gestures still govern writes.
+    bool partial = detail::RandomizeParameterModulationDepths(manager, selectedParam, /*minimumSources=*/1, densityQuartile);
     // Descend one level -- but ONLY if a deeper level exists to descend into.
     // Read from the drill-in's own single definition site rather than
     // re-testing a literal.
@@ -1783,8 +1774,8 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
             // -- this loop is the depth-parameter sweep, so a short-circuited
             // `||` here would skip randomizing every remaining depth parameter.
             // Floor 1: the other half of the same drilled-in Randomize All
-            // press -- never a no-op on a modulating depth either.
-            const bool depthPartial = detail::RandomizeParameterModulationDepths(manager, *depthParam, /*minimumSources=*/1);
+            // press, retaining its one-source floor.
+            const bool depthPartial = detail::RandomizeParameterModulationDepths(manager, *depthParam, /*minimumSources=*/1, densityQuartile);
             partial = partial || depthPartial;
         }
     }
