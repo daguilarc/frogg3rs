@@ -3,3 +3,4 @@
 - [x] Model cadence/publication and Sheaf-specific behavior with Lean contracts.
 - [x] Validate native behavior, source alias rejection, regression suites and model proofs.
 - [x] Build VST3/AU artifacts and verify plugin host, latency, packaging and incremental dependencies.
+- [x] Prove continuous-band source-filter response bounds in Lean, bind exact C++ coefficients, and verify native/negative controls.

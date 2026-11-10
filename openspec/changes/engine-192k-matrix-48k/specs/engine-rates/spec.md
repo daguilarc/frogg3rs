@@ -50,3 +50,19 @@ The evaluator MAY reuse an unchanged scalar nested leaf. It SHALL re-evaluate af
 - **WHEN** a reused leaf receives a direct scene-reference edit, cache overwrite or child wiring change
 - **THEN** its evaluated cache reflects the current inputs
 - **Check:** `prepared_scalar_depth_leaf_reuses_only_an_unchanged_image`
+
+### Requirement: Checked continuous-band source-filter attenuation
+The formal gate SHALL export and check all 20 configured binary32 source-filter
+coefficients against their exact real embeddings in Lean. At a 192 kHz engine
+rate, the real fixed-coefficient response SHALL have power gain at most
+1/4000000 throughout 47..96 kHz and at least 1/2 throughout 0..1 kHz. The model
+SHALL prove a relative amplitude-gain bound of 1/1000 for every high/reference
+pair from those bands and the 47 kHz to 1 kHz four-to-one sampling identity.
+These claims SHALL describe steady-state frequency response; they SHALL NOT be
+presented as IEEE processing-error bounds, transient guarantees, transition-band
+suppression, output-FIR proofs or whole-synth alias freedom.
+
+#### Scenario: Native response agrees with proved band bounds
+- **WHEN** the configured C++ source filter's response is checked at 8193 points in each proved band
+- **THEN** every point meets the formal power bounds and the 47 kHz/1 kHz pair meets the relative bound
+- **Check:** `rate_separated_source_filter_matches_proved_response_band_bounds`

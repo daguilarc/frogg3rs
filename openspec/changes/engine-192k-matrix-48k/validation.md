@@ -100,3 +100,34 @@ not been rebuilt for this correction. No plugins were installed.
 
 The operator confirmed the corrected desktop build “works great.” Merge and push
 remain on hold pending explicit approval. All changes are saved locally.
+
+## Formal source-filter alias bounds (2026-11-09)
+
+Added 20 real-valued aliasing theorems: the full gate now verifies **69 theorem
+declarations and seven reviewed sources**, with only the same three allowed
+standard Lean axioms. Mathlib v4.32.0 and its transitive dependencies are pinned
+in the Sheaf Lake manifest. No globally installed Lean packages are required.
+
+A fresh C++ exporter checks the exact bit patterns of all 20 configured source
+filter coefficients and their exact real embeddings. The proofs derive the
+biquad squared-magnitude polynomial, verify each concrete stage certificate,
+combine the cascade bounds, and connect continuous frequency bands using real
+trigonometric inequalities. At a 192 kHz engine, 47..96 kHz power gain is bounded
+by 1/4000000 and 0..1 kHz power gain is at least 1/2. Relative amplitude gain is
+therefore at most 1/1000 (at least 60 dB rejection). The 47 kHz to 1 kHz sampling
+fold is proved explicitly.
+
+The native parameter suite passed **362 cases**, including the existing actual
+binary32 time-domain alias test and a new 8193-point-per-band frequency-response
+cross-check. A one-bit coefficient snapshot drift was rejected by the export
+gate. Doubling the first stage numerator in a temporary proof copy caused Lean
+to reject the attenuation certificate. Both negative controls failed as intended.
+
+These are exact-real, fixed-coefficient steady-state response proofs. They do not
+bound per-sample IEEE error, transients or pole convergence, the transition band
+just above 24 kHz, nonlinear DSP, oscillator generation, root imaging, the output
+FIR or whole-synth aliasing. The bridge cutoff expression was factored into a
+named constant for shared runtime/export use without changing its numeric value.
+The already-tested desktop app remains open; no desktop or plugin rebuild was
+needed for this proof-only behavior extension. See
+`External/Sheaf/projects/synth/formal/ALIASING.md` for full correspondence boundaries.
