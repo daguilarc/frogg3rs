@@ -154,10 +154,22 @@ struct RandomEvents {
             [this](std::size_t maximum) { return std::size_t(Take('i', maximum)); });
     }
     void Done() const { REQUIRE_TRUE(cursor == events.size()); }
-    void Target(std::size_t eligible, std::size_t minimum, std::size_t within, std::size_t count,
+    // Independent ticket oracle for the bounded two-sided geometric law.
+    void Count(std::size_t minimum, std::size_t maximum, std::size_t desired) {
+        const int mode = int(std::clamp(std::size_t{2}, minimum, maximum));
+        const int radius = std::max(mode - int(minimum), int(maximum) - mode);
+        std::size_t total = 0, ticket = 0;
+        for (std::size_t c = minimum; c <= maximum; ++c) {
+            const auto weight = std::size_t(std::ldexp(1.0, radius - std::abs(int(c) - mode)));
+            if (c < desired) ticket += weight;
+            total += weight;
+        }
+        Index(total, ticket);
+    }
+    void Target(std::size_t eligible, std::size_t minimum, std::size_t, std::size_t count,
                 synth::ModulationTargetKind kind = synth::ModulationTargetKind::kBipolar) {
         if (eligible == 0) return;
-        Index(eligible - std::min(minimum, eligible) + 1, within);
+        Count(std::min(minimum, eligible), eligible, count);
         for (std::size_t source = 0; source < count; ++source) {
             Index(eligible - source, eligible - source - 1);
             Depth(0, kind, 1);
@@ -170,14 +182,20 @@ struct RandomEvents {
         for (std::size_t i = 0; i < crispyCount; ++i) Coin(0.9f);
         if (crispyCount < detail::kMaxRandomizedCrispy) Coin(0.1f);
         for (std::size_t i = 0; i < crispyCount; ++i) Index(kFroggersPageCount - i, 0);
-        std::size_t target = 0;
         for (std::size_t bank = 0; bank < kFroggersPageCount; ++bank) {
             for (std::size_t slot = 0; slot < kFroggersParamsPerBank; ++slot) Value(0.3f);
             if (bank < crispyCount) Value(0.3f);
-            for (std::size_t slot = 0; slot < kFroggersParamsPerBank; ++slot) {
-                const std::size_t count = counts.at(target++);
-                Target(eligible, 0, count % 4 == 0 ? 0 : eligible, count);
-            }
+        }
+        const std::size_t selected = std::count_if(counts.begin(), counts.end(), [](auto c) { return c > 0; });
+        // Counts are specified in target-pick order; zeroes are unselected.
+        const std::size_t within = 4 * selected >= face * 85 ? 4 * selected - face * 85 : 0;
+        REQUIRE_TRUE(within < 85 && (face * 85 + within) / 4 == selected);
+        Index(85, within);
+        std::size_t picked = 0;
+        for (auto count : counts) {
+            if (count == 0) continue;
+            Index(84 - picked++, 0);
+            Target(eligible, 1, 0, count);
         }
         Index(std::size_t{1} << 32, (std::size_t{1} << 32) - 1);
     }
@@ -1474,8 +1492,9 @@ TEST_CASE(geometric_depth_prefix_probabilities_signs_and_threshold_are_exact) {
 
 TEST_CASE(geometric_all_writes_independent_route_scene_and_kind_coordinates) {
     for (bool oneWay : {false, true}) {
-        for (std::size_t face = 0; face < 4; ++face) {
+        for (std::size_t repeat = 0; repeat < 4; ++repeat) {
             Fixture fx;
+            (void)repeat;
             fx.StepOnce(true);
             for (std::size_t i = 0; i < 15; ++i)
                 fx.model.Group().GetModulators().Metadata(i).connected = i < 2;
@@ -1491,7 +1510,7 @@ TEST_CASE(geometric_all_writes_independent_route_scene_and_kind_coordinates) {
                     feed.Depth(route * 2 + pole, kind, (route + pole) % 2);
             }
             feed.Bind(fx.manager);
-            REQUIRE_TRUE(!detail::RandomizeParameterModulationDepths(fx.manager, parameter, 2, face));
+            REQUIRE_TRUE(!detail::RandomizeParameterModulationDepths(fx.manager, parameter, 2, true));
             feed.Done();
             for (std::size_t route = 0; route < 2; ++route) {
                 auto* depth = parameter.ModulationDepthParameter(route);
@@ -1587,12 +1606,12 @@ TEST_CASE(geometric_all_retains_children_and_separates_nominal_from_live_and_ges
                 }
                 const auto kind = depth->TargetKind();
                 RandomEvents feed;
-                feed.Index(2, 0); // q0, floor1, range2 -> one selected source
+                feed.Count(1, 2, 1); // independently select one source
                 feed.Index(2, 0);
                 feed.Depth(2, kind, 1);
                 feed.Depth(1, kind, 1);
                 feed.Bind(fx.manager);
-                REQUIRE_TRUE(!detail::RandomizeParameterModulationDepths(fx.manager, parameter, 1, 0));
+                REQUIRE_TRUE(!detail::RandomizeParameterModulationDepths(fx.manager, parameter, 1, true));
                 feed.Done();
                 REQUIRE_TRUE(parameter.ModulationDepthParameter(0) == depth);
                 REQUIRE_TRUE(depth->ModulationDepthParameter(1) == child);
@@ -1651,7 +1670,7 @@ TEST_CASE(geometric_all_held_edits_match_first_arm_and_already_armed_legacy_muta
             feed.Depth(2, depth->TargetKind(), 0);
             feed.Depth(1, depth->TargetKind(), 1);
             feed.Bind(actual.manager);
-            REQUIRE_TRUE(!detail::RandomizeParameterModulationDepths(actual.manager, parameter, 1, 0));
+            REQUIRE_TRUE(!detail::RandomizeParameterModulationDepths(actual.manager, parameter, 1, true));
             feed.Done();
             detail::ZeroExistingModulationDepths(referenceParameter);
             for (std::size_t pole = 0; pole < 2; ++pole) {
@@ -1684,6 +1703,7 @@ TEST_CASE(geometric_all_drilled_one_way_descendants_inherit_positive_only_depth_
     RandomEvents feed;
     feed.Index(4, 3);
     for (int target = 0; target < 2; ++target) {
+        if (target == 1) { feed.Index(2, 0); feed.Index(1, 0); }
         feed.Index(1, 0);
         feed.Index(1, 0);
         feed.Depth(2 + target, synth::ModulationTargetKind::kOneWayAmount, 0);
@@ -1737,6 +1757,8 @@ TEST_CASE(geometric_depth_sampling_excludes_page_depths_and_top_level_values) {
     values.Index(4, 2);
     values.Coin(0.1f); // no Crispy banks
     for (std::size_t target = 0; target < 84; ++target) values.Value(0.37f);
+    values.Index(85, 0);
+    for (std::size_t i = 0; i < 42; ++i) values.Index(84 - i, 0);
     values.Index(std::size_t{1} << 32, 17);
     values.Bind(top.manager);
     REQUIRE_TRUE(!RandomizeAll(top.manager, topView, top.model, top.slate).partial);
@@ -1763,7 +1785,7 @@ TEST_CASE(geometric_all_reports_real_allocation_failure_before_sampling_missing_
     feed.Index(1, 0);
     feed.Index(1, 0);
     feed.Bind(fx.manager);
-    const bool partial = detail::RandomizeParameterModulationDepths(fx.manager, target, 1, 0);
+    const bool partial = detail::RandomizeParameterModulationDepths(fx.manager, target, 1, true);
     REQUIRE_TRUE(partial);
     REQUIRE_TRUE(target.ModulationDepthParameter(0) == nullptr);
     feed.Done();
@@ -1783,165 +1805,114 @@ std::size_t CountModulatingSources(const synth::Parameter& parameter) {
     return count;
 }
 
-TEST_CASE(quartile_counts_cover_every_eligible_set_and_floor_without_bias) {
-    // Missing observable: finite sets must never draw outside eligibility or
-    // bias their marginal counts. Green: every allowed count appears four
-    // times, in ordered quartile intervals, using the actual route writer.
-    for (std::size_t eligible = 0; eligible <= FroggersParameterModel::kNumModulators; ++eligible) {
-        for (std::size_t floor : {std::size_t{0}, std::size_t{1}}) {
-            Fixture fx;
-            fx.StepOnce(true);
-            for (std::size_t source = 0; source < FroggersParameterModel::kNumModulators; ++source) {
-                fx.model.Group().GetModulators().Metadata(source).connected = source < eligible;
-            }
-            synth::Parameter& parameter = fx.model.PageParameter(FroggersBankId::Reverb, 0);
-            const std::size_t minimum = std::min(floor, eligible);
-            const std::size_t range = eligible - minimum + 1;
-            std::array<std::size_t, FroggersParameterModel::kNumModulators + 1> histogram{};
-            std::size_t orderedCount = minimum;
-            std::size_t multiplicity = 0;
-            for (std::size_t face = 0; face < 4; ++face) {
-                for (std::size_t within = 0; within < range; ++within) {
-                    RandomEvents feed;
-                    feed.Target(eligible, floor, within, orderedCount);
-                    feed.Bind(fx.manager);
-                    REQUIRE_TRUE(!detail::RandomizeParameterModulationDepths(fx.manager, parameter, floor, face));
-                    feed.Done();
-                    const std::size_t count = CountModulatingSources(parameter);
-                    if (eligible == 0) {
-                        REQUIRE_TRUE(count == 0);
-                        continue;
-                    }
-                    REQUIRE_TRUE(count >= minimum && count <= eligible);
-                    // Independent rank oracle: each count occupies four
-                    // successive cells of the flattened quantile grid.
-                    REQUIRE_TRUE(count == orderedCount);
-                    if (++multiplicity == 4) {
-                        ++orderedCount;
-                        multiplicity = 0;
-                    }
-                    ++histogram[count];
-                }
-            }
-            if (eligible > 0) {
-                for (std::size_t count = minimum; count <= eligible; ++count) {
-                    REQUIRE_TRUE(histogram[count] == 4);
-                }
-            }
+TEST_CASE(modal_source_count_has_exact_geometric_ticket_weights) {
+    Fixture fx;
+    for (std::size_t maximum = 1; maximum <= 15; ++maximum) {
+        // Exhaust every entropy ticket, independently compute a histogram.
+        std::size_t total = 0;
+        for (std::size_t c = 1; c <= maximum; ++c)
+            total += std::size_t(std::ldexp(1.0, int(maximum > 2 ? maximum - 2 : 0)
+                - std::abs(int(c) - int(std::min(std::size_t{2}, maximum)))));
+        // For N=2 the radius includes the left tail.
+        if (maximum == 2) total = 3;
+        std::array<std::size_t, 16> histogram{};
+        fx.manager.SetRandomSource({}, {}, [&](std::size_t bound) { REQUIRE_TRUE(bound == total); return 0; });
+        for (std::size_t ticket = 0; ticket < total; ++ticket) {
+            fx.manager.SetRandomSource({}, {}, [&, ticket](std::size_t bound) {
+                REQUIRE_TRUE(bound == total); return ticket;
+            });
+            auto c = detail::DrawModalSourceCount(fx.manager, 1, maximum);
+            REQUIRE_TRUE(c >= 1 && c <= maximum);
+            ++histogram[c];
         }
+        const std::size_t mode = std::min(std::size_t{2}, maximum);
+        for (std::size_t c = 1; c <= maximum; ++c) {
+            REQUIRE_TRUE(histogram[c] > 0);
+            if (c != mode) REQUIRE_TRUE(histogram[mode] > histogram[c]);
+            if (c > mode) REQUIRE_TRUE(histogram[c-1] == 2 * histogram[c]);
+        }
+        if (maximum >= 2) REQUIRE_TRUE(histogram[2] == 2 * histogram[1]);
     }
 }
 
-TEST_CASE(randomize_all_shares_one_entry_face_across_banks_and_allows_repeats) {
-    // Missing observable: a face must survive target traversal and repeated
-    // presses. Green: all 84 targets follow the scripted entry face while
-    // alternating independent within-face draws give distinct counts.
+TEST_CASE(coverage_quartiles_have_uniform_marginals_for_every_target_population) {
+    Fixture fx;
+    for (std::size_t targets = 0; targets <= 84; ++targets) {
+        std::array<std::size_t, 85> histogram{};
+        for (std::size_t q = 0; q < 4; ++q) {
+            for (std::size_t r = 0; r <= targets; ++r) {
+                fx.manager.SetRandomSource({}, {}, [=](std::size_t range) {
+                    REQUIRE_TRUE(range == targets + 1); return r;
+                });
+                auto count = detail::DrawQuartileCount(fx.manager, 0, targets, q);
+                REQUIRE_TRUE(count <= targets);
+                ++histogram[count];
+            }
+        }
+        for (std::size_t count = 0; count <= targets; ++count) REQUIRE_TRUE(histogram[count] == 4);
+    }
+}
+
+TEST_CASE(quartile_controls_target_coverage_not_sources_per_target) {
     Fixture fx;
     fx.StepOnce(true);
-    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
-    for (std::size_t face : {3u, 3u, 0u, 2u, 1u, 1u}) {
-        std::vector<std::size_t> counts;
-        for (std::size_t target = 0; target < 84; ++target)
-            counts.push_back(face * 4 + (target % 2 == 0 ? 0 : 3));
+    FroggersModulationDrillIn view(fx.model.BankAt(FroggersBankId::Reverb));
+    for (std::size_t face : {0u, 1u, 2u, 3u, 3u, 0u}) {
+        const std::size_t selected = (face * 85 + 84) / 4;
+        std::vector<std::size_t> counts(84, 0);
+        for (std::size_t i = 0; i < selected; ++i) counts[i] = 2;
         RandomEvents feed;
         feed.PageAll(face, 15, counts);
         feed.Bind(fx.manager);
-        REQUIRE_TRUE(!RandomizeAll(fx.manager, drillIn, fx.model, fx.slate).partial);
-        std::size_t target = 0;
-        for (std::size_t bank = 0; bank < kFroggersPageCount; ++bank) {
-            for (std::size_t slot = 0; slot < kFroggersParamsPerBank; ++slot) {
-                REQUIRE_TRUE(CountModulatingSources(fx.model.PageParameter(static_cast<FroggersBankId>(bank), slot))
-                             == face * 4 + (target++ % 2 == 0 ? 0 : 3));
-            }
-        }
-        REQUIRE_TRUE(target == counts.size());
+        REQUIRE_TRUE(!RandomizeAll(fx.manager, view, fx.model, fx.slate).partial);
         feed.Done();
+        std::size_t observed = 0;
+        for (std::size_t bank = 0; bank < 6; ++bank)
+            for (std::size_t slot = 0; slot < 14; ++slot) {
+                auto count = CountModulatingSources(fx.model.PageParameter(static_cast<FroggersBankId>(bank), slot));
+                REQUIRE_TRUE(count == 0 || count == 2);
+                observed += count != 0;
+            }
+        REQUIRE_TRUE(observed == selected);
     }
-    // An empty eligible set still consumes the operation's face, but no
-    // target count. The only later index is the existing bag reseed.
-    for (std::size_t source = 0; source < FroggersParameterModel::kNumModulators; ++source) {
-        fx.model.Group().GetModulators().Metadata(source).connected = false;
-    }
-    RandomEvents empty;
-    empty.PageAll(0, 0, std::vector<std::size_t>(84, 0));
-    empty.Bind(fx.manager);
-    REQUIRE_TRUE(!RandomizeAll(fx.manager, drillIn, fx.model, fx.slate).partial);
-    empty.Done();
-
 }
 
-TEST_CASE(randomize_all_shares_its_face_at_every_drill_level_and_keeps_the_floor) {
-    // Missing observable: every supported view must share the die across
-    // selected/deeper targets. Green: literal upper counts {4,8,12,15}
-    // for fifteen sources and floor one, without changing view or level.
-    constexpr std::array<std::size_t, 4> upperCounts{4, 8, 12, 15};
+TEST_CASE(randomize_all_coverage_respects_every_drill_level_and_cap) {
     for (std::size_t level = 1; level <= FroggersModulationDrillIn::kMaxDrillLevel; ++level) {
         Fixture fx;
         fx.StepOnce(true);
-        FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
-        for (std::size_t entered = 0; entered < level; ++entered) {
-            drillIn.PressEncoder(0);
-        }
-        synth::Parameter* selected = drillIn.BankRef().SelectedParameter();
-        REQUIRE_TRUE(selected != nullptr);
-        for (std::size_t face : {3u, 0u, 0u, 2u, 1u}) {
+        FroggersModulationDrillIn view(fx.model.BankAt(FroggersBankId::Reverb));
+        for (std::size_t entered = 0; entered < level; ++entered) view.PressEncoder(0);
+        auto* selected = view.BankRef().SelectedParameter();
+        for (std::size_t face : {0u, 3u, 1u, 2u}) {
             RandomEvents feed;
             feed.Index(4, face);
-            const std::size_t calls = level < FroggersModulationDrillIn::kMaxDrillLevel ? 1 + upperCounts[face] : 1;
-            for (std::size_t target = 0; target < calls; ++target)
-                feed.Target(15, 1, 14, upperCounts[face]);
-            feed.Bind(fx.manager);
-            REQUIRE_TRUE(!RandomizeAll(fx.manager, drillIn, fx.model, fx.slate).partial);
-            feed.Done();
-            REQUIRE_TRUE(drillIn.Level() == level);
-            REQUIRE_TRUE(drillIn.BankRef().SelectedParameter() == selected);
-            REQUIRE_TRUE(CountModulatingSources(*selected) == upperCounts[face]);
+            feed.Target(15, 1, 0, 2);
+            std::size_t covered = 0;
             if (level < FroggersModulationDrillIn::kMaxDrillLevel) {
-                std::size_t descended = 0;
-                for (std::size_t source = 0; source < FroggersParameterModel::kNumModulators; ++source) {
-                    synth::Parameter* depth = selected->ModulationDepthParameter(source);
-                    if (depth == nullptr) continue;
-                    if (detail::DepthIsModulating(*depth)) {
-                        ++descended;
-                        REQUIRE_TRUE(CountModulatingSources(*depth) == upperCounts[face]);
-                    } else {
-                        REQUIRE_TRUE(CountModulatingSources(*depth) == 0);
-                    }
+                covered = (face * 3 + 2) / 4;
+                feed.Index(3, 2);
+                for (std::size_t i = 0; i < covered; ++i) {
+                    feed.Index(2 - i, 0);
+                    feed.Target(15, 1, 0, 2);
                 }
-                REQUIRE_TRUE(descended == upperCounts[face]);
             }
+            feed.Bind(fx.manager);
+            REQUIRE_TRUE(!RandomizeAll(fx.manager, view, fx.model, fx.slate).partial);
+            feed.Done();
+            REQUIRE_TRUE(view.Level() == level && view.BankRef().SelectedParameter() == selected);
+            REQUIRE_TRUE(CountModulatingSources(*selected) == 2);
+            std::size_t actual = 0;
+            for (std::size_t source = 0; source < 15; ++source) {
+                auto* depth = selected->ModulationDepthParameter(source);
+                if (!depth) continue;
+                auto count = CountModulatingSources(*depth);
+                REQUIRE_TRUE(count == 0 || count == 2);
+                actual += count != 0;
+            }
+            REQUIRE_TRUE(actual == covered);
         }
     }
-    // Diego must not acquire routes beyond the supported cap. The earlier
-    // selected-count check could pass even if the descent guard admitted
-    // one extra level. A fresh cap view makes those forbidden children
-    // observable: the densest press fills the selected parameter's own
-    // depths, and every one of their depth slots must remain null.
-    Fixture capped;
-    capped.StepOnce(true);
-    FroggersModulationDrillIn capView(capped.model.BankAt(FroggersBankId::Reverb));
-    for (std::size_t entered = 0; entered < FroggersModulationDrillIn::kMaxDrillLevel; ++entered) {
-        capView.PressEncoder(0);
-    }
-    synth::Parameter* capSelected = capView.BankRef().SelectedParameter();
-    REQUIRE_TRUE(capSelected != nullptr);
-    RandomEvents capFeed;
-    capFeed.Index(4, 3);
-    capFeed.Target(15, 1, 14, 15);
-    capFeed.Bind(capped.manager);
-    REQUIRE_TRUE(!RandomizeAll(capped.manager, capView, capped.model, capped.slate).partial);
-    capFeed.Done();
-    REQUIRE_TRUE(capView.Level() == FroggersModulationDrillIn::kMaxDrillLevel);
-    REQUIRE_TRUE(capView.BankRef().SelectedParameter() == capSelected);
-    REQUIRE_TRUE(CountModulatingSources(*capSelected) == FroggersParameterModel::kNumModulators);
-    for (std::size_t source = 0; source < FroggersParameterModel::kNumModulators; ++source) {
-        const synth::Parameter* depth = capSelected->ModulationDepthParameter(source);
-        REQUIRE_TRUE(depth != nullptr);
-        for (std::size_t inner = 0; inner < FroggersParameterModel::kNumModulators; ++inner) {
-            REQUIRE_TRUE(depth->ModulationDepthParameter(inner) == nullptr);
-        }
-    }
-
 }
 
 TEST_CASE(randomize_page_retains_geometric_counts_without_a_quartile_draw) {

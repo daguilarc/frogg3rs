@@ -224,21 +224,29 @@ pressing twice does not accumulate more modulation than pressing once.
 
 #### How many sources a randomize attaches
 
-Each **Randomize All** press rolls a fair four-sided density die. Repeats are allowed: two
-successive presses can land on the same density. Every parameter reached by that press shares the
-density, while each independently draws how many sources to attach within it.
-
-On a parameter page with all fifteen sources connected, the four equally likely densities are:
+Each **Randomize All** press rolls a fair four-sided density die. It chooses how many
+**parameters receive modulation**, across the 84 ordinary parameters on all six pages.
+It does not increase the number of sources attached to each selected parameter.
 
 | density | sparse | light | full | dense |
 |---|---|---|---|---|
-| sources per parameter | 0–3 | 4–7 | 8–11 | 12–15 |
+| parameters receiving modulation | 0–21 | 21–42 | 42–63 | 63–84 |
 
-Each count within one of these bands is equally likely. With fewer connected sources, the bands
-adjust to the available counts; neighboring densities can share a boundary count. In a modulation
-view, Randomize All keeps a minimum of one source when any source is connected, and shares its die
-with the deeper depths it reaches. A held gesture still receives the randomization, so selecting a
-source does not guarantee a change to its ordinary depth or an audible change.
+Integer boundary counts can belong to adjacent densities. The exact count is
+`floor((quartile * 85 + r) / 4)`, with independent uniform `r` from 0 through 84.
+Targets are selected without replacement; unselected targets' previous depths are cleared.
+
+For each selected parameter, **two connected sources is the most likely outcome**.
+Counts on either side have geometric falloff: one or three sources has half the
+weight of two, four has one quarter, five one eighth, and so on. The distribution
+is normalized over one through the connected-source count; with only one eligible
+source, that source is used. No connected sources means no routes. Coverage,
+source count and depth magnitude are independent draws.
+
+In a modulation view, the selected parameter receives the same mode-two source
+count. Below the drill cap, the density die selects how many of its actually
+modulating depths receive further modulation, using the same independent source-count
+law. The current view stays in place. Held gestures retain their usual edit behavior.
 
 **Randomize Page** uses a sparse draw from zero:
 

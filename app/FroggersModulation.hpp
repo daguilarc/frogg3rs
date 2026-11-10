@@ -956,10 +956,10 @@ private:
 // change upstream (same function).
 //
 // `detail::RandomizeParameterModulationDepths` below (used by all four call
-// sites: RandomizeBankLevel1Depths, RandomizePage's drill-in branch, and
+// sites: RandomizeDepthTargets, RandomizePage's drill-in branch, and
 // both RandomizeAll drill-in branches) replaces this with an APP-SIDE count/
-// source selection -- a shared density quartile for All, geometric for
-// Page, with a zero floor except for drilled-in All (floor one) -- while Sheaf
+// source selection -- an independent mode-two law for All and the sparse
+// zero-floor geometric law for Page -- while Sheaf
 // still performs every actual write through its public APIs: EnsureModulationDepth
 // allocates the chosen depth, then HandleSetAbsolute edits unheld All nominal
 // commands, while RandomizeVisibleValue handles selected gestures and Page.
@@ -1154,6 +1154,31 @@ inline std::size_t DrawQuartileCount(synth::ParameterManager& manager, std::size
     return minimum + (quartile * range + manager.NextRandomIndex(range)) / kDensityQuartileCount;
 }
 
+// Conditional on a parameter receiving modulation, count weights are
+// 2^(-abs(count-2)), restricted to connected sources. Integer tickets keep
+// the two-sided geometric law exact and require one independent RNG draw.
+inline std::size_t SourceCountWeight(std::size_t minimum, std::size_t maximum, std::size_t count) {
+    const std::size_t mode = std::clamp(std::size_t{2}, minimum, maximum);
+    const std::size_t radius = std::max(mode - minimum, maximum - mode);
+    const std::size_t distance = count < mode ? mode - count : count - mode;
+    return std::size_t{1} << (radius - distance);
+}
+
+inline std::size_t DrawModalSourceCount(synth::ParameterManager& manager,
+                                        std::size_t minimum, std::size_t maximum) {
+    assert(minimum <= maximum && maximum <= FroggersParameterModel::kNumModulators);
+    std::size_t total = 0;
+    for (std::size_t count = minimum; count <= maximum; ++count)
+        total += SourceCountWeight(minimum, maximum, count);
+    std::size_t ticket = manager.NextRandomIndex(total);
+    for (std::size_t count = minimum; count < maximum; ++count) {
+        const std::size_t weight = SourceCountWeight(minimum, maximum, count);
+        if (ticket < weight) return count;
+        ticket -= weight;
+    }
+    return maximum;
+}
+
 // Convert a geometric effective magnitude to the existing mutator's input.
 inline float DrawGeometricDepthRandomizeInput(synth::ParameterManager& manager,
                                                synth::ModulationTargetKind kind) {
@@ -1182,10 +1207,10 @@ inline std::size_t SwapInRandomPick(synth::ParameterManager& manager, std::span<
 }
 
 // The shared count/source-selection helper used by all
-// four RandomMod dispatch sites in this file (RandomizeBankLevel1Depths,
+// four RandomMod dispatch sites in this file (RandomizeDepthTargets,
 // RandomizePage's drill-in branch, and both RandomizeAll drill-in branches).
 // Chooses a COUNT of `parameter`'s connected modulation sources using the
-// press's density quartile for All or the geometric law for Page, draws
+// independent mode-two law for All or the sparse geometric law for Page, draws
 // that many DISTINCT sources
 // (partial Fisher-Yates -- Sheaf's
 // own private Bank::RandomizeModulationDepths loop can independently redraw
@@ -1208,7 +1233,7 @@ inline std::size_t SwapInRandomPick(synth::ParameterManager& manager, std::span<
 // already uses for the identical null-return case.
 inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager, synth::Parameter& parameter,
                                                 std::size_t minimumSources,
-                                                std::optional<std::size_t> densityQuartile = std::nullopt) {
+                                                bool randomizeAll = false) {
     synth::ParameterGroup& group = parameter.Group();
     bool partial = CapacityExhausted(group);
 
@@ -1219,8 +1244,8 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
     // Scope note: this function is the single call site every RandomizeAll/
     // RandomizePage branch below routes through per parameter, so "zero in
     // scope, then draw" naturally becomes "zero ALL depths this operation
-    // touches" for Randomize All (RandomizeBankLevel1Depths calls this once
-    // per top-level parameter, across every bank) and "zero only that page's
+    // touches" for Randomize All (RandomizeDepthTargets calls this once
+    // per selected target, after clearing the full coverage scope) and "zero only that page's
     // parameter's depths" for Randomize Page (RandomizePage's level-1/2
     // branch calls this exactly once, on the one selected parameter) -- no
     // separate wide "zero everything up front" pass is needed, since one
@@ -1242,11 +1267,11 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
         return partial;
     }
 
-    // All shares one face across the press; Page/direct callers keep their
-    // geometric draw. Connected eligibility and the gesture floor bound both.
+    // Coverage is chosen by the caller. Source counts are independent of its
+    // quartile; Page/direct callers retain their sparse geometric draw.
     const std::size_t minimum = std::min(minimumSources, eligible.size());
-    const std::size_t count = densityQuartile
-        ? DrawQuartileCount(manager, minimum, eligible.size(), *densityQuartile)
+    const std::size_t count = randomizeAll
+        ? DrawModalSourceCount(manager, minimum, eligible.size())
         : DrawGeometricCount(manager, minimum, eligible.size());
 
     // Partial Fisher-Yates over `eligible`: draws `count` DISTINCT source
@@ -1268,10 +1293,10 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
         // kScenePoles rather than naming each pole in its own statement --
         // see that array's own comment.
         for (const synth::SceneState& pole : kScenePoles) {
-            const float input = densityQuartile
+            const float input = randomizeAll
                 ? DrawGeometricDepthRandomizeInput(manager, depth->TargetKind())
                 : manager.NextRandomValue();
-            if (densityQuartile && manager.SelectedGestureMask() == 0) {
+            if (randomizeAll && manager.SelectedGestureMask() == 0) {
                 const float center = depth->TargetKind() == synth::ModulationTargetKind::kOneWayAmount
                     ? 0.5f + 0.5f * input : input;
                 depth->HandleSetAbsolute(pole, center);
@@ -1374,46 +1399,21 @@ inline void RandomizeBankValues(synth::ParameterManager& manager, synth::Bank& b
     }
 }
 
-// Randomizes one bank's 14 page parameters' LEVEL-1 depths -- and only those.
-// Crispy (encoder 14) is deliberately EXCLUDED here, as is Crunchy (encoder
-// 15), so unlike RandomizeBankValues above there is no `includeCrispy` knob:
-// that function randomizes VALUES and its two callers differ on Crispy, while
-// this one randomizes DEPTHS and its sole caller (RandomizeAll's level-0
-// branch, which runs it once per bank) always wants Crispy out. The why is
-// spelled out at this function's tail.
-// Does not press through Bank::HandlePress at all --
-// `bank.VisibleParameter(paramIx)` reads the top-level parameter directly
-// (this bank is never drilled into here, so `visible_ == topLevel_`, per
-// PressBankWithRandomValue's own header comment on Bank-owned state), and
-// RandomizeParameterModulationDepths is called on it directly (it derives
-// the parameter's group itself via `parameter.Group()`, which is every page
-// parameter's SAME group -- FroggersParameterModel's one mono
-// ParameterGroup -- so no separate group parameter is needed here anymore).
-inline bool RandomizeBankLevel1Depths(synth::ParameterManager& manager, synth::Bank& bank, std::size_t densityQuartile) {
+// Density applies to the number of target parameters receiving routes.
+// Clear the entire scope, select distinct targets, then independently draw
+// a mode-two source count and geometric magnitudes for each selected target.
+inline bool RandomizeDepthTargets(synth::ParameterManager& manager,
+                                 std::vector<synth::Parameter*> targets, std::size_t quartile) {
     bool partial = false;
-    // Each call's result is hoisted into its own named local BEFORE
-    // combining (the same short-circuit hazard FroggersAppCore::ProcessFrame()
-    // guards against for its own Randomize All/Page dispatch), so every
-    // iteration of this loop always runs its randomize call -- `partial =
-    // RandomizeParameterModulationDepths(...) || partial` reads fine but is
-    // only correct because the call sits on the left of `||`; swapping the
-    // combine order (or a future edit that does) would short-circuit once
-    // `partial` went true and skip randomizing every remaining page parameter.
-    for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
-        synth::Parameter* param = bank.VisibleParameter(static_cast<synth::PhysicalEncoderId>(paramIx));
-        if (param == nullptr) {
-            continue;  // defensive: every page-parameter slot is always registered in practice.
-        }
-        // Parameter-page All retains its zero-source floor.
-        const bool paramPartial = RandomizeParameterModulationDepths(manager, *param, /*minimumSources=*/0, densityQuartile);
-        partial = partial || paramPartial;
+    for (auto* target : targets) ZeroExistingModulationDepths(*target);
+    if (targets.empty()) return partial;
+    const std::size_t count = DrawQuartileCount(manager, 0, targets.size(), quartile);
+    for (std::size_t i = 0; i < count; ++i) {
+        const std::size_t pick = i + manager.NextRandomIndex(targets.size() - i);
+        std::swap(targets[i], targets[pick]);
+        const bool targetPartial = RandomizeParameterModulationDepths(manager, *targets[i], 1, true);
+        partial = partial || targetPartial;
     }
-    // Crispy's DEPTHS stay excluded here regardless of whether this press
-    // drew this bank's Crispy VALUE (see kMaxRandomizedCrispy's own comment):
-    // this function runs once per bank from Randomize All, and depths are
-    // simply out of Randomize All's scope for Crispy, full stop. Randomize
-    // Page reaches a single page's Crispy depths through the ordinary
-    // drill-in path, which is unaffected.
     return partial;
 }
 
@@ -1691,20 +1691,20 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
             crispyDrawn[detail::SwapInRandomPick(manager, crispyPool, i)] = true;
         }
 
-        // Hoisted for the same reason as RandomizeBankLevel1Depths's own
-        // loop above (the same short-circuit hazard FroggersAppCore::ProcessFrame()
-        // guards against) -- this loop is
-        // ACROSS ALL SIX BANKS, so a short-circuited `||` here would skip
-        // randomizing every remaining bank once one had already gone partial.
+        // Randomize all ordinary values, then select modulation coverage
+        // across the complete population, excluding Crispy/Crunchy depths.
+        std::vector<synth::Parameter*> targets;
+        targets.reserve(kFroggersPageCount * kFroggersParamsPerBank);
         for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
             const auto bankId = static_cast<FroggersBankId>(bankIx);
             synth::Bank& bank = model.BankAt(bankId);
             // Randomize All: this bank's Crispy VALUE is randomized only if
             // this press drew it above; Crunchy stays excluded regardless.
             detail::RandomizeBankValues(manager, bank, /*includeCrispy=*/crispyDrawn[bankIx]);
-            const bool bankPartial = detail::RandomizeBankLevel1Depths(manager, bank, densityQuartile);
-            partial = partial || bankPartial;
+            for (std::size_t slot = 0; slot < kFroggersParamsPerBank; ++slot)
+                targets.push_back(&model.PageParameter(bankId, slot));
         }
+        partial = detail::RandomizeDepthTargets(manager, std::move(targets), densityQuartile);
         // The gesture that re-rolls the whole patch also re-rolls the five
         // stepped sources' held values, so a locked phrase is a new phrase
         // afterwards. The salt comes from the manager's own generator, so a
@@ -1747,46 +1747,22 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
     // unchanged; what it avoids is the wasted allocate-then-prune churn.)
     synth::Parameter& selectedParam = *drillIn.BankRef().SelectedParameter();
     // Drilled-in All retains a one-source floor; held gestures still govern writes.
-    bool partial = detail::RandomizeParameterModulationDepths(manager, selectedParam, /*minimumSources=*/1, densityQuartile);
+    bool partial = detail::RandomizeParameterModulationDepths(manager, selectedParam, /*minimumSources=*/1, true);
     // Descend one level -- but ONLY if a deeper level exists to descend into.
     // Read from the drill-in's own single definition site rather than
     // re-testing a literal.
     if (drillIn.Level() < FroggersModulationDrillIn::kMaxDrillLevel) {
+        std::vector<synth::Parameter*> targets;
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
-            synth::Parameter* depthParam = selectedParam.ModulationDepthParameter(modIx);
-            if (depthParam == nullptr) {
-                continue;  // not connected, or the draw above hit CanAllocate()==false
-            }
-            // Descend only into depths that are ACTUALLY modulating. A
-            // materialized-but-neutral depth modulates nothing, so
-            // sub-modulating it is meaningless -- and it is what made the
-            // drilled parameter show 13 badges when 1 source was live. See
-            // DepthIsModulating's own comment for the badge mechanism.
-            if (!detail::DepthIsModulating(*depthParam)) {
-                // CLEAR it rather than merely skipping. Randomize is
-                // non-additive: each press zeroes the selected
-                // parameter's own depths before drawing, so a source picked
-                // last press is neutral this press. But
-                // ZeroExistingModulationDepths DOES NOT RECURSE -- it clears
-                // this parameter's depths, not those depths' own sub-depths.
-                // Skipping alone would therefore leave the sub-depths a
-                // PREVIOUS press wrote sitting on a now-neutral depth, and
-                // Sheaf's badge criterion counts a depth that merely HAS
-                // sub-modulation -- so the badge would stay lit for a source
-                // that is modulating nothing, which is the very defect this
-                // rule exists to remove.
-                detail::ZeroExistingModulationDepths(*depthParam);
-                continue;
-            }
-            // Hoisted for the same reason (the same short-circuit hazard
-            // FroggersAppCore::ProcessFrame() guards against)
-            // -- this loop is the depth-parameter sweep, so a short-circuited
-            // `||` here would skip randomizing every remaining depth parameter.
-            // Floor 1: the other half of the same drilled-in Randomize All
-            // press, retaining its one-source floor.
-            const bool depthPartial = detail::RandomizeParameterModulationDepths(manager, *depthParam, /*minimumSources=*/1, densityQuartile);
-            partial = partial || depthPartial;
+            auto* depth = selectedParam.ModulationDepthParameter(modIx);
+            if (depth == nullptr) continue;
+            // Remove stale descendants before deciding which parent depths
+            // actually modulate; badges also count descendant-only routes.
+            detail::ZeroExistingModulationDepths(*depth);
+            if (detail::DepthIsModulating(*depth)) targets.push_back(depth);
         }
+        const bool deeperPartial = detail::RandomizeDepthTargets(manager, std::move(targets), densityQuartile);
+        partial = partial || deeperPartial;
     }
     return {partial};
 

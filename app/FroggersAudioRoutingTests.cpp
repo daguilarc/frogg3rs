@@ -933,15 +933,6 @@ std::size_t ConnectedSources(synth_froggers::FroggersParameterModel& model) {
         [](const synth::ModulatorMetadata& source) { return source.connected; }));
 }
 
-void RequireWholeDraw(const RouteSet& assigned, std::size_t expectedPerTarget) {
-    std::array<std::size_t, synth_froggers::kFroggersPageCount * synth_froggers::kFroggersParamsPerBank> counts{};
-    for (const RouteKey& route : assigned) {
-        ++counts[route.first];
-    }
-    for (const std::size_t count : counts) {
-        REQUIRE_TRUE(count == expectedPerTarget);
-    }
-}
 
 // Audio storage checks bound each entropy channel independently. Index roles
 // are fixed by script position: face, each target's count, source pick and
@@ -966,19 +957,28 @@ void SetFace(Rig& rig, std::size_t face) {
     feed = std::make_shared<Feed>();
     const auto scripted = feed;
     const std::size_t connected = ConnectedSources(rig.Application().Parameters());
-    const std::size_t count = (face * (connected + 1) + connected) / 4;
-    scripted->expectedValues = synth_froggers::kFroggersPageCount * synth_froggers::kFroggersParamsPerBank;
+    // Force coverage to its quartile's upper boundary and independently
+    // force every selected target to the maximum source count. This remains
+    // a worst-case storage test, even though dense routes are now rare.
+    const std::size_t targets = synth_froggers::kFroggersPageCount * synth_froggers::kFroggersParamsPerBank;
+    const std::size_t selected = (face * (targets + 1) + targets) / 4;
+    scripted->expectedValues = targets;
     scripted->ranges.push_back(4);
-    for (std::size_t target = 0; target < scripted->expectedValues; ++target) {
-        scripted->ranges.push_back(connected + 1);
-        for (std::size_t source = 0; source < count; ++source) {
+    scripted->ranges.push_back(targets + 1);
+    std::size_t totalWeight = 0;
+    for (std::size_t c = 1; c <= connected; ++c)
+        totalWeight += synth_froggers::detail::SourceCountWeight(1, connected, c);
+    for (std::size_t target = 0; target < selected; ++target) {
+        scripted->ranges.push_back(targets - target);
+        scripted->ranges.push_back(totalWeight);
+        for (std::size_t source = 0; source < connected; ++source) {
             scripted->ranges.push_back(connected - source);
             scripted->ranges.push_back(2);
             scripted->ranges.push_back(2);
         }
     }
     scripted->ranges.push_back(std::size_t{1} << 32);
-    scripted->expectedCoins = 1 + 2 * count * scripted->expectedValues;
+    scripted->expectedCoins = 1 + 2 * connected * selected;
     manager.SetRandomSource(
         [scripted] {
             REQUIRE_TRUE(++scripted->values <= scripted->expectedValues);
@@ -1066,7 +1066,13 @@ TEST_CASE(randomize_storm_holds_its_depth_working_set) {
         REQUIRE_TRUE(!rig.Application().LastRandomizePartial());
         density_draws::Exhaust();
         density_draws::RouteSet assigned = density_draws::PageRoutes(model, true);
-        density_draws::RequireWholeDraw(assigned, face == 3 ? connected : connected / 4);
+        const std::size_t selected = (face * 85 + 84) / 4;
+        REQUIRE_TRUE(assigned.size() == selected * connected);
+        // Selected targets have a complete forced draw; every other target
+        // is cleared, independently of the coverage quartile.
+        std::array<std::size_t, 84> counts{};
+        for (const auto& route : assigned) ++counts[route.first];
+        for (auto count : counts) REQUIRE_TRUE(count == 0 || count == connected);
         density_draws::RouteSet retained = previousAssigned;
         retained.insert(assigned.begin(), assigned.end());
         const density_draws::RouteSet materialized = density_draws::PageRoutes(model, false);
@@ -1392,8 +1398,26 @@ TEST_CASE(a_small_patch_loaded_in_the_same_block_as_a_randomize_all_press_leaves
         storage_watermark::RunProductionBlocks(rig, cadence, 1);
     }
 
-    const std::size_t availableBeforeLoad = rig.Application().Parameters().Group().AvailableParameterSlots();
+    // Make capacity pressure explicit rather than relying on random draws
+    // to create a particular number of depths. Source counts are now sparse;
+    // the small patch must still fit with only one launch batch left over.
+    auto& pressureModel = rig.Application().Parameters();
     const std::size_t onePress = synth_froggers::FroggersModulationSlate::kDepthParameterStorageCapacity;
+    const std::size_t desiredFree = patchLiveDepths + onePress;
+    std::vector<synth::Parameter*> pressureParents{&pressureModel.Crispy(synth_froggers::FroggersBankId::Reverb)};
+    for (std::size_t parent = 0;
+         pressureModel.Group().AvailableParameterSlots() > desiredFree; ++parent) {
+        REQUIRE_TRUE(parent < pressureParents.size());
+        for (std::size_t source = 0; source < synth_froggers::FroggersParameterModel::kNumModulators &&
+             pressureModel.Group().AvailableParameterSlots() > desiredFree; ++source) {
+            auto* depth = pressureParents[parent]->EnsureModulationDepth(source);
+            REQUIRE_TRUE(depth != nullptr);
+            for (const auto& pole : synth_froggers::detail::kScenePoles)
+                depth->SceneCenter(pole.leftScene) = 0.75f;
+            pressureParents.push_back(depth);
+        }
+    }
+    const std::size_t availableBeforeLoad = pressureModel.Group().AvailableParameterSlots();
     REQUIRE_TRUE(availableBeforeLoad > patchLiveDepths);
     std::cout << "  [watermark] same-block target: " << availableBeforeLoad << " available, patch needs "
               << patchLiveDepths << ", leaving " << (availableBeforeLoad - patchLiveDepths)

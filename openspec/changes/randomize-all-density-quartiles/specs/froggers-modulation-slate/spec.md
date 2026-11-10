@@ -1,3 +1,5 @@
+> Superseded by `randomization-coverage-source-bias`: the source-count quartile interpretation below was incorrect. Quartiles apply to target-parameter coverage; selected targets retain the mode-two geometric source-count law.
+
 > Revised requirement approved after fresh-context review and implemented. Independent after-code reviewer A accepted the implementation, checks, manual and evidence; both independent final reviewers accepted delivery of main commit/push commands. See implementation.md.
 
 ## MODIFIED Requirements

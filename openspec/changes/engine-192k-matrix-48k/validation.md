@@ -57,4 +57,46 @@ Incremental-build checks reproduced a missing dependency on `RateSeparatedParame
 
 The JUCE boundary, firmware-include boundary, parameter-table documentation, specification references, promoted-requirement consistency, planning-history and artifact-symbol checks passed. Both repository diffs passed whitespace checks.
 
-Changes remain uncommitted in the parent worktree and its Sheaf submodule. The separate Desktop checkout's uncommitted density/randomization changes were preserved and are not included in this worktree's committed baseline.
+The original implementation was checkpointed in local parent and Sheaf commits before rebasing. The separate Desktop checkout was preserved.
+
+## Rebase and operator correction (2026-11-09)
+
+Rebased cleanly onto `46291acd`, fetched from the Froggers remote. Main did not
+change the Sheaf gitlink. The source-count quartile policy in that main commit
+was a product-intent error: the operator clarified that quartiles choose how many
+parameters receive modulation. Selected parameters retain a source-count mode of
+two, with geometric falloff in both directions. The current code, manual, native
+checks and Lean model implement that separation. See
+`openspec/changes/randomization-coverage-source-bias/`.
+
+Post-correction checks:
+
+- 49 Lean theorem declarations, five reviewed source fingerprints and fresh axiom audit passed.
+- 361 Sheaf parameter tests, 72 modulation tests, nine headless and 14 parameter-model tests passed.
+- The final optimized code passed all 200 actual-audio Randomize All stress draws: finite, bounded and non-silent on both channels.
+- Reintroducing dense source-count quartiles failed the source-weight/coverage regressions; ignoring target coverage failed the coverage regression. These controls were compiled in temporary copies, not the production tree.
+- Twelve repeated randomizations each rendered 0.501 seconds of finite audible audio. After profiling and exact scalar-curve reuse/absent-inactive-route skipping, measured render times were approximately 0.36–0.42 seconds, versus roughly 0.48–0.59 seconds before those optimizations. These are throughput measurements, not a universal deadline guarantee.
+- Source boundaries, documentation, specification references, promoted clauses, artifact symbols and whitespace checks passed.
+
+All 62 distinct routing scenarios are covered by the completed broad run and
+subsequent targeted reruns. The corrected, final optimized code reran the 200-draw
+storm, all 34 scenarios after the old run's stopping point, and the corrected
+same-tick Load pressure fixture. The earlier broad run covers the other completed
+routing cases. The obsolete broad process was terminated before operator testing;
+no stress or storage test remains running.
+
+The same-tick Load fixture now explicitly creates retained storage pressure instead
+of relying on random growth to reach a particular capacity. Its assertion remains
+unchanged. The rerun measured 1521 available slots for an 81-depth patch, leaving
+exactly one 1440-slot launch batch; Load applied in the same block, all 1092 forced
+routes were written, all 75 saved page-depth paths were present, and no partial draw
+was reported. This setup change does not change production allocation behavior.
+
+Build hygiene removed this worktree's old `app/build`, `app/build-launcher`, and
+`app/vst/build` outputs (approximately 840 MB) before rebuilding the core tests
+and desktop app. The corrected desktop bundle passed signature verification and
+was launched from this exact worktree. Plugin artifacts were removed and have
+not been rebuilt for this correction. No plugins were installed.
+
+The operator confirmed the corrected desktop build “works great.” Merge and push
+remain on hold pending explicit approval. All changes are saved locally.

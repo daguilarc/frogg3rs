@@ -1,0 +1,5 @@
+- [x] Separate target coverage, source count and depth magnitude samplers.
+- [x] Add exhaustive source-ticket and independent target-coverage regressions.
+- [x] Update Lean behavior, axiom audit and reviewed source correspondence.
+- [x] Complete native regression, timing checks and clean desktop rebuild.
+- [x] Launch corrected desktop build for operator testing.
