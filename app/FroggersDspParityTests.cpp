@@ -12445,6 +12445,36 @@ TEST_CASE(stereo_delay_read_lag_stays_inside_the_line_across_random_knob_walks) 
     std::cout << "  [random knob walk] points=" << points << " sample rates=44100/48000/88200/96000\n";
 }
 
+TEST_CASE(fuego_preserves_within_cell_errors_across_every_mask_and_supported_row) {
+    using synth_froggers::dsp::Fuegoize;
+    for (int bits = 0; bits <= 8; ++bits) {
+        for (int row = 0; row < 16; ++row) {
+            for (int cell = 0; cell < 255; ++cell) {
+                const float x = (cell+0.25f)/255.0f, y = (cell+0.75f)/255.0f;
+                REQUIRE_TRUE(static_cast<unsigned>(x*255.0f) == static_cast<unsigned>(y*255.0f));
+                const float delta = Fuegoize(y,bits == 0 ? 0.03125f : bits/8.0f,static_cast<uint8_t>(row))-
+                    Fuegoize(x,bits == 0 ? 0.03125f : bits/8.0f,static_cast<uint8_t>(row));
+                REQUIRE_TRUE(std::fabs(delta-(y-x)) <= 2e-7f);
+            }
+        }
+    }
+}
+
+TEST_CASE(fuego_first_bit_boundary_amplifies_an_adjacent_float_as_the_model_predicts) {
+    using synth_froggers::dsp::Fuegoize;
+    const float threshold = 1.0f/255.0f;
+    const float below = std::nextafter(threshold,0.0f);
+    const float inputStep = threshold-below;
+    const float atOutput = Fuegoize(threshold,1.0f,0);
+    const float belowOutput = Fuegoize(below,1.0f,0);
+    REQUIRE_TRUE(inputStep > 0);
+    REQUIRE_TRUE(std::fabs(atOutput-belowOutput) > 0.08f);
+    REQUIRE_TRUE(std::fabs(atOutput-belowOutput) > 100000000.0f*inputStep);
+    REQUIRE_TRUE(Fuegoize(threshold,0.0f,0) == threshold);
+    REQUIRE_TRUE(Fuegoize(below,0.0f,0) == below); // bypass is the non-amplifying positive control
+    std::cout << "  [Fuego boundary] input=" << inputStep << " output=" << atOutput-belowOutput << "\n";
+}
+
 }  // namespace
 
 int main() {

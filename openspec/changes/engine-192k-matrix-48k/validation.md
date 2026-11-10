@@ -131,3 +131,49 @@ named constant for shared runtime/export use without changing its numeric value.
 The already-tested desktop app remains open; no desktop or plugin rebuild was
 needed for this proof-only behavior extension. See
 `External/Sheaf/projects/synth/formal/ALIASING.md` for full correspondence boundaries.
+
+## State, rounding and composition extension (2026-11-10)
+
+The fresh gate now verifies **139 theorem declarations and 10 reviewed sources**,
+with only the same three standard Lean axioms. The native coefficient exporter
+checks **20 source-filter coefficients plus all 287 stored binary32 FIR taps**.
+
+Added full direct-form-I memory and its relation to the feedback recurrence,
+two-sample input-history alignment, concrete positive energy certificates,
+exponential initial-history decay, convergence of homogeneous energy, and bounded
+adversarial disturbance accumulation. Mathematical nearest-even binary32/binary64
+models include gradual subnormals, FTZ/DAZ allowances, primitive/local/state budgets
+and the actual mixed-precision FIR operation pattern under explicit finite guards.
+The FIR has certified L1 gain at most 9/4 and finite history; final clipping is
+proved nonexpansive for value error. These are guarded mathematical contracts,
+not compiler/hardware refinement proofs or an all-patch spectral guarantee.
+
+Native verification passed **685 cases**: 366 Sheaf parameter/filter, 108 Sheaf
+DSP, and 211 Froggers DSP scenarios. This includes actual ARM64 FPCR FTZ/DAZ
+checks with environment restoration, exact state-copy and tap-order checks,
+512-sample four-section priming, and the existing time/frequency alias tests.
+Measured peak local biquad residual was about 7.87054e-8 (guarded budget about
+4.29153e-6); peak FIR mixed-precision error was about 5.15049e-8.
+
+The nonlinear extension proves within-cell error preservation for a fixed code,
+explicit offset-jump budgets for cell/control-code crossings, and two-stage warp
+composition. It also proves a discontinuity witness for the actual maximum-Fuego,
+row-zero integer transformation. Native adjacent float inputs differed by
+4.65661287e-10 but their outputs differed by 0.0823529437. The bypass control
+preserved the inputs; 36,720 within-cell mask/row/cell pairs passed. Therefore the
+linear filter guarantee cannot simply be carried through the bit warp without
+those guards/jump terms. This does not assert non-Lipschitzness of the finite
+binary32 domain or formally establish a full audio-output counterexample.
+
+Negative controls rejected an unstable stage coefficient, a one-bit output FIR
+snapshot drift, and FE_TOWARDZERO in the nearest-even native check. The reviewed
+contracts and detailed limits are in
+`External/Sheaf/projects/synth/formal/STATE_AND_ROUNDING.md`.
+
+No production DSP behavior was changed; this extension adds models, coefficient
+correspondence, tests and documentation. The already approved desktop sound was
+preserved. No desktop/plugin rebuild, install, merge or push was performed.
+
+Source-boundary/documentation checks and both whitespace checks passed. The spec
+check markers were normalized to the parser's plain `Check:` form; all 136 case
+references now resolve, including the state/arithmetic cases above.

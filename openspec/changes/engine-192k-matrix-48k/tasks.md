@@ -4,3 +4,4 @@
 - [x] Validate native behavior, source alias rejection, regression suites and model proofs.
 - [x] Build VST3/AU artifacts and verify plugin host, latency, packaging and incremental dependencies.
 - [x] Prove continuous-band source-filter response bounds in Lean, bind exact C++ coefficients, and verify native/negative controls.
+- [x] Extend state, finite IEEE/FTZ/DAZ, actual FIR and nonlinear cell/jump contracts; verify native hardware and negative controls.
