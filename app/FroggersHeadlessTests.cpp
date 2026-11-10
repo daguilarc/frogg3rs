@@ -422,6 +422,23 @@ TEST_CASE(stop_silences_curve_one_grace_active_voice_within_bound) {
     REQUIRE_TRUE(postStopPeak < 1.0e-4f);
 }
 
+// Non-power-of-two blocks exercise cadence across callback boundaries.
+TEST_CASE(engine_runs_four_samples_per_host_matrix_frame_and_records_at_host_rate) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        64, UseScratchRuntimeDataPaths("rate_split"),
+        {.sampleRate = 48000.0, .blockSize = 37});
+    auto& app = rig.Application();
+    const auto engineBefore = app.EngineSamplesProcessed();
+    const auto matrixBefore = app.MatrixFramesProcessed();
+    rig.RunBlocks(3);
+    REQUIRE_TRUE(app.EngineSampleRate() == 192000.0);
+    REQUIRE_TRUE(app.MatrixSampleRate() == 48000.0);
+    REQUIRE_TRUE(app.EngineSamplesProcessed() - engineBefore == 3 * 37 * 4);
+    REQUIRE_TRUE(app.MatrixFramesProcessed() - matrixBefore == 3 * 37);
+    REQUIRE_TRUE(app.RecordSampleRate() == 48000.0f);
+    REQUIRE_TRUE(!rig.SawNaN());
+}
+
 }  // namespace
 
 int main() {

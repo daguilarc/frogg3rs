@@ -5,6 +5,20 @@
 The app is built on [Sheaf](https://github.com/jvictor0/Sheaf), a git submodule
 at `External/Sheaf`. Development tracks a fork of it rather than upstream.
 
+## Audio and matrix rates
+
+At the preferred 48 kHz device rate, the audio engine and modulation sources run
+at 192 kHz. The editable modulation matrix and Fuego/UI phases run at 48 kHz;
+filtered sources feed each evaluation and processed parameter values interpolate
+across four engine samples. Other device rates retain the same 4:1 ratio.
+Recording and scope history stay at device rate. The output FIR adds 143 engine
+samples (35.75 device samples) of delay; the plugin reports 36 samples.
+
+The reusable bridge and Lean behavior model live in Sheaf's `projects/synth`.
+With Lean 4.32.0 installed, `make -C External/Sheaf/projects/synth formal-test`
+checks the proofs, source correspondence and allowed axioms. See that model's
+`formal/README.md` for the proof boundary.
+
 ## Build the launcher
 
 ```bash

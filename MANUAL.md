@@ -2,6 +2,8 @@
 
 This is the manual for **Frogg3rs**, a modular synthesizer program running on the Sheaf design platform.
 
+At a 48 kHz audio-device rate, the sound engine runs at 192 kHz and the modulation matrix updates at 48 kHz. Recordings use the audio-device rate.
+
 The same instrument core runs in five hosts:
 
 - **Standalone** — a self-contained desktop app, with its own audio-device and

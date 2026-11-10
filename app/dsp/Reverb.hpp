@@ -174,8 +174,9 @@ inline constexpr float kReverbWetLimiterReleaseSeconds = kSharedReleaseSeconds; 
 // derivation noted at its call site/setter.
 struct Reverb
 {
-    // 08b5fd3:src/core/FroggersEngine.hpp:65 (x_rvSize).
-    static constexpr size_t kSize = 4096;
+    // Fourfold capacity retains the original room/pre-delay times at 192 kHz.
+    static constexpr size_t kReferenceSize = 4096;
+    static constexpr size_t kSize = 4 * kReferenceSize;
 
     // Authored Mod depth constants (no equivalent to cite) -- a slow
     // wow on the tank read-taps, deliberately small (well under one sample
@@ -523,7 +524,8 @@ struct Reverb
     static float PreDelayNormFromKnob(float knob01, float sampleRate)
     {
         constexpr float kPreDelayFloorMs = 1.0f;
-        const float ceilingMs = 1000.0f * static_cast<float>(kSize - 1) / sampleRate;
+        const float ceilingMs = std::min(1000.0f * static_cast<float>(kReferenceSize - 1) / 48000.0f,
+            1000.0f * static_cast<float>(kSize - 1) / sampleRate);
         return ExpMapCompute(kPreDelayFloorMs / 1000.0f, ceilingMs / 1000.0f, knob01);
     }
 
@@ -626,8 +628,8 @@ struct Reverb
 
         // 08b5fd3:src/core/FroggersEngine.hpp:456, 08b5fd3:src/core/FroggersEngine.hpp:506-512 -- room size sets both tank delay lengths.
         const float sizeNorm = RoomSizeFromKnob(sizeKnob01);
-        size_t baseA = static_cast<size_t>(180.0f + sizeNorm * 1300.0f);
-        size_t baseB = static_cast<size_t>(260.0f + sizeNorm * 1800.0f);
+        size_t baseA = static_cast<size_t>((180.0f + sizeNorm * 1300.0f) * sampleRate / 48000.0f);
+        size_t baseB = static_cast<size_t>((260.0f + sizeNorm * 1800.0f) * sampleRate / 48000.0f);
         size_t dA = std::min(kSize - 1, std::max(static_cast<size_t>(1), baseA));
         size_t dB = std::min(kSize - 1, std::max(static_cast<size_t>(1), baseB));
 
@@ -666,7 +668,7 @@ struct Reverb
         // so dA/dB are unchanged from today's Room-size-only result at the
         // default, exactly like modOffset==0 above.
         const float tunedOffset = TunedOffsetSamplesFromKnob(tunedKnob01);
-        const long offsetSamples = std::lround(modOffset + tunedOffset);
+        const long offsetSamples = std::lround((modOffset + tunedOffset) * sampleRate / 48000.0f);
         const auto applyMod = [&](size_t baseDelay) -> size_t {
             long modulated = static_cast<long>(baseDelay) + offsetSamples;
             modulated = std::max<long>(1, std::min<long>(static_cast<long>(kSize) - 1, modulated));
@@ -788,7 +790,7 @@ struct Reverb
         // 08b5fd3:src/core/FroggersEngine.hpp:459, 08b5fd3:src/core/FroggersEngine.hpp:574 Damping -- both filters take the same alpha (one
         // knob, two independent lines; see dampFilterA/dampFilterB's own
         // field comment for why they no longer share state).
-        const float dampAlpha = DampAlphaFromKnob(dampKnob01);
+        const float dampAlpha = 1.0f - std::pow(1.0f - DampAlphaFromKnob(dampKnob01), 48000.0f / sampleRate);
         dampFilterA.alpha = dampAlpha;
         dampFilterB.alpha = dampAlpha;
         const float aOut = dampFilterA.Process(valA);

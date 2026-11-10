@@ -95,8 +95,8 @@ using Rig = synth_rig::SynthRig<synth_froggers::FroggersApp>;
 namespace dsp = synth_froggers::dsp;
 
 // SceneCenter writes are applied through a SMOOTHED periodic Compute
-// (Parameter::ProcessSamplePhase1, alpha 0.0994 every 16 samples), so a patch
-// is only ~81% applied one block after it is written. ComputeAllParameters()
+// (Parameter::ProcessSamplePhase1 at host-frame cadence). Its target alpha
+// is converted from the former 3 kHz target cadence. ComputeAllParameters()
 // passes smoothTargetCenter=false and therefore converges exactly, in one
 // call. Call this after the SceneCenter writes and before the first
 // RunBlocks() whenever a test asserts on a patch rather than on a ramp.
@@ -685,7 +685,7 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
     model.Crispy(synth_froggers::FroggersBankId::Filter).SceneCenter(0) = 1.0f;
     // A SceneCenter write is only ~81% applied after one block
     // (Parameter::ProcessSamplePhase1's periodic smoothed Compute, alpha
-    // 0.0994 every 16 samples). This test must measure the patch it declares,
+    // retuned to the host-frame cadence). This test must measure the patch it declares,
     // not a ramp into it, so apply it exactly before the first block.
     ApplyPatchNow(rig);
 
@@ -1675,7 +1675,9 @@ TEST_CASE(magnitude_recovery_ignores_a_single_block_transient) {
     // the finiteness-recovery test above for why 4000 is safe) -- Tier 1
     // does not fire (it IS finite), so only Tier 2's sustained-window logic
     // is under test here.
-    constexpr std::size_t kIndex = 4000;
+    // Five host blocks advance 5120 engine samples at 4x. Use a
+    // cell beyond that cursor travel so ordinary writes cannot erase it.
+    constexpr std::size_t kIndex = dsp::Comb::kSize - 1;
     comb.delayLine.Write(kIndex, 500.0f);
     REQUIRE_TRUE(comb.StateFinite());
     REQUIRE_TRUE(comb.StateMagnitude() > 100.0f);
@@ -3137,68 +3139,62 @@ TEST_CASE(freeze_release_resumes_a_transport_that_survives_a_device_reprepare) {
 // ringing signal is immediate, not dependent on new input reaching the
 // tank.
 TEST_CASE(encoder_edit_while_frozen_changes_the_output_measurably) {
-    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("encoder_edit_while_frozen_changes_output"));
-    BuildLatchedRingHeldAcrossStop(rig);
-    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
     using synth_froggers::FroggersBankId;
-
-    const auto [settleLeadBlocks, checkWindowBlocks, kBandSilenceFloorLinear] =
-        ComputeSilenceSettleWindow(/*settleSeconds=*/0.25);
-    (void)kBandSilenceFloorLinear;
-
-    rig.RunBlocks(settleLeadBlocks);
-    rig.ClearOutput();
-    rig.RunBlocks(checkWindowBlocks);
-    REQUIRE_TRUE(!rig.SawNaN());
-    const float peakBeforeEdit = PeakAbs(rig.Output());
-    // Positive control: the drone must be genuinely audible right here,
-    // immediately before the edit below, or a measured change (or lack of
-    // one) proves nothing.
-    REQUIRE_TRUE(peakBeforeEdit > kFrozenRingFloorLinear);
-
-    // The "encoder edit" -- still latched, still stopped, no Play in
-    // between. Deliberately NOT using ApplyPatchNow/ComputeAllParameters()
-    // here (same reasoning as patch_change_still_reaches_dsp_while_
-    // transport_stopped's own comment, above in this file): that helper
-    // writes CachedKnobValue() directly, bypassing parameters_.
-    // ProcessSample()'s smoothed per-sample Compute entirely -- so it would
-    // still pass even if THIS test's actual claim (ProcessSample() itself
-    // stays ungated by transport state) were broken. A plain SceneCenter
-    // write exercises the real path an operator's encoder turn uses.
-    model.PageParameter(FroggersBankId::Delay, 0).SceneCenter(0) = 0.0f;  // Wet/dry: fully wet -> fully dry.
-
-    // The periodic smoothed Compute (alpha 0.0994 every 16 samples,
-    // this file's own ApplyPatchNow comment) converges geometrically;
-    // patch_change_still_reaches_dsp_while_transport_stopped's own comment
-    // works the math for 50 blocks x 256 samples -- comfortably converged
-    // well under float precision. Run that many BEFORE measuring so the
-    // "after" window reads the settled value, not a mid-crossfade one.
-    constexpr std::size_t kConvergeBlocks = 50;
-    rig.RunBlocks(kConvergeBlocks);
-
-    rig.ClearOutput();
-    rig.RunBlocks(checkWindowBlocks);
-    REQUIRE_TRUE(!rig.SawNaN());
-    const auto& afterEditOutput = rig.Output();
-    RequireFiniteStereo(afterEditOutput);
-    const float peakAfterEdit = PeakAbs(afterEditOutput);
-
-    // Measurable, not merely different in the noise: a self-sustaining ring
-    // is not a pure tone, so consecutive non-overlapping windows differ by
-    // a small amount even with NO edit at all -- measured directly (with
-    // parameters_.ProcessSample() deliberately gated behind
-    // `transportRunningNow`, so the edit above could not reach the DSP):
-    // diff == 0.00627667 over this same 50-block gap. The real edit (Mix
-    // 1.0 -> 0.0 collapsing delayOut toward the near-silent dry signal,
-    // dsp/Delay.hpp's ToStereo) measures diff == 0.537887 -- ~86x that
-    // noise floor. kMeasurableChangeLinear sits an order of magnitude above
-    // the measured noise floor and comfortably below the measured true
-    // effect, so this cannot pass on drift alone.
-    const float peakDiff = std::fabs(peakBeforeEdit - peakAfterEdit);
-    std::cout << "encoder-edit-while-frozen: peakBeforeEdit=" << peakBeforeEdit
-              << " peakAfterEdit=" << peakAfterEdit << " diff=" << peakDiff << "\n";
-    constexpr float kMeasurableChangeLinear = 0.05f;  // noise floor 0.0063, true effect 0.538 (both measured, comment above).
-    REQUIRE_TRUE(peakDiff > kMeasurableChangeLinear);
+    const auto build = [](const char* name) {
+        auto rig = std::make_unique<Rig>(64, UseScratchRuntimeDataPaths(name));
+        auto& model = rig->Application().Parameters();
+        // Isolate the deterministic ring from launch-random source streams.
+        for (std::size_t bank = 0; bank < synth_froggers::kFroggersPageCount; ++bank) {
+            for (std::size_t slot = 0; slot < synth_froggers::kFroggersParamsPerBank; ++slot)
+                model.PageParameter(bank, slot).ClearModulationDepths();
+            model.Crispy(bank).ClearModulationDepths();
+        }
+        model.Crunchy().ClearModulationDepths();
+        ApplyPatchNow(*rig);
+        BuildLatchedRingHeldAcrossStop(*rig);
+        return rig;
+    };
+    auto edited = build("frozen_edit_arm");
+    auto control = build("frozen_control_arm");
+    const auto [settleBlocks, windowBlocks, floor] = ComputeSilenceSettleWindow(0.25);
+    (void)floor;
+    for (auto* rig : {edited.get(), control.get()}) {
+        rig->RunBlocks(settleBlocks);
+        rig->ClearOutput();
+        rig->RunBlocks(windowBlocks);
+        REQUIRE_TRUE(PeakAbs(rig->Output()) > kFrozenRingFloorLinear);
+        REQUIRE_TRUE(!rig->SawNaN());
+    }
+    const auto difference = [](const auto& a, const auto& b) {
+        REQUIRE_TRUE(a.size() == b.size());
+        double energy = 0.0;
+        std::size_t count = 0;
+        for (std::size_t i = 0; i < a.size(); ++i)
+            for (std::size_t channel = 0; channel < a[i].channels.size(); ++channel) {
+                const double delta = a[i].channels[channel] - b[i].channels[channel];
+                energy += delta * delta;
+                ++count;
+            }
+        return std::sqrt(energy / count);
+    };
+    // Same-time untouched arms must agree before the edit. Peak levels alone
+    // cannot distinguish wet/dry signals of similar level at the new rate.
+    const double baselineDifference = difference(edited->Output(), control->Output());
+    REQUIRE_TRUE(baselineDifference < 1e-6);
+    auto& mix = edited->Application().Parameters().PageParameter(FroggersBankId::Delay, 0);
+    REQUIRE_TRUE(mix.CachedKnobValue(0) > 0.99f);
+    mix.SceneCenter(0) = 0.0f; // Exercise the normal smoothed edit path.
+    for (auto* rig : {edited.get(), control.get()}) {
+        rig->RunBlocks(50);
+        rig->ClearOutput();
+        rig->RunBlocks(windowBlocks);
+        RequireFiniteStereo(rig->Output());
+    }
+    REQUIRE_TRUE(mix.CachedKnobValue(0) < 1e-4f);
+    const double editDifference = difference(edited->Output(), control->Output());
+    std::cout << "frozen edit: baseline RMS difference=" << baselineDifference
+              << " edited RMS difference=" << editDifference << "\n";
+    REQUIRE_TRUE(editDifference > 0.05);
 }
 
 // =========================================================================
@@ -3552,10 +3548,9 @@ TEST_CASE(patch_change_still_reaches_dsp_while_transport_stopped) {
     driveGain.SceneCenter(0) = kTarget;
 
     // The periodic smoothed Compute (Parameter::ProcessSamplePhase1,
-    // alpha 0.0994 every 16 samples -- this file's own ApplyPatchNow comment
-    // above) converges geometrically: residual after k updates is
-    // (1-0.0994)^k. 50 blocks x 256 samples / 16 samples-per-update = 800
-    // updates; (0.9006)^800 underflows float precision many times over.
+    // retuned from the former 3 kHz target cadence) converges geometrically.
+    // Fifty 256-frame blocks give the same elapsed smoothing time as before
+    // the rate split, comfortably beyond this test's convergence tolerance.
     // Deliberately NOT using ApplyPatchNow/ComputeAllParameters() here --
     // the point of this test is to exercise the real per-sample path
     // (parameters_.ProcessSample(), called every sample regardless of
@@ -4427,16 +4422,20 @@ TEST_CASE(a_fast_parameter_sweep_with_no_reset_does_not_latch_the_instrument) {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
     int failed = 0;
+    std::size_t selected = 0;
     for (const auto& test : Registry()) {
+        if (argc > 1 && std::string(test.name).find(argv[1]) == std::string::npos) continue;
+        ++selected;
         try {
             test.fn();
-            std::cout << "[PASS] " << test.name << "\n";
+            std::cout << "[PASS] " << test.name << std::endl;
         } catch (const std::exception& ex) {
             ++failed;
             std::cerr << "[FAIL] " << test.name << ": " << ex.what() << "\n";
         }
     }
-    return failed == 0 ? 0 : 1;
+    std::cout << selected - failed << "/" << selected << " tests passed\n";
+    return selected != 0 && failed == 0 ? 0 : 1;
 }

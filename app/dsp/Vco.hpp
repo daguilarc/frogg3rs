@@ -281,6 +281,39 @@ struct Vco
         return lfoValue;
     }
 
+    // One complete oscillator step for callers that already run an
+    // oversampled engine. The host-rate Process wrapper uses the same step.
+    float ProcessEngineSample(float pitchKnob01, float morphKnob01, float pmKnob01,
+                              float pmRateKnob01, float ringModKnob01, float sampleRate)
+    {
+        const float phaseIncrement = PitchToPhaseIncrement(pitchKnob01, sampleRate);
+        // 08b5fd3:src/core/FroggersEngine.hpp:741-743 -- the depth multiply is at the caller of
+        // StepIndependentPmLfo, not inside it; ported the same way.
+        const float pmOffset = kPmLfoDepth * PmDepthScale(pmKnob01) * StepPmLfo(pmRateKnob01, sampleRate);
+        const float modulatedPhase = WrapPhase(carrierPhase + pmOffset);
+        const float dry = EvalWaveMorph(*waveforms, modulatedPhase, morphKnob01,
+                                        phaseIncrement * sampleRate, 0.5f * sampleRate);
+
+        // This SAME VCO's own internal ring-mod carrier -- stepped
+        // every sample regardless of depth (same practice as pmLfoPhase
+        // above, so raising the knob never causes a phase jump), multiplied
+        // against `dry` (the pre-ASR-gate wave-morph output -- this struct
+        // has no ASR gate of its own; that happens later in
+        // dsp::MixOscVoices/VcoAdsrState::apply, so "pre-gate" is the only
+        // choice available here and the one this port makes). Blended by
+        // RingModDepthScale's taper amount so the bottom of the knob is an
+        // exact identity and the top is a full ring-mod product; convex
+        // blend is bounded before filtering. The causal lowpass can overshoot;
+        // do not clip its output, which would create new harmonics.
+        const float ringCarrier = Sine01(ringCarrierPhase);
+        ringCarrierPhase = WrapPhase(ringCarrierPhase + RingModPhaseIncrement(ringModKnob01, sampleRate));
+        const float ringAmount = RingModDepthScale(ringModKnob01);
+        const float mixed = dry * (1.0f - ringAmount) + dry * ringCarrier * ringAmount;
+
+        carrierPhase = WrapPhase(carrierPhase + phaseIncrement);
+        return mixed;
+    }
+
     // 08b5fd3:src/core/FroggersEngine.hpp:735-744, the m_simIndependentPm branch, plus Ring
     // Mod and PM-rate decoupling on top. pmKnob01 drives ONLY this VCO's
     // own PM depth (PmDepthScale); pmRateKnob01 is the shared Audio-slot-12
@@ -294,34 +327,8 @@ struct Vco
         // Hold all five normalized controls through four complete oscillator
         // steps. Decimate the complete PM/ring result through two halfbands.
         for (int substep = 0; substep < kOversampleFactor; ++substep)
-        {
-            const float phaseIncrement = PitchToPhaseIncrement(pitchKnob01, internalSampleRate);
-            // 08b5fd3:src/core/FroggersEngine.hpp:741-743 -- the depth multiply is at the caller of
-            // StepIndependentPmLfo, not inside it; ported the same way.
-            const float pmOffset = kPmLfoDepth * PmDepthScale(pmKnob01) * StepPmLfo(pmRateKnob01, internalSampleRate);
-            const float modulatedPhase = WrapPhase(carrierPhase + pmOffset);
-            const float dry = EvalWaveMorph(*waveforms, modulatedPhase, morphKnob01,
-                                            phaseIncrement * internalSampleRate, 0.5f * internalSampleRate);
-
-            // This SAME VCO's own internal ring-mod carrier -- stepped
-            // every sample regardless of depth (same practice as pmLfoPhase
-            // above, so raising the knob never causes a phase jump), multiplied
-            // against `dry` (the pre-ASR-gate wave-morph output -- this struct
-            // has no ASR gate of its own; that happens later in
-            // dsp::MixOscVoices/VcoAdsrState::apply, so "pre-gate" is the only
-            // choice available here and the one this port makes). Blended by
-            // RingModDepthScale's taper amount so the bottom of the knob is an
-            // exact identity and the top is a full ring-mod product; convex
-            // blend is bounded before filtering. The causal lowpass can overshoot;
-            // do not clip its output, which would create new harmonics.
-            const float ringCarrier = Sine01(ringCarrierPhase);
-            ringCarrierPhase = WrapPhase(ringCarrierPhase + RingModPhaseIncrement(ringModKnob01, internalSampleRate));
-            const float ringAmount = RingModDepthScale(ringModKnob01);
-            const float mixed = dry * (1.0f - ringAmount) + dry * ringCarrier * ringAmount;
-
-            carrierPhase = WrapPhase(carrierPhase + phaseIncrement);
-            internalOutput[static_cast<std::size_t>(substep)] = mixed;
-        }
+            internalOutput[static_cast<std::size_t>(substep)] = ProcessEngineSample(
+                pitchKnob01, morphKnob01, pmKnob01, pmRateKnob01, ringModKnob01, internalSampleRate);
         const float middleFirst = antiAliasFilter[0].Process(internalOutput[0], internalOutput[1]);
         const float middleSecond = antiAliasFilter[0].Process(internalOutput[2], internalOutput[3]);
         const float output = antiAliasFilter[1].Process(middleFirst, middleSecond);

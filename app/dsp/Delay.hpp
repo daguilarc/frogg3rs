@@ -256,7 +256,7 @@ struct DelayReverser
 struct StereoDelay
 {
     static constexpr float kMaxDelaySeconds = 2.0f;
-    static constexpr size_t kMaxDelaySamples = 96000;
+    static constexpr size_t kMaxDelaySamples = 384000;
 
     // The line length SetSampleRate allocates for a given rate, in samples.
     // Tests that need to know where the line ends derive it from here rather

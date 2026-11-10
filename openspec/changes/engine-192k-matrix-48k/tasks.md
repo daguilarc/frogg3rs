@@ -1,0 +1,5 @@
+- [x] Implement reusable filtered-source/control-frame/root-publication bridge in Sheaf.
+- [x] Integrate fourfold audio and source processing with host-rate matrix, clocks and recording.
+- [x] Model cadence/publication and Sheaf-specific behavior with Lean contracts.
+- [x] Validate native behavior, source alias rejection, regression suites and model proofs.
+- [x] Build VST3/AU artifacts and verify plugin host, latency, packaging and incremental dependencies.

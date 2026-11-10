@@ -79,6 +79,14 @@ int main() {
     frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths());
     processor.setRateAndBufferSizeDetails(kSampleRate, kBlockSize);
     processor.prepareToPlay(kSampleRate, kBlockSize);
+    // The 287-tap output FIR delays 143 engine samples: 35.75 host
+    // frames at 4x. Report the next whole frame to the DAW.
+    if (processor.getLatencySamples() != 36) {
+        std::fprintf(stderr, "FroggersVstSmokeTest: FAIL reported latency %d, expected 36\n",
+                     processor.getLatencySamples());
+        return 1;
+    }
+
 
     // Pre-start: the transport-gated ASR (FroggersAppCore.hpp) never opened,
     // so output must stay at/near silence -- ~0.5s, comfortably past any

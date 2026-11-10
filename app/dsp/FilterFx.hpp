@@ -617,7 +617,7 @@ struct Comb
 // src/core/Comb.hpp:79-109. Fractional interpolation at :98-108.
 struct PureDelay
 {
-    static constexpr size_t kSize = 8192;
+    static constexpr size_t kSize = 32768;
 
     float delayLine[kSize]{};
     size_t index = 0;

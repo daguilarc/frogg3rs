@@ -674,70 +674,23 @@ TEST_CASE(envelope_bank_short_names_survive_four_char_truncation_distinctly) {
     }
 }
 
-// --- ConfigureProcessingTiming must be wired at PrepareToPlay -----
-//
-// Sheaf's parameter-smoothing constants (kDefaultProcessLiteAlpha,
-// kDefaultTargetComputeIntervalSamples, kDefaultUiDisplayCenterAlpha,
-// kDefaultUiDisplaySpreadAlpha -- External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp) are
-// defined at a 48 kHz reference (their own comments), and
-// ParameterGroupConfig initialises to exactly those raw values
-// (External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp) -- ConfigureProcessingTiming
-// (External/Sheaf/projects/synth/src/ParameterModulation.cpp) is the only thing that ever replaces
-// them. Braid 4 calls it from its own `Braid4Core::PrepareToPlay`, converting each
-// constant with ConvertOnePoleAlpha/ConvertSampleInterval against its own
-// internal (oversampled) rate (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp). This app has no
-// oversampling at the parameter tier (FroggersAppCore.hpp's own
-// PrepareToPlay sets sampleRate_ straight from the host rate, no
-// internalSampleRate_ concept anywhere in this class), so the fix converts
-// against the host sample rate directly.
-//
-// At the plain 48 kHz default (every other test in this file), a missing
-// call and a correctly-wired call are indistinguishable (48/48 == 1, every
-// ConvertOnePoleAlpha/ConvertSampleInterval call is a no-op) -- so this test
-// prepares the app at 96 kHz instead, where a missing call leaves the raw
-// 48 kHz-reference constants in place (2x too slow in real time) and a
-// correctly-wired call converts them to run at half the raw alpha/interval,
-// i.e. this asserts the converted values differ from the unconverted
-// defaults, not merely that they are "close to something."
+// A 96 kHz host must retain host-rate matrix timing and a 384 kHz engine.
 TEST_CASE(configure_processing_timing_is_wired_at_96khz_prepare) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
         64, UseScratchRuntimeDataPaths("configure_processing_timing_96khz"),
-        synth_rig::SynthRig<synth_froggers::FroggersApp>::AudioSettings{
-            .sampleRate = 96000.0, .blockSize = 256});
-
-    const synth::ParameterGroupConfig& config = rig.Application().Parameters().Group().Config();
-
-    // Expected values: the exact conversion Braid 4's own PrepareToPlay
-    // performs, in `Braid4Core::PrepareToPlay`
-    // (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp), substituting the host rate
-    // (96000.0) for Braid 4's internalSampleRate_ per this app's own
-    // no-oversampling-at-parameter-tier design.
-    const float expectedProcessLiteAlpha =
-        synth::ConvertOnePoleAlpha(synth::kDefaultProcessLiteAlpha, 48000.0, 96000.0);
-    const std::size_t expectedTargetComputeIntervalSamples =
-        synth::ConvertSampleInterval(synth::kDefaultTargetComputeIntervalSamples, 48000.0, 96000.0);
-    const float expectedUiDisplayCenterAlpha =
-        synth::ConvertOnePoleAlpha(synth::kDefaultUiDisplayCenterAlpha, 48000.0, 96000.0);
-    const float expectedUiDisplaySpreadAlpha =
-        synth::ConvertOnePoleAlpha(synth::kDefaultUiDisplaySpreadAlpha, 48000.0, 96000.0);
-
-    // Sanity: at a 2x rate, ConvertOnePoleAlpha must actually move the
-    // alpha away from the raw 48 kHz-reference constant -- otherwise this
-    // test would pass whether or not the app ever calls
-    // ConfigureProcessingTiming at all.
-    REQUIRE_TRUE(std::fabs(expectedProcessLiteAlpha - synth::kDefaultProcessLiteAlpha) > 1.0e-4f);
-    REQUIRE_TRUE(expectedTargetComputeIntervalSamples != synth::kDefaultTargetComputeIntervalSamples);
-
-    REQUIRE_NEAR(config.processLiteAlpha, expectedProcessLiteAlpha, 1.0e-6f);
-    REQUIRE_TRUE(config.targetComputeIntervalSamples == expectedTargetComputeIntervalSamples);
-    REQUIRE_NEAR(config.uiDisplayCenterAlpha, expectedUiDisplayCenterAlpha, 1.0e-6f);
-    REQUIRE_NEAR(config.uiDisplaySpreadAlpha, expectedUiDisplaySpreadAlpha, 1.0e-6f);
-
-    // targetCenterAlpha is deliberately NOT part of
-    // synth::ParameterProcessingTiming (External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp) --
-    // ConfigureProcessingTiming never touches it, so it must stay at its
-    // own untouched default regardless of host sample rate.
-    REQUIRE_NEAR(config.targetCenterAlpha, synth::kDefaultTargetCenterAlpha, 1.0e-6f);
+        {.sampleRate = 96000.0, .blockSize = 256});
+    const auto& config = rig.Application().Parameters().Group().Config();
+    REQUIRE_TRUE(config.targetComputeIntervalSamples == 1);
+    REQUIRE_NEAR(config.processLiteAlpha,
+        synth::ConvertOnePoleAlpha(synth::kDefaultProcessLiteAlpha, 48000.0, 96000.0), 1e-6f);
+    REQUIRE_NEAR(config.targetCenterAlpha,
+        synth::ConvertOnePoleAlpha(synth::kDefaultTargetCenterAlpha, 3000.0, 96000.0), 1e-6f);
+    REQUIRE_NEAR(config.uiDisplayCenterAlpha,
+        synth::ConvertOnePoleAlpha(synth::kDefaultUiDisplayCenterAlpha, 48000.0, 96000.0), 1e-6f);
+    REQUIRE_NEAR(config.uiDisplaySpreadAlpha,
+        synth::ConvertOnePoleAlpha(synth::kDefaultUiDisplaySpreadAlpha, 48000.0, 96000.0), 1e-6f);
+    REQUIRE_NEAR(rig.Application().EngineSampleRate(), 384000.0, 1e-3f);
+    REQUIRE_NEAR(rig.Application().MatrixSampleRate(), 96000.0, 1e-3f);
 }
 
 }  // namespace

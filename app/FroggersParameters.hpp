@@ -41,6 +41,7 @@
 
 #include "dsp/Fuegoize.hpp"
 
+#include "synth/RateSeparatedParameters.hpp"
 #include "synth/AppContext.hpp"
 #include "synth/Color.hpp"
 #include "synth/ParameterModulation.hpp"
@@ -571,6 +572,12 @@ public:
         group_->ProcessSamplePhase2();
     }
 
+    void ConfigureEngineRate() { rateSeparated_.Configure(*group_); }
+    void ProcessEngineSample(std::uint64_t controlSample, std::size_t phase, bool advanceSources) {
+        rateSeparated_.ProcessSample(*group_, controlSample, phase, [this] { ApplyFuegoSeam(); }, advanceSources);
+    }
+    const synth::RateSeparatedParameters& RateProcessing() const { return rateSeparated_; }
+
     synth::ParameterGroup& Group() { return *group_; }
     const synth::ParameterGroup& Group() const { return *group_; }
     synth::BankSlot& Slot() { return *slot_; }
@@ -587,8 +594,9 @@ public:
     synth::Parameter& Crunchy() { return *crunchy_; }
 
 private:
+    synth::RateSeparatedParameters rateSeparated_;
     // The ONE fuego application
-    // point -- called exactly once per sample from ProcessSample(), between
+    // point -- called once per control frame (or by the single-rate ProcessSample API), between
     // group_->ProcessSamplePhase1() (which just wrote each parameter's raw,
     // modulated value into its cached-knob slot via ProcessLitePhase1's
     // `currentKnobValues_[v] = GetRaw(v)`) and group_->ProcessSamplePhase2()

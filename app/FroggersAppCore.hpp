@@ -51,6 +51,7 @@
 // exactly like any other bank parameter (generic encoder press/drag over
 // `context_->uiBus`); it carries no command of its own.
 
+#include "synth/DspBuffers.hpp"
 #include "FroggersModulation.hpp"
 #include "FroggersParameters.hpp"
 #include "FroggersTransferFunctionVisualizer.hpp"
@@ -465,6 +466,14 @@ public:
     // possibility, not a hypothetical -- this is the ONE place that
     // possibility is handled.
     static constexpr double kFallbackSampleRateHz = 44100.0;
+    static constexpr std::size_t kEngineFactor = synth::RateSeparatedParameters::kFactor;
+    double EngineSampleRate() const { return sampleRate_; }
+    double MatrixSampleRate() const { return hostSampleRate_; }
+    std::uint64_t EngineSamplesProcessed() const { return parameters_.RateProcessing().EngineSamples(); }
+    std::uint64_t MatrixFramesProcessed() const { return parameters_.RateProcessing().MatrixFrames(); }
+    static constexpr std::size_t OutputLatencyHostSamples() {
+        return (synth::kFourToOneDecimatorTaps - 1 + 2 * kEngineFactor - 1) / (2 * kEngineFactor);
+    }
 
     void PrepareToPlay(double sampleRate, int /*blockSize*/) {
         // `synth::Engine::Prepare()`
@@ -495,7 +504,9 @@ public:
         if (!(sampleRate > 0.0)) {
             sampleRate = kFallbackSampleRateHz;
         }
-        modulation_.Prepare(sampleRate);
+        hostSampleRate_ = static_cast<float>(sampleRate);
+        modulation_.Prepare(sampleRate * kEngineFactor, true);
+        outputStage_.Reset();
 
         // The audio-path DSP units below are a
         // SEPARATE set of instances from modulation_'s own private VCOs
@@ -503,39 +514,23 @@ public:
         // produce the six VCO-audio-rate modulation-source values and are
         // never summed to the output bus -- see that header's own scope
         // note). These need their own sample-rate-dependent setup.
-        sampleRate_ = static_cast<float>(sampleRate);
+        sampleRate_ = static_cast<float>(sampleRate * kEngineFactor);
         audioAdsr_.init(sampleRate_);
 
-        // Sheaf's parameter-smoothing constants
-        // (kDefaultProcessLiteAlpha/kDefaultTargetComputeIntervalSamples/
-        // kDefaultUiDisplayCenterAlpha/kDefaultUiDisplaySpreadAlpha,
-        // External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp) are defined at a 48 kHz
-        // reference and ParameterGroupConfig starts out holding exactly
-        // those raw values (also in External/Sheaf/projects/synth/include/synth/ParameterModulation.hpp) until
-        // ConfigureProcessingTiming replaces them
-        // (External/Sheaf/projects/synth/src/ParameterModulation.cpp) -- otherwise knob glide,
-        // modulation-depth smoothing, and UI-display slew all run at the
-        // wrong real-time rate at any host rate other than 48 kHz. Mirrors
-        // Braid 4's own `Braid4Core::PrepareToPlay` (External/Sheaf/projects/synth/apps/braid-4/Braid4Core.hpp), which
-        // converts against internalSampleRate_ (its oversampled internal
-        // parameter-tier rate); this app has no such oversampling at the
-        // parameter tier (parameters_/modulation_ share the single mono
-        // ParameterGroup below, driven once per sample at the host rate --
-        // see modulation_.Init(parameters_.Group()) in Init()), so this
-        // converts against the host `sampleRate` directly instead. One
-        // call covers modulation_ too: modulation_.Init(parameters_.Group())
-        // (Init(), above) hands it the SAME ParameterGroup instance, not a
-        // separate one.
+        // The matrix and its UI/Fuego phases run once per host frame. Retune
+        // target smoothing from its former 48k/16 cadence to the host rate.
         parameters_.Group().ConfigureProcessingTiming(synth::ParameterProcessingTiming{
             .processLiteAlpha =
                 synth::ConvertOnePoleAlpha(synth::kDefaultProcessLiteAlpha, 48000.0, sampleRate),
-            .targetComputeIntervalSamples = synth::ConvertSampleInterval(
-                synth::kDefaultTargetComputeIntervalSamples, 48000.0, sampleRate),
+            .targetComputeIntervalSamples = 1,
             .uiDisplayCenterAlpha =
                 synth::ConvertOnePoleAlpha(synth::kDefaultUiDisplayCenterAlpha, 48000.0, sampleRate),
             .uiDisplaySpreadAlpha =
                 synth::ConvertOnePoleAlpha(synth::kDefaultUiDisplaySpreadAlpha, 48000.0, sampleRate),
+            .targetCenterAlpha = synth::ConvertOnePoleAlpha(synth::kDefaultTargetCenterAlpha,
+                48000.0 / synth::kDefaultTargetComputeIntervalSamples, sampleRate),
         });
+        parameters_.ConfigureEngineRate();
         // The ASR gate is not forced permanently on -- it is driven per-sample in
         // ProcessBlock() from the master clock's transport quarter-note
         // pulse (see TransportQuarterNotesAt()/the gate computation there).
@@ -691,7 +686,7 @@ public:
         QueueTruncatedExportIfPending();
         const std::size_t capacityFrames = capacityFramesOverride != 0
             ? capacityFramesOverride
-            : static_cast<std::size_t>(kMaxRecordSeconds * sampleRate_);
+            : static_cast<std::size_t>(kMaxRecordSeconds * hostSampleRate_);
         if (recordBuffer_ == nullptr || capacityFrames != recordCapacityFrames_) {
             // Uninitialized storage, not zero-filled here: make_unique_for_overwrite
             // leaves the pages untouched, so first touch is this call's own
@@ -734,7 +729,7 @@ public:
     }
     std::uint64_t RecordedFrameCount() const { return recordFrames_.load(std::memory_order_acquire); }
     bool RecordingTruncated() const { return recordTruncated_.load(std::memory_order_acquire); }
-    float RecordSampleRate() const { return sampleRate_; }
+    float RecordSampleRate() const { return hostSampleRate_; }
 
     // Whether a capture is currently armed -- the
     // surface's transport-row Record glyph and HandleAction both need this
@@ -1056,6 +1051,7 @@ public:
         if (block.clockPlan != nullptr) {
             quarterNotesPerSample = block.clockPlan->QuarterNotesPerSample();
         }
+        if (quarterNotesPerSample) *quarterNotesPerSample /= kEngineFactor;
         modulation_.PrepareBlockClock(quarterNotesPerSample);
 
         // `block.outputs` is `AudioBlock`'s own field
@@ -1320,86 +1316,33 @@ public:
             wasTransportRunning_ = transportRunningNow;
             wasFreezeLatched_ = freezeLatchedNow;
 
-            // VCO audio-rate modulation sources (slots 6-8) are
-            // driven from each VCO's own Audio-bank pitch/shape/PM knobs --
-            // the PREVIOUS sample's post-fuego cached value (this Step()
-            // call runs before this sample's own fuego/modulation resolve;
-            // see FroggersModulationSlate::Step's comment on the resulting
-            // one-sample latency, standard for any modulation graph with a
-            // cycle -- e.g. the cross-VCO pitch default).
-            const auto vcoDrive = [this](std::size_t paramIx) {
-                return FroggersModulationSlate::VcoDrive{
-                    parameters_.PageParameter(FroggersBankId::Audio, AudioSlot(paramIx, VcoSlotRole::Pitch)).CachedKnobValue(0),
-                    parameters_.PageParameter(FroggersBankId::Audio, AudioSlot(paramIx, VcoSlotRole::Shape)).CachedKnobValue(0),
-                    parameters_.PageParameter(FroggersBankId::Audio, AudioSlot(paramIx, VcoSlotRole::PhaseMod)).CachedKnobValue(0),
-                };
-            };
-            // Operator-ordered, not the DigitalReorganizer DC-seed fix --
-            // that fix was a static DC seed inside DigitalReorganizer, a pure
-            // function of frozen knob state (fixed separately); freezing
-            // modulation could never have removed it. This gate is the operator's own ruling
-            // instead, verbatim: "no, modulation should not free-run
-            // while stopped lol. come on."
-            //
-            // Gated on `transportRunningNow`, already computed above (this
-            // same `transportQuarterNotes.has_value()`) for the ASR gate and
-            // the stop-edge reset logic -- reused here, not a second clock
-            // query or null-check sequence. `parameters_.ProcessSample()`
-            // below stays UNGATED on purpose: a SceneCenter write only
-            // reaches the DSP through its own periodic smoothed Compute
-            // (Parameter::ProcessSamplePhase1), so gating that call too would
-            // freeze knob edits and Randomize All until Play. Only the
-            // modulation SOURCES stop here.
-            //
-            // The genuinely free-running set this stops is 8 slots --
-            // kModSlotRandomSh6, kModSlotVco1/2/3Audio, kModSlotVco1/2/3Ef,
-            // kModSlotNoise -- every one written unconditionally inside
-            // Step()'s own body. Random S&H lanes 1-5 are deliberately NOT
-            // named here: StepClockDrivenLanes's own has_value() guard
-            // already stops their Increment() regardless of this outer gate
-            // (RandomShLane::Process() itself still glides a further few
-            // samples toward an already-fixed target, then holds bit-exact --
-            // a transient, not free-running; an earlier draft
-            // named the lanes here instead, which was wrong). Sources HOLD
-            // rather than reset: RegisterSources() hands Sheaf raw pointers
-            // to the member variables Step() writes, and
-            // Modulators::UpdateModValues() (inside parameters_.
-            // ProcessSample(), still called every sample below) dereferences
-            // those same pointers regardless of this gate -- there is no
-            // neutral-reset path, so skipping Step() simply leaves them at
-            // whatever they last held. modulation_.PublishUiState(), once
-            // per block after this loop, republishes that same held state,
-            // so a visualizer shows a held value, not darkness.
-            //
-            // `transportQuarterNotes` is still passed into Step() below --
-            // reused from the ASR gate's own
-            // already-computed value rather than re-derived a second time,
-            // for StepClockDrivenLanes's own tick-phase arithmetic -- see
-            // Step()'s own comment.
-            if (transportRunningNow) {
-                // `SampleOrSilence(0, frame)` reads this frame's logical
-                // channel zero -- the plugin has already resolved the
-                // operator's channel/Sum selection down to that one channel
-                // before this call ever sees the block (FroggersPluginProcessor::
-                // processBlock()'s own comment); the standalone host's
-                // device callback delivers its one requested channel there
-                // directly. Silence (0.0f) whenever no channel is active,
-                // matching this call's disconnected-source behavior anyway
-                // (Step() ignores the sample entirely while
-                // !ExternalAudioConnected()).
-                const float externalAudioSample = externalAudioInputView.SampleOrSilence(0, frame);
-                modulation_.Step(vcoDrive(0), vcoDrive(1), vcoDrive(2), transportQuarterNotes, externalAudioSample);
-            }
-
-            parameters_.ProcessSample(absoluteOutputSample);
-
-            // Routes this sample's post-fuego, post-modulation
-            // parameter values into the ported DSP chain and sums the (mono,
-            // The chain's own output is a pair. Folding to the device happens
-            // in the write loop below and only where the device is mono; the
-            // middle of the chain no longer collapses, which is what lets the
-            // delay's and the reverb's Width controls reach a listener.
-            const dsp::StereoSample sample = RouteAudioSample();
+            // Sources and audio advance at engine cadence. The bridge filters
+            // sources, evaluates the complete editable tree plus Fuego once
+            // per host frame, then publishes four interpolated root caches.
+            const auto output = outputStage_.ProcessHostFrame(absoluteOutputSample,
+                [&, this](std::uint64_t internalSample) {
+                    const std::size_t phase = internalSample % kEngineFactor;
+                    const auto vcoDrive = [this](std::size_t voice) {
+                        return FroggersModulationSlate::VcoDrive{
+                            RoutedKnob(FroggersBankId::Audio, AudioSlot(voice, VcoSlotRole::Pitch)),
+                            RoutedKnob(FroggersBankId::Audio, AudioSlot(voice, VcoSlotRole::Shape)),
+                            RoutedKnob(FroggersBankId::Audio, AudioSlot(voice, VcoSlotRole::PhaseMod))};
+                    };
+                    if (transportRunningNow) {
+                        auto position = transportQuarterNotes;
+                        if (position && quarterNotesPerSample) *position += phase * *quarterNotesPerSample;
+                        modulation_.Step(vcoDrive(0), vcoDrive(1), vcoDrive(2), position,
+                            externalAudioInputView.SampleOrSilence(0, frame));
+                    }
+                    parameters_.ProcessEngineSample(absoluteOutputSample, phase, transportRunningNow);
+                    const auto audio = RouteAudioSample();
+                    return std::array<float, 2>{audio.l, audio.r};
+                });
+            // Reconstruction can overshoot even bounded engine samples.
+            // Enforce the device's full-scale bound after the final filter.
+            const dsp::StereoSample sample{
+                std::clamp(GuardOutputSample(output[0]), -1.0f, 1.0f),
+                std::clamp(GuardOutputSample(output[1]), -1.0f, 1.0f)};
 
             // DIAGNOSTIC (2026-08-07), OFF unless FROGG3RS_STOP_DIAG is set
             // in the environment -- see stopDiagBlocks_'s own comment. Tracks
@@ -1835,7 +1778,7 @@ private:
         const float pmRateKnob = RoutedKnob(FroggersBankId::Audio, 12);
         std::array<float, 3> vcoOut{};
         for (std::size_t i = 0; i < audioVcos_.size(); ++i) {
-            vcoOut[i] = audioVcos_[i].Process(RoutedKnob(FroggersBankId::Audio, AudioSlot(i, VcoSlotRole::Pitch)),
+            vcoOut[i] = audioVcos_[i].ProcessEngineSample(RoutedKnob(FroggersBankId::Audio, AudioSlot(i, VcoSlotRole::Pitch)),
                                                RoutedKnob(FroggersBankId::Audio, AudioSlot(i, VcoSlotRole::Shape)),
                                                RoutedKnob(FroggersBankId::Audio, AudioSlot(i, VcoSlotRole::PhaseMod)),
                                                pmRateKnob,
@@ -2309,8 +2252,8 @@ private:
         x.r = GuardOutputSample(x.r);
         constexpr float kMakeUpGain = 1.0f / dsp::kStageCeiling;  // 1.25x, +1.9 dB.
         const dsp::StereoSample limited = outputLimiter_.Process(x);
-        return {std::clamp(limited.l * kMakeUpGain, -1.0f, 1.0f),
-                std::clamp(limited.r * kMakeUpGain, -1.0f, 1.0f)};
+        // The hard output bound belongs after reconstruction in ProcessBlock.
+        return {limited.l * kMakeUpGain, limited.r * kMakeUpGain};
     }
 
     static float GuardOutputSample(float x) {
@@ -2400,7 +2343,7 @@ private:
             return;
         }
         if (dsp::StateOverCeiling(unit)) {
-            overCeilingSeconds += static_cast<float>(blockFrames) / sampleRate_;
+            overCeilingSeconds += static_cast<float>(blockFrames) / hostSampleRate_;
             if (overCeilingSeconds >= kSustainedOverCeilingSeconds) {
                 unit.Reset();
                 overCeilingSeconds = 0.0f;
@@ -2501,7 +2444,11 @@ private:
     // members are (re)initialized in PrepareToPlay()). Deliberately separate
     // instances from modulation_'s private VCOs -- see this class's
     // PrepareToPlay() comment.
-    float sampleRate_ = 48000.0f;
+    float hostSampleRate_ = 48000.0f;
+    float sampleRate_ = 192000.0f;
+    using OutputDecimator = synth::FirDecimator<kEngineFactor, 2, synth::kFourToOneDecimatorTaps>;
+    synth::OversampledOutputStage<kEngineFactor, 2, OutputDecimator> outputStage_{
+        OutputDecimator{synth::FourToOneDecimatorCoefficients()}};
     // Collapsed from three separately-named dsp::Vco audioVco1_/
     // audioVco2_/audioVco3_ members into one std::array -- dsp::Vco is
     // trivially copy/move constructible/assignable (all members are float,

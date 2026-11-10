@@ -317,7 +317,8 @@ public:
     // here is always already positive: a redundant `48000.0` fallback here
     // would be a THIRD fallback value, disagreeing with both the six
     // 44100.0 sites and Limiter's 1.0f, so this function carries none.
-    void Prepare(double sampleRate) {
+    void Prepare(double sampleRate, bool engineOversampled = false) {
+        engineOversampled_ = engineOversampled;
         sampleRate_ = sampleRate;
         vcoEnvelopeFollowers_.SetSampleRate(static_cast<float>(sampleRate_));
         externalAudioEf_.SetSampleRate(static_cast<float>(sampleRate_));
@@ -435,9 +436,16 @@ public:
         // depth behaviour this call always had -- and Ring Mod is held at
         // 0.0f (its own zero floor), so this source's output is unchanged.
         const float sr = static_cast<float>(sampleRate_);
-        const float vco1Raw = vco1_.Process(vco1.pitch01, vco1.shape01, vco1.phaseMod01, vco1.phaseMod01, 0.0f, sr);
-        const float vco2Raw = vco2_.Process(vco2.pitch01, vco2.shape01, vco2.phaseMod01, vco2.phaseMod01, 0.0f, sr);
-        const float vco3Raw = vco3_.Process(vco3.pitch01, vco3.shape01, vco3.phaseMod01, vco3.phaseMod01, 0.0f, sr);
+        const auto stepVco = [this, sr](dsp::Vco& oscillator, const VcoDrive& drive) {
+            return engineOversampled_
+                ? oscillator.ProcessEngineSample(drive.pitch01, drive.shape01, drive.phaseMod01,
+                    drive.phaseMod01, 0.0f, sr)
+                : oscillator.Process(drive.pitch01, drive.shape01, drive.phaseMod01,
+                    drive.phaseMod01, 0.0f, sr);
+        };
+        const float vco1Raw = stepVco(vco1_, vco1);
+        const float vco2Raw = stepVco(vco2_, vco2);
+        const float vco3Raw = stepVco(vco3_, vco3);
         vco1AudioSource_ = NormalizeBipolarToUnit(vco1Raw);
         vco2AudioSource_ = NormalizeBipolarToUnit(vco2Raw);
         vco3AudioSource_ = NormalizeBipolarToUnit(vco3Raw);
@@ -715,6 +723,7 @@ private:
 
     synth::ParameterGroup* group_ = nullptr;
     double sampleRate_ = 48000.0;
+    bool engineOversampled_ = false;
 
     dsp::Vco vco1_;
     dsp::Vco vco2_;

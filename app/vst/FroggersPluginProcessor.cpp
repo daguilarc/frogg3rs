@@ -468,6 +468,7 @@ void FroggersPluginProcessor::prepareToPlay(double sampleRate, int samplesPerBlo
     // mid-session is a real, expected event (and why it re-asserts a
     // previously-started transport via desiredTransportRunning_).
     engine_.Prepare(sampleRate, samplesPerBlock);
+    setLatencySamples(static_cast<int>(synth_froggers::FroggersAppCore::OutputLatencyHostSamples()));
 
     // resolvedInputScratch_'s own comment (header): sized to the host's
     // negotiated block size here; processBlock() still re-checks its own

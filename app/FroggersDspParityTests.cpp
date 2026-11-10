@@ -5042,21 +5042,13 @@ TEST_CASE(reverb_predelay_sweeps_tens_of_milliseconds_with_no_dead_adjacent_step
 }
 
 TEST_CASE(reverb_predelay_floor_and_ceiling_match_derived_millisecond_range) {
-    // Floor is the port's own "1.0" literal, now read as 1ms instead of 1
-    // sample. Ceiling is derived from the pre-delay line's own capacity
-    // (`kSize - 1` samples at the sample rate in force), not a guessed
-    // number -- at 48kHz that is 4095/48000 = 85.3125ms.
-    const float sr = 48000.0f;
-    REQUIRE_NEAR(dsp::Reverb::PreDelayNormFromKnob(0.0f, sr), 0.001f, 1e-9);
-    const float expectedCeilingSeconds = static_cast<float>(dsp::Reverb::kSize - 1) / sr;
-    REQUIRE_NEAR(dsp::Reverb::PreDelayNormFromKnob(1.0f, sr), expectedCeilingSeconds, 1e-9);
-    REQUIRE_NEAR(expectedCeilingSeconds * 1000.0f, 85.3125f, 1e-3);
-
-    // The ceiling is derived from sampleRate at each call, not baked in at
-    // 48kHz -- at 96kHz the same buffer holds half as much time.
-    const float sr2 = 96000.0f;
-    const float expectedCeilingSeconds2 = static_cast<float>(dsp::Reverb::kSize - 1) / sr2;
-    REQUIRE_NEAR(dsp::Reverb::PreDelayNormFromKnob(1.0f, sr2), expectedCeilingSeconds2, 1e-9);
+    const float nominal = static_cast<float>(dsp::Reverb::kReferenceSize - 1) / 48000.0f;
+    REQUIRE_NEAR(nominal * 1000.0f, 85.3125f, 1e-3f);
+    for (float rate : {44100.0f, 48000.0f, 96000.0f, 192000.0f, 384000.0f}) {
+        const float capacity = static_cast<float>(dsp::Reverb::kSize - 1) / rate;
+        REQUIRE_NEAR(dsp::Reverb::PreDelayNormFromKnob(0.0f, rate), 0.001f, 1e-9f);
+        REQUIRE_NEAR(dsp::Reverb::PreDelayNormFromKnob(1.0f, rate), std::min(nominal, capacity), 1e-9f);
+    }
 }
 
 TEST_CASE(reverb_damping_stays_geometric_and_never_reaches_the_inaudible_end) {
@@ -12376,10 +12368,22 @@ TEST_CASE(stereo_delay_width_spread_bound_holds_across_the_reachable_grid) {
                     const float timeR = std::max(0.001f, baseSeconds + modSeconds + widthSpread);
                     const float expectedLagSamples = timeR * sr;
 
+                    // Predict when the moving read cursor crosses the written
+                    // impulse, rather than freezing the LFO at injection time.
+                    // The upper bound simplifies independently to min(total, capacity).
+                    size_t expectedIndex = 0;
+                    float nearestCursor = std::numeric_limits<float>::max();
                     size_t peakIndex = 0;
                     float peakAbs = 0.0f;
                     for (size_t i = 0; i < capacity + 5000; ++i) {
                         const dsp::DelayWetPair wet = step(i == 0 ? 1.0f : 0.0f);
+                        const float movingTime = std::max(0.001f, std::min(capacitySeconds,
+                            baseSeconds + std::sin(phase) * dmod * baseSeconds * 0.08f + widthSpreadRaw));
+                        const float cursorDistance = std::fabs(static_cast<float>(i) - movingTime * sr);
+                        if (cursorDistance < nearestCursor) {
+                            nearestCursor = cursorDistance;
+                            expectedIndex = i;
+                        }
                         if (i > 0 && std::fabs(wet.r) > peakAbs) {
                             peakAbs = std::fabs(wet.r);
                             peakIndex = i;
@@ -12391,36 +12395,7 @@ TEST_CASE(stereo_delay_width_spread_bound_holds_across_the_reachable_grid) {
                               << " widthBalance=" << wb << " dmod=" << dmod << " expected=" << expectedLagSamples
                               << " measured=" << lagSamples << "\n";
                     REQUIRE_TRUE(peakAbs > 0.01f);
-                    // A continuously modulated delay's measured lag is where
-                    // the read trajectory RE-CROSSES the impulse's buffer
-                    // slot as the LFO keeps oscillating, not the phase-at-
-                    // firing value the formula above computes -- the two
-                    // drift apart by a few samples over a several-thousand-
-                    // sample crossing, absorbed by 5 samples of tolerance,
-                    // at every grid point where the width term stays live
-                    // (dwid > 0): there, maxSpreadSeconds soaks up whatever
-                    // budget the modulation term leaves, which pins timeR to
-                    // capacitySeconds regardless of how far phase has moved
-                    // by the time the scan finds its peak.
-                    // At dwid == 0 or widthBalance == 0 the width term
-                    // (widthSpreadRaw = dwid * baseSeconds * 0.35f * wb) is
-                    // multiplied by zero and cannot do that -- timeR tracks
-                    // baseSeconds + modSeconds directly, so when
-                    // maxModSeconds is large enough for phase decay to move
-                    // modSeconds by a lot over the scan window (the regime
-                    // dtim=0.9 exists to reach), the re-crossing drift itself
-                    // scales with maxModSeconds*sr rather than staying within
-                    // a handful of samples -- measured at 5509 samples
-                    // against this point's own maxModSeconds*sr of 6216, with
-                    // no width defect possible to hide behind it since
-                    // dwid == 0 or wb == 0 makes the width bound this test
-                    // exists to catch inert by construction. Tolerating up to
-                    // maxModSeconds*sr here stays two orders of magnitude
-                    // tighter than the tens-of-thousands-of-samples error an
-                    // actually broken width bound produces at dwid > 0 with
-                    // wb > 0, where this widened tolerance does not apply.
-                    const float tolerance = (dwid == 0.0f || wb == 0.0f) ? (maxModSeconds * sr + 5.0f) : 5.0f;
-                    REQUIRE_NEAR(static_cast<float>(lagSamples), expectedLagSamples, tolerance);
+                    REQUIRE_NEAR(static_cast<float>(lagSamples), static_cast<float>(expectedIndex), 5.0f);
                 }
             }
         }
