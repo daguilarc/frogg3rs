@@ -103,6 +103,10 @@ remain on hold pending explicit approval. All changes are saved locally.
 
 ## Formal source-filter alias bounds (2026-11-09)
 
+Superseded: this section and everything after it describe the earlier
+four-section source filter. The converter, its certificate and its checks are
+now those of change `conversion-alias-rejection`.
+
 Added 20 real-valued aliasing theorems: the full gate now verifies **69 theorem
 declarations and seven reviewed sources**, with only the same three allowed
 standard Lean axioms. Mathlib v4.32.0 and its transitive dependencies are pinned
@@ -133,6 +137,12 @@ needed for this proof-only behavior extension. See
 `External/Sheaf/projects/synth/formal/ALIASING.md` for full correspondence boundaries.
 
 ## State, rounding and composition extension (2026-11-10)
+
+Historical validation below describes the previous four-section converter. Its
+concrete energy/512-sample priming claims are superseded by conversion-alias-rejection
+Stage C: six-section response, conditional generic state algebra and DC-equilibrium
+Reset. Current contracts and gate are in `External/Sheaf/projects/synth/formal/`;
+the dated measurements below are not validation of the replacement converter.
 
 The fresh gate now verifies **139 theorem declarations and 10 reviewed sources**,
 with only the same three standard Lean axioms. The native coefficient exporter

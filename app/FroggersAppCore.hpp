@@ -1318,7 +1318,7 @@ public:
 
             // Sources and audio advance at engine cadence. The bridge filters
             // sources, evaluates the complete editable tree plus Fuego once
-            // per host frame, then publishes four interpolated root caches.
+            // per host frame, then publishes four interpolated, low-passed root caches.
             const auto output = outputStage_.ProcessHostFrame(absoluteOutputSample,
                 [&, this](std::uint64_t internalSample) {
                     const std::size_t phase = internalSample % kEngineFactor;

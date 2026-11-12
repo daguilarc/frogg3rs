@@ -4,7 +4,7 @@ Diego requests the Smart Grid encoder rate split and a Lean behavioral model in 
 
 Source baseline: Froggers 305ca6a; Sheaf 3b84a6d. Reference Smart Grid e7afa9761bb2238b5affc3c61d92be27aec88476.
 
-Pipeline: host input and transport -> four engine-rate modulation-source steps -> eighth-order Butterworth source low-pass decimation -> one editable-tree matrix evaluation with the phase-1/Fuego/phase-2 seam -> root interpolation -> engine-rate audio DSP -> existing Sheaf output FIR -> host recording/output/scope cursor.
+Pipeline: host input and transport -> four engine-rate modulation-source steps -> source low-pass decimation (now the six-section elliptic filter of change `conversion-alias-rejection`) -> one editable-tree matrix evaluation with the phase-1/Fuego/phase-2 seam -> root interpolation and root low-pass -> engine-rate audio DSP -> existing Sheaf output FIR -> host recording/output/scope cursor.
 
 At a 48 kHz host the engine is 192 kHz and the matrix 48 kHz. Other host rates retain the four-to-one ratio. Existing recursive depths, gestures, arbitrary scene/voice counts, crossfade/attenuverter blend modes, normalized absolute edits and quiescent skipping remain in the authoritative ParameterGroup path. No prepared graph replaces those semantics. Unchanged scalar nested leaves reuse their evaluated image; fresh raw-center comparison and mutation invalidation retain edit responsiveness.
 

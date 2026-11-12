@@ -1,0 +1,48 @@
+name: Parameter model
+
+# The rate-conversion bridge, its native tests and its Lean certificate live in
+# the Sheaf submodule; a Sheaf pin bump must not merge without both gates.
+on:
+  push:
+    paths:
+      - 'External/Sheaf'
+      - '.github/workflows/parameter-model.yml'
+  pull_request:
+    paths:
+      - 'External/Sheaf'
+      - '.github/workflows/parameter-model.yml'
+
+jobs:
+  native:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Build and run native parameter and DSP tests
+        working-directory: External/Sheaf/projects/synth
+        run: |
+          make build/parameter_modulation_tests build/dsp_tests
+          ./build/parameter_modulation_tests
+          ./build/dsp_tests
+
+  formal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install the pinned Lean toolchain
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch prebuilt Mathlib
+        working-directory: External/Sheaf/projects/synth
+        run: lake exe cache get
+
+      - name: Coefficient snapshot, statement pins and Lean axiom audit
+        working-directory: External/Sheaf/projects/synth
+        run: make formal-test

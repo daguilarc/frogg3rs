@@ -15,7 +15,7 @@ The app SHALL run four audio/source samples for every host-rate matrix frame. At
 - Check: `configure_processing_timing_is_wired_at_96khz_prepare`
 
 ### Requirement: Filter sources and interpolate processed roots
-The reusable Sheaf bridge SHALL low-pass source samples before matrix-rate evaluation, retain source-filter history across callbacks, and publish interpolated root caches at weights 1/4, 1/2, 3/4 and 1. The application seam SHALL be applied once before interpolation, for every configured voice.
+The reusable Sheaf bridge SHALL low-pass source samples before matrix-rate evaluation, retain source-filter history across callbacks, interpolate root targets at weights 1/4, 1/2, 3/4 and 1, and pass each interpolated root through the six-section root low-pass before publication (change `conversion-alias-rejection`). The application seam SHALL be applied once before interpolation, for every configured voice.
 
 #### Scenario: Source alias rejection
 - **WHEN** a 1 kHz source and a 47 kHz source are evaluated at 192/48 kHz
@@ -24,11 +24,16 @@ The reusable Sheaf bridge SHALL low-pass source samples before matrix-rate evalu
 
 #### Scenario: Processed multivoice publication
 - **WHEN** two voices receive distinct post-seam values
-- **THEN** each voice publishes its own four-step interpolation and the seam runs once
+- **THEN** each voice publishes its own four-step interpolation, filtered by its own root low-pass history, and the seam runs once
 - Check: `rate_separated_parameters_interpolate_post_seam_once_per_frame`
 
 ### Requirement: Explicit formal correspondence boundary
 The Lean model SHALL describe cadence, publication and Sheaf-specific behavioral extensions independently of runtime evaluation strategy. Its gate SHALL kernel-check theorems, reject unapproved axioms and report changes to reviewed source fingerprints. Rational model proofs SHALL NOT be presented as verification of C++ floating-point behavior.
+
+#### Scenario: Formal gate rejects drift
+- **WHEN** a reviewed source, coefficient, theorem statement or settlement constant changes without a reviewed manifest update
+- **THEN** `make formal-test` fails
+- Check: none — the formal gate runs in the CI workflow .github/workflows/parameter-model.yml, not as a test case
 
 ### Requirement: Source hold and editable frozen parameters
 Stopped transport SHALL hold modulation source-filter state exactly while matrix evaluation and parameter edits continue.
@@ -52,25 +57,29 @@ The evaluator MAY reuse an unchanged scalar nested leaf. It SHALL re-evaluate af
 - Check: `prepared_scalar_depth_leaf_reuses_only_an_unchanged_image`
 
 ### Requirement: Checked continuous-band source-filter attenuation
-The formal gate SHALL export and check all 20 configured binary32 source-filter
-coefficients against their exact real embeddings in Lean. At a 192 kHz engine
-rate, the real fixed-coefficient response SHALL have power gain at most
-1/4000000 throughout 47..96 kHz and at least 1/2 throughout 0..1 kHz. The model
-SHALL prove a relative amplitude-gain bound of 1/1000 for every high/reference
-pair from those bands and the 47 kHz to 1 kHz four-to-one sampling identity.
+The formal gate SHALL export and check all 30 configured binary32 coefficients
+of the six-section converter against their exact real embeddings in Lean.
+The complete closed normalized pass band [0,5/48] SHALL have power gain in
+[981/1000,10001/10000]; the stop band [1/8,1/2] SHALL have power gain at most
+981/1000000000000. Every stop/pass pair SHALL have power ratio at most
+1/1000000000. At a 192 kHz engine these are 0..20 kHz and 24..96 kHz; other
+engine rates scale the physical edges. The model SHALL prove strict denominator
+positivity, all six product identities, complete interval coverage and closed
+trigonometric endpoints, retaining the 47 kHz to 1 kHz sampling identity.
 These claims SHALL describe steady-state frequency response; they SHALL NOT be
 presented as IEEE processing-error bounds, transient guarantees, transition-band
 suppression, output-FIR proofs or whole-synth alias freedom.
 
 #### Scenario: Native response agrees with proved band bounds
-- **WHEN** the configured C++ source filter's response is checked at 8193 points in each proved band
-- **THEN** every point meets the formal power bounds and the 47 kHz/1 kHz pair meets the relative bound
-- Check: `rate_separated_source_filter_matches_proved_response_band_bounds`
+- **WHEN** the configured C++ six-section source filter is checked across the pass and stop bands
+- **THEN** native response meets its numeric band criteria, separately from the continuous kernel proof
+- Check: `rate_separated_source_filter_dense_response_band_bounds`
 
 ### Requirement: Stateful finite-arithmetic and nonlinear composition contracts
-The formal model SHALL include full direct-form-I biquad memory, verified
-positive energy certificates for the exported coefficients, initial-history decay,
-and accumulated bounded disturbances. It SHALL model nearest-even binary32 and
+The formal model SHALL retain full direct-form-I biquad memory identities and
+generic positive-energy, initial-history decay and disturbance theorems conditional
+on FilterState.Certificate. It SHALL NOT claim actual-six-section stability
+instances or describe runtime DC-equilibrium Reset as 512-sample priming. It SHALL model nearest-even binary32 and
 binary64 arithmetic, subnormal spacing, FTZ/DAZ effects, and finite-operand budgets.
 The actual 287 stored output FIR taps SHALL be exported and checked. FIR history
 flush, L1 error gain, guarded mixed precision, and final-clamp error propagation
@@ -83,9 +92,9 @@ within-cell behavior MAY preserve a perturbation; the linear filter's small gain
 SHALL NOT be assumed across unconstrained bit-cell crossings.
 
 #### Scenario: Actual state and arithmetic agree with the contracts
-- **WHEN** actual source-filter state evolution, 512-sample DC priming and rounding residuals are exercised
-- **THEN** state copies, transient checks and guarded residual bounds pass
-- Check: `source_filter_state_decay_and_512_sample_priming_match_model`
+- **WHEN** actual source-filter DC initialization, endpoint settling and guarded rounding residuals are exercised
+- **THEN** native initialization/settling criteria and local residual bounds pass, without claiming the generic conditional state budget applies to the actual cascade
+- Check: `source_filter_dc_equilibrium_and_settled_endpoints`
 - Check: `source_filter_native_rounding_residual_fits_state_disturbance_budget`
 
 #### Scenario: Native floating-point modes are explicit

@@ -9,8 +9,9 @@ at `External/Sheaf`. Development tracks a fork of it rather than upstream.
 
 At the preferred 48 kHz device rate, the audio engine and modulation sources run
 at 192 kHz. The editable modulation matrix and Fuego/UI phases run at 48 kHz;
-filtered sources feed each evaluation and processed parameter values interpolate
-across four engine samples. Other device rates retain the same 4:1 ratio.
+filtered sources feed each evaluation, and processed parameter values interpolate
+across four engine samples and pass through a low-pass that removes the
+interpolation images. Other device rates retain the same 4:1 ratio.
 Recording and scope history stay at device rate. The output FIR adds 143 engine
 samples (35.75 device samples) of delay; the plugin reports 36 samples.
 
