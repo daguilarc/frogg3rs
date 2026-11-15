@@ -76,7 +76,7 @@ browser install apps, and you allow it, then install. A newer APK installs over 
 
 ---
 
-Six parameter pages — **Audio**, **Envelope**, **Filter**, **Drive**, **Delay**, **Reverb** — each with
+Six parameter pages — **Audio**, **Envelope**, **Drive**, **Filter**, **Delay**, **Reverb** — each with
 16 encoder slots: 14 page parameters (slots 0–13), a page-local **Crispy** (slot 14), and one shared
 global **Crunchy** (slot 15, the same control in every page). All six pages process audio every sample
 regardless of which one is on screen — switching pages only changes what you're looking at.
@@ -106,7 +106,7 @@ differently from each other, because the scramble pattern follows the slot index
 
 ### Page selection
 
-Six named buttons — Audio, Envelope, Filter, Drive, Delay, Reverb — pick which page's 16 slots populate
+Six named buttons — Audio, Envelope, Drive, Filter, Delay, Reverb — pick which page's 16 slots populate
 the encoder grid on screen. Every page keeps processing audio whichever one is selected; the buttons
 change what you can see and edit.
 
@@ -649,8 +649,7 @@ Independent per VCO.
 **Ph.mod 1 / Ph.mod 2 / Ph.mod 3** (slots 6–8) — each VCO's own phase-modulation depth, driven
 by that VCO's own internal sine LFO (no cross-VCO modulation). Below a small floor near 0 it's silent;
 above it, it grows from a subtle vibrato into an increasingly warbly, FM-like wobble at full depth. The
-size of the wobble is set here and does not change with the rate. All three VCOs' LFOs share one rate
-(see PM rate, slot 12).
+size of the wobble is set here. All three VCOs' LFOs run at a fixed 2 Hz.
 
 **Ringmod 1 / Ringmod 2 / Ringmod 3** (slots 9–11) — each VCO ring-modulates against its own
 internal carrier oscillator. One knob sets the carrier and the amount
@@ -658,13 +657,10 @@ together: as it is raised, the carrier's own frequency sweeps 20 Hz–5 kHz and,
 of the metallic ring-modulated product blends in, fully replacing the dry tone at maximum. Below a
 small floor at the bottom of its travel, ring mod is off. Defaults to 0, so ring mod is off on a fresh app.
 
-**PM rate** (slot 12) — one shared knob (2 Hz–20 Hz) setting how fast the phase-mod wobble runs
-for all three VCOs at once. Depth and rate are independent: this sets the speed for all three, and each
-VCO's own Phase mod knob sets how far its pitch swings.
-
-**VCO balance** (slot 13) — a single tilt sweeping mix emphasis from VCO1 (bottom of travel)
-through an even three-way split (center, the default) to VCO3 (top of travel). By construction, every
-VCO's share of the mix stays between 10% and 80%.
+**Balance Y** (slot 12) and **Balance X** (slot 13) — the two coordinates of the oscillator mix.
+Both centre defaults give equal thirds. Along the bottom edge, X crossfades VCO1 and VCO2; along the
+left and right edges, Y crossfades that oscillator with VCO3. The top edge selects VCO3 alone. There
+is no minimum share for an oscillator: the corners can solo one VCO.
 
 ---
 
@@ -703,75 +699,6 @@ Sustain, Grace keeps it there for at least this long (0–1 s) before honoring a
 short gate pulse does not cut a note off mid-way through its own Attack/Decay. At its default (0) a note
 cuts to Release the instant the gate closes. Grace delays only when Release starts; Attack, Decay and
 Release durations stay the same.
-
----
-
-## Filter page
-
-Signal path (at the default Topology): the Drive page feeds this page's input. A resonant notch filter
-("Scoop") is blended into that input first; the scooped signal feeds both a resonant peaking EQ ("peak")
-and, through a short pure delay, a comb filter. Topology morphs how much the comb path feeds the peak
-path, from fully parallel to fully in series, and Comb/Peak blends the peak and comb outputs together.
-A limiter after that blend holds the page's output down before this page hands off to Delay and then
-Reverb downstream.
-
-**Peak freq** (slot 0) — center frequency of the resonant peaking EQ, 100 Hz–20 kHz.
-
-**Peak gain** (slot 1) — how far the peak stands above the rest of the signal. At the bottom of
-travel the peak is flat. The peak path divides its own output by the same height it raises the peak
-to, so turning this up holds the level at the peak's own center frequency and pulls the rest of the
-signal down. With the page at its defaults, which put the peak at 100 Hz, a full-scale tone at that
-center frequency stays essentially unchanged across the whole travel, a tone at 1 kHz falls about
-5 dB, and a tone at 5 kHz falls about 6 dB; a broadband source loses about 7 dB of total level end to
-end. Because the peak is shaped by attenuation, raising this control also lowers the overall output
-level by roughly that amount.
-
-**Peak Q** (slot 2) — width/resonance of the peak: a wide, gentle bump at the bottom, a narrow,
-ringing resonance at the top.
-
-**Comb offset** (slot 3) — a short pure delay ahead of the comb (1 ms–100 ms). Smears the
-comb's attack transient without changing the comb's own pitch.
-
-**Comb delay** (slot 4) — the comb filter's own delay time, expressed as a pitch (100 Hz–10 kHz)
-— this sets the comb's characteristic pitched ringing.
-
-**Comb feedback** (`Comb FB`, slot 5) — comb resonance. Neutral (no resonance) at the exact center of
-travel; pushing toward either end raises feedback up to ±0.95, where the comb rings for a long time
-before decaying.
-
-**Comb LP** (slot 6) — a low-pass filter inside the comb's own feedback loop. Turning it down
-darkens/dampens the comb's repeats faster; turning it up brightens and sustains them longer, up to
-20 kHz.
-
-**Comb drive** (slot 7) — pre-gain (0.25×–4×) into the comb's own saturator; unity gain at the
-center default. Raising it pushes the comb's ringing into harder, more distorted saturation. Below
-the center default the saturator's own ceiling on the comb's output level no longer holds — the comb
-can ring louder than the drive at unity or above — and it is the Filter page's own output limiter,
-downstream of the Comb/Peak blend, that holds the level there.
-
-**Scoop mix** (slot 8) — blends a resonant notch filter into the shared input that feeds both the comb
-and peak paths. At the bottom of travel the notch is absent and Comb/Peak sees the unaffected signal;
-raising it mixes in progressively more of the notched signal, up to fully replacing the input at
-maximum. The notch's own dip depth is a separate control (Scoop depth, slot 11).
-
-**Scoop freq** (slot 9) — the notch's own center frequency (100 Hz–20 kHz), independent of
-Peak freq.
-
-**Scoop width** (slot 10) — the notch's own Q/width, independent of Peak Q.
-
-**Scoop depth** (slot 11) — how deep the notch dips (0 = no dip, up to roughly a 95% deep dip at
-maximum). Independent of Scoop mix (slot 8), which sets how much of that notch reaches the signal at
-all.
-
-**Comb/Peak** (slot 12) — an equal-power blend between the peak path and the comb path. The
-blend's travel is floored, so the held-back branch is never fully absent: about −22 dB down at
-either extreme, exactly −3 dB — a true 50/50 — at the center of travel. Topology (slot 13) is the
-separate control that morphs between parallel and series.
-
-**Topology** (slot 13) — a continuous morph between running the comb path and the peak **in
-parallel** (bottom of travel, the default — the comb's output does not reach the peak) and running
-them fully **in series** (top of travel — the comb's output becomes the peak's input, so the peak
-shapes an already comb-colored signal). Every value in between blends smoothly.
 
 ---
 
@@ -917,6 +844,67 @@ loop on each pass:
 
 Reverb's tank runs on one feedback coefficient, and two controls set it: Decay places it between
 0.1 and 0.98, and Hold moves it from wherever Decay left it toward 1, always stopping short.
+
+---
+
+## Filter page
+
+Drive feeds Filter 1, then the comb, then Filter 2. Each state-variable filter has its own
+linear dry-to-filtered mix. A limiter after Filter 2 contains the page's peaks before the signal
+continues to Delay and Reverb. Resonance can raise level, especially when the stages reinforce.
+
+The VCO pitch controls and Balance determine one shared tracking reference: the Balance-weighted
+mean of the three pitches in semitones. Middle C (261.6 Hz, note 60) is the reference for the frequency
+ranges below. Moving Balance can move this reference as well as changing the oscillator mix.
+
+**Cutoff 1** (slot 0) — Filter 1's cutoff, 20 Hz–20 kHz exponentially before key tracking.
+Defaults fully open at 20 kHz.
+
+**Res 1** (slot 1) — resonance, Q 0.5–5.5. Raising it emphasizes the cutoff and makes the filter ring.
+There is no level compensation for the resonance gain.
+
+**Morph 1** (slot 2) — sweeps continuously from low-pass through band-pass to high-pass. Defaults to
+low-pass.
+
+**Keytrk 1** (slot 3) — how the cutoff follows the shared VCO pitch reference: −100% at the bottom,
+0% at the centre default, +100% at the top. At +100%, an octave rise in that reference doubles the
+cutoff; at −100%, it halves it. The filter's sample-rate limit still applies.
+
+**Mix 1** (slot 4) — dry-to-filtered mix for Filter 1. At 0 the signal passes dry; at 1 it passes entirely
+through Filter 1. The mix is linear, and differences in phase can reduce level in the middle.
+Defaults to fully filtered.
+
+**Comb delay** (slot 5) — a pure delay ahead of the comb, 1–100 ms. Shifts the comb's attack without
+changing its tuning. The available delay is bounded by the buffer at the current sample rate.
+
+**Comb tune** (slot 6) — the comb's ringing pitch, 100 Hz–10 kHz at the middle-C reference. It follows
+the shared VCO pitch reference one octave per octave. Tuning beyond the delay buffer's range stops
+at the nearest available delay.
+
+**Comb FB** (slot 7) — feedback, zero at the exact centre and up to ±0.95 toward either end.
+Moving away from the centre lengthens the ringing; the two signs place the comb's peaks differently.
+
+**Comb LP** (slot 8) — low-pass cutoff inside the feedback loop. Turning down darkens and damps the
+repeats; turning up opens it to 20 kHz. Its lower end follows four times the tracked tune frequency,
+bounded at 20 kHz.
+
+**Comb drive** (slot 9) — gain into the comb's saturator, 0.25×–4×, unity at the centre default.
+Higher values saturate the ringing more strongly. Below unity the comb can ring louder; the page's
+output limiter contains its peaks.
+
+**Cutoff 2** (slot 10) — Filter 2's peak or notch frequency, 20 Hz–20 kHz exponentially. Defaults to
+20 kHz and does not follow the shared tracking reference.
+
+**Res 2** (slot 11) — resonance, Q 0.5–5.5. Raising it narrows the peak or notch and increases the
+peak's ringing. There is no resonance gain compensation.
+
+**Morph 2** (slot 12) — sweeps continuously from a resonant peak to a notch at Cutoff 2. The middle
+retains both the low and high passbands. Away from the centre frequency, gain also changes from
+about −3 dB at the peak end to 0 dB at the notch end. Defaults to notch.
+
+**Mix 2** (slot 13) — linear dry-to-filtered mix around Filter 2: 0 passes the comb output, 1 passes it
+entirely through Filter 2. Phase differences can reduce level between the endpoints. Defaults fully
+filtered. The open low-pass and high-frequency notch defaults can still soften upper harmonics.
 
 ---
 

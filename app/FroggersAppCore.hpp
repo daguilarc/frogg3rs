@@ -315,6 +315,7 @@ public:
               //     hand-builds. Copying the number without the display it
               //     serves would just allocate ~400MB for nothing.
               /*minY=*/-1.0f, /*maxY=*/1.0f, /*numSamples=*/512, /*drawMarkers=*/true),
+          mainFilterVisualizer_(mainFilterUiState_, synth::Color::Blue),
           peakVisualizer_(peakUiState_, synth::Color::Blue),
           combVisualizer_(combUiState_, synth::Color::Blue.AdjustBrightness(0.7f)) {
         audioVcos_[0].SetScopeWriterHolder(&vco1ScopeHolder_);
@@ -419,7 +420,7 @@ public:
         // constructor (see its comment), ahead of Init() always running --
         // passed in so FroggersParameterModel can attach them as the Filter
         // bank's Peak/Comb parameter underlays.
-        parameters_.Init(*context->parameterManager, &peakVisualizer_, &combVisualizer_);
+        parameters_.Init(*context->parameterManager, &peakVisualizer_, &combVisualizer_, &mainFilterVisualizer_);
 
         // Registers all 15 modulation sources -- see FroggersModulation.hpp
         // for the full list and ordering.
@@ -906,12 +907,12 @@ public:
             // press while drilled in is a no-op, not a silent exit from the
             // drill.
             if (drillIn_->Level() == 0) {
-                SelectPage((activePageIx_ + kFroggersPageCount - 1) % kFroggersPageCount);
+                SelectPage(FroggersBankAtDisplayPosition((FroggersDisplayPosition(activePageIx_) + kFroggersPageCount - 1) % kFroggersPageCount));
             }
             break;
         case FroggersCommand::kPageNext:
             if (drillIn_->Level() == 0) {
-                SelectPage((activePageIx_ + 1) % kFroggersPageCount);
+                SelectPage(FroggersBankAtDisplayPosition((FroggersDisplayPosition(activePageIx_) + 1) % kFroggersPageCount));
             }
             break;
         case FroggersCommand::kEncoderPress: {
@@ -1471,7 +1472,8 @@ public:
         audioVcos_[0].PopulateUIState(vco1ScopeUiState_);
         audioVcos_[1].PopulateUIState(vco2ScopeUiState_);
         audioVcos_[2].PopulateUIState(vco3ScopeUiState_);
-        filterChain_.peak.PopulateUIState(peakUiState_);
+        filterChain_.mainFilter.PopulateUIState(mainFilterUiState_);
+        filterChain_.PopulatePeakUiState(peakUiState_);
         filterChain_.comb.PopulateUIState(combUiState_);
         modulation_.PublishUiState();
 
@@ -1536,8 +1538,12 @@ public:
     dsp::SampleRateReducer& TestSampleRateReducer(std::size_t ix) {
         return ix == 0 ? drive_.sampleRateReducer1 : drive_.sampleRateReducer2;
     }
-    dsp::ResonantBump& TestFilterPeak() { return filterChain_.peak; }
-    dsp::ResonantBump& TestFilterScoopNotch() { return filterChain_.scoopNotch; }
+    dsp::RecoverableSvf& TestFilterPeak() { return filterChain_.peakFilter; }
+    dsp::RecoverableSvf& TestFilterMain() { return filterChain_.mainFilter; }
+    dsp::FilterFxChain& TestFilterChain() { return filterChain_; }
+#ifdef FROGGERS_DSP_CHECKS
+    void TestObserveFilterSamples(std::function<void()> observer) { filterSampleObserver_ = std::move(observer); }
+#endif
     dsp::Comb& TestFilterComb() { return filterChain_.comb; }
     // Test/inspection access to the MASTER output limiter, same
     // convention as the accessors above -- lets tests call Process()/
@@ -1770,18 +1776,13 @@ private:
     // (carrierPhase/pmLfoPhase) plus this call's own arguments -- no
     // cross-VCO term exists (Vco.hpp's own header comment) -- so the
     // iteration order across i cannot change any instance's output.
-    // Ring Mod slots 9-11 + PM rate slot 12:
-    // slot 12 (PMrt) is read ONCE here and passed identically to all
-    // three Process() calls -- deliberately "ONE knob shared
-    // across all three VCOs' StepPmLfo calls, not three per-VCO rates".
+    // Ring Mod occupies slots 9-11; PM runs at its fixed rate.
     std::array<float, 3> RouteAudioBank() {
-        const float pmRateKnob = RoutedKnob(FroggersBankId::Audio, 12);
         std::array<float, 3> vcoOut{};
         for (std::size_t i = 0; i < audioVcos_.size(); ++i) {
             vcoOut[i] = audioVcos_[i].ProcessEngineSample(RoutedKnob(FroggersBankId::Audio, AudioSlot(i, VcoSlotRole::Pitch)),
                                                RoutedKnob(FroggersBankId::Audio, AudioSlot(i, VcoSlotRole::Shape)),
                                                RoutedKnob(FroggersBankId::Audio, AudioSlot(i, VcoSlotRole::PhaseMod)),
-                                               pmRateKnob,
                                                RoutedKnob(FroggersBankId::Audio, AudioSlot(i, VcoSlotRole::RingMod)),
                                                sampleRate_);
         }
@@ -1816,7 +1817,7 @@ private:
             RoutedKnob(FroggersBankId::Envelope, 4), RoutedKnob(FroggersBankId::Envelope, 5), RoutedKnob(FroggersBankId::Envelope, 6), ReleaseKnob(7),
             RoutedKnob(FroggersBankId::Envelope, 8), RoutedKnob(FroggersBankId::Envelope, 9), RoutedKnob(FroggersBankId::Envelope, 10), ReleaseKnob(11),
             RoutedKnob(FroggersBankId::Envelope, 12), RoutedKnob(FroggersBankId::Envelope, 13),
-            RoutedKnob(FroggersBankId::Audio, 13), &gatedVoices);
+            RoutedKnob(FroggersBankId::Audio, 13), RoutedKnob(FroggersBankId::Audio, 12), &gatedVoices);
 
         // Post-gate scope tap: writes the GATED values, not
         // the raw pre-gate VCO output -- so the scope stays flat until the
@@ -1863,169 +1864,44 @@ private:
         return driveOut;
     }
 
-    // -- Filter bank -> dsp::FilterFxChain -------------------
-    // src/core/FroggersEngine.hpp:272,274-288 mapping (Comb offset -> pureDelay,
-    // Peak freq/gain/Q -> ResonantBump, Comb delay/feedback/LP -> Comb,
-    // Comb/Peak -> blend, Scoop -> scoopMix). The old `useParallel` bool
-    // (which used to mirror `SetUseV2FilterParallel(UsesV2Fuego(hostKind))`,
-    // always `true` for this app) has
-    // been replaced by the Filter slot-13 "Topology" knob, a continuous
-    // morph -- see FilterFxChain::Process's own comment (FilterFx.hpp).
-    // Clamped to `PureDelay::kSize` so a very high host sample rate
-    // cannot push `SetDelaySeconds` past the ported unit's fixed-size
-    // ring buffer (defensive; PureDelay itself is not
-    // modified).
+    // Filter follows the actual VCO/envelope mix and Drive. The tracking
+    // pitches and Balance values come from the same current sample caches
+    // the oscillator mixer just consumed; no MIDI note or external test
+    // signal supplies the key.
     float RouteFilterBank(float driveOut) {
-        const float combOffsetSeconds = std::min(
-            dsp::ExpMapCompute(0.001f, 0.1f, RoutedKnob(FroggersBankId::Filter, 3)),
-            static_cast<float>(dsp::PureDelay::kSize - 1) / sampleRate_);
-        filterChain_.pureDelay.SetDelaySeconds(combOffsetSeconds, sampleRate_);
-        // 08b5fd3:src/core/FroggersEngine.hpp:561-562: the scoop notch shares the peak bump's
-        // freq and width verbatim -- hoisted into locals because BOTH
-        // ResonantBumps consume them.
-        // Floor raised from 20 Hz to 100 Hz: this is a peak, not a cutoff
-        // (traced against ResonantBump above), so a low draw idled below
-        // audibility rather than merely softening it -- inert, not tame. The
-        // knob is a modulation TARGET (see this function's own resonant-peak
-        // ceiling comment below), so a randomized depth visits this floor
-        // regularly, not only when an operator dials there. Moves the
-        // bottom decile from about 40 Hz to about 170 Hz.
-        const float bumpFreq =
-            dsp::ExpMapCompute(100.0f / sampleRate_, 20000.0f / sampleRate_, RoutedKnob(FroggersBankId::Filter, 0));
-        // Floor raised from 0.1 to 0.4: at Q 0.4 the RBJ peaking biquad's
-        // bandwidth (ResonantBump::UpdateCoefficients's `alpha =
-        // sin(w0)/(2*Q)`, FilterFx.hpp) is about 3 octaves -- broad, but
-        // still a discernible peak, not the flat pass-through the old
-        // floor could sit at.
-        const float bumpWidth = dsp::ExpMapCompute(0.4f, 10.0f, RoutedKnob(FroggersBankId::Filter, 2));
-        filterChain_.peak.SetFreq(bumpFreq);
-        // Peak gain maps its whole travel onto bump heights from 1.0 (flat)
-        // up to `dsp::kMaxResonantBumpHeight`, read from that constant rather
-        // than retyped here so the two cannot drift apart; the constant's own
-        // comment (dsp/FilterFx.hpp) carries where its value comes from.
-        // scoopNotch (below) has its own independent freq/width knobs (Filter
-        // slots 9/10) and its own height is a DIP (max(0.05, 1-0.95*scoop)),
-        // so this ceiling leaves it untouched.
-        //
-        // Modulation is the case that governs this ceiling: the knob is a
-        // modulation TARGET, so a randomized depth sweeps it to maximum
-        // regularly, not only when the operator dials it there. The comb
-        // feeding this stage is bounded near |in| + 0.95 (about 2 at full
-        // scale) at Comb drive 1 and above; below drive 1 that bound fails
-        // (measured directly on `dsp::Comb`, 100-sample delay, feedback
-        // 0.95, full-scale sine at the comb's own pitch: drive 0.25 reaches
-        // 3.9222), and
-        // it is the Filter page's own limiter, downstream of the Comb/Peak
-        // blend, that holds the level then. Whatever the peak multiplies
-        // its input by, that same limiter takes back -- heavy sustained
-        // gain reduction is itself audible as harshness, so the ceiling is
-        // what keeps it off the signal.
-        //
-        // The height sets how far the peak stands above its surroundings, and
-        // raising it lowers those surroundings. `FilterFxChain::Process`
-        // divides the peak branch by this same height (its own `rawPeakTrim`,
-        // dsp/FilterFx.hpp): at the bump's own resonant frequency the divide
-        // cancels the height exactly, so the level there holds across the
-        // whole travel, and away from that frequency the same divide lowers
-        // the level. Raising this ceiling widens that spread; it does not
-        // make the instrument louder.
-        //
-        // If the resonance is harsh, the lever is the comb feedback (0.95)
-        // that feeds it -- past a point, lowering this ceiling only makes the
-        // resonance inaudible.
-        filterChain_.peak.SetHeight(
-            dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, RoutedKnob(FroggersBankId::Filter, 1)));
-        filterChain_.peak.SetWidth(bumpWidth);
-        // 08b5fd3:src/core/FroggersEngine.hpp:561-564, restored 2026-07-27. These three
-        // setters were dropped in the port even though `FilterFxChain`
-        // kept the scoop blend, so `scoopNotch` ran forever on
-        // `ResonantBump`'s default `freq = 1000.0f` (FilterFx.hpp's `ResonantBump::freq`) --
-        // an unnormalized value in a cycles/sample convention, i.e.
-        // thousands of times past Nyquist, giving a marginally stable
-        // biquad. Under a self-oscillating comb (Randomize All pins the
-        // feedback near its -0.95 extreme) its state diverged to non-finite,
-        // and `SanitizeOutputSample` then masked every later sample to
-        // 0.0f: permanent silence with no recovery. Note `scoopNotch`
-        // processes unconditionally, so a poisoned state reaches the output
-        // even at `scoopMix == 0` -- IEEE `NaN * 0` is `NaN`.
-        // Height is a DIP, not a gain: max(0.05, 1 - 0.95 * scoop).
-        // Filter slots 9/10 ("Scoop freq"/"Scoop width",
-        // "ScFq"/"ScWd"): the scoop notch used to share the peak bump's
-        // freq/width verbatim (bumpFreq/bumpWidth above); it now gets its
-        // own independent knobs, mapped with the SAME shape (same
-        // ExpMapCompute min/max) so the two controls behave consistently
-        // with one another.
-        // Floor raised from 20 Hz to 100 Hz, same reasoning as bumpFreq's own
-        // comment above (an independent knob, same inert-below-audibility
-        // failure). Moves the bottom decile from about 40 Hz to about
-        // 170 Hz.
-        const float scoopFreq =
-            dsp::ExpMapCompute(100.0f / sampleRate_, 20000.0f / sampleRate_, RoutedKnob(FroggersBankId::Filter, 9));
-        // Same floor raise (0.1 -> 0.4) and reasoning as bumpWidth's own
-        // comment above.
-        const float scoopWidth = dsp::ExpMapCompute(0.4f, 10.0f, RoutedKnob(FroggersBankId::Filter, 10));
-        filterChain_.scoopNotch.SetFreq(scoopFreq);
-        filterChain_.scoopNotch.SetWidth(scoopWidth);
-        // Deliberate decreasing exponential map (base 0.05 < 1 is
-        // well-defined): equal knob steps cut equal dB, running from an
-        // exact 1.0 (no dip) at the floor to an exact 0.05 at the ceiling.
-        // Scoop depth (Filter slot 11) drives the notch's own dip;
-        // how much of that dip reaches the output is Scoop (slot 8, the
-        // wet/dry blend below).
-        filterChain_.scoopNotch.SetHeight(
-            dsp::ExpMapCompute(1.0f, 0.05f, RoutedKnob(FroggersBankId::Filter, 11)));
-        // Floor raised from 20 Hz to 100 Hz, same inert-below-audibility
-        // reasoning as bumpFreq/scoopFreq above. Ceiling here is 10 kHz, not
-        // 20 kHz, so this moves the bottom decile from about 37 Hz to about
-        // 159 Hz. NOTE this floor also raises the comb low-pass knob's own
-        // floor below (cmlp derives its floor as 4x this frequency) from
-        // 80 Hz to 400 Hz at minimum comb frequency -- a range change to a
-        // control nobody asked to change, accepted on the same reasoning (an
-        // 80 Hz low-pass on a comb is inaudible) but stated here so the
-        // coupling is not a surprise later.
-        const float combFreq =
-            dsp::ExpMapCompute(100.0f / sampleRate_, 10000.0f / sampleRate_, RoutedKnob(FroggersBankId::Filter, 4));
-        // Fractional now (Comb::delaySamples, FilterFx.hpp) -- no truncating
-        // cast here; the clamp keeps the same [1, kSize-1] bounds as floats.
-        filterChain_.comb.delaySamples =
-            std::min(static_cast<float>(dsp::Comb::kSize - 1), std::max(1.0f, dsp::Comb::GetDelaySamples(combFreq)));
-        filterChain_.comb.SetFeedback(dsp::Comb::GetFeedback(RoutedKnob(FroggersBankId::Filter, 5)));
-        // Comb low-pass floor derives from combFreq above (4x it), so it
-        // moved too when combFreq's own floor was raised -- see combFreq's
-        // comment just above. The low-pass runs from just above the comb's
-        // own pitch up to fully open, so the floor is clamped to the
-        // ceiling: once the comb sits high enough that 4x its frequency is
-        // already past fully open, the range degenerates to fully open --
-        // the knob goes inert there, it never reverses direction.
-        const float cmlpCeiling = 20000.0f / sampleRate_;
-        const float cmlp = dsp::ExpMapCompute(std::min(4.0f * combFreq, cmlpCeiling), cmlpCeiling,
-                                               RoutedKnob(FroggersBankId::Filter, 6));
-        // src/core/FroggersEngine.hpp:245-247 (Alpha): 1 - exp(-2*pi*natFreq).
-        filterChain_.comb.SetCutoffAlpha(1.0f - std::exp(-2.0f * static_cast<float>(M_PI) * cmlp));
-        // Comb drive (Filter slot 7, "CDrv"): knob-driven
-        // pre-gain on the comb saturator's argument (dsp::Comb::Process,
-        // FilterFx.hpp), exponential map (dsp::ExpMapCompute, same shape
-        // used throughout this method), range 0.25x-4.0x so unity (1.0x)
-        // is reachable exactly at knob==0.5 -- ExpMapCompute(0.25, 4.0,
-        // 0.5) == 0.25 * sqrt(16) == 1.0. The Filter slot-7 default
-        // (FroggersParameters.hpp) is set to 0.5f for exactly this reason.
-        // stoppedKnob (defined above, beside kStopFadeReleaseKnob)
-        // overrides this to kStopUnityDriveKnob (0.5, i.e. unity post-map)
-        // while the transport is stopped, regardless of the commanded knob.
-        filterChain_.comb.SetDrive(
-            dsp::ExpMapCompute(0.25f, 4.0f, StoppedKnob(FroggersBankId::Filter, 7, kStopUnityDriveKnob)));
-        // Topology (Filter slot 13, "Topo"): continuous morph
-        // replacing the old `useParallel` bool -- see FilterFxChain::Process's
-        // own comment (FilterFx.hpp) for why topology==0 is bit-identical to
-        // the old always-true `useParallel` behaviour.
-        // Scoop (Filter slot 8) is the notch's wet/dry blend into the
-        // chain's shared input, ahead of both the Comb and Peak stages
-        // (FilterFxChain::Process, FilterFx.hpp) -- SetHeight above reads
-        // Scoop depth (slot 11) instead, the notch's own dip.
-        const float filterOut =
-            filterChain_.Process(driveOut, RoutedKnob(FroggersBankId::Filter, 13), RoutedKnob(FroggersBankId::Filter, 12),
-                                  RoutedKnob(FroggersBankId::Filter, 8));
-        return filterOut;
+        const std::array<float, 3> pitches{{
+            RoutedKnob(FroggersBankId::Audio, AudioSlot(0, VcoSlotRole::Pitch)),
+            RoutedKnob(FroggersBankId::Audio, AudioSlot(1, VcoSlotRole::Pitch)),
+            RoutedKnob(FroggersBankId::Audio, AudioSlot(2, VcoSlotRole::Pitch))}};
+        filterChain_.keyTracking.Update(pitches, RoutedKnob(FroggersBankId::Audio, 13),
+            RoutedKnob(FroggersBankId::Audio, 12), sampleRate_);
+        const auto knob = [this](std::size_t slot) { return RoutedKnob(FroggersBankId::Filter, slot); };
+        const auto cutoffHz = [](float k) { return dsp::ExpMapCompute(20.0f, 20000.0f, k); };
+        const auto resonance = [](float k) { return dsp::ExpMapCompute(0.5f, 5.5f, k); };
+        filterChain_.mainInput.cutoff = filterChain_.keyTracking.Track(cutoffHz(knob(0)), 2.0f * knob(3) - 1.0f) / sampleRate_;
+        filterChain_.mainInput.resonance = resonance(knob(1));
+        filterChain_.mainInput.blend = 2.0f * knob(2) - 1.0f;
+        filterChain_.mainMix = knob(4);
+        filterChain_.pureDelay.SetDelaySeconds(std::min(dsp::ExpMapCompute(0.001f, 0.1f, knob(5)),
+            static_cast<float>(dsp::PureDelay::kSize - 1) / sampleRate_), sampleRate_);
+        const float tuneHz = filterChain_.keyTracking.Track(dsp::ExpMapCompute(100.0f, 10000.0f, knob(6)));
+        filterChain_.comb.delaySamples = std::clamp(dsp::Comb::GetDelaySamples(tuneHz / sampleRate_),
+            1.0f, static_cast<float>(dsp::Comb::kSize - 1));
+        filterChain_.comb.SetFeedback(dsp::Comb::GetFeedback(knob(7)));
+        const float lowPassHz = dsp::ExpMapCompute(std::min(4.0f * tuneHz, 20000.0f), 20000.0f, knob(8));
+        filterChain_.comb.SetCutoffAlpha(1.0f - std::exp(-2.0f * static_cast<float>(M_PI) * lowPassHz / sampleRate_));
+        filterChain_.comb.SetDrive(dsp::ExpMapCompute(0.25f, 4.0f,
+            StoppedKnob(FroggersBankId::Filter, 9, kStopUnityDriveKnob)));
+        filterChain_.peakInput.cutoff = cutoffHz(knob(10)) / sampleRate_;
+        filterChain_.peakInput.resonance = resonance(knob(11));
+        filterChain_.peakInput.blend = 0.0f;
+        filterChain_.peakMorph = knob(12);
+        filterChain_.peakMix = knob(13);
+        const float output = filterChain_.Process(driveOut);
+#ifdef FROGGERS_DSP_CHECKS
+        if (filterSampleObserver_) filterSampleObserver_();
+#endif
+        return output;
     }
 
     // -- Delay bank -> dsp::StereoDelay ---------------------
@@ -2323,7 +2199,7 @@ private:
     // (sustained magnitude) recovery, called once per block per unit from
     // RecoverPoisonedUnitState() below. `Unit` is any of the dsp:: structs
     // that carry `StateFinite()`/`StateMagnitude()`/`Reset()` (dsp::Vco,
-    // dsp::ResonantBump, dsp::Comb, dsp::Oversampler2x,
+    // dsp::RecoverableSvf, dsp::Comb, dsp::Oversampler2x,
     // dsp::SampleRateReducer, dsp::DriveBlendPhase) -- templated rather than
     // duplicated 10 times over, since the recovery POLICY (finiteness first,
     // then a sustained-magnitude watch) is identical for every one of them
@@ -2388,7 +2264,7 @@ private:
     // ForEachStatefulUnit() below, the single definition site (see that
     // method's own comment). Tier 2's per-unit sustained-over-ceiling
     // counter now lives ON each Magnitude-tagged unit itself
-    // (`unit.overCeilingSeconds`, dsp::Vco/dsp::ResonantBump/dsp::Comb/
+    // (`unit.overCeilingSeconds`, dsp::Vco/dsp::RecoverableSvf/dsp::Comb/
     // dsp::Oversampler2x/dsp::SampleRateReducer/dsp::DriveBlendPhase's own
     // member -- see dsp::Vco::overCeilingSeconds's own comment, Vco.hpp,
     // for why it moved there instead of staying a parallel member here) --
@@ -2464,6 +2340,9 @@ private:
     dsp::FrogBlock drive_;
     dsp::DriveBlendPhase driveBlendPhase_;
     dsp::FilterFxChain filterChain_;
+#ifdef FROGGERS_DSP_CHECKS
+    std::function<void()> filterSampleObserver_;
+#endif
     dsp::StereoDelay delay_;
     dsp::Reverb reverb_;
     // RouteAudioSample()'s last-resolved effective values for the
@@ -2613,13 +2492,15 @@ private:
 
     // Populated once per block from filterChain_'s
     // live peak/comb, same convention as the VCO UIStates above.
-    dsp::ResonantBump::UIState peakUiState_;
+    synth::ClassicStateVariableFilter::UIState mainFilterUiState_;
+    dsp::PeakNotchUiState peakUiState_;
     dsp::Comb::UIState combUiState_;
     // One TransferFunctionVisualizer per filter, attached as
     // the Filter bank's Peak/Comb parameter underlays via
     // parameters_.Init()'s peakVisualizer_/combVisualizer_ arguments --
     // rendered automatically as grid-cell underlays, not
     // placed into the surface's own tree directly.
+    TransferFunctionVisualizer mainFilterVisualizer_;
     TransferFunctionVisualizer peakVisualizer_;
     TransferFunctionVisualizer combVisualizer_;
 

@@ -25,10 +25,20 @@ The Drive and Reverb scenarios carry edits beyond the slots this change moves, a
 Every promoted clause this requirement does not carry forward word for word is named below. The list is checked mechanically: a clause dropped without appearing here fails the build, and an entry here that matches no dropped clause fails it too, so neither the omission nor the stale declaration can sit reading as deliberate.
 
 <!-- RESTATES-EXCEPT
-the ratio between the Width knob's time-offset spread and its cross-feed blend
-  keeps: slot 12 is Width Balance (short name `WBal`)
-not yet delivered for the slot-12 ratio clause
-  keeps: DELIVERED for the capacity clause, that the time-offset spread this balance produces never lengthens a read tap beyond the delay buffer's own capacity
+slot 12 is PM Rate
+  keeps: there is no phase-modulation rate parameter
+slot 13 is VCO Balance (short name `VBal`)
+  keeps: slot 13 stays the VCO Balance knob
+with saved patches unaffected because persistence addresses parameters by name
+  keeps: grouped by the stage they belong to
+slots 0-2 are the Peak stage
+  keeps: the resonant peak/notch stage holds four parameters
+slots 3-7 are the Comb stage
+  keeps: Comb drive (`CmbDrv`)
+slots 8-11 are the Scoop stage
+  keeps: no parameter named Topology
+slots 12-13 are the routing pair
+  keeps: Topology, Comb/Peak
 -->
 
 #### Scenario: Page identity is preserved
@@ -58,20 +68,16 @@ not yet delivered for the slot-12 ratio clause
   unmodulated, per the shared ramp the `froggers-vco-topology` delta requires
 - **THEN** each Ring Mod knob defaults to a position at or below that zero floor, so the instrument at its
   defaults sounds exactly as it did before Ring Mod existed
-- **THEN** slot 12 is PM Rate (short name `PMrt`), the phase-modulation LFO's own rate, shared across all
-  three VCOs and independent of the phase-modulation depth the existing Phase-mod knobs already control
-- **THEN** slot 13 is VCO Balance (short name `VBal`), a single tilt sweeping mix emphasis across VCO1
-  through VCO3, replacing the fixed equal-thirds average with a constant-total-gain crossfade, subject to
-  the floor and cap the "VCO Balance keeps every VCO in the mix" scenario below requires
-
-#### Scenario: VCO Balance keeps every VCO in the mix
-- **WHEN** the VCO Balance crossfade weights are computed for any knob position
-- **THEN** the three weights SHALL sum to exactly 1
-- **THEN** each weight SHALL stay within the range 0.10 to 0.80 inclusive
-- **THEN** no knob position reduces any VCO's weight to 0, and no knob position raises any VCO's weight to
-  1.0
-- **THEN** the three-VCO, 10%-floor arithmetic caps any single VCO's weight at 1 minus two floors, i.e.
-  0.80, so the floor and the cap are the same constraint expressed from opposite ends
+- **THEN** slot 13 stays the VCO Balance knob and slot 12, which held PM Rate, becomes the second axis of
+  the same control (`Balance Y`, short name `BalY`, default 0.5, at slot 12; `Balance X`, short name
+  `BalX`, default 0.5, at slot 13; the names `PM rate` and `VCO balance` no longer exist): a two-knob
+  balance over VCO1, VCO2 and VCO3 after the Logic ES2 Triangle, whose two knobs are the X/Y of a point in
+  a triangle with the VCOs at its corners; the knobs' centre gives equal thirds, each side crossfades two
+  VCOs with the third silent, each corner plays one VCO alone, the weights sum to 1 and each lies in 0 to
+  1 inclusive with no floor; the weights are `w3 = y^log2(3)`, `w1 = (1 - w3)(1 - x)`, `w2 = (1 - w3) x`
+  with `y` Balance Y and `x` Balance X
+- **THEN** there is no phase-modulation rate parameter: phase modulation runs at one fixed rate (2 Hz) set by no
+  knob, and the per-VCO phase-modulation depth knobs alone set and remove it
 
 #### Scenario: The Envelope bank holds fourteen parameters in interleaved ADSR order
 - **WHEN** the Envelope bank is enumerated
@@ -89,25 +95,33 @@ not yet delivered for the slot-12 ratio clause
 
 - **WHEN** the Filter bank is enumerated
 - **THEN** it holds fourteen named parameters at slot indices 0 through 13, grouped by the stage they
-  belong to, with saved patches unaffected because persistence addresses parameters by name
-- **THEN** slots 0-2 are the Peak stage: Peak Freq (`PkFreq`), Peak Gain (`PkGain`), Peak Q (`PkQ`)
-- **THEN** slots 3-7 are the Comb stage: Comb Offset (`CmbOff`), Comb Delay (`CmbDly`), Comb Feedback
-  (`CmbFb`), Comb LP (`CmbLP`), and Comb Drive (`CDrv`) — a saturation-depth control whose drive factor
+  belong to, each saved value applied by parameter name as the "Saved patches survive the regrouping"
+  scenario of `froggers-app-surface-layout` states, and the slot order is the main filter at slots 0-4 (Cutoff 1, Res 1, Morph 1, Keytrk 1,
+  Mix 1), the comb at slots 5-9 (labels Comb delay, Comb tune, Comb FB, Comb LP, Comb drive; slots 5 and 7 are stored as `Comb offset` and `Comb feedback`) and the peak/notch
+  stage at slots 10-13 (Cutoff 2, Res 2, Morph 2, Mix 2); the labels equal the stored names except in slots 5 and 7, and the short names are
+  `Cut1`, `Res1`, `Mrph1`, `Key1`, `Mix1`, `CmbDly`, `CmbTun`, `CmbFb`, `CmbLP`, `CmbDrv`, `Cut2`, `Res2`, `Mrph2`, `Mix2`
+- **THEN** the main filter stage holds five parameters: cutoff, resonance, a low-pass to band-pass to
+  high-pass blend, key tracking and a dry-to-filtered mix; the filter is one `synth::ClassicStateVariableFilter`
+  and its cutoff is the one key-tracking construct's output (see the key-tracking requirement below)
+- **THEN** the comb stage holds five parameters: Comb delay (`CmbDly`, stored `Comb offset`), a key-tracked tune (`CmbTun`), Comb FB
+  (`CmbFb`, stored `Comb feedback`), Comb LP (`CmbLP`), and Comb drive (`CmbDrv`) — a saturation-depth control whose drive factor
   multiplies the in-loop saturator's input while the same factor divides its output, so the loop's
   small-signal gain is unity at every setting, the fed-back term never exceeds the delayed signal it is
   computed from, and the loop's decay argument is preserved at every drive
-- **THEN** slots 8-11 are the Scoop stage: Scoop Mix (`ScMix`, the notch's wet/dry blend into the chain's
-  shared input, ahead of both the Comb and Peak stages), Scoop Freq (`ScFq`, the notch's own center
-  frequency, independent of the Peak stage's), Scoop Width (`ScWd`, the notch's own width, independent
-  of the Peak stage's), Scoop Depth (`ScDp`, the notch's own dip depth, independent of how much of it
-  reaches the chain's input)
-- **THEN** slots 12-13 are the routing pair: Comb/Peak (`Cmb/Pk`) and Topology (`Topo`) — Topology a
-  continuous morph of the Comb and Peak stages from parallel at one end to series at the other, with no
-  switched positions anywhere in its travel; at its minimum the Peak stage reads the chain's scooped
-  input, the same input the Comb stage reads, and at its maximum it reads the Comb stage's output
-  instead, with the Comb/Peak blend and every output trim and limiter staying in force at every
-  position of both controls
+- **THEN** the resonant peak/notch stage holds four parameters: frequency, resonance, a peak-to-notch blend
+  and a dry-to-filtered mix; the filter is a second instance of the same `synth::ClassicStateVariableFilter`
+  class the main filter uses
+- **THEN** no parameter named Topology, Comb/Peak, Scoop mix, Scoop freq, Scoop width, Scoop depth or Peak
+  gain exists, and the names are the ones the change's design.md parameter table lists: `Comb offset`, `Comb feedback`, `Comb LP` and `Comb drive` keep their stored
+  names because their meaning is unchanged (the first two display as `Comb delay` and `Comb FB`), every other Filter parameter
+  carries a new name
 - **THEN** the bank's Crispy and the global Crunchy keep slots 14 and 15
+
+#### Scenario: An old patch restores Comb offset and Comb feedback, and its old Comb delay value sets nothing
+
+- **WHEN** a patch saved before this change, holding `Filter Comb offset`, `Filter Comb feedback` and `Filter Comb delay` (the former tune knob) values, is loaded
+- **THEN** `Comb offset` and `Comb feedback` hold the saved values, and the `Filter Comb delay` value sets no parameter, `Comb tune` staying at its registered default
+- Check: not yet delivered; execution task E4 adds the case; its liveness control is the same patch with the `Filter Comb offset` value changed, which must change slot 5.
 
 #### Scenario: The Drive bank holds fourteen parameters, complete
 
@@ -322,6 +336,8 @@ SHALL settle at its ordinary release rate, so the audible result is a fade of
 about 100ms rather than a cut. The discontinuity belongs in the target, not in
 the output.
 
+Scope of the Filter page's mixes (approved by Diego 2026-11-14): the Filter page's two dry-to-filtered mixes are not crossfades of the instrument against a separate processed signal. The wet leg of each is the instrument itself, filtered, so it counts as the instrument; at the top of such a mix's travel the instrument is still present, as the filtered signal, and neither mix carries a floor. What could silence that wet leg is a filter setting, which the checks of the Filter page's resonance and level requirements cover. Every other crossfade keeps the whole requirement above.
+
 #### Scenario: Full wet still passes dry signal
 - **WHEN** the Reverb Wet/dry control is at its maximum
 - **THEN** the dry signal's contribution to this stage's output is at least 30%
@@ -353,6 +369,11 @@ the output.
 #### Scenario: The patch the instrument ships with stays audible
 - **WHEN** the default patch is played with Wet/dry at maximum
 - **THEN** the instrument is audible
+
+#### Scenario: A Filter mix at its top passes the instrument filtered
+- **WHEN** the main filter's Mix 1, or the peak/notch stage's Mix 2, is at its maximum with the stage's filter at a setting that passes signal
+- **THEN** the output of that stage is the filtered instrument, and the dry sample is replaced by it rather than removed
+- Check: not yet delivered; execution task E4 adds a full-wet case (the instrument's output at Mix 1 = 1 and Mix 2 = 1 equals the filtered signal at an explicitly live setting).
 
 ### Requirement: The pitch range excludes the inaudible end
 
@@ -474,20 +495,18 @@ mean of the range is a cutoff a driven signal can still be heard through.
 
 ### Requirement: Comb knob travel is spent on audible change
 
-The comb feedback and Comb/Peak blend knobs SHALL spend their travel on
-audible change rather than crowding it into one end. Comb feedback maps each
+The comb feedback knob SHALL spend its travel on audible change rather than crowding it into one end. Comb feedback maps each
 half of its bipolar travel so the feedback gap falls geometrically — equal
 knob steps multiply the loop's ring time by equal ratios — with the center
 still exactly zero and the rails still exactly the loop's maximum magnitude.
-The Comb/Peak blend crossfades with equal power across a floored range:
-the knob traverses 0.05 to 0.95 of the crossfade, so the comb is clearly
-present by mid-travel and neither branch is ever fully absent — each
-extreme holds the other branch near −22 dB. Launch knob positions are
-unchanged, and launch, Reset All, and New agree with each other through
-the one shared mapping; the launch output carries the comb at the blend
-floor, which is accepted. Comb feedback SHALL default to its center — the
-zero-feedback point of its bipolar travel — so the floored comb bed is a
-single short echo of the dry signal at startup, not a ring.
+Launch, Reset All, and New agree with each other through
+the one shared mapping. Comb feedback SHALL default to its center — the
+zero-feedback point of its bipolar travel — so the comb does not ring at startup.
+
+<!-- RESTATES-EXCEPT
+including the floored comb bed
+  keeps: all three present the same knob values and the same output
+-->
 
 #### Scenario: Feedback travel is log-linear in ring time
 
@@ -498,21 +517,12 @@ single short echo of the dry signal at startup, not a ring.
 - **THEN** the center still produces zero feedback and each rail still
   produces the loop's maximum magnitude, numerically identical to before
 
-#### Scenario: The comb is present by mid-blend
-
-- **WHEN** the Comb/Peak blend sits at the middle of its travel
-- **THEN** the comb branch contributes at equal power with the peak branch,
-  not at half amplitude
-- **THEN** at either extreme the selected branch dominates while the other
-  branch stays present at the blend floor, near −22 dB, never fully absent
-
 #### Scenario: Launch, Reset All, and New stay in agreement
 
 - **WHEN** the instrument launches with the default patch, and the state is
   also reached through Reset All and through New
 - **THEN** all three present the same knob values and the same output,
-  including the floored comb bed — a single short echo, feedback at its
-  centered zero default — because all three read the one shared mapping
+  because all three read the one shared mapping
 
 ### Requirement: The signal is not folded to mono before it reaches the device
 
@@ -682,6 +692,8 @@ Where one control makes another inert, that SHALL be stated in the manual, and t
 
 A control that crossfades two paths SHALL NOT lose level partway through its travel. Where the two paths are not fully correlated -- including where they differ only in group delay -- an equal-power law SHALL be used, or the paths SHALL be aligned so that a linear law holds.
 
+The Filter page's dry-to-filtered mixes are the one exception: each is linear with no floor (proposal D-MIX, approved by Diego 2026-11-14), measured and reported by task M2 rather than held to the one-decibel bound of the scenario below.
+
 #### Scenario: The anti-alias control does not dip mid-travel
 
 - **WHEN** the Drive page's anti-alias control is swept end to end on a tone whose harmonics fold, with the bank's other parameters at their registered defaults
@@ -694,34 +706,22 @@ A control that crossfades two paths SHALL NOT lose level partway through its tra
 
 A control whose name promises emphasis, boost or gain SHALL NOT cost output level silently: where its travel costs level that cannot be removed without degrading the output, the cost SHALL be stated where the control is described, and SHALL be pinned by a check measuring it. A cost that CAN be removed without degrading the output is removed instead of documented.
 
-<!-- RESTATES-EXCEPT
-any makeup compensating that sits ahead of `peakLimiter`
-  keeps: The cost cannot be removed, only reduced
--->
+#### Scenario: A resonance control's level cost is measured, stated, and pinned
 
-#### Scenario: Peak gain's level cost is measured, stated, and pinned
-
-- **WHEN** the Filter page's Peak gain is swept from its floor to its top, measured through the whole filter chain rather than through the resonant bump alone
-- **THEN** the level at the resonant bump's own centre frequency stays flat across the whole travel
-- **AND** the level at frequencies at least three octaves away falls at every step of that travel, which is the liveness control for the flat row and is asserted in the same case
-- **AND** the manual and the quick dictionary each state what the control delivers at the output and what it costs, rather than quoting the bump's own centre gain
-- Check: `app/FroggersDspParityTests.cpp`, `filter_bank_peak_gain_travel_measurement_at_and_away_from_resonance`, which drives the Filter bank through a replica of `RouteFilterBank`'s setter order at the registered defaults and pins both halves in one case: the level at the bump's own centre frequency stays flat across the whole travel, and the level on both rows at least three octaves away falls at every step and by several dB end to end, which is the flat row's liveness control. The manual and the quick dictionary each state what the control delivers at the output and what it costs. The cost cannot be removed, only reduced: the peak branch is divided by its own height, and any makeup compensating that sits ahead of the Filter page's output limiter, which every branch passes through after the Comb/Peak blend, whose ceiling is `kStageCeiling` and whose `OutputLimiter::DesiredMagnitude` asymptotes toward it without reaching it, so the branch's contribution is hard-capped whatever makeup precedes the limiter. An earlier wording of this requirement demanded that total level not fall at all, which is unsatisfiable at that placement. Every figure lives in the check rather than here, because a figure in prose cannot fail when it drifts.
+- **WHEN** the main filter's resonance, and separately the peak/notch stage's resonance, is swept from its floor to its top through the whole filter chain at the bank's registered defaults
+- **THEN** the level at the stage's own cutoff or centre frequency and the level at frequencies at least three octaves away are each recorded at every step, and the check asserts the relationships task M3 measures
+- **AND** the manual and the quick dictionary each state what the control delivers at the output and what it costs
+- Check: not yet delivered; measurement task M3 determines the figures and writes the assertions into this scenario before any execution task is dispatched, and execution task E4 adds the case; its liveness control is the same sweep with the filter's output scaled by a known factor, which must move every recorded level by exactly that factor.
 
 ### Requirement: A document describing a control states what the control does
 
 Prose in the shipped manual SHALL describe the behaviour the code produces at the output, not the behaviour of a stage read in isolation, and SHALL NOT promise an endpoint the signal path does not reach.
 
-#### Scenario: The manual's Comb/Peak endpoints match the blend the DSP applies
+#### Scenario: The manual's mix and blend endpoints match the DSP
 
-- **WHEN** the manual's description of a blend control is read against the blend the code applies
-- **THEN** it does not describe either endpoint as isolating one branch, where the blend is floored so both branches remain present
-- Check: operator step. The manual's Comb/Peak entry now states the floored equal-power blend and the roughly -22 dB the held-back branch keeps at either extreme, matching the blend in `app/dsp/FilterFx.hpp` and the parity cases over it. No automated gate reads manual prose against DSP behaviour: `app/check_docs_match_parameter_table.py` checks that every table entry exists, not what its sentence claims.
-
-#### Scenario: The manual's Peak gain figure matches the output
-
-- **WHEN** the manual's stated gain for a boost control is compared against the level that control produces at the chain's output
-- **THEN** the stated figure is the one the output reaches
-- Check: `app/FroggersDspParityTests.cpp`, `filter_bank_peak_gain_travel_measurement_at_and_away_from_resonance`, which drives the Filter bank through a replica of `RouteFilterBank`'s setter order at the registered defaults and pins both halves in one case: the level at the bump's own centre frequency stays flat across the whole travel, and the level at frequencies at least three octaves away falls at every step. Both documents now state what the control delivers at the output — the peak rises relative to its surroundings because the surroundings fall — and state the cost, rather than quoting the bump's own centre gain as if the output reached it.
+- **WHEN** the manual's description of a dry-to-filtered mix or a blend control of the Filter page is read against the law the code applies
+- **THEN** it does not describe an endpoint as reaching a state the law does not reach, including that at the top of its travel the dry signal is entirely replaced by the filtered one, because the mixes carry no floor
+- Check: operator step. No automated gate reads manual prose against DSP behaviour: `app/check_docs_match_parameter_table.py` checks that every table entry exists, not what its sentence claims.
 
 ### Requirement: A gate asserting a claim resolves distinguishes evidence from coincidence
 
@@ -783,25 +783,6 @@ The Envelope page's Curve control SHALL morph every Attack, Decay and Release ra
 - **THEN** every ramp is bit-identical to the linear ramp
 - **AND** at Curve's top every stage still completes within the completion requirement's bounded multiple, which this mechanism fixes at two and a half times the linear duration nominally, realised as no more than 2.75 once the float accumulator's step quantisation is counted (2.60 measured); the floor constant that sets it is pinned, so it cannot drift without the change that moves it saying so
 - Check: `app/FroggersDspParityTests.cpp`, `compute_ramp_step_curve_zero_is_bit_identical_to_the_untouched_linear_path` and `compute_ramp_step_bounds_every_stage_duration_across_curve_and_knob_grid_at_multiple_sample_rates` (44.1, 48 and 96 kHz, Sustain 0.05, 0.5 and 0.95), which report the worst multiple observed; `compute_ramp_step_never_progresses_below_the_floor_at_any_curve`, which sweeps the step function itself at every hundredth of Curve and at the largest steps low sample rates produce, so the floor cannot be skipped in a band no grid samples; `compute_ramp_step_curves_at_every_step_magnitude`, which asserts the curved branch is alive at two hundred step magnitudes and that a ramp lands on its target only from within one step, at every hundredth of the blend, probing the landing at exactly one step, one float ulp past one step, a quarter step further and a whole step further, so a landing widened by any factor is rejected down to one ulp of a step; NEW `compute_ramp_step_depends_on_remaining_distance_only`, which holds the step function's progress equal across start values from 0 to 1 at every grid point, so the ramp's law is a function of remaining distance alone and a voice retriggered mid-ramp takes the same shape as one starting fresh; NEW `compute_ramp_step_is_the_same_law_ascending_and_descending`, which holds a rising ramp and its mirror-image falling ramp to the same progress at every grid point, so Attack, Decay and Release share one law; and NEW `envelope_voice_level_is_the_step_function_iterated_with_the_mapped_knob`, which holds the voice's per-sample level bit-identical to the pure step function iterated with the knob map of the same knob on every voice index, across Grace settings and several stage-knob sets, so nothing between the knob and the ramp can scale, bypass, gate or rewire the blend; NEW `mix_osc_voices_forwards_the_shared_knobs_to_every_voice` holds each voice's gated output from the mixer bit-identical to an independent reference across VCO Balance, Grace and every hundredth of Curve, so the shared knob reaches every voice whatever the other knobs hold. The step function and the knob map are static, so neither can read the state's sample rate.
-
-### Requirement: The Filter page limits its output after the Comb/Peak blend
-
-The Filter page SHALL limit its output with one limiter placed after the Comb/Peak blend, so the comb branch and the peak branch pass through the same limiter and neither reaches the pages after Filter unlimited, at every Comb/Peak, Topology, Comb feedback and Comb drive setting. Neither branch SHALL carry a limiter of its own ahead of the blend. The limiter's threshold SHALL sit below the master output limiter's threshold, and its ceiling SHALL be the per-stage ceiling every limiter other than the master's shares.
-
-#### Scenario: A resonant comb is limited at the page's output
-
-- **WHEN** the Comb/Peak blend sits at the comb end, comb feedback is at its maximum, Comb drive is at the bottom of its travel, and the input is a tone at the comb's own pitch
-- **THEN** the blended signal ahead of the limiter exceeds the limiter's threshold, which is the liveness control for the clauses below
-- **AND** the page's output is the limiter applied to the blended signal, sample for sample
-- **AND** the page's output peak is lower than the same chain's with its limiter bypassed, in the same run
-- Check: `app/FroggersDspParityTests.cpp`, `filter_fx_chain_limits_the_blended_output_so_a_resonant_comb_is_limited`, which drives a `FilterFxChain` with a below-unity-drive resonant comb, loud enough on the unlimited blend to exceed the limiter's threshold, and asserts that the shipped chain's output matches a fresh limiter applied to the unlimited blend sample for sample, and that the shipped peak is lower than the unlimited peak.
-
-#### Scenario: Neither branch is limited ahead of the blend on a pinned comb
-
-- **WHEN** Peak gain and comb feedback are both at their maximum, Topology puts the peak's input on the comb branch alone, and Peak frequency and Comb delay share the same registered-default pitch
-- **THEN** the peak branch's own peak and the comb branch's own peak, each read before either reaches the blend, both exceed the limiter's threshold, which is the liveness control for the clause below
-- **AND** a replica that applies no limiter to either branch, only to the blend, matches the chain's own output sample for sample
-- Check: `app/FroggersDspParityTests.cpp`, `filter_fx_chain_limits_neither_branch_ahead_of_the_blend_on_a_pinned_comb`, which pins Peak gain and comb feedback at maximum, Topology at maximum so the peak's input is the comb branch alone, and Peak frequency and Comb delay at their shared registered-default pitch, then drives a full-scale sine at that pitch through both the shipped `FilterFxChain::Process` and a replica that applies the output limiter only to the blend, never to either branch alone, and asserts that the two match sample for sample, and that the peak branch's own peak and the comb branch's own peak, each read before the blend, both exceed the limiter's threshold.
 
 ### Requirement: Froggers' modulation depth is an attenuverter, not a crossfade
 
@@ -921,4 +902,134 @@ This requirement's own depth knob cannot be turned below off: Sheaf's `Parameter
 - **WHEN** `braid-4`, `miniapp`, and every Froggers page parameter are inspected
 - **THEN** none of them sets `modulationTargetKind`, so all default to `kBipolar` and resolve exactly as the requirement above states, byte-for-byte unchanged by this requirement
 - Check: not yet delivered by this change; Sheaf task S1.7's full `test` target run is the literal proof.
+
+### Requirement: The Filter page limits its output after its last stage
+
+The Filter page SHALL limit its output with one limiter placed after its last stage, so every stage passes through the same limiter and none reaches the pages after Filter unlimited, at every setting of every Filter knob. No stage SHALL carry a limiter of its own ahead of it. The limiter's threshold SHALL sit below the master output limiter's threshold, and its ceiling SHALL be the per-stage ceiling every limiter other than the master's shares. The stage order is main filter, comb, peak/notch.
+
+#### Scenario: A resonant comb is limited at the page's output
+
+- **WHEN** comb feedback is at its maximum, Comb drive is at the bottom of its travel, and the input is a tone at the comb's own pitch
+- **THEN** the signal ahead of the limiter exceeds the limiter's threshold, which is the liveness control for the clauses below
+- **AND** the page's output is the limiter applied to that signal, sample for sample
+- **AND** the page's output peak is lower than the same chain's with its limiter bypassed, in the same run
+- Check: not yet delivered; execution task E6 adapts `filter_fx_chain_limits_the_blended_output_so_a_resonant_comb_is_limited` to the new chain, keeping its assertions.
+
+#### Scenario: No stage is limited ahead of the page limiter
+
+- **WHEN** the main filter's resonance, the peak/notch stage's resonance and comb feedback are all at their maximum, with the cutoffs and the comb tune at one shared pitch
+- **THEN** each stage's own output peak, read before the next stage, is recorded under its measurement-task M3 excitation, and that stage exceeds the limiter's threshold
+- **AND** adding the page-configured limiter separately after each stage changes the output and makes the comparison below fail for every such mutation; no stage may borrow another stage's excitation as its liveness control
+- **AND** a replica that applies no limiter to any stage, only to the page's output, matches the chain's own output sample for sample
+- Check: not yet delivered; execution task E6 adapts `filter_fx_chain_limits_neither_branch_ahead_of_the_blend_on_a_pinned_comb`; measurement task M3 records each stage's reachable excitation before E6 runs, or reports a failure to make that stage observable.
+
+### Requirement: The main cutoff and the comb tune track one key from the VCO pitches
+
+The Filter page SHALL have one main state-variable filter, one comb and one peak/notch state-variable filter, fed in the signal path the app has: the three VCOs mixed with the VCO Balance weights, then Drive, then the Filter page. One key-tracking construct SHALL hold the key, read by both the main cutoff and the comb tune. The key SHALL be the three VCO pitches as continuous MIDI note numbers (from each VCO's pitch knob through the VCO pitch map) averaged with the same VCO Balance weights the VCO mix applies, and no gate SHALL enter it. The construct returns the offset of the key from the reference note, MIDI 60, in semitones. The main filter cutoff SHALL move one semitone per semitone of that offset at the Keytrk 1 knob's +100%, none at 0% and the opposite way at -100%; the comb tune SHALL move one semitone per semitone of the same offset. The comb's delay in samples SHALL stay within the comb's buffer at every pitch and tune.
+
+#### Scenario: Moving every VCO moves the key one for one
+
+- **WHEN** all three VCO pitch knobs move by n semitones at settings where neither the effective cutoff nor the comb delay reaches a clamp
+- **THEN** the comb tune frequency changes by 2^(n/12) and the main cutoff by 2^(t n/12), t the Keytrk 1 amount from -1 to +1
+- Check: not yet delivered; E2 prepares the construct and E4 completes both production-router consumers. Ratios are asserted at unclamped settings; the separate buffer scenario checks the intended clamp.
+
+#### Scenario: One VCO moves the key by its Balance weight
+
+- **WHEN** VCO i's pitch knob moves by n semitones with the other two held, at a Balance setting giving VCO i weight w and with both consumers away from their clamps
+- **THEN** the key moves by w n semitones, so the comb tune frequency changes by 2^(w n/12) and the main cutoff by 2^(t w n/12)
+- **AND** at a Balance setting giving VCO i weight 0 neither changes, which is the liveness control against an unweighted mean
+- Check: not yet delivered; execution task E2.
+
+#### Scenario: No gate enters the key
+
+- **WHEN** the three VCOs' gates open and close with the pitch and Balance knobs held
+- **THEN** the key, the main cutoff and the comb tune do not change
+- Check: not yet delivered; execution task E2; its liveness control is a pitch knob move in the same run, which must move them.
+
+#### Scenario: Key tracking at its neutral position leaves the cutoff independent of the pitch
+
+- **WHEN** the Keytrk 1 knob is at its centre and the VCO pitches move between two notes chosen so the top-of-travel control stays away from the cutoff clamp
+- **THEN** the main cutoff is the same at both
+- Check: not yet delivered; execution task E2; its liveness control is the same case at the knob's top, where the cutoff must differ.
+
+#### Scenario: Moving inputs keep the key in step with the audio mix
+
+- **WHEN** VCO pitches or Balance weights change within an audio block
+- **THEN** the key on every engine sample uses the same current pitch values and Balance weights as that sample's VCO mix, and both unclamped consumers read that key
+- **AND** a block-held-key mutation differs during the same run while a fixed-input control agrees
+- Check: not yet delivered; E2 prepares the construct and E4 exercises the production router with varying inputs.
+
+#### Scenario: The comb never reads outside its buffer
+
+- **WHEN** the VCO pitches and the comb tune are swept across their whole ranges
+- **THEN** the comb's delay in samples stays at least 1 and at most the comb buffer size minus 1, whatever the engine rate
+- Check: not yet delivered; E2 prepares the construct and E4 checks the production clamp.
+
+The lowest representable comb pitch is the engine rate divided by that bound, 23.44 Hz at 192 kHz (192000 / 8191); below it the delay clamps at the bound (record item 14, approved by Diego 2026-11-14).
+
+### Requirement: Both state-variable filters are one class and honour the fault-recovery contract
+
+The main filter and the peak/notch filter SHALL be two instances of one state-variable filter class, `synth::ClassicStateVariableFilter` (recovery through an app wrapper carrying `overCeilingSeconds`, with the Sheaf methods and accessors of D-SHEAF, approved by Diego 2026-11-14), and each SHALL be visited by the app's Tier-2 fault recovery: non-finite state is reset, and sustained over-ceiling state is reset. No second state-variable integrator SHALL be defined in the app.
+
+#### Scenario: A poisoned filter state is recovered
+
+- **WHEN** a non-finite sample is fed to either of the two filters and the page then runs a block
+- **THEN** the filter's state is reset and the page's output is finite
+- **AND** the same case run without the recovery visiting that filter leaves the output non-finite, which is the liveness control
+- Check: not yet delivered; E3 prepares the wrapper and E4 adds the production case through `RecoverUnitIfNeeded` for each actual instance.
+
+#### Scenario: One definition site
+
+- **WHEN** the tree is searched for the state-variable integrator's state names and type names, case-insensitively, outside tests and this change's evidence
+- **THEN** the app defines none of its own
+- Check: operator step. The sweep's C1 enumeration is the pattern; task E3 re-runs it and prints found against changed. Nothing is built as a gate (omni §10.1: no agent but the reviewer hits this failure).
+
+### Requirement: Filter mixes are a linear dry-to-filtered interpolation with no floor
+
+The main filter's and the peak/notch filter's dry-to-filtered mix SHALL each be `out = dry + m (filtered - dry)`, `m` the knob in [0, 1], with no floor (proposal D-MIX, approved by Diego 2026-11-14; the law REPORT2 measured). At mix 0 the output SHALL be the dry sample exactly. The two mixes SHALL share one construct and SHALL NOT introduce a third wet/dry law beside it and `EqualPowerWetDry`.
+
+#### Scenario: A mix at its middle interpolates linearly
+
+- **WHEN** a Filter page mix is at the middle of its travel and its filtered path is a known signal
+- **THEN** the output is the average of the dry and filtered samples, and at mix 0 it equals the dry sample bit for bit
+- **AND** the equal-power law's output differs from it by more than the float rounding at the middle, which is the liveness control
+- Check: not yet delivered; execution task E4 adds the case; measurement task M2 reports the dips both mixes produce (REPORT2: fMix up to -3.5 dB, pMix up to -26.1 dB on saw110) and no figure here is claimed until it runs.
+
+### Requirement: The peak/notch blend follows the stated law
+
+The peak/notch stage's output SHALL be `m (low + high) + 2 m (1 - k) band` for blend knob `k` in [0, 1] (0 peak, 1 notch), `m = sqrt(0.5 k^2 + 0.5)`, `low`, `band` and `high` the stage's own Sheaf state-variable states after processing (Vital's band/peak/notch blend law over its peak-to-notch half, proposal D-PNLAW, approved by Diego 2026-11-14, replacing the linear crossfade whose mid-travel output was a pure low-pass). No level compensation SHALL be applied.
+
+#### Scenario: Notch end nulls the centre and mid-travel is not a low-pass
+
+- **WHEN** the stage runs at resonance Q above 1 with the blend at 1, and again at 0.5
+- **THEN** at 1 the output at the stage's own frequency is more than 40 dB below the input's, and away from it within 0.1 dB of it
+- **AND** at 0.5 the output at three octaves above the stage's frequency is not more than 3 dB below the input's, which a pure low-pass would fail
+- Check: not yet delivered; execution task E4 adds the case, and its liveness control is the old linear crossfade at 0.5, which a hand computation from Sheaf's transfer formula puts at -36.0 dB three octaves above the stage's frequency (Q 1.66 and 5.5) against -2.0 dB for this law; the same computation gives -0.025 dB (Q 1.66) and -0.002 dB (Q 5.5) for the notch end at three octaves. Measurement task M2 supplies the build figures before E4 is dispatched.
+
+### Requirement: The comb's own notch costs at most 6.02 dB
+
+At every comb feedback magnitude from 0 up to the loop's maximum magnitude, the comb's response at its deepest notch SHALL be at least 1/(1+g) times the input's level, which is at least 1/2, that is, no more than 6.02 dB down, given the judgment J-FBMAX that the loop's maximum feedback magnitude g is at most 1. The loop's current maximum, `kMaxFeedbackMagnitude` in `dsp/FilterFx.hpp`, is 0.95, which gives 1/1.95, 5.80 dB. This dip is the comb's chosen sound (Diego, 2026-11-13) and level checks count it as such.
+
+#### Scenario: The notch bound holds for every feedback
+
+- **WHEN** the comb feedback magnitude g is any value from 0 to 1
+- **THEN** 1/(1+g) is at least 1/2
+- Check: not yet delivered; formal task L2 proves it in Lean with J-FBMAX named as a hypothesis, and reports it as "given J-FBMAX, the bound holds for every g"; the correspondence to code is scenario below.
+
+#### Scenario: The shipped comb's notch sits within the bound
+
+- **WHEN** `dsp::Comb` is driven with a small-amplitude sine at the frequency where its notch falls, at maximum positive and maximum negative feedback, at the lowest, the unity and the highest Comb drive
+- **THEN** the output level relative to the input is no lower than minus 6.02 dB
+- **AND** the same measurement with the loop low-pass fully open and fully closed is recorded
+- Check: not yet delivered; execution task E6 adds the case; its liveness control is the same measurement at feedback 0, which must read 0 dB, and at 0.95, which must read within the bound but below 0 dB.
+
+### Requirement: VCO Balance weights are a point of a triangle
+
+The VCO Balance control's three weights SHALL sum to exactly 1 and each SHALL lie between 0 and 1 inclusive at every pair of knob positions; the knobs' centre SHALL give equal thirds, each side of the knob square but the top SHALL crossfade two VCOs with the third at 0, and each corner SHALL play one VCO alone (Logic ES2 Triangle, Diego). The control SHALL have no floor: Diego's 2026-11-13 ruling ("fine do that then") removed it, following Prophet VS, Logic ES2, Surge and Vital.
+
+#### Scenario: The weights are a point of a triangle for every knob pair
+
+- **WHEN** the two VCO Balance knobs are at any positions from 0 to 1
+- **THEN** the three weights sum to exactly 1 and each lies between 0 and 1 inclusive
+- Check: not yet delivered; formal task L1 proves it in Lean for the mapping `w3 = y^log2(3)`, `w1 = (1 - w3)(1 - x)`, `w2 = (1 - w3) x`, stated as "given J-BAL-MAP, the weights sum to 1 and each lies in [0, 1]"; execution task E1 adds the case over a knob grid through `dsp::ComputeVcoBalanceWeights`, whose float sum is within rounding of 1, a boundary the Lean model does not cover.
 

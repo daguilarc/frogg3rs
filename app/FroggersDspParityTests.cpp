@@ -18,6 +18,8 @@
 #include "dsp/StereoField.hpp"
 #include "dsp/Vco.hpp"
 #include "dsp/VoiceEnvelope.hpp"
+#include "fixtures/PmDefaultGolden.hpp"
+#include <bit>
 
 #include <algorithm>
 #include <chrono>
@@ -138,7 +140,7 @@ TEST_CASE(vco_pitch_exp_map_matches_named_range) {
             double energy = 0.0;
             for (int sample = 0; sample < static_cast<int>(sr); ++sample) {
                 const float before = vco.carrierPhase;
-                const float output = vco.Process(knob, 0.0f, 0.0f, 0.0f, 0.0f, sr);
+                const float output = vco.Process(knob, 0.0f, 0.0f, 0.0f, sr);
                 REQUIRE_TRUE(std::isfinite(output));
                 double advance = static_cast<double>(vco.carrierPhase) - before;
                 if (advance < 0.0) advance += 1.0;
@@ -198,7 +200,7 @@ TEST_CASE(dsp_true_zero_depth_taper_monotonic_smoothstep_and_pm_parity) {
 // Full convolution reference deliberately does not use the runtime sparse
 // symmetric-pair evaluator. Both stages emit on their second input sample.
 std::vector<double> ReferenceOversampled(float pitch, float morph, float sr, int count,
-                                         float pm = 0, float pmRate = 0, float ring = 0) {
+                                         float pm = 0, float ring = 0) {
     std::array<double, 47> coefficients{};
     coefficients[23]=.5;
     for (std::size_t i=0;i<12;++i) {
@@ -216,7 +218,7 @@ std::vector<double> ReferenceOversampled(float pitch, float morph, float sr, int
     const auto& bank = dsp::PreparedVcoWaveforms();
     const float internalRate = sr * 4;
     const float increment = dsp::Vco::PitchToPhaseIncrement(pitch, internalRate);
-    const float pmHz = dsp::ExpMapCompute(dsp::Vco::kPmLfoMinHz, dsp::Vco::kPmLfoMaxHz, pmRate);
+    const float pmHz = dsp::Vco::kPmLfoMinHz;
     float phase=0, pmPhase=0, ringPhase=0;
     std::vector<double> result;
     for(int n=0;n<count;++n) {
@@ -274,9 +276,9 @@ TEST_CASE(vco_pm_zero_at_or_below_floor_leaves_carrier_unmodulated) {
         dsp::Vco zero, floor;
         const auto reference = ReferenceOversampled(.3f, .4f, sr, 256);
         for (int i=0; i<256; ++i) {
-            const float y = zero.Process(.3f,.4f,0,0,0,sr);
+            const float y = zero.Process(.3f,.4f,0,0,sr);
             REQUIRE_NEAR(y, reference[i], 3e-5);
-            REQUIRE_TRUE(y == floor.Process(.3f,.4f,dsp::Vco::kPmLfoFloor,1,0,sr));
+            REQUIRE_TRUE(y == floor.Process(.3f,.4f,dsp::Vco::kPmLfoFloor,0,sr));
         }
     }
 }
@@ -284,13 +286,13 @@ TEST_CASE(vco_pm_zero_at_or_below_floor_leaves_carrier_unmodulated) {
 TEST_CASE(vco_oversampling_filter_state_is_reset_and_observed_by_recovery) {
     for (float sr : {44100.f,48000.f}) {
         dsp::Vco vco, fresh;
-        for (int n=0;n<256;++n) vco.Process(.5f,1,1,1,1,sr);
+        for (int n=0;n<256;++n) vco.Process(.5f,1,1,1,sr);
         REQUIRE_TRUE(vco.StateMagnitude()>0);
         vco.Reset();
         REQUIRE_TRUE(vco.StateFinite());
         REQUIRE_TRUE(vco.StateMagnitude()==0);
         for (int n=0;n<128;++n)
-            REQUIRE_TRUE(vco.Process(.5f,1,1,1,1,sr)==fresh.Process(.5f,1,1,1,1,sr));
+            REQUIRE_TRUE(vco.Process(.5f,1,1,1,sr)==fresh.Process(.5f,1,1,1,sr));
         for (auto& section : vco.antiAliasFilter) {
             for (float& sample : section.history) {
                 float* history = &sample;
@@ -313,8 +315,8 @@ TEST_CASE(vco_pm_above_floor_actually_modulates) {
     const float sr = 48000.0f;
     bool sawDifference = false;
     for (int i = 0; i < 64; ++i) {
-        const float a = withPm.Process(0.3f, 0.4f, /*pmKnob=*/1.0f, /*pmRateKnob=*/0.5f, /*ringModKnob=*/0.0f, sr);
-        const float b = withoutPm.Process(0.3f, 0.4f, /*pmKnob=*/0.0f, /*pmRateKnob=*/0.5f, /*ringModKnob=*/0.0f, sr);
+        const float a = withPm.Process(0.3f, 0.4f, /*pmKnob=*/1.0f, /*ringModKnob=*/0.0f, sr);
+        const float b = withoutPm.Process(0.3f, 0.4f, /*pmKnob=*/0.0f, /*ringModKnob=*/0.0f, sr);
         if (std::fabs(a - b) > 1e-4f) {
             sawDifference = true;
         }
@@ -331,18 +333,18 @@ TEST_CASE(vco_zero_cross_vco_terms_independent_of_other_instances) {
     dsp::Vco alone;
     std::vector<float> aloneSeq;
     for (int i = 0; i < 16; ++i) {
-        aloneSeq.push_back(alone.Process(0.6f, 0.2f, 0.7f, /*pmRateKnob=*/0.3f, /*ringModKnob=*/0.6f, sr));
+        aloneSeq.push_back(alone.Process(0.6f, 0.2f, 0.7f, /*ringModKnob=*/0.6f, sr));
     }
 
     dsp::Vco interleavedA;
     dsp::Vco interleavedB;
     std::vector<float> interleavedSeq;
     for (int i = 0; i < 16; ++i) {
-        interleavedSeq.push_back(interleavedA.Process(0.6f, 0.2f, 0.7f, /*pmRateKnob=*/0.3f, /*ringModKnob=*/0.6f, sr));
+        interleavedSeq.push_back(interleavedA.Process(0.6f, 0.2f, 0.7f, /*ringModKnob=*/0.6f, sr));
         // different knobs, driven "in between" -- proves zero cross-VCO
         // terms hold for the new Ring Mod carrier too (each instance's own
         // internal carrier, never the other's).
-        interleavedB.Process(0.9f, 0.8f, 0.1f, /*pmRateKnob=*/0.9f, /*ringModKnob=*/0.4f, sr);
+        interleavedB.Process(0.9f, 0.8f, 0.1f, /*ringModKnob=*/0.4f, sr);
     }
 
     REQUIRE_TRUE(aloneSeq.size() == interleavedSeq.size());
@@ -384,9 +386,9 @@ TEST_CASE(vco_active_modulation_matches_full_convolution) {
     for (float sr : {44100.f,96000.f}) {
         for (float morph : {.25f,.75f,1.f}) {
             dsp::Vco voice;
-            const auto reference=ReferenceOversampled(.83f,morph,sr,512,.72f,.37f,.61f);
+            const auto reference=ReferenceOversampled(.83f,morph,sr,512,.72f,.61f);
             for (std::size_t i=0;i<reference.size();++i) {
-                const float actual=voice.Process(.83f,morph,.72f,.37f,.61f,sr);
+                const float actual=voice.Process(.83f,morph,.72f,.61f,sr);
                 REQUIRE_TRUE(std::isfinite(actual));
                 REQUIRE_NEAR(actual,reference[i],3e-5);
             }
@@ -403,12 +405,12 @@ TEST_CASE(vco_nonfinite_lookup_preserves_reset_recovery) {
         REQUIRE_TRUE(!std::isfinite(dsp::EvalWaveMorph(bank,args[0],.75f,args[1],args[2])));
     }
     voice.carrierPhase=nan;
-    REQUIRE_TRUE(!std::isfinite(voice.Process(.5f,.75f,1,.5f,1,48000)));
+    REQUIRE_TRUE(!std::isfinite(voice.Process(.5f,.75f,1,1,48000)));
     REQUIRE_TRUE(!voice.StateFinite());
     voice.Reset();
     REQUIRE_TRUE(voice.StateFinite());
     for (int n=0;n<128;++n)
-        REQUIRE_TRUE(voice.Process(.5f,.75f,1,.5f,1,48000)==fresh.Process(.5f,.75f,1,.5f,1,48000));
+        REQUIRE_TRUE(voice.Process(.5f,.75f,1,1,48000)==fresh.Process(.5f,.75f,1,1,48000));
 }
 
 // =========================================================================
@@ -608,7 +610,7 @@ TEST_CASE(mix_osc_voices_forwards_the_shared_knobs_to_every_voice) {
                                                            attack[0], decay[0], sustain[0], release[0],
                                                            attack[1], decay[1], sustain[1], release[1],
                                                            attack[2], decay[2], sustain[2], release[2],
-                                                           curveKnob, graceKnob, balanceKnob, &gated);
+                                                           curveKnob, graceKnob, balanceKnob, 0.5f, &gated);
                     const float reference[3] = {
                         adsrReference.apply(0, inputs[0], attack[0], decay[0], sustain[0], release[0],
                                             curveKnob, graceKnob),
@@ -633,7 +635,7 @@ TEST_CASE(mix_osc_voices_forwards_the_shared_knobs_to_every_voice) {
                     float w1 = 0.0f;
                     float w2 = 0.0f;
                     float w3 = 0.0f;
-                    dsp::ComputeVcoBalanceWeights(balanceKnob, w1, w2, w3);
+                    dsp::ComputeVcoBalanceWeights(balanceKnob, 0.5f, w1, w2, w3);
                     const float expectedMix = w1 * reference[0] + w2 * reference[1] + w3 * reference[2];
                     if (mixed != expectedMix) {
                         ++mixMismatches;
@@ -801,18 +803,6 @@ long ConservativeStageCap(float distance, float stepMagnitude) {
 
 }  // namespace
 
-// =========================================================================
-// Attack/Decay/Release/Sustain map floor, geometric midpoint and ceiling,
-// pinned against LITERAL expected values -- not the kMin*/kMax* constants
-// the production code itself reads. A test that re-derives its expectation
-// from those same constants cannot catch an endpoint being moved (see
-// MapSustain's own header comment, and dsp::kMaxResonantBumpHeight's, for
-// this project already shipping exactly that regression once). mapAttack/
-// mapDecay/mapRelease are private, so there is no direct call surface for
-// them the way MapSustain (public) offers -- each is instead measured
-// through the ramp's own observable timing -- see kMapMeasureSampleRate's
-// own comment for why 96kHz, not an extreme rate, is the accurate choice.
-// =========================================================================
 
 namespace {
 
@@ -2853,10 +2843,6 @@ TEST_CASE(fuego_stack_apply_musical_row_warps_crispy_by_crunchy_first) {
     REQUIRE_NEAR(actual, expected, 1e-9);
 }
 
-// =========================================================================
-// 3.6 -- Filters (src/core/ResonantBump.hpp:44-71; src/core/Comb.hpp:54,63,66-76,79-109;
-// src/core/TanhSaturator.hpp:25-30 Pade approximation; src/core/FroggersEngine.hpp:590-622)
-// =========================================================================
 
 TEST_CASE(pade_saturator_matches_rational_approximation_and_clamps) {
     for (float x : {-2.0f, -0.5f, 0.0f, 0.5f, 2.0f}) {
@@ -2869,106 +2855,6 @@ TEST_CASE(pade_saturator_matches_rational_approximation_and_clamps) {
     REQUIRE_NEAR(dsp::PadeSaturator::Saturate(-100.0f), -1.0f, 1e-6);
 }
 
-TEST_CASE(resonant_bump_coefficients_match_rbj_peaking_formula) {
-    dsp::ResonantBump bump;
-    bump.SetFreq(0.01f);
-    bump.SetHeight(2.0f);
-    bump.SetWidth(1.0f);
-
-    const float omega = 2.0f * static_cast<float>(M_PI) * 0.01f;
-    const float cosw = std::cos(omega);
-    const float sinw = std::sin(omega);
-    const float a = std::sqrt(2.0f);
-    const float q = 1.0f;
-    const float alpha = sinw / (2.0f * q);
-    const float a0 = 1.0f + alpha / a;
-    const float a1 = -2.0f * cosw;
-    const float a2 = 1.0f - alpha / a;
-    const float b0 = 1.0f + alpha * a;
-    const float b1 = -2.0f * cosw;
-    const float b2 = 1.0f - alpha * a;
-
-    REQUIRE_NEAR(bump.biquad.b0, b0 / a0, 1e-6);
-    REQUIRE_NEAR(bump.biquad.b1, b1 / a0, 1e-6);
-    REQUIRE_NEAR(bump.biquad.b2, b2 / a0, 1e-6);
-    REQUIRE_NEAR(bump.biquad.a1, a1 / a0, 1e-6);
-    REQUIRE_NEAR(bump.biquad.a2, a2 / a0, 1e-6);
-}
-
-// -----------------------------------------------------------------------
-// The Filter bank wires
-// `filterChain_.peak.SetHeight(dsp::ExpMapCompute(1.0f, kMaxResonantBumpHeight, knob))`
-// (FroggersAppCore.hpp's RouteAudioSample), so the ceiling is whatever that
-// constant says; its own comment (dsp/FilterFx.hpp) carries why it is that
-// value, and is not restated here where it would drift. Drives the app's OWN
-// `dsp::kMaxResonantBumpHeight`
-// (dsp/FilterFx.hpp) at knob==1.0 through the real ResonantBump::Process
-// path with a full-scale sine at the peak's resonant frequency, and confirms
-// the measured steady-state gain lands on that constant -- so retuning it
-// moves this test rather than leaving a stale literal behind.
-// -----------------------------------------------------------------------
-TEST_CASE(resonant_bump_max_knob_settles_at_the_apps_configured_ceiling) {
-    // Reads the app's OWN ceiling constant. The previous version of this test
-    // typed `4.0f` into its own ExpMapCompute call and then asserted the
-    // result was 4.0f -- which is true of any number, so it passed unchanged
-    // when the app's real ceiling moved to 2.0. It pinned nothing.
-    const float maxHeight = dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, 1.0f);
-    REQUIRE_NEAR(maxHeight, dsp::kMaxResonantBumpHeight, 1e-5);
-
-    dsp::ResonantBump bump;
-    const float freqNormalized = 0.05f;
-    bump.SetFreq(freqNormalized);
-    bump.SetHeight(maxHeight);
-    bump.SetWidth(1.0f);
-
-    constexpr int kWarmupSamples = 4000;
-    constexpr int kMeasureSamples = 200;
-    float measuredPeak = 0.0f;
-    for (int i = 0; i < kWarmupSamples + kMeasureSamples; ++i) {
-        const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(i);
-        const float output = bump.Process(std::sin(phase));  // full-scale (unit-amplitude) input.
-        if (i >= kWarmupSamples) {
-            measuredPeak = std::max(measuredPeak, std::fabs(output));
-        }
-    }
-    // Measured gain must match the app's ceiling, whatever it currently is --
-    // so retuning the constant moves this assertion with it instead of
-    // silently leaving a stale number behind.
-    REQUIRE_NEAR(measuredPeak, dsp::kMaxResonantBumpHeight, 0.05);
-    // And it must stay well under the retired 10x parity ceiling regardless.
-    REQUIRE_TRUE(measuredPeak < 5.0f);
-}
-
-// -----------------------------------------------------------------------
-// Peak gain's floor is NOT a "reaches zero" no-effect knob -- it is a gain,
-// so no-effect is unity (1.0x, no boost), reached at knob==0.0f. Asserted
-// directly against the app's own ExpMapCompute(1.0f, kMaxResonantBumpHeight,
-// ·) call (FroggersAppCore.hpp) and, past the map, against ResonantBump's
-// actual measured steady-state gain -- the same measurement idiom the
-// ceiling test above uses, at the opposite knob extreme.
-// -----------------------------------------------------------------------
-TEST_CASE(resonant_bump_min_knob_settles_at_unity_no_boost) {
-    const float minHeight = dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, 0.0f);
-    REQUIRE_NEAR(minHeight, 1.0f, 1e-6);
-
-    dsp::ResonantBump bump;
-    const float freqNormalized = 0.05f;
-    bump.SetFreq(freqNormalized);
-    bump.SetHeight(minHeight);
-    bump.SetWidth(1.0f);
-
-    constexpr int kWarmupSamples = 4000;
-    constexpr int kMeasureSamples = 200;
-    float measuredPeak = 0.0f;
-    for (int i = 0; i < kWarmupSamples + kMeasureSamples; ++i) {
-        const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(i);
-        const float output = bump.Process(std::sin(phase));  // full-scale (unit-amplitude) input.
-        if (i >= kWarmupSamples) {
-            measuredPeak = std::max(measuredPeak, std::fabs(output));
-        }
-    }
-    REQUIRE_NEAR(measuredPeak, 1.0f, 0.05);
-}
 
 // DELIBERATE PARITY DIVERGENCE: the firmware's Comb::GetFeedback
 // (src/core/Comb.hpp:66-76) returns an asymmetric +-1.1 ceiling. |fb| > 1
@@ -3305,294 +3191,6 @@ TEST_CASE(pure_delay_fractional_delay_interpolates) {
     REQUIRE_NEAR(last, 2.5f, 1e-4);
 }
 
-TEST_CASE(filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend) {
-    dsp::FilterFxChain chain;
-    chain.comb.delaySamples = 1;
-    chain.comb.SetFeedback(0.3f);
-    chain.comb.SetCutoffAlpha(0.5f);
-    chain.pureDelay.delaySamples = 0.0f;
-    chain.peak.SetFreq(0.02f);
-    chain.peak.SetHeight(1.5f);
-    chain.peak.SetWidth(1.0f);
-    chain.scoopNotch.SetFreq(0.02f);
-    chain.scoopNotch.SetHeight(0.5f);
-    chain.scoopNotch.SetWidth(1.0f);
-
-    dsp::Comb refComb;
-    refComb.delaySamples = 1;
-    refComb.SetFeedback(0.3f);
-    refComb.SetCutoffAlpha(0.5f);
-    dsp::PureDelay refPureDelay;
-    refPureDelay.delaySamples = 0.0f;
-    dsp::ResonantBump refPeak;
-    refPeak.SetFreq(0.02f);
-    refPeak.SetHeight(1.5f);
-    refPeak.SetWidth(1.0f);
-    dsp::ResonantBump refScoop;
-    refScoop.SetFreq(0.02f);
-    refScoop.SetHeight(0.5f);
-    refScoop.SetWidth(1.0f);
-
-    const float combPeakBlend = 0.4f;
-    const float scoopMix = 0.6f;
-
-    // The comb branch now carries an exact output trim `1/(1+|fb|)`,
-    // smoothed by a one-pole (FilterFxChain::combTrimSmoother,
-    // FilterFx.hpp) before the blend below. OLD expectation: `combPath =
-    // refComb.Process(...)`, untrimmed. NEW expectation: `combPath =
-    // refComb.Process(...) * trimState`, where `trimState` comes from
-    // `refTrimSmoother`, an actual `dsp::OnePoleLowPass` instance (rather
-    // than re-implementing the one-pole recurrence by hand here, which
-    // would make the recurrence exist twice and risk silently desyncing
-    // from `OnePoleLowPass::Process` on a future change to it). Seeded
-    // identically to production: `alpha` copied from
-    // `chain.combTrimSmoother.alpha` (public field, set once by
-    // FilterFxChain's own constructor -- read, never re-hardcoded a second
-    // time here) and `output` at 1.0 (combTrimSmoother's construction-time
-    // initial value, matching the untrimmed branch -- no fade-in), driven
-    // each sample by the constant raw target `1/(1+|0.3|)` (feedback is
-    // fixed at 0.3 for this whole test, never changes). The reference chain
-    // otherwise stays independent of production (refComb/refPureDelay/
-    // refPeak/refScoop below are all separate instances) -- a parity test's
-    // job is to be an independent check, so only the recurrence itself
-    // (which must exist exactly once on the production side, not be
-    // re-derived here too) is shared via the same reusable
-    // `dsp::OnePoleLowPass` type, not shared state.
-    dsp::OnePoleLowPass refTrimSmoother;
-    refTrimSmoother.alpha = chain.combTrimSmoother.alpha;
-    refTrimSmoother.output = 1.0f;
-    const float rawCombTrim = 1.0f / (1.0f + std::fabs(0.3f));
-
-    // The peak branch now carries its own exact output trim `1/height`,
-    // smoothed the identical way the comb trim above is (same
-    // `dsp::OnePoleLowPass` type, own instance, `alpha` read from
-    // production's `chain.peakTrimSmoother.alpha` rather than
-    // re-hardcoded, `output` seeded at 1.0 matching the untrimmed branch).
-    // `height` is fixed at 1.5 for this whole test (never changes), so
-    // `rawPeakTrim` is likewise a constant target.
-    // OLD expectation: `peakPath = refPeak.Process(input)`, untrimmed
-    // (0.0905098 at this test's fixed inputs before the trim existed). NEW: `peakPath =
-    // refPeak.Process(input) * trimState`, where `trimState` converges to
-    // `1/1.5 ~= 0.6667` -- the ~33% reduction the arithmetic (0.0905098 *
-    // 0.6667 ~= 0.0603) does NOT land on the measured 0.0717059 above only
-    // because the smoother is still gliding from its unity seed across
-    // these first 8 samples, not yet at steady state; REQUIRE_NEAR below
-    // reads the same live recurrence, so it tracks the glide exactly rather
-    // than asserting the converged number.
-    dsp::OnePoleLowPass refPeakTrimSmoother;
-    refPeakTrimSmoother.alpha = chain.peakTrimSmoother.alpha;
-    refPeakTrimSmoother.output = 1.0f;
-    const float rawPeakTrim = 1.0f / 1.5f;
-
-    // The chain now runs one `OutputLimiter` (`chain.outputLimiter`) on the
-    // Comb/Peak blend below, not on the peak branch alone. Copied wholesale
-    // from `chain.outputLimiter` -- sharing the reusable type/state rather
-    // than re-deriving the tuning -- taken here, before any
-    // `chain.Process()` call, so it captures exactly the state the
-    // production instance starts this test in (its constructor's
-    // assumed-48kHz `Configure()` call, FilterFx.hpp; this test never calls
-    // `chain.Configure()` itself, so production and reference must agree on
-    // that same starting state or this parity check would silently test the
-    // wrong thing). The blend crosses `kFilterOutputLimiterThreshold` (0.7)
-    // at the last two of this test's eight fixed inputs (0.727463 and
-    // 0.829634), so the limiter genuinely engages there (envelope 0.995333
-    // then 0.932303) -- this reference has to run the real limiter, not
-    // assume identity, for those two samples to match.
-    dsp::OutputLimiter refOutputLimiter = chain.outputLimiter;
-
-    for (int i = 0; i < 8; ++i) {
-        const float input = 0.1f * static_cast<float>(i + 1);
-        const float actual = chain.Process(input, /*topology=*/0.0f, combPeakBlend, scoopMix);
-
-        // Scoop now shapes the shared input both branches below eat,
-        // computed first from `input` -- not, as before, blended into the
-        // output after the comb/peak mix.
-        const float scoopedIn = input * (1.0f - scoopMix) + refScoop.Process(input) * scoopMix;
-        const float combRaw = refComb.Process(refPureDelay.Process(scoopedIn));
-        const float trimState = refTrimSmoother.Process(rawCombTrim);
-        const float combPath = combRaw * trimState;
-        const float peakRaw = refPeak.Process(scoopedIn);
-        const float peakTrimState = refPeakTrimSmoother.Process(rawPeakTrim);
-        const float peakTrimmed = peakRaw * peakTrimState;
-        const float flooredBlend = 0.05f + 0.90f * combPeakBlend;
-        const float halfPi = 0.5f * static_cast<float>(M_PI);
-        const float blended = peakTrimmed * std::cos(flooredBlend * halfPi) + combPath * std::sin(flooredBlend * halfPi);
-        const float expected = refOutputLimiter.Process(blended);
-
-        REQUIRE_NEAR(actual, expected, 1e-5);
-    }
-}
-
-// -----------------------------------------------------------------------
-// Pins the floor itself (FilterFxChain::Process's own header comment,
-// FilterFx.hpp): at combPeakBlend's two extremes the equal-power mix gains
-// are sin(0.025*pi)/cos(0.025*pi) -- NOT 0/1 -- so the held-back branch
-// never disappears. Independent of
-// filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend's own
-// parity check above (which reconstructs the SAME remap production uses,
-// so a shared typo in both places would still pass it): the gains checked
-// here are literal target constants, not re-derived from production's own
-// 0.05f/0.90f floor coefficients, so a drift in either coefficient would
-// show up here even if a parity test's own copy of the remap stayed in
-// sync with it.
-// -----------------------------------------------------------------------
-TEST_CASE(filter_fx_chain_blend_extremes_hold_other_branch_at_floor_gain) {
-    const float mainGain = std::cos(0.025f * static_cast<float>(M_PI));  // ~0.996917 -- the dominant branch.
-    const float floorGain = std::sin(0.025f * static_cast<float>(M_PI));  // ~0.078459 -- the held-back branch.
-    REQUIRE_NEAR(mainGain, 0.9969173, 1e-6);
-    REQUIRE_NEAR(floorGain, 0.0784591, 1e-6);
-
-    dsp::FilterFxChain chainAtZero;
-    chainAtZero.comb.delaySamples = 1;
-    chainAtZero.comb.SetFeedback(0.3f);
-    chainAtZero.comb.SetCutoffAlpha(0.5f);
-    chainAtZero.pureDelay.delaySamples = 0.0f;
-    chainAtZero.peak.SetFreq(0.02f);
-    chainAtZero.peak.SetHeight(1.5f);
-    chainAtZero.peak.SetWidth(1.0f);
-
-    dsp::FilterFxChain chainAtOne;
-    chainAtOne.comb.delaySamples = 1;
-    chainAtOne.comb.SetFeedback(0.3f);
-    chainAtOne.comb.SetCutoffAlpha(0.5f);
-    chainAtOne.pureDelay.delaySamples = 0.0f;
-    chainAtOne.peak.SetFreq(0.02f);
-    chainAtOne.peak.SetHeight(1.5f);
-    chainAtOne.peak.SetWidth(1.0f);
-
-    // Independent reference replica, same convention as
-    // filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend above --
-    // computes combPath/peakTrimmed from `dsp::Comb`/`dsp::ResonantBump`/
-    // `dsp::OnePoleLowPass` directly, not by reaching into either chain
-    // above, so this stays an independent check. Neither combPath nor
-    // peakTrimmed depends on combPeakBlend (FilterFxChain::Process computes
-    // both before its own final mix line), so one pair of them, driven by
-    // the same input as chainAtZero/chainAtOne, serves both knob positions.
-    // The limiter downstream of the blend does not: `chainAtZero` and
-    // `chainAtOne` feed it two different blended composites (mainGain on
-    // opposite branches), and `OutputLimiter` carries its own envelope
-    // sample to sample, so each knob position needs its own reference
-    // limiter instance, fed that position's own blend.
-    dsp::Comb refComb;
-    refComb.delaySamples = 1;
-    refComb.SetFeedback(0.3f);
-    refComb.SetCutoffAlpha(0.5f);
-    dsp::PureDelay refPureDelay;
-    refPureDelay.delaySamples = 0.0f;
-    dsp::ResonantBump refPeak;
-    refPeak.SetFreq(0.02f);
-    refPeak.SetHeight(1.5f);
-    refPeak.SetWidth(1.0f);
-
-    dsp::OnePoleLowPass refTrimSmoother;
-    refTrimSmoother.alpha = chainAtZero.combTrimSmoother.alpha;
-    refTrimSmoother.output = 1.0f;
-    const float rawCombTrim = 1.0f / (1.0f + std::fabs(0.3f));
-
-    dsp::OnePoleLowPass refPeakTrimSmoother;
-    refPeakTrimSmoother.alpha = chainAtZero.peakTrimSmoother.alpha;
-    refPeakTrimSmoother.output = 1.0f;
-    const float rawPeakTrim = 1.0f / 1.5f;
-
-    dsp::OutputLimiter refOutputLimiterAtZero = chainAtZero.outputLimiter;
-    dsp::OutputLimiter refOutputLimiterAtOne = chainAtOne.outputLimiter;
-
-    for (int i = 0; i < 8; ++i) {
-        const float input = 0.1f * static_cast<float>(i + 1);
-
-        const float combRaw = refComb.Process(refPureDelay.Process(input));
-        const float trimState = refTrimSmoother.Process(rawCombTrim);
-        const float combPath = combRaw * trimState;
-        const float peakRaw = refPeak.Process(input);
-        const float peakTrimState = refPeakTrimSmoother.Process(rawPeakTrim);
-        const float peakTrimmed = peakRaw * peakTrimState;
-
-        const float actualAtZero =
-            chainAtZero.Process(input, /*topology=*/0.0f, /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
-        const float blendedAtZero = peakTrimmed * mainGain + combPath * floorGain;
-        REQUIRE_NEAR(actualAtZero, refOutputLimiterAtZero.Process(blendedAtZero), 1e-5);
-
-        const float actualAtOne =
-            chainAtOne.Process(input, /*topology=*/0.0f, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
-        const float blendedAtOne = peakTrimmed * floorGain + combPath * mainGain;
-        REQUIRE_NEAR(actualAtOne, refOutputLimiterAtOne.Process(blendedAtOne), 1e-5);
-    }
-}
-
-// -----------------------------------------------------------------------
-// Scoop (Filter slot 8, scoopMix) is a true-zero no-effect knob --
-// unlike peak gain/fold above, 0.0f here really does mean "no scoop at
-// all", per FilterFxChain::Process's own `mixed * (1 - scoopMix) + scooped
-// * scoopMix` blend. Proven by varying the scoop notch's own freq/width/
-// height drastically while scoopMix stays 0.0f: if scoopMix genuinely has
-// no effect, the drastically different scoop notch settings must not
-// change the output at all.
-// -----------------------------------------------------------------------
-TEST_CASE(filter_fx_chain_zero_scoop_mix_is_unaffected_by_scoop_notch_settings) {
-    dsp::FilterFxChain chainA;
-    chainA.comb.delaySamples = 1;
-    chainA.comb.SetFeedback(0.3f);
-    chainA.comb.SetCutoffAlpha(0.5f);
-    chainA.pureDelay.delaySamples = 0.0f;
-    chainA.peak.SetFreq(0.02f);
-    chainA.peak.SetHeight(1.5f);
-    chainA.peak.SetWidth(1.0f);
-    chainA.scoopNotch.SetFreq(0.02f);
-    chainA.scoopNotch.SetHeight(0.5f);
-    chainA.scoopNotch.SetWidth(1.0f);
-
-    dsp::FilterFxChain chainB;
-    chainB.comb.delaySamples = 1;
-    chainB.comb.SetFeedback(0.3f);
-    chainB.comb.SetCutoffAlpha(0.5f);
-    chainB.pureDelay.delaySamples = 0.0f;
-    chainB.peak.SetFreq(0.02f);
-    chainB.peak.SetHeight(1.5f);
-    chainB.peak.SetWidth(1.0f);
-    // Drastically different scoop notch settings from chainA -- must not
-    // matter, since scoopMix (below) stays 0.0f on both.
-    chainB.scoopNotch.SetFreq(0.3f);
-    chainB.scoopNotch.SetHeight(0.05f);
-    chainB.scoopNotch.SetWidth(5.0f);
-
-    for (int i = 0; i < 8; ++i) {
-        const float input = 0.1f * static_cast<float>(i + 1);
-        const float outA = chainA.Process(input, /*topology=*/0.0f, /*combPeakBlend=*/0.4f, /*scoopMix=*/0.0f);
-        const float outB = chainB.Process(input, /*topology=*/0.0f, /*combPeakBlend=*/0.4f, /*scoopMix=*/0.0f);
-        REQUIRE_NEAR(outA, outB, 1e-6);
-    }
-}
-
-// Independent replica of FilterFxChain::Process from before the scoop path was added -- scoop
-// blended in AFTER the comb/peak mix, at the return, rather than shaping
-// the shared input before either branch, and with `outputLimiter` still on
-// the peak branch alone, before that mix, rather than on the blend below
-// -- this pin does not track the limiter's own later move to the Filter
-// page's output either, since that is independent of the topology fix
-// this pin exists for. This file's own established convention for a
-// regression pin (filter_fx_chain_parallel_matches_manual_comb_peak_scoop_
-// blend above reconstructs production's CURRENT formula the same way): a
-// frozen, independent snapshot of the OLD behaviour, so the pin below
-// cannot silently start passing again just because some future change
-// re-derives the same old formula by accident.
-float OldTopologyFilterFxProcess(dsp::FilterFxChain& chain, float input, float topology, float combPeakBlend,
-                                  float scoopMix) {
-    const float combRaw = chain.comb.Process(chain.pureDelay.Process(input));
-    const float rawCombTrim = 1.0f / (1.0f + std::fabs(chain.comb.feedback));
-    const float combTrim = chain.combTrimSmoother.Process(rawCombTrim);
-    const float combPath = combRaw * combTrim;
-    const float peakIn = input * (1.0f - topology) + combPath * topology;
-    const float peakRaw = chain.peak.Process(peakIn);
-    const float rawPeakTrim = 1.0f / chain.peak.height;
-    const float peakTrim = chain.peakTrimSmoother.Process(rawPeakTrim);
-    const float peakTrimmed = peakRaw * peakTrim;
-    const float peakPath = chain.outputLimiter.Process(peakTrimmed);
-    const float flooredBlend = 0.05f + 0.90f * combPeakBlend;
-    const float halfPi = 0.5f * static_cast<float>(M_PI);
-    const float mixed = peakPath * std::cos(flooredBlend * halfPi) + combPath * std::sin(flooredBlend * halfPi);
-    const float scooped = chain.scoopNotch.Process(mixed);
-    return mixed * (1.0f - scoopMix) + scooped * scoopMix;
-}
 
 // Independent replica of FroggersAudioRoutingTests.cpp's own GoertzelPower
 // (this file's established convention, per app/Makefile:124-125,189-190
@@ -3613,1336 +3211,16 @@ double GoertzelPower(const std::vector<float>& samples, double freqHz, double sa
     return s1 * s1 + s2 * s2 - coeff * s1 * s2;
 }
 
-// -----------------------------------------------------------------------
-// This test's directional pin. What this actually measures was traced with a
-// scratch harness before writing it (not part of this suite): comparing a
-// STATIC boosted height against a STATIC flat height, everything else
-// held equal, gives the SAME band energy at the shared centre frequency in
-// EITHER topology, to float precision -- the peak's own `1/height` trim
-// (FilterFxChain::Process's own comment) cancels height's effect on the
-// trimmed branch's centre-frequency contribution exactly, by construction,
-// regardless of where the scoop sits. Height is therefore NOT the knob
-// that distinguishes old topology from new here.
-//
-// What DOES distinguish them: under the topology before the scoop path was added, the peak
-// branch -- and its own `outputLimiter` -- always saw the RAW, un-scooped
-// input, even with Scoop at its maximum; under the NEW topology it only
-// ever sees the already-scooped material. Feeding the limiter a needlessly
-// full-scale signal drives real, measurable gain reduction it would not
-// otherwise need, shrinking the branch's own contribution to the mix. This
-// pin catches exactly that: at a boosted height, the REAL chain (production
-// `FilterFxChain::Process`) must still clear a frozen snapshot of what the
-// OLD topology produced at the SAME frequency with the peak left FLAT (no
-// boost at all) -- i.e. the peak's contribution under the fix must exceed
-// what a listener got under the bug even with no boost dialled in. A
-// single full-scale sine at the shared centre frequency drives both stages
-// to steady state; GoertzelPower above measures the settled band energy.
-// -----------------------------------------------------------------------
-TEST_CASE(filter_fx_chain_scoop_full_does_not_cancel_a_boosted_peak_at_the_shared_center_frequency) {
-    constexpr float sampleRate = 48000.0f;
-    const float freqNormalized = 0.05f;  // matches this file's other peak-branch bound tests.
-    const double freqHz = static_cast<double>(freqNormalized) * static_cast<double>(sampleRate);
-    constexpr int kWarmupSamples = 4000;  // resonance buildup, matches topology_morph_peak_branch_headroom_across_full_range.
-    constexpr int kMeasureSamples = 4096;
 
-    const auto measureBandEnergy = [&](auto processFn, float peakHeight) {
-        dsp::FilterFxChain chain;
-        chain.Configure(sampleRate);
-        chain.peak.SetFreq(freqNormalized);
-        chain.peak.SetHeight(peakHeight);
-        chain.peak.SetWidth(1.0f);
-        chain.scoopNotch.SetFreq(freqNormalized);  // scoop centered on the SAME frequency as the peak.
-        chain.scoopNotch.SetHeight(0.05f);  // deep dip -- ExpMapCompute(1, 0.05, knob)'s own ceiling.
-        chain.scoopNotch.SetWidth(1.0f);
 
-        std::vector<float> samples;
-        samples.reserve(kMeasureSamples);
-        int sampleIx = 0;
-        for (; sampleIx < kWarmupSamples; ++sampleIx) {
-            const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
-            processFn(chain, std::sin(phase));
-        }
-        for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
-            const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
-            samples.push_back(processFn(chain, std::sin(phase)));
-        }
-        return GoertzelPower(samples, freqHz, sampleRate);
-    };
 
-    // Baseline: a frozen replica of the OLD topology, peak held FLAT (no
-    // boost at all) -- "the unboosted baseline."
-    const double baselineEnergy = measureBandEnergy(
-        [](dsp::FilterFxChain& c, float in) {
-            return OldTopologyFilterFxProcess(c, in, /*topology=*/0.0f, /*combPeakBlend=*/0.0f, /*scoopMix=*/1.0f);
-        },
-        /*peakHeight=*/1.0f);
 
-    // Test: the REAL production chain, peak BOOSTED near the app's own
-    // ceiling, Scoop at its full maximum.
-    const double boostedEnergy = measureBandEnergy(
-        [](dsp::FilterFxChain& c, float in) {
-            return c.Process(in, /*topology=*/0.0f, /*combPeakBlend=*/0.0f, /*scoopMix=*/1.0f);
-        },
-        /*peakHeight=*/dsp::kMaxResonantBumpHeight);
 
-    std::cout << "  [directional pin] band energy at the shared centre frequency -- "
-                 "old-topology unboosted baseline="
-              << baselineEnergy << "  new-topology boosted (scoopMix=1.0)=" << boostedEnergy << "\n";
-
-    REQUIRE_TRUE(boostedEnergy > baselineEnergy);
-}
-
-// -----------------------------------------------------------------------
-// Pins the fix itself. With comb feedback pinned at its maximum magnitude
-// (kMaxFeedbackMagnitude, 0.95) and a sustained full-scale input, the comb
-// branch must never exceed the computed bound `(A + fb) / (1 + fb)` -- the
-// exact worst case the trim was designed to normalize to 1.0. The bound is
-// COMPUTED from A and fb, never a hardcoded literal -- a pin asserts the
-// property that broke, not a typed-in number. scoopMix=0.0 makes the
-// return value `mixed` exactly (`mixed*(1-0) + scooped*0 == mixed`).
-//
-// combPeakBlend=1.0 no longer ISOLATES the comb branch: FilterFx.hpp's
-// floored equal-power blend remaps combPeakBlend==1 to flooredBlend==0.95,
-// so the return is `combPath*cos(0.025*pi) + peakPath*sin(0.025*pi)` -- the
-// peak branch is held in at `sin(0.025*pi)` gain (~0.0785, about -22 dB),
-// not a negligible float residual. `chain.peak` is left at its default
-// height (1.0), which makes ResonantBump an exact allpass (H(z)==1, see
-// this file's resonant_bump_coefficients_match_rbj_peaking_formula), so
-// with topology==0 (peakIn==input) peakPath tracks the same
-// `inputAmplitude` bound the comb branch's own trim targets (FilterFx.hpp's
-// peak-trim comment: the trim normalizes the peak branch's own worst case
-// to exactly A, and OutputLimiter is non-expansive -- DesiredMagnitude(m)
-// <= m always, Limiter.hpp -- so the limiter after it only ever reduces
-// further). The assertion below widens the pre-fix slack (1e-4, float-noise
-// only) by `sin(0.025*pi) * inputAmplitude` to cover that held-in peak
-// contribution, on top of the comb bound the return value is otherwise
-// still pinned to.
-//
-// A settle period precedes the assertion window: the trim smoother starts
-// at unity (matching feedback's own default of 0) and glides toward its
-// new, lower target over several time constants once feedback jumps to its
-// maximum -- asserting mid-glide would catch the transient, not the
-// steady-state bound this test exists to pin.
-// -----------------------------------------------------------------------
-TEST_CASE(comb_branch_output_stays_at_or_below_computed_bound_at_max_feedback) {
-    dsp::FilterFxChain chain;
-    chain.comb.delaySamples = 1;
-    chain.comb.SetFeedback(dsp::Comb::GetFeedback(1.0f));  // +0.95, kMaxFeedbackMagnitude.
-    chain.comb.SetCutoffAlpha(1.0f);  // identity lowpass -- isolates the feedback loop gain itself.
-    chain.pureDelay.delaySamples = 0.0f;
-
-    const float fb = std::fabs(chain.comb.feedback);
-    const float inputAmplitude = 1.0f;  // A: the filter's input is bounded |A| <= 1 by the Drive stage ahead of it.
-    const float bound = (inputAmplitude + fb) / (1.0f + fb);
-    // Held-in peak-branch contribution the floored blend now adds on top of
-    // `bound` (this test's own header comment) -- computed from the floor
-    // gain and the same `A` bound the peak trim targets, never typed in.
-    const float peakFloorGain = std::sin(0.025f * static_cast<float>(M_PI));  // ~0.0785; FilterFx.hpp's floor.
-    const float widenedSlack = peakFloorGain * inputAmplitude + 1.0e-4f;
-
-    constexpr int kSettleSamples = 2000;   // many comb-loop + trim-smoother time constants.
-    constexpr int kAssertSamples = 2000;
-
-    for (int i = 0; i < kSettleSamples; ++i) {
-        chain.Process(inputAmplitude, /*topology=*/0.0f, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
-    }
-
-    for (int i = 0; i < kAssertSamples; ++i) {
-        const float chainOutput =
-            chain.Process(inputAmplitude, /*topology=*/0.0f, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
-        REQUIRE_TRUE(std::fabs(chainOutput) <= bound + widenedSlack);
-    }
-}
-
-// -----------------------------------------------------------------------
-// The test above holds `fb` STATIC and settles for 2000 samples before
-// asserting, so it
-// cannot see the trim smoother's lag -- and in the real app `fb` is NOT
-// static: `Comb::SetFeedback` is called from `RouteAudioSample()` once per
-// SAMPLE, so a fast modulation source (audio-
-// rate noise being the extreme case -- `NoiseModulatorProcessor` draws a
-// fresh independent value every sample, DspNoise.hpp) can swing `fb` across
-// its whole range sample-to-sample, and an abrupt scramble (Crispy,
-// randomize) can step it instantly. This test asserts the SAME `(A +
-// fb)/(1 + fb)` bound the test above pins, widened by the SAME held-in
-// peak-branch slack (that test's own header comment -- combPeakBlend=1.0
-// no longer isolates the comb branch, and `chain.peak` is left at its
-// default height here too, so the same `sin(0.025*pi) * inputAmplitude`
-// term applies), but evaluated against each
-// sample's OWN currently-set `fb` (not a fixed one), from sample zero --
-// deliberately NOT skipping a settle window, because the transient
-// immediately following a fast swing is exactly what a static-feedback test
-// cannot catch and this one exists to.
-//
-// Two feedback drive patterns, both audio-rate (one new `SetFeedback` call
-// per `Process` call, matching production's per-sample cadence exactly):
-//   1. A hard step: settle at fb=0 (matching the trim smoother's own
-//      construction-time initial state, `output=1.0`, i.e. "at rest"), then
-//      jump straight to the maximum magnitude and hold -- the single
-//      sharpest possible transient, the shape a Crispy/randomize scramble
-//      produces.
-//   2. A fixed-seed audio-rate sweep: `fb` redrawn every sample, uniformly
-//      across its full [-kMaxFeedbackMagnitude, +kMaxFeedbackMagnitude]
-//      range -- the worst realistic case, a 100%-depth Noise source
-//      modulating this parameter (deterministic xorshift32, not
-//      `<random>`, so this TU stays dependency-free per its own header
-//      comment; a fixed seed keeps the test reproducible).
-//
-// Measured at the pre-fix constant (kCombTrimGlideCyclesPerSample = 0.01,
-// analogy-derived from RandomShLane, ~16-sample time constant): worst-case
-// overshoot over the bound was ~0.80 for the hard step and ~0.53 for the
-// audio-rate sweep (delaySamples=1, same adversarial single-sample-delay
-// setup the test above already uses to isolate loop gain) -- both fail this
-// test outright. Sweeping the constant (scratch measurement, not checked
-// in) found overshoot reaches exactly 0.0 (to measurement precision, 50000
-// trials x 7 seeds for the sweep pattern) at glide >= ~0.33 cycles/sample;
-// `kCombTrimGlideCyclesPerSample` is now 0.45, comfortably above that
-// crossover while staying below `OnePoleLowPass::kMaxCutoff` (0.499, the
-// hard clamp). At 0.45 both patterns below measure exactly 0.0 overshoot.
-// -----------------------------------------------------------------------
-TEST_CASE(comb_branch_output_stays_at_or_below_computed_bound_under_audio_rate_feedback_modulation) {
-    const float inputAmplitude = 1.0f;  // A: the filter's input is bounded |A| <= 1 by the Drive stage ahead of it.
-    const float kMaxFb = dsp::Comb::GetFeedback(1.0f);  // +0.95, kMaxFeedbackMagnitude.
-
-    auto boundFor = [&](float fb) { return (inputAmplitude + std::fabs(fb)) / (1.0f + std::fabs(fb)); };
-    auto makeChain = [&]() {
-        dsp::FilterFxChain chain;
-        chain.comb.delaySamples = 1;
-        chain.comb.SetCutoffAlpha(1.0f);  // identity lowpass -- isolates the feedback loop gain itself.
-        chain.pureDelay.delaySamples = 0.0f;
-        return chain;
-    };
-    // Held-in peak-branch contribution the floored blend adds on top of
-    // `boundFor(fb)` -- same derivation as
-    // comb_branch_output_stays_at_or_below_computed_bound_at_max_feedback's
-    // own `widenedSlack` (chain.peak is left at its default height, 1.0,
-    // exact allpass, here too).
-    const float peakFloorGain = std::sin(0.025f * static_cast<float>(M_PI));  // ~0.0785; FilterFx.hpp's floor.
-    const float widenedSlack = peakFloorGain * inputAmplitude + 1.0e-4f;
-
-    // Pattern 1: hard step from rest (fb=0) to max, held -- the sharpest
-    // transient a scramble can produce.
-    {
-        dsp::FilterFxChain chain = makeChain();
-        chain.comb.SetFeedback(0.0f);
-        constexpr int kSettleSamples = 500;
-        for (int i = 0; i < kSettleSamples; ++i) {
-            chain.Process(inputAmplitude, /*topology=*/0.0f, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
-        }
-        chain.comb.SetFeedback(kMaxFb);
-        constexpr int kPostJumpSamples = 500;
-        const float bound = boundFor(kMaxFb);
-        for (int i = 0; i < kPostJumpSamples; ++i) {
-            const float chainOutput =
-                chain.Process(inputAmplitude, /*topology=*/0.0f, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
-            REQUIRE_TRUE(std::fabs(chainOutput) <= bound + widenedSlack);
-        }
-    }
-
-    // Pattern 2: audio-rate sweep, `fb` redrawn every sample across its full
-    // range -- the worst realistic case (a 100%-depth Noise source).
-    {
-        dsp::FilterFxChain chain = makeChain();
-        std::uint32_t rngState = 0xC0FFEEu;
-        const auto nextUniform01 = [&rngState]() {
-            rngState ^= rngState << 13;
-            rngState ^= rngState >> 17;
-            rngState ^= rngState << 5;
-            return static_cast<float>(rngState % 1000000u) / 1000000.0f;
-        };
-        constexpr int kSamples = 20000;
-        for (int i = 0; i < kSamples; ++i) {
-            const float fb = (2.0f * nextUniform01() - 1.0f) * kMaxFb;  // [-kMaxFb, kMaxFb)
-            chain.comb.SetFeedback(fb);
-            const float chainOutput =
-                chain.Process(inputAmplitude, /*topology=*/0.0f, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
-            REQUIRE_TRUE(std::fabs(chainOutput) <= boundFor(fb) + widenedSlack);
-        }
-    }
-}
-
-// -----------------------------------------------------------------------
-// Mirrors the comb bound test above, pinning the peak bound `|peak| <= A *
-// height`: static height held at the app's own ceiling, driven with a
-// full-scale sine at the bump's own resonant frequency (the peak's worst
-// case, matching
-// resonant_bump_max_knob_settles_at_the_apps_configured_ceiling's own
-// excitation shape), and asserts the TRIMMED branch output never exceeds
-// A (== A * height / height, the exact target) once warmed up.
-//
-// `combPeakBlend=0` no longer isolates the peak branch exactly:
-// FilterFx.hpp's floored equal-power blend remaps combPeakBlend==0 to
-// flooredBlend==0.05, holding the comb branch in at `sin(0.025*pi)` gain
-// (~0.0785, about -22 dB). `chain.comb` is left at its default (feedback
-// 0.0f, never configured below), so its own established bound `(A +
-// fb)/(1 + fb)` collapses to exactly A -- the SAME bound this test already
-// uses for the peak branch -- so the assertion widens the pre-existing
-// (empirical, resonance-buildup) 0.05 slack by `sin(0.025*pi) *
-// inputAmplitude` to cover that held-in comb contribution too.
-// -----------------------------------------------------------------------
-TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_at_max_height) {
-    dsp::FilterFxChain chain;
-    const float maxHeight = dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, 1.0f);
-    const float freqNormalized = 0.05f;  // matches resonant_bump_max_knob_settles_at_the_apps_configured_ceiling
-    chain.peak.SetFreq(freqNormalized);
-    chain.peak.SetHeight(maxHeight);
-    chain.peak.SetWidth(1.0f);
-
-    const float inputAmplitude = 1.0f;  // A: the filter's input is bounded |A| <= 1 by the Drive stage ahead of it.
-    const float bound = inputAmplitude;  // A * height / height == A -- the trim's exact target.
-    // Held-in comb-branch contribution the floored blend adds on top of
-    // `bound` (see this test's own header comment) -- chain.comb defaults
-    // to feedback=0.0f, so its own bound is exactly `inputAmplitude` too.
-    const float combFloorGain = std::sin(0.025f * static_cast<float>(M_PI));  // ~0.0785; FilterFx.hpp's floor.
-    const float widenedSlack = 0.05f + combFloorGain * inputAmplitude;
-
-    constexpr int kWarmupSamples = 4000;   // same buildup window the untrimmed ceiling test uses.
-    constexpr int kAssertSamples = 400;
-    int sampleIx = 0;
-    for (; sampleIx < kWarmupSamples; ++sampleIx) {
-        const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
-        chain.Process(inputAmplitude * std::sin(phase), /*topology=*/0.0f, /*combPeakBlend=*/0.0f,
-                      /*scoopMix=*/0.0f);
-    }
-    for (int i = 0; i < kAssertSamples; ++i, ++sampleIx) {
-        const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
-        const float chainOutput = chain.Process(inputAmplitude * std::sin(phase), /*topology=*/0.0f,
-                                                 /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
-        REQUIRE_TRUE(std::fabs(chainOutput) <= bound + widenedSlack);
-    }
-}
-
-// -----------------------------------------------------------------------
-// The peak-branch analogue of the test above: the static test above holds
-// `height` fixed and settles for 4000 samples first, so it
-// cannot see the trim smoother's lag against a fast-moving `height` -- and
-// in the real app `height` is not static: `ResonantBump::SetHeight` is
-// called from `RouteAudioSample()` once per SAMPLE, same cadence as the
-// comb's `fb`, so a noise-modulation source can redraw it every sample
-// (see comb_branch_output_stays_at_or_below_computed_bound_under_audio_
-// rate_feedback_modulation's own comment for the production call-site
-// citation). Same two adversarial patterns, same glide constant under test
-// (peakTrimSmoother shares kTrimGlideCyclesPerSample with combTrimSmoother,
-// FilterFx.hpp) -- reused here rather than re-derived.
-//
-// FINDING (measured, not fixed -- the peak trim mirrors the comb trim's
-// mechanism and does nothing further): pattern 1 (hard step) settles to ~0
-// overshoot, same as the comb -- but pattern 2 (audio-rate sweep) does NOT
-// reach the comb's "exactly 0 overshoot at glide>=0.33" result. Root cause,
-// traced rather than assumed: the comb's per-sample bound is UNCONDITIONAL
-// on history -- `PadeSaturator::Saturate` sits INSIDE the loop and clamps
-// the fed-back term to +-1 every sample regardless of what `fb` was a
-// moment ago, so any trim fast enough to track `fb`'s current value fully
-// closes the gap. The peak's raw branch has no such per-sample clamp: it is
-// a genuine two-pole recursive filter whose x1/x2/y1/y2 state persists
-// across a height change, so when `height` drops suddenly the trim (tracked
-// fast, correctly, at the new low target) can under-attenuate a raw signal
-// still carrying resonance energy built up under the PRIOR, higher height
-// -- the mirror image of the lag the comb's own trim was added to close,
-// and not closable by retuning the same one glide constant in either
-// direction (faster worsens a height-decrease; slower would reopen the
-// height-increase gap the comb's trim closes). Measured (500,000 trials across 10 fixed seeds,
-// xorshift32, 50000 samples/seed): trimmed worst-case 1.669 vs raw
-// (untrimmed) worst-case 1.819 -- the trim fix measurably helps (worst case pulled
-// down from near the untrimmed ceiling) but does not achieve the static
-// case's tight `A` bound under this adversarial pattern. What IS still
-// provably true, and what this test pins: the trim never makes the
-// worst case WORSE than the pre-existing, already-accepted ceiling
-// `A * kMaxResonantBumpHeight` (the bump's own `|peak| <= A * height`,
-// with height <= kMaxResonantBumpHeight) -- i.e. the trim fix is a net improvement and a
-// safe no-regression, not a complete fix of the audio-rate case. Recorded
-// as a residual finding for a future dispatch, not invented as a fix here
-// (the trim mirrors the comb trim's mechanism rather than redesigning it).
-//
-// Both bounds below are widened by the SAME held-in comb-branch slack
-// peak_branch_output_stays_at_or_below_computed_bound_at_max_height derives
-// (`sin(0.025*pi) * inputAmplitude`): combPeakBlend=0 no longer isolates
-// the peak branch exactly, and `chain.comb` is left at its default
-// feedback=0.0f here too, so its own bound is exactly `inputAmplitude`.
-// -----------------------------------------------------------------------
-TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_under_audio_rate_height_modulation) {
-    const float inputAmplitude = 1.0f;  // A: the filter's input is bounded |A| <= 1 by the Drive stage ahead of it.
-    const float freqNormalized = 0.05f;
-    const float kMaxHeight = dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, 1.0f);
-
-    auto makeChain = [&]() {
-        dsp::FilterFxChain chain;
-        chain.peak.SetFreq(freqNormalized);
-        chain.peak.SetWidth(1.0f);
-        return chain;
-    };
-    // Held-in comb-branch contribution the floored blend adds (this
-    // TEST_CASE's own header comment).
-    const float combFloorGain = std::sin(0.025f * static_cast<float>(M_PI));  // ~0.0785; FilterFx.hpp's floor.
-    const float floorSlack = combFloorGain * inputAmplitude;
-
-    // Pattern 1: hard step from rest (height=1, exact flat passthrough --
-    // ResonantBump::UpdateCoefficients reduces to H(z)==1 at height==1, see
-    // this file's resonant_bump_coefficients_match_rbj_peaking_formula's own
-    // math) to the app's ceiling, held -- the sharpest transient a
-    // scramble/randomize can produce. Measured worst overshoot here: ~4e-6
-    // (float noise floor) -- this pattern DOES reach the trim fix's tight `A` bound.
-    {
-        dsp::FilterFxChain chain = makeChain();
-        chain.peak.SetHeight(1.0f);
-        int sampleIx = 0;
-        constexpr int kSettleSamples = 500;
-        for (; sampleIx < kSettleSamples; ++sampleIx) {
-            const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
-            chain.Process(inputAmplitude * std::sin(phase), /*topology=*/0.0f, /*combPeakBlend=*/0.0f,
-                          /*scoopMix=*/0.0f);
-        }
-        chain.peak.SetHeight(kMaxHeight);
-        constexpr int kPostJumpSamples = 4000;  // resonance buildup window, same as the static test above.
-        for (int i = 0; i < kPostJumpSamples; ++i, ++sampleIx) {
-            const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
-            const float chainOutput = chain.Process(inputAmplitude * std::sin(phase), /*topology=*/0.0f,
-                                                     /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
-            REQUIRE_TRUE(std::fabs(chainOutput) <= inputAmplitude + 0.05f + floorSlack);
-        }
-    }
-
-    // Pattern 2: audio-rate sweep, `height` redrawn every sample across its
-    // full [1, kMaxHeight] range -- the worst realistic case (a 100%-depth
-    // Noise source modulating this parameter, same idiom as the comb's own
-    // pattern 2). Deterministic xorshift32, fixed seed, dependency-free.
-    // Per this TEST_CASE's own header finding, this pattern does NOT settle
-    // to the tight `A` bound the way the comb's audio-rate sweep does --
-    // asserted here against the pre-existing, already-established ceiling
-    // `A * kMaxResonantBumpHeight` instead: the property this
-    // test CAN honestly pin is "the trim fix does not regress the worst case past the
-    // already-accepted untrimmed ceiling", not "the trim fix fully bounds the
-    // audio-rate case" (it measurably does not, per the header comment).
-    {
-        dsp::FilterFxChain chain = makeChain();
-        std::uint32_t rngState = 0xC0FFEEu;
-        const auto nextUniform01 = [&rngState]() {
-            rngState ^= rngState << 13;
-            rngState ^= rngState >> 17;
-            rngState ^= rngState << 5;
-            return static_cast<float>(rngState % 1000000u) / 1000000.0f;
-        };
-        const float ceilingBound = inputAmplitude * dsp::kMaxResonantBumpHeight;  // the untrimmed peak's own ceiling.
-        constexpr int kSamples = 20000;
-        for (int i = 0; i < kSamples; ++i) {
-            const float height = 1.0f + nextUniform01() * (kMaxHeight - 1.0f);
-            chain.peak.SetHeight(height);
-            const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(i);
-            const float chainOutput = chain.Process(inputAmplitude * std::sin(phase), /*topology=*/0.0f,
-                                                     /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
-            REQUIRE_TRUE(std::fabs(chainOutput) <= ceilingBound + 1.0e-3f + floorSlack);
-        }
-    }
-}
-
-// -----------------------------------------------------------------------
-// Pins the property the trim alone does not close -- the
-// peak branch respects its own computed bound `A` (not the looser
-// untrimmed ceiling `A * kMaxResonantBumpHeight` the test above settles
-// for) under the exact same adversarial per-sample-random height
-// modulation that measured a trim-only worst case of 1.669. The trim-only
-// test above traced WHY the trim alone cannot do this: the peak is a
-// stateful 2-pole biquad whose stored energy
-// survives a height DROP, so a same-instant scalar cannot retroactively
-// remove energy already in its state -- what corrects that is something
-// with its own release, i.e. `FilterFxChain::outputLimiter`
-// (`OutputLimiter`, dsp/Limiter.hpp), inserted after the trim and the
-// Comb/Peak blend in `Process()` (FilterFx.hpp). Reuses the existing
-// Pattern-2 idiom exactly
-// (freqNormalized, kMaxHeight, xorshift32, seed 0xC0FFEE, 20000 samples --
-// the identical adversarial drive, not a fresh one) so this test is a
-// direct tightening of the assertion above, not a different measurement.
-//
-// `chain.Configure(sampleRate)` is called explicitly here (rather than
-// relying on the constructor's assumed-48kHz default, FilterFx.hpp) so
-// this test exercises the exact call production makes
-// (FroggersAppCore::PrepareToPlay -> filterChain_.Configure(sampleRate_)).
-//
-// MEASURED (this exact seed/sample count, a scratch harness reproducing
-// this file's own production math bit-for-bit before this test existed):
-// worst-case overshoot with the trim only (no limiter) = 1.615898 against
-// bound 1.0 (this single seed does not reach the full 500k-trial/10-seed
-// worst case of 1.669, but is comfortably past the bound this test pins,
-// which is what makes this seed a valid case for it). With
-// `outputLimiter` inserted at its measured tuning (kFilterOutputLimiterThreshold
-// 0.7, kFilterOutputLimiterAttackSeconds 5 microseconds, kFilterOutputLimiterReleaseSeconds
-// 100ms, FilterFx.hpp), limiting the blended output: worst-case overshoot
-// = 0.812201, at or below bound.
-//
-// The bound below is widened by the SAME held-in comb-branch slack
-// peak_branch_output_stays_at_or_below_computed_bound_at_max_height derives
-// (`sin(0.025*pi) * inputAmplitude`): combPeakBlend=0 no longer isolates
-// the peak branch exactly, and `chain.comb` is left at its default
-// feedback=0.0f here too, so its own bound is exactly `inputAmplitude`.
-// -----------------------------------------------------------------------
-TEST_CASE(peak_branch_output_respects_computed_bound_under_audio_rate_height_modulation_with_limiter) {
-    constexpr float sampleRate = 48000.0f;
-    const float inputAmplitude = 1.0f;  // A: the filter's input is bounded |A| <= 1 by the Drive stage ahead of it.
-    const float freqNormalized = 0.05f;
-    const float kMaxHeight = dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, 1.0f);
-    const float bound = inputAmplitude;  // the computed bound the test targets -- never a literal.
-    // Held-in comb-branch contribution the floored blend adds (this
-    // TEST_CASE's own header comment).
-    const float combFloorGain = std::sin(0.025f * static_cast<float>(M_PI));  // ~0.0785; FilterFx.hpp's floor.
-    const float floorSlack = combFloorGain * inputAmplitude;
-
-    dsp::FilterFxChain chain;
-    chain.Configure(sampleRate);
-    chain.peak.SetFreq(freqNormalized);
-    chain.peak.SetWidth(1.0f);
-
-    std::uint32_t rngState = 0xC0FFEEu;  // identical seed to Pattern 2 above -- same adversarial drive.
-    const auto nextUniform01 = [&rngState]() {
-        rngState ^= rngState << 13;
-        rngState ^= rngState >> 17;
-        rngState ^= rngState << 5;
-        return static_cast<float>(rngState % 1000000u) / 1000000.0f;
-    };
-
-    constexpr int kSamples = 20000;
-    for (int i = 0; i < kSamples; ++i) {
-        const float height = 1.0f + nextUniform01() * (kMaxHeight - 1.0f);
-        chain.peak.SetHeight(height);
-        const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(i);
-        const float chainOutput = chain.Process(inputAmplitude * std::sin(phase), /*topology=*/0.0f,
-                                                 /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
-        REQUIRE_TRUE(std::fabs(chainOutput) <= bound + 1.0e-2f + floorSlack);
-    }
-}
-
-// -----------------------------------------------------------------------
-// Measures, but does not enforce, three candidate values for the peak
-// branch's height ceiling (kMaxResonantBumpHeight is 3.0f) against the
-// same adversarial drive the kFilterOutputLimiter* tuning comment above describes:
-// a per-sample-random height, full-scale sine at the bump's own resonant
-// frequency. The production constant is never written here -- each
-// candidate is substituted only into this test's own local
-// `ExpMapCompute(1.0f, candidate, randomKnob)` call, which drives
-// `peak.SetHeight` the same way the real knob-driven call site does (a
-// modulation source varies the KNOB in [0,1], not the mapped height
-// directly, so drawing `randomKnob` uniformly and mapping it is the
-// faithful reproduction of that, not a direct linear draw on height
-// itself -- see the note on numbers below). Driven through the real
-// `FilterFxChain`, under this tree's current defaults: `comb` untouched
-// (feedback 0.0f, centred), `combDrive` untouched (1.0f, unity), Comb/Peak
-// blend floored (`combPeakBlend=0` -> 0.05, this file's established idiom
-// for isolating the peak branch while still holding a small comb
-// contribution in).
-//
-// NUMBERS ARE FRESH, not a reproduction of the 1.669/1.615898 recorded
-// above: those came from a direct linear draw of height itself over
-// [1, maxHeight] (either the single in-repo seed 0xC0FFEE at 20000
-// samples above, or an earlier, never-checked-in scratch harness at 10
-// seeds x 50000 samples/seed). This case draws the knob uniformly instead
-// and maps it through ExpMapCompute, which is a LOG-uniform draw on
-// height, not a linear one -- it spends relatively less time near the very
-// top of the range than a linear draw does. Different sampling, different
-// seeds beyond 0xC0FFEE, different candidate values: expect different
-// numbers, not a match, hence this comment saying so rather than implying
-// reproduction. Ten fixed, listed xorshift32 seeds x 50000 samples/seed
-// (500,000 trials per candidate) -- the same scale the retired scratch
-// harness used.
-//
-// "Pre-limiter" below comes from a SECOND `FilterFxChain`, configured
-// identically and driven by the exact same per-sample height sequence,
-// with only `outputLimiter` reconfigured to a practical no-op (threshold and
-// ceiling both far above anything this file's signals reach). That pins
-// `envelope` at exactly 1.0f for the whole run -- not approximately:
-// `OutputLimiter::Process`'s own declaration comment (Limiter.hpp) proves
-// this is bit-exact whenever the signal never crosses `threshold`, so the
-// second chain's output is provably the un-limited trim-only signal, still
-// produced by the same production Process() path (peak, trim smoothers,
-// comb, blend) as the real one.
-//
-// What is ASSERTED holds no matter which candidate, if any, ever becomes
-// the production value, because it does not depend on the candidate:
-// every sample stays finite, and the real limiter's own `envelope` field
-// never leaves (0, 1] -- `OutputLimiter::NextGain`'s targetGain is always
-// <= 1 (DesiredMagnitude never exceeds its input), and a convex
-// combination of two values <= 1 stays <= 1 -- so the limiter can only
-// hold gain or pull it down, never push output above what fed it, for any
-// input. A loose blowup guard (10x the candidate, well past every ceiling
-// this file's trims/limiters target) catches a genuine regression, e.g. a
-// silently disabled limiter, without pretending to know where the real
-// bound should sit. The candidate numbers themselves are PRINTED, not
-// asserted: whether 3.0 or 4.0 is an acceptable ceiling is a judgment call
-// for whoever reads this table, not something this test decides.
-// -----------------------------------------------------------------------
-TEST_CASE(peak_ceiling_candidate_limiter_measurement) {
-    constexpr float sampleRate = 48000.0f;
-    const float inputAmplitude = 1.0f;   // the chain's input amplitude, held at full scale.
-    const float freqNormalized = 0.05f;  // matches this file's other peak-branch bound tests.
-
-    // Ten fixed, listed seeds -- not derived, not incremented ad hoc.
-    constexpr std::uint32_t kSeeds[] = {0xC0FFEEu, 0xBADF00Du, 0xFEEDFACEu, 0xDEADBEEFu, 0x8BADF00Du,
-                                         0xCAFEBABEu, 0x1337C0DEu, 0xABCDEF01u, 0x0F0F0F0Fu, 0x13579BDFu};
-    constexpr int kSamplesPerSeed = 50000;
-    constexpr float kCandidates[] = {2.0f, 3.0f, 4.0f};  // 3.0f == production kMaxResonantBumpHeight.
-
-    std::cout << "  [peak height ceiling candidates] " << (sizeof(kSeeds) / sizeof(kSeeds[0])) << " seeds x "
-              << kSamplesPerSeed
-              << " samples/seed, xorshift32, full-scale sine at freqNormalized=" << freqNormalized
-              << ", knob drawn uniform in [0,1) then mapped through ExpMapCompute(1, candidate, knob) -- "
-                 "fresh numbers, not seed-reproducible against the 1.669/1.615898 recorded above (see "
-                 "this case's own comment):\n";
-
-    for (float candidate : kCandidates) {
-        float worstPreLimiter = 0.0f;
-        float worstPostLimiter = 0.0f;
-        int samplesInReduction = 0;
-        int totalSamples = 0;
-
-        for (std::uint32_t seed : kSeeds) {
-            dsp::FilterFxChain postChain;  // real production tuning -- the constant under measurement.
-            postChain.Configure(sampleRate);
-            postChain.peak.SetFreq(freqNormalized);
-            postChain.peak.SetWidth(1.0f);
-
-            dsp::FilterFxChain preChain;  // identical, except outputLimiter neutralized -- see header comment.
-            preChain.peak.SetFreq(freqNormalized);
-            preChain.peak.SetWidth(1.0f);
-            preChain.outputLimiter.Configure(sampleRate, /*threshold=*/1.0e6f, /*ceiling=*/2.0e6f,
-                                            dsp::kFilterOutputLimiterAttackSeconds, dsp::kFilterOutputLimiterReleaseSeconds);
-
-            std::uint32_t rngState = seed;
-            const auto nextUniform01 = [&rngState]() {
-                rngState ^= rngState << 13;
-                rngState ^= rngState >> 17;
-                rngState ^= rngState << 5;
-                return static_cast<float>(rngState % 1000000u) / 1000000.0f;
-            };
-
-            for (int i = 0; i < kSamplesPerSeed; ++i) {
-                const float randomKnob = nextUniform01();
-                const float height = dsp::ExpMapCompute(1.0f, candidate, randomKnob);
-                postChain.peak.SetHeight(height);
-                preChain.peak.SetHeight(height);
-                const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(i);
-                const float sample = inputAmplitude * std::sin(phase);
-
-                const float preOutput =
-                    preChain.Process(sample, /*topology=*/0.0f, /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
-                const float postOutput =
-                    postChain.Process(sample, /*topology=*/0.0f, /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
-
-                REQUIRE_TRUE(std::isfinite(preOutput));
-                REQUIRE_TRUE(std::isfinite(postOutput));
-                // The limiter's own documented ceiling behaviour: envelope only ever holds
-                // or reduces gain, never amplifies -- true for any input, any candidate.
-                REQUIRE_TRUE(postChain.outputLimiter.envelope > 0.0f
-                             && postChain.outputLimiter.envelope <= 1.0f + 1.0e-6f);
-
-                worstPreLimiter = std::max(worstPreLimiter, std::fabs(preOutput));
-                worstPostLimiter = std::max(worstPostLimiter, std::fabs(postOutput));
-                if (postChain.outputLimiter.envelope < 1.0f - 1.0e-6f) {
-                    ++samplesInReduction;
-                }
-                ++totalSamples;
-            }
-        }
-
-        const double pctInReduction =
-            100.0 * static_cast<double>(samplesInReduction) / static_cast<double>(totalSamples);
-        std::cout << "  [peak height ceiling candidates]   candidate=" << candidate
-                  << "  pre-limiter worst=" << worstPreLimiter << "  post-limiter worst=" << worstPostLimiter
-                  << "  %time-in-reduction=" << pctInReduction << "\n";
-
-        // Loose blowup guard only (mirrors topology_morph_peak_branch_headroom_across_full_range's
-        // own flat guard above) -- catches a genuine regression, not a claim about where the real
-        // ceiling sits; the printed numbers above are the actual finding.
-        REQUIRE_TRUE(worstPreLimiter < 10.0f * candidate);
-        REQUIRE_TRUE(worstPostLimiter < 10.0f * candidate);
-    }
-}
-
-// -----------------------------------------------------------------------
-// This test's own re-run of the harness above: the bound argument for the
-// scoop notch (RBJ cut, |H| <= 1 for height <= 1) is steady-state, but
-// scoop's freq/width/depth now refresh per sample AND feed both branches
-// below (FilterFxChain::Process), so this measures the SAME worst-case
-// pre-/post-limiter numbers with that modulation included, at the live
-// ceiling (kMaxResonantBumpHeight) only -- candidate sweeping is the
-// harness above's job, not this one's. scoopMix is held at 1.0 (not
-// redrawn) so the scoop actually feeds the branches on every sample rather
-// than a partial blend diluting the adversarial signal; freq/width/depth
-// are redrawn every sample across their full production ranges (the same
-// ExpMapCompute maps FroggersAppCore.hpp uses for these knobs).
-//
-// This IS where "analogy-picked transient bounds measuring 80% wrong"
-// (this file's own record, cited again here) turned out to apply again: a
-// biquad whose OWN coefficients (not just its input) are redrawn every
-// sample -- both the peak's height and, through what now feeds it, the
-// scoop's freq/width/depth -- can produce a single-sample spike many
-// orders of magnitude past any steady-state bound. The limiter smooths
-// the blended composite every sample, so its envelope carries the
-// composite's history into whichever sample this run's extreme draw lands
-// on: this run prints pre-limiter 2.19351e+06 and post-limiter 0.877405.
-// That is a property of this specific adversarial
-// draw and the limiter's own envelope history, not a bound this file
-// derives or a claim that every draw behaves this way -- printed, not
-// asserted, for the same reason as before: a magnitude bound would be
-// asserting a property this run does not establish in general.
-// Reproducible under the topology before the scoop path was added too, at a comparably
-// extreme magnitude -- this is a pre-existing biquad coefficient-
-// modulation property, not a regression the scoop-topology change introduces or a defect its
-// topology change is positioned to fix, so per the standing rule of no new
-// defensive branch without a demonstrated failing input, it is
-// reported here, not treated as a bug to close out inline. Hence: assert
-// ONLY the finiteness/limiter-ceiling invariants this test asks for (per
-// sample, below) and PRINT the worst-case numbers rather than bounding
-// them.
-// -----------------------------------------------------------------------
-TEST_CASE(peak_ceiling_scoop_modulation_limiter_measurement) {
-    constexpr float sampleRate = 48000.0f;
-    const float inputAmplitude = 1.0f;
-    const float freqNormalized = 0.05f;  // matches this file's other peak-branch bound tests.
-    const float candidate = dsp::kMaxResonantBumpHeight;  // the live ceiling -- read from the shared constant.
-
-    constexpr std::uint32_t kSeeds[] = {0xC0FFEEu, 0xBADF00Du, 0xFEEDFACEu, 0xDEADBEEFu, 0x8BADF00Du,
-                                         0xCAFEBABEu, 0x1337C0DEu, 0xABCDEF01u, 0x0F0F0F0Fu, 0x13579BDFu};
-    constexpr int kSamplesPerSeed = 50000;
-
-    float worstPreLimiter = 0.0f;
-    float worstPostLimiter = 0.0f;
-
-    for (std::uint32_t seed : kSeeds) {
-        dsp::FilterFxChain postChain;  // real production tuning -- the constant under measurement.
-        postChain.Configure(sampleRate);
-        postChain.peak.SetFreq(freqNormalized);
-        postChain.peak.SetWidth(1.0f);
-
-        dsp::FilterFxChain preChain;  // identical, except outputLimiter neutralized -- see the harness above.
-        preChain.peak.SetFreq(freqNormalized);
-        preChain.peak.SetWidth(1.0f);
-        preChain.outputLimiter.Configure(sampleRate, /*threshold=*/1.0e6f, /*ceiling=*/2.0e6f,
-                                        dsp::kFilterOutputLimiterAttackSeconds, dsp::kFilterOutputLimiterReleaseSeconds);
-
-        std::uint32_t rngState = seed;
-        const auto nextUniform01 = [&rngState]() {
-            rngState ^= rngState << 13;
-            rngState ^= rngState >> 17;
-            rngState ^= rngState << 5;
-            return static_cast<float>(rngState % 1000000u) / 1000000.0f;
-        };
-
-        for (int i = 0; i < kSamplesPerSeed; ++i) {
-            const float height = dsp::ExpMapCompute(1.0f, candidate, nextUniform01());
-            postChain.peak.SetHeight(height);
-            preChain.peak.SetHeight(height);
-
-            // Scoop freq/width/depth redrawn per sample too, same maps
-            // FroggersAppCore.hpp uses for these knobs, on both chains.
-            const float scoopFreq = dsp::ExpMapCompute(100.0f / sampleRate, 20000.0f / sampleRate, nextUniform01());
-            const float scoopWidth = dsp::ExpMapCompute(0.4f, 10.0f, nextUniform01());
-            const float scoopDepth = dsp::ExpMapCompute(1.0f, 0.05f, nextUniform01());
-            postChain.scoopNotch.SetFreq(scoopFreq);
-            postChain.scoopNotch.SetWidth(scoopWidth);
-            postChain.scoopNotch.SetHeight(scoopDepth);
-            preChain.scoopNotch.SetFreq(scoopFreq);
-            preChain.scoopNotch.SetWidth(scoopWidth);
-            preChain.scoopNotch.SetHeight(scoopDepth);
-
-            const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(i);
-            const float sample = inputAmplitude * std::sin(phase);
-
-            const float preOutput =
-                preChain.Process(sample, /*topology=*/0.0f, /*combPeakBlend=*/0.0f, /*scoopMix=*/1.0f);
-            const float postOutput =
-                postChain.Process(sample, /*topology=*/0.0f, /*combPeakBlend=*/0.0f, /*scoopMix=*/1.0f);
-
-            REQUIRE_TRUE(std::isfinite(preOutput));
-            REQUIRE_TRUE(std::isfinite(postOutput));
-            REQUIRE_TRUE(postChain.outputLimiter.envelope > 0.0f
-                         && postChain.outputLimiter.envelope <= 1.0f + 1.0e-6f);
-
-            worstPreLimiter = std::max(worstPreLimiter, std::fabs(preOutput));
-            worstPostLimiter = std::max(worstPostLimiter, std::fabs(postOutput));
-        }
-    }
-
-    std::cout << "  [scoop-modulation limiter measurement] candidate=" << candidate
-              << " (live ceiling), scoop freq/width/depth modulated per sample feeding both branches, scoopMix=1.0: "
-                 "pre-limiter worst="
-              << worstPreLimiter << "  post-limiter worst=" << worstPostLimiter
-              << " -- no magnitude bound asserted here, see this test's own header comment.\n";
-    // Finiteness and the limiter's own envelope invariant were already
-    // asserted per-sample, above, inside the seed loop -- those are the
-    // finiteness/limiter-ceiling invariants this test asks for. No
-    // magnitude bound on the worst-case numbers themselves: see this
-    // test's own header comment for why one would be asserting a property
-    // this run has just shown does not hold.
-}
-
-// filter_fx_chain_serial_matches_delay_then_comb_then_peak DELETED: it
-// pinned the `useParallel == false` series branch (`pureDelay -> comb ->
-// peak`, no trims/limiter/blend, ignoring combPeakBlend/scoopMix) that
-// FilterFxChain::Process no longer has -- dead code, confirmed by grep,
-// deleted rather than kept beside the new `topology` morph. No replacement
-// test: there is
-// no longer a distinct series code path to pin, and topology's behaviour
-// across [0,1] is covered by the topology-morph headroom sweep test below plus
-// filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend at
-// topology==0.
-
-// -----------------------------------------------------------------------
-// Filter slot 13 ("Topology"): at high topology the peak biquad's input is
-// `combPath` (the comb branch's OWN output, FilterFxChain::Process,
-// FilterFx.hpp) instead of the raw chain input -- a new operating point
-// for a stage whose ceiling this codebase has already had to lower
-// (kMaxResonantBumpHeight's own history, FilterFx.hpp; the Filter page's
-// own limiter's history, this file above). Sweeps topology
-// across the WHOLE [0,1] range -- not just the endpoints; the midpoint
-// genuinely mixes both paths and is its own case -- drives the peak branch
-// (predominantly isolated via combPeakBlend=0/scoopMix=0 -- the floored
-// blend also holds a small comb-branch residual in, see
-// peak_branch_output_stays_at_or_below_computed_bound_at_max_height's own
-// comment above -- this file's established idiom for driving the peak
-// branch) with a full-scale sine at the peak's own resonant
-// frequency, comb feedback pinned at its own maximum (the worst case for
-// how far combPath can depart from the raw input), and RECORDS the
-// measured peak absolute output at each topology -- a bare pass/fail is
-// not a result here, so the measured figures are printed below.
-// -----------------------------------------------------------------------
-TEST_CASE(topology_morph_peak_branch_headroom_across_full_range) {
-    constexpr float sampleRate = 48000.0f;
-    const float inputAmplitude = 1.0f;  // full-scale.
-    const float freqNormalized = 0.05f;  // matches this file's other peak-branch bound tests.
-    const float maxHeight = dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, 1.0f);
-    const float maxFeedback = dsp::Comb::GetFeedback(1.0f);  // +0.95, kMaxFeedbackMagnitude.
-
-    // Not just the endpoints -- the midpoint (0.5) mixes both paths and is
-    // worth checking as its own case.
-    const float topologies[] = {0.0f, 0.1f, 0.25f, 0.5f, 0.75f, 0.9f, 1.0f};
-
-    std::cout << "  [topology sweep] peak-branch-isolated (combPeakBlend=0, scoopMix=0), "
-                 "full-scale sine at peak freq, comb feedback pinned at max magnitude:\n";
-
-    float overallMax = 0.0f;
-    for (float topology : topologies) {
-        dsp::FilterFxChain chain;
-        chain.Configure(sampleRate);  // real outputLimiter coefficients, not the constructor's assumed-48kHz default.
-        chain.comb.delaySamples = 1;
-        chain.comb.SetFeedback(maxFeedback);
-        chain.comb.SetCutoffAlpha(1.0f);  // identity lowpass -- isolates the feedback loop gain, worst case for combPath.
-        chain.pureDelay.delaySamples = 0.0f;
-        chain.peak.SetFreq(freqNormalized);
-        chain.peak.SetHeight(maxHeight);
-        chain.peak.SetWidth(1.0f);
-
-        constexpr int kWarmupSamples = 4000;  // resonance buildup window, matches this file's other peak tests.
-        constexpr int kAssertSamples = 400;
-        int sampleIx = 0;
-        float maxLevel = 0.0f;
-        for (; sampleIx < kWarmupSamples; ++sampleIx) {
-            const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
-            chain.Process(inputAmplitude * std::sin(phase), topology, /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
-        }
-        for (int i = 0; i < kAssertSamples; ++i, ++sampleIx) {
-            const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
-            const float level = chain.Process(inputAmplitude * std::sin(phase), topology, /*combPeakBlend=*/0.0f,
-                                               /*scoopMix=*/0.0f);
-            REQUIRE_TRUE(std::isfinite(level));
-            maxLevel = std::max(maxLevel, std::fabs(level));
-        }
-        overallMax = std::max(overallMax, maxLevel);
-        std::cout << "  [topology sweep]   topology=" << topology << "  peak abs output=" << maxLevel << "\n";
-    }
-
-    // Safety net only, deliberately NOT a tight "topology must never exceed
-    // topology==0's own level" assertion: the standing rule is that a
-    // measurement showing topology's new operating point running hotter
-    // than topology==0 must be REPORTED plainly (see the numbers printed
-    // above), not hidden behind a bound tuned to pass regardless of what
-    // the measurement finds. `< 5.0f` only guards against a genuine
-    // blowup -- an order of magnitude past every ceiling this file's
-    // limiters/trims already target -- which finiteness above does not by
-    // itself rule out.
-    REQUIRE_TRUE(overallMax < 5.0f);
-}
-
-// -----------------------------------------------------------------------
-// Filter-bank replica (SetFilterFxChainKnobs/ProcessFilterBank, mirroring
-// RouteFilterBank's own setter order, FroggersAppCore.hpp) -- there was no
-// Filter-bank equivalent of DriveBankKnobs/SetFrogBlockKnobs/
-// ProcessDriveBank (3.9 below) before this. One field per
-// FroggersBankId::Filter slot (FroggersBankLayouts()'s Filter row,
-// FroggersParameters.hpp), holding the RAW 0..1 knob value exactly as
-// RoutedKnob would return it. Unlike Drive's SetGain/SetCoefs, most of
-// RouteFilterBank's ExpMapCompute/GetFeedback/GetDelaySamples calls happen
-// OUTSIDE the dsp setters, so SetFilterFxChainKnobs below reproduces those
-// calls itself rather than pushing raw knobs straight into the chain.
-// Defaults are the FroggersParameters.hpp registered defaults: every slot
-// is 0.0f except Comb feedback (0.5, GetFeedback maps it to exactly zero
-// feedback) and Comb drive (0.5, ExpMapCompute(0.25,4,0.5) is exactly
-// unity) -- see FroggersBankLayouts()'s own Filter-row comments.
-struct FilterBankKnobs {
-    float peakFreq = 0.0f;       // slot 0
-    float peakGain = 0.0f;       // slot 1 -- swept across its travel below.
-    float peakQ = 0.0f;          // slot 2 (bump width)
-    float combOffset = 0.0f;     // slot 3
-    float combDelay = 0.0f;      // slot 4 (comb frequency)
-    float combFeedback = 0.5f;   // slot 5
-    float combLp = 0.0f;         // slot 6
-    float combDrive = 0.5f;      // slot 7
-    float scoopMix = 0.0f;       // slot 8
-    float scoopFreq = 0.0f;      // slot 9
-    float scoopWidth = 0.0f;     // slot 10
-    float scoopDepth = 0.0f;     // slot 11
-    float combPeakBlend = 0.0f;  // slot 12
-    float topology = 0.0f;       // slot 13
-};
-
-// RouteFilterBank's own setter order (FroggersAppCore.hpp): pureDelay
-// (comb offset) first, then peak freq/height/width, then scoop
-// freq/width/height, then comb delay-samples/feedback/LP-alpha/drive.
-// Comb/Peak blend, Scoop mix and Topology are not chain setters at all --
-// they are arguments to FilterFxChain::Process itself, passed through
-// unmodified (see ProcessFilterBank below), exactly where RouteFilterBank
-// passes them. combDrive's setter reads RouteFilterBank's own
-// `StoppedKnob(Filter, 7, kStopUnityDriveKnob)` in production (a
-// transport-stop override); this replica has no transport, so it always
-// takes the raw knob directly -- safe here because the override value
-// (kStopUnityDriveKnob, 0.5f) and the registered default (also 0.5f) are
-// the SAME number, so a measurement that never moves combDrive off its
-// default cannot tell the two paths apart.
-void SetFilterFxChainKnobs(dsp::FilterFxChain& chain, const FilterBankKnobs& k, float sampleRate) {
-    const float combOffsetSeconds =
-        std::min(dsp::ExpMapCompute(0.001f, 0.1f, k.combOffset),
-                 static_cast<float>(dsp::PureDelay::kSize - 1) / sampleRate);
-    chain.pureDelay.SetDelaySeconds(combOffsetSeconds, sampleRate);
-
-    const float bumpFreq = dsp::ExpMapCompute(100.0f / sampleRate, 20000.0f / sampleRate, k.peakFreq);
-    const float bumpWidth = dsp::ExpMapCompute(0.4f, 10.0f, k.peakQ);
-    chain.peak.SetFreq(bumpFreq);
-    chain.peak.SetHeight(dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, k.peakGain));
-    chain.peak.SetWidth(bumpWidth);
-
-    const float scoopFreq = dsp::ExpMapCompute(100.0f / sampleRate, 20000.0f / sampleRate, k.scoopFreq);
-    const float scoopWidth = dsp::ExpMapCompute(0.4f, 10.0f, k.scoopWidth);
-    chain.scoopNotch.SetFreq(scoopFreq);
-    chain.scoopNotch.SetWidth(scoopWidth);
-    chain.scoopNotch.SetHeight(dsp::ExpMapCompute(1.0f, 0.05f, k.scoopDepth));
-
-    const float combFreq = dsp::ExpMapCompute(100.0f / sampleRate, 10000.0f / sampleRate, k.combDelay);
-    chain.comb.delaySamples =
-        std::min(static_cast<float>(dsp::Comb::kSize - 1), std::max(1.0f, dsp::Comb::GetDelaySamples(combFreq)));
-    chain.comb.SetFeedback(dsp::Comb::GetFeedback(k.combFeedback));
-    const float cmlpCeiling = 20000.0f / sampleRate;
-    const float cmlp = dsp::ExpMapCompute(std::min(4.0f * combFreq, cmlpCeiling), cmlpCeiling, k.combLp);
-    chain.comb.SetCutoffAlpha(1.0f - std::exp(-2.0f * static_cast<float>(M_PI) * cmlp));
-    chain.comb.SetDrive(dsp::ExpMapCompute(0.25f, 4.0f, k.combDrive));
-}
-
-// The full bank: FilterFxChain's Process, driven by RouteFilterBank's own
-// last three routed knobs (Topology, Comb/Peak blend, Scoop mix) exactly
-// as it passes them -- same split ProcessDriveBank uses below (setters,
-// then Process, then the bank's own remaining routed arguments). Calls
-// `dsp::FilterFxChain::Process` itself, so what is measured through here
-// is the shipped signal path rather than a replica of it.
-float ProcessFilterBank(dsp::FilterFxChain& chain, const FilterBankKnobs& k, float sampleRate, float driveOut) {
-    SetFilterFxChainKnobs(chain, k, sampleRate);
-    return chain.Process(driveOut, k.topology, k.combPeakBlend, k.scoopMix);
-}
-
-// Advances a deterministic LCG noise state one step and returns it as a
-// bipolar sample in [-1, 1). Shared by every broadband/noise source in this
-// file that draws from this exact shift/divisor/offset; the caller still
-// owns the state variable and any extra scaling (full scale, half scale, an
-// applied amplitude).
 static float NextLcgBipolarSample(std::uint32_t& state) {
     state = state * 1664525u + 1013904223u;
     return static_cast<float>(state >> 8) / 8388608.0f - 1.0f;
 }
 
-// -----------------------------------------------------------------------
-// MEASUREMENT (read-only): FilterFxChain::Process divides the peak
-// branch's output by peak.height with no makeup gain (`rawPeakTrim =
-// 1.0f / peak.height`, FilterFx.hpp). AT the bump's own resonant
-// frequency this is the intended behaviour -- `peakRaw ~= A*height` there,
-// so `peakRaw/height ~= A`, height-independent, matching combTrim's own
-// worst-case normalization (FilterFxChain::Process's own comment on
-// `rawPeakTrim`). AWAY from resonance the RBJ peaking biquad's own gain
-// approaches UNITY regardless of height (ResonantBump::UpdateCoefficients,
-// FilterFx.hpp) -- the SAME `1/height` divide still applies there, with
-// nothing to compensate for, so the composite level at an off-resonance
-// frequency is expected to FALL as Peak gain (height) rises.
-//
-// Driven through ProcessFilterBank (mirroring RouteFilterBank's own
-// setter order, FroggersAppCore.hpp) at the Filter bank's registered
-// defaults (FroggersBankLayouts()'s Filter row, FroggersParameters.hpp).
-// Only Peak gain (slot 1) is swept, across its whole [0,1] travel, not
-// just the endpoints (this file's own topology-sweep idiom above).
-//
-// NOT dsp::ResonantBump alone: an isolated bump has no `1/height` trim, so
-// its own skirt gain RISES with height even off-centre, hiding this
-// defect entirely (contrast resonant_bump_frequency_response_matches_
-// simulated_steady_state_gain above, which never sweeps an off-centre
-// row). NOT a hand-configured FilterFxChain either: SetFilterFxChainKnobs
-// above calls pureDelay.SetDelaySeconds, mirroring RouteFilterBank's own
-// first setter call -- a chain that skips it leaves pureDelay.delaySamples
-// at its struct default (0.0f), which a prior attempt found moved one
-// frequency row's reading while the others agreed.
-//
-// Tap point: the composite FilterFxChain output -- ProcessFilterBank's
-// return value, exactly RouteFilterBank's own return (post comb/peak
-// blend, post outputLimiter) -- fed by a full-scale sine (matches
-// filter_fx_chain_scoop_full_does_not_cancel_a_boosted_peak_at_the_shared_center_frequency/
-// topology_morph_peak_branch_headroom_across_full_range's own idiom), one
-// grid frequency at a time. A fourth row runs the same travel and the same tap on a
-// full-scale broadband source and reads total level as RMS, which is the
-// overall cost both documents quote; a per-frequency grid cannot produce
-// that figure, so without this row it would live only in prose.
-//
-// This case asserts the PAIRING it prints, and both halves belong to it.
-// The resonance row alone is also what a dead or disconnected rig prints
-// -- every cell equal because nothing is reaching the peak -- so the away
-// rows' monotonic fall is this fixture's liveness control and is asserted
-// here rather than in a separate case. It pins today's shipped behaviour,
-// including the level the travel costs, which no change removes; MANUAL.md
-// and QUICK_DICT.md describe Peak gain in exactly these terms.
-// -----------------------------------------------------------------------
-TEST_CASE(filter_bank_peak_gain_travel_measurement_at_and_away_from_resonance) {
-    constexpr float sampleRate = 48000.0f;
-    constexpr float inputAmplitude = 1.0f;  // full-scale, matches this section's own peak-branch idiom.
-
-    FilterBankKnobs knobs;  // every field at its FroggersBankLayouts() registered default.
-    const float bumpFreqNormalized = dsp::ExpMapCompute(100.0f / sampleRate, 20000.0f / sampleRate, knobs.peakFreq);
-    const double resonantFreqHz = static_cast<double>(bumpFreqNormalized) * static_cast<double>(sampleRate);
-
-    // Grid: the bump's own resonant frequency (Peak freq's registered
-    // default -- ExpMapCompute's floor, 100 Hz) plus two frequencies well
-    // outside the default bump's own skirt (bumpWidth's registered default
-    // is 0.4, ResonantBump.hpp's own comment measures that as ~3 octaves --
-    // 1 kHz sits ~3.3 octaves above 100 Hz, 5 kHz ~5.6 octaves above it).
-    const double frequencyGridHz[] = {resonantFreqHz, 1000.0, 5000.0};
-    const char* frequencyLabels[] = {"resonance (100 Hz)", "away (1000 Hz)", "away (5000 Hz)"};
-    constexpr std::size_t kNumRows = 3;
-
-    // Peak gain's whole travel, not just the endpoints.
-    const float peakGainGrid[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
-    constexpr std::size_t kNumCols = 5;
-
-    constexpr int kWarmupSamples = 4000;   // resonance buildup, matches this file's other peak-branch tests above.
-    constexpr int kMeasureSamples = 2000;  // >= 4 periods even at the grid's lowest frequency (100 Hz, 480 samples/period at 48 kHz).
-
-    std::cout << "  [filter bank peak gain sweep] tap = ProcessFilterBank's composite output "
-                 "(post comb/peak blend, post outputLimiter), full-scale sine input, "
-              << kWarmupSamples << " warmup + " << kMeasureSamples << " measured samples/cell:\n";
-
-    double levelDbGrid[kNumRows][kNumCols];
-
-    for (std::size_t row = 0; row < kNumRows; ++row) {
-        std::cout << "  [filter bank peak gain sweep] " << frequencyLabels[row] << ":\n";
-        for (std::size_t col = 0; col < kNumCols; ++col) {
-            FilterBankKnobs trialKnobs = knobs;
-            trialKnobs.peakGain = peakGainGrid[col];
-
-            dsp::FilterFxChain chain;
-            chain.Configure(sampleRate);
-
-            const float freqNormalized = static_cast<float>(frequencyGridHz[row] / sampleRate);
-            int sampleIx = 0;
-            for (; sampleIx < kWarmupSamples; ++sampleIx) {
-                const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
-                ProcessFilterBank(chain, trialKnobs, sampleRate, inputAmplitude * std::sin(phase));
-            }
-            // Split the measurement window in half as a settle check: if the
-            // rig were still transiting (not at steady state), the two
-            // halves would disagree -- printed below, not asserted, since
-            // this is instrumentation liveness, not the pairing under test.
-            float windowAPeak = 0.0f, windowBPeak = 0.0f;
-            for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
-                const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
-                const float level = ProcessFilterBank(chain, trialKnobs, sampleRate, inputAmplitude * std::sin(phase));
-                REQUIRE_TRUE(std::isfinite(level));
-                if (i < kMeasureSamples / 2) {
-                    windowAPeak = std::max(windowAPeak, std::fabs(level));
-                } else {
-                    windowBPeak = std::max(windowBPeak, std::fabs(level));
-                }
-            }
-            const double measuredLevel = std::max(windowAPeak, windowBPeak);
-            const double levelDb = 20.0 * std::log10(std::max(measuredLevel, 1.0e-12));
-            levelDbGrid[row][col] = levelDb;
-            std::cout << "  [filter bank peak gain sweep]   Peak gain=" << peakGainGrid[col]
-                      << "  level=" << measuredLevel << "  (" << levelDb << " dB)"
-                      << "  [settle check: first-half=" << windowAPeak << ", second-half=" << windowBPeak << "]\n";
-        }
-    }
-
-    // Row 0 is the bump's own resonant frequency. `FilterFxChain::Process`
-    // divides the peak branch by `peak.height` and the RBJ peaking biquad's
-    // centre gain IS that height, so the two cancel exactly and the level
-    // there is the same at every Peak gain setting. The tolerance sits 400
-    // times below kAwayFallDb, so it separates "holds" from "moves" without
-    // pinning float noise.
-    constexpr double kResonanceFlatnessDb = 0.01;
-    double resonanceLowDb = levelDbGrid[0][0];
-    double resonanceHighDb = levelDbGrid[0][0];
-    for (std::size_t col = 1; col < kNumCols; ++col) {
-        resonanceLowDb = std::min(resonanceLowDb, levelDbGrid[0][col]);
-        resonanceHighDb = std::max(resonanceHighDb, levelDbGrid[0][col]);
-    }
-    REQUIRE_TRUE(resonanceHighDb - resonanceLowDb < kResonanceFlatnessDb);
-
-    // Rows 1 and 2 are at least three octaves off that resonance (the grid
-    // comment above states the octave distances), where the bump contributes
-    // no gain and the same divide is the whole of what the peak branch does.
-    // Level therefore falls at every step of the travel, and by several dB
-    // end to end, which the promoted spec's own Check names -- a dead or
-    // disconnected rig prints no fall at all, so this fall is the flat
-    // row's own liveness control.
-    constexpr double kAwayFallDb = 4.0;
-    for (std::size_t row = 1; row < kNumRows; ++row) {
-        for (std::size_t col = 1; col < kNumCols; ++col) {
-            REQUIRE_TRUE(levelDbGrid[row][col] < levelDbGrid[row][col - 1]);
-        }
-        REQUIRE_TRUE(levelDbGrid[row][0] - levelDbGrid[row][kNumCols - 1] > kAwayFallDb);
-    }
-
-    // The same travel measured on a broadband source instead of one tone at
-    // a time, which is the figure both documents quote for what Peak gain
-    // costs overall. Total level is the RMS of the composite output, the
-    // same tap the rows above use, over the window after the warmup. The
-    // source is a deterministic LCG at full scale, seed 20260911u, the
-    // generator this file already uses for broadband work
-    // (reverb_damping_darkens_and_quiets_the_tank_while_room_size_does_
-    // neither below), and the amplitude is part of the quantity: it is
-    // chosen so the source exceeds the Filter page's own output limiter's
-    // threshold, and a quieter source would read a different fall.
-    {
-        constexpr int kBroadbandWarmup = 12000;
-        constexpr int kBroadbandMeasure = 24000;
-        std::uint32_t lcg = 20260911u;
-        std::vector<float> noise;
-        noise.reserve(kBroadbandWarmup + kBroadbandMeasure);
-        for (int i = 0; i < kBroadbandWarmup + kBroadbandMeasure; ++i) {
-            noise.push_back(inputAmplitude * NextLcgBipolarSample(lcg));
-        }
-
-        double broadbandDb[kNumCols];
-        std::cout << "  [filter bank peak gain sweep] broadband (full-scale LCG noise, RMS of the same composite tap, "
-                  << kBroadbandWarmup << " warmup + " << kBroadbandMeasure << " measured samples/cell):\n";
-        for (std::size_t col = 0; col < kNumCols; ++col) {
-            FilterBankKnobs trialKnobs = knobs;
-            trialKnobs.peakGain = peakGainGrid[col];
-
-            dsp::FilterFxChain chain;
-            chain.Configure(sampleRate);
-            double sumSquares = 0.0;
-            for (std::size_t i = 0; i < noise.size(); ++i) {
-                const float level = ProcessFilterBank(chain, trialKnobs, sampleRate, noise[i]);
-                REQUIRE_TRUE(std::isfinite(level));
-                if (static_cast<int>(i) >= kBroadbandWarmup) {
-                    sumSquares += static_cast<double>(level) * static_cast<double>(level);
-                }
-            }
-            const double rms = std::sqrt(sumSquares / static_cast<double>(kBroadbandMeasure));
-            broadbandDb[col] = 20.0 * std::log10(std::max(rms, 1.0e-12));
-            std::cout << "  [filter bank peak gain sweep]   Peak gain=" << peakGainGrid[col] << "  rms=" << rms << "  ("
-                      << broadbandDb[col] << " dB)\n";
-        }
-        const double broadbandFallDb = broadbandDb[0] - broadbandDb[kNumCols - 1];
-        std::cout << "  [filter bank peak gain sweep]   broadband total level falls " << broadbandFallDb
-                  << " dB end to end\n";
-
-        // The figure both documents quote is this row's own printed fall,
-        // not a bound pinned here: a fixed noise seed's reading is what the
-        // documentation step reads from a run of the built app, to the
-        // hundredth of a decibel it is quoted at. What this case asserts is the
-        // direction: the travel costs level at the loud end it starts from,
-        // the same liveness the away rows above establish per frequency.
-        REQUIRE_TRUE(broadbandDb[kNumCols - 1] < broadbandDb[0]);
-    }
-}
-
-// One sample of the Filter bank with the peak branch's trim individually
-// switchable, and both branches read out immediately before the blend.
-// Mirrors `dsp::FilterFxChain::Process` node for node and in its order --
-// scoop input blend, pureDelay, comb, comb trim smoother, topology morph,
-// peak, peak trim, floored equal-power blend, outputLimiter -- so the only
-// difference from the shipped path is the trim flag. `applyTrim == false`
-// drops the `1/height` scalar, which is what a makeup gain of exactly
-// `height` at the trim's own position does: the blend then sees the
-// untrimmed peak output. The peak trim smoother still advances every
-// sample whichever way the flag sits, so both settings drive identical
-// unit state. Neither branch carries a limiter of its own any more --
-// `outputLimiter` runs once, after the blend, on `composite` -- so there is
-// no `applyLimiter` flag to toggle. With the trim flag set this reproduces
-// `dsp::FilterFxChain::Process` itself, which
-// filter_fx_chain_limits_neither_branch_ahead_of_the_blend_on_a_pinned_comb
-// checks sample for sample before it measures anything.
-struct PeakBranchTap {
-    float composite;   // what dsp::FilterFxChain::Process returns.
-    float peakBranch;  // the peak branch alone, immediately before the blend.
-    float combBranch;  // the comb branch alone, immediately before the blend.
-};
-
-PeakBranchTap ProcessFilterBankPeakVariant(dsp::FilterFxChain& chain, const FilterBankKnobs& k, float sampleRate,
-                                           float driveOut, bool applyTrim) {
-    SetFilterFxChainKnobs(chain, k, sampleRate);
-    const float scoopedIn = driveOut * (1.0f - k.scoopMix) + chain.scoopNotch.Process(driveOut) * k.scoopMix;
-    const float delayed = chain.pureDelay.Process(scoopedIn);
-    const float combRaw = chain.comb.Process(delayed);
-    const float rawCombTrim = 1.0f / (1.0f + std::fabs(chain.comb.feedback));
-    const float combTrim = chain.combTrimSmoother.Process(rawCombTrim);
-    const float combPath = combRaw * combTrim;
-    const float peakIn = scoopedIn * (1.0f - k.topology) + combPath * k.topology;
-    const float peakRaw = chain.peak.Process(peakIn);
-    const float rawPeakTrim = 1.0f / chain.peak.height;
-    const float peakTrim = chain.peakTrimSmoother.Process(rawPeakTrim);
-    const float peakPath = applyTrim ? peakRaw * peakTrim : peakRaw;
-    const dsp::FloorBlendGains blendGains = dsp::FlooredEqualPowerBlend(k.combPeakBlend);
-    const float blended = peakPath * blendGains.legA + combPath * blendGains.legB;
-    return PeakBranchTap{chain.outputLimiter.Process(blended), peakPath, combPath};
-}
-
-// A resonant comb at a below-unity drive is the branch neither the comb
-// trim nor the peak trim bounds on its own: below Comb drive 1 the
-// fed-back term exceeds the comb trim's assumed bound (measured directly
-// on `dsp::Comb`, 100-sample delay, feedback 0.95, full-scale sine at the
-// comb's own pitch: Comb drive 0.25 reaches 3.9222 against the bound's
-// 1.9500), and the peak branch's own scalar trim does not bound a
-// stateful biquad's stored energy through a height drop either, so it
-// drives the blend loud enough to exercise
-// the Filter page's own limiter at its real placement: after the Comb/Peak
-// blend, not on the peak branch alone. `shipped` runs the real
-// `FilterFxChain::Process`. `neutralized` is the identical chain with its
-// output limiter configured to a threshold and ceiling neither this sine
-// can reach, so its own `Process` returns the unlimited blend. A `refLimiter`
-// with the shipped tuning, run by hand on `neutralized`'s output, is what
-// `shipped` must equal sample for sample if the limiter runs once, on the
-// blend, and nowhere else.
-TEST_CASE(filter_fx_chain_limits_the_blended_output_so_a_resonant_comb_is_limited) {
-    constexpr float sampleRate = 48000.0f;
-    constexpr int kCombPeriodSamples = 100;  // comb delay below; also the drive sine's period.
-
-    const auto setup = [&](dsp::FilterFxChain& chain) {
-        chain.Configure(sampleRate);
-        chain.pureDelay.delaySamples = 1.0f;
-        chain.comb.delaySamples = static_cast<float>(kCombPeriodSamples);
-        chain.comb.SetFeedback(0.95f);
-        chain.comb.SetCutoffAlpha(1.0f);
-        chain.comb.SetDrive(0.25f);
-        // The Filter bank's registered defaults, as RouteFilterBank maps them.
-        chain.peak.SetFreq(100.0f / sampleRate);
-        chain.peak.SetWidth(0.4f);
-        chain.peak.SetHeight(1.0f);
-        chain.scoopNotch.SetFreq(100.0f / sampleRate);
-        chain.scoopNotch.SetWidth(0.4f);
-        chain.scoopNotch.SetHeight(1.0f);
-    };
-
-    dsp::FilterFxChain shipped;
-    setup(shipped);
-
-    dsp::FilterFxChain neutralized;
-    setup(neutralized);
-    neutralized.outputLimiter.Configure(sampleRate, /*threshold=*/1.0e6f, /*ceiling=*/2.0e6f,
-                                         dsp::kFilterOutputLimiterAttackSeconds,
-                                         dsp::kFilterOutputLimiterReleaseSeconds);
-
-    dsp::OutputLimiter refLimiter;
-    refLimiter.Configure(sampleRate, dsp::kFilterOutputLimiterThreshold, dsp::kFilterOutputLimiterCeiling,
-                          dsp::kFilterOutputLimiterAttackSeconds, dsp::kFilterOutputLimiterReleaseSeconds);
-
-    float shippedPeak = 0.0f;
-    float neutralizedPeak = 0.0f;
-    const int totalSamples = 2 * static_cast<int>(sampleRate);  // 2 seconds.
-    for (int i = 0; i < totalSamples; ++i) {
-        const float in = 0.25f * std::sin(2.0f * static_cast<float>(M_PI) *
-                                           static_cast<float>(i % kCombPeriodSamples) /
-                                           static_cast<float>(kCombPeriodSamples));
-        const float shippedSample = shipped.Process(in, /*topology=*/0.0f, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
-        const float neutralizedSample =
-            neutralized.Process(in, /*topology=*/0.0f, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
-        const float refSample = refLimiter.Process(neutralizedSample);
-
-        shippedPeak = std::max(shippedPeak, std::fabs(shippedSample));
-        neutralizedPeak = std::max(neutralizedPeak, std::fabs(neutralizedSample));
-
-        REQUIRE_TRUE(shippedSample == refSample);
-    }
-
-    REQUIRE_TRUE(neutralizedPeak > dsp::kFilterOutputLimiterThreshold);  // liveness: the excitation is loud enough.
-    REQUIRE_TRUE(shippedPeak < neutralizedPeak);
-}
-
-// -----------------------------------------------------------------------
-// A full-scale sine at the comb's own fundamental resonance drives the
-// comb loop until the saturator inside it clamps -- the loudest state
-// `dsp::Comb::Process` can hold. Comb feedback sits at the knob's maximum
-// (`dsp::Comb::GetFeedback` returns +0.95, the largest magnitude this port
-// produces) and Topology at maximum makes the peak's input the comb branch
-// alone, so the pinned loop is the only thing the peak sees. Peak freq and
-// Comb delay are both at their registered default, which puts the bump's
-// centre and the comb's fundamental on the same 100 Hz, so the comb's
-// loudest partial lands exactly on the peak's own resonance. Peak gain
-// sits at its own maximum too, where the peak branch's `1/height` trim is
-// its smallest.
-//
-// Replica fidelity: `ProcessFilterBankPeakVariant`, with its trim flag set,
-// reproduces `dsp::FilterFxChain::Process` sample for sample -- checked
-// first, over the same run the two branch peaks below are read from.
-//
-// Neither branch carries a limiter of its own any more: the peak branch's
-// own trim is a fixed scalar at this corner, and the comb branch's own
-// trim assumes a bound (`FilterFxChain::Process`'s comb-trim comment,
-// dsp/FilterFx.hpp) this corner does not test below Comb drive 1. Both
-// branch peaks, read immediately before the blend, are expected to exceed
-// the Filter page's own limiter threshold here -- the liveness control for
-// the story this file's `filter_fx_chain_limits_the_blended_output_so_a_
-// resonant_comb_is_limited` pins directly: the limiter is what holds a
-// pinned comb like this one down, not either branch's own trim.
-// -----------------------------------------------------------------------
-TEST_CASE(filter_fx_chain_limits_neither_branch_ahead_of_the_blend_on_a_pinned_comb) {
-    constexpr float sampleRate = 48000.0f;
-    constexpr float inputAmplitude = 1.0f;  // full-scale, matches this section's own peak-branch idiom.
-
-    FilterBankKnobs knobs;         // every field at its FroggersBankLayouts() registered default, except:
-    knobs.peakGain = 1.0f;         // slot 1 at maximum -- height == kMaxResonantBumpHeight.
-    knobs.combFeedback = 1.0f;     // slot 5 at maximum -- GetFeedback returns +0.95.
-    knobs.topology = 1.0f;         // slot 13 at maximum -- the peak's input is the comb branch alone.
-
-    const float bumpFreqNormalized = dsp::ExpMapCompute(100.0f / sampleRate, 20000.0f / sampleRate, knobs.peakFreq);
-    const float driveFreqNormalized = bumpFreqNormalized;
-    const float combFreqNormalized = dsp::ExpMapCompute(100.0f / sampleRate, 10000.0f / sampleRate, knobs.combDelay);
-    const float combDelaySamples = dsp::Comb::GetDelaySamples(combFreqNormalized);
-    const float maxFeedback = dsp::Comb::GetFeedback(1.0f);
-
-    constexpr int kPinSamples = 24000;     // 0.5 s at 48 kHz, 50 round trips of the 480-sample comb.
-    constexpr int kMeasureSamples = 9600;  // 20 further round trips, input still running.
-
-    std::cout << "  [pinned comb] excitation: full-scale sine at " << driveFreqNormalized * sampleRate
-              << " Hz; comb delay " << combDelaySamples << " samples (" << combFreqNormalized * sampleRate
-              << " Hz); comb feedback " << maxFeedback << "; bump centre " << bumpFreqNormalized * sampleRate
-              << " Hz; " << kPinSamples << " pin + " << kMeasureSamples << " measured samples\n";
-
-    dsp::FilterFxChain production;
-    dsp::FilterFxChain replica;
-    production.Configure(sampleRate);
-    replica.Configure(sampleRate);
-    double worstDelta = 0.0;
-    double peakBranchPeak = 0.0;
-    double combBranchPeak = 0.0;
-    for (int i = 0; i < kPinSamples + kMeasureSamples; ++i) {
-        const float phase = 2.0f * static_cast<float>(M_PI) * driveFreqNormalized * static_cast<float>(i);
-        const float input = inputAmplitude * std::sin(phase);
-        const float shipped = ProcessFilterBank(production, knobs, sampleRate, input);
-        const PeakBranchTap tap = ProcessFilterBankPeakVariant(replica, knobs, sampleRate, input, /*applyTrim=*/true);
-        worstDelta =
-            std::max(worstDelta, std::fabs(static_cast<double>(shipped) - static_cast<double>(tap.composite)));
-        if (i >= kPinSamples) {
-            peakBranchPeak = std::max(peakBranchPeak, static_cast<double>(std::fabs(tap.peakBranch)));
-            combBranchPeak = std::max(combBranchPeak, static_cast<double>(std::fabs(tap.combBranch)));
-        }
-    }
-    std::cout << "  [pinned comb] replica vs dsp::FilterFxChain::Process, worst sample delta = " << worstDelta
-              << "; peak branch peak = " << peakBranchPeak << "; comb branch peak = " << combBranchPeak << "\n";
-    REQUIRE_TRUE(worstDelta <= 1.0e-6);
-    REQUIRE_TRUE(peakBranchPeak > dsp::kFilterOutputLimiterThreshold);
-    REQUIRE_TRUE(combBranchPeak > dsp::kFilterOutputLimiterThreshold);
-}
 
 // =========================================================================
 // 3.8 -- Reverb (src/core/FroggersEngine.hpp:301-342 ProcessReverb, :263-269 wiring,
@@ -7158,39 +5436,6 @@ TEST_CASE(stereo_delay_read_before_buffer_has_filled_is_defined_and_silent) {
     }
 }
 
-// =========================================================================
-// 9.1/9.4 -- ResonantBump/Comb transfer-function UIState
-// =========================================================================
-
-// Independent cross-check of ResonantBump::UIState::TransferFunctionValue's
-// closed form: drive a unit-amplitude sinusoid at the SAME normalized
-// frequency through the real Process() path long enough to settle, and
-// confirm the measured steady-state gain matches the closed form's
-// predicted magnitude -- not merely self-consistent with it.
-TEST_CASE(resonant_bump_frequency_response_matches_simulated_steady_state_gain) {
-    dsp::ResonantBump bump;
-    const float freqNormalized = 0.05f;
-    bump.SetFreq(freqNormalized);
-    bump.SetHeight(4.0f);
-    bump.SetWidth(2.0f);
-
-    dsp::ResonantBump::UIState state;
-    bump.PopulateUIState(state);
-    const float predictedMagnitude = state.FrequencyResponse(freqNormalized);
-    REQUIRE_TRUE(std::isfinite(predictedMagnitude));
-
-    constexpr int kWarmupSamples = 4000;
-    constexpr int kMeasureSamples = 200;
-    float measuredPeak = 0.0f;
-    for (int i = 0; i < kWarmupSamples + kMeasureSamples; ++i) {
-        const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(i);
-        const float output = bump.Process(std::sin(phase));
-        if (i >= kWarmupSamples) {
-            measuredPeak = std::max(measuredPeak, std::fabs(output));
-        }
-    }
-    REQUIRE_NEAR(measuredPeak, predictedMagnitude, 0.05);
-}
 
 // The comb's linearised closed form at feedback=0 must be EXACTLY unity
 // (H(z) = 1/(1-0) = 1) at every frequency -- a clean, simulation-free sanity
@@ -7227,55 +5472,6 @@ TEST_CASE(self_oscillating_comb_response_is_finite_and_bounded) {
     }
 }
 
-// -----------------------------------------------------------------------
-// FilterFxChain::Process's own runtime sibling to the closed-form check
-// above: self-oscillating comb feedback (Comb::GetFeedback's own +-0.95
-// ceiling) together with scoop freq/width/depth AND scoopMix redrawn every
-// sample while the scoop feeds both branches (the current topology) -- the
-// shape of input the scoopNotch self-oscillation bug needed before Tier 2
-// recovery existed (FroggersAppCore.hpp's own restored-setters comment).
-// No recovery is exercised here (that is
-// finiteness_recovery_resets_only_the_poisoned_unit_and_audio_recovers's
-// job, FroggersAudioRoutingTests.cpp); this pins that the chain itself
-// never hands a non-finite sample downstream under this input in the
-// first place.
-// -----------------------------------------------------------------------
-TEST_CASE(filter_fx_chain_stays_finite_under_self_oscillating_comb_with_audio_rate_scoop_modulation) {
-    constexpr float sampleRate = 48000.0f;
-    dsp::FilterFxChain chain;
-    chain.Configure(sampleRate);
-    chain.comb.delaySamples = 1;
-    chain.comb.SetFeedback(dsp::Comb::GetFeedback(1.0f));  // +0.95, self-oscillating ceiling.
-    chain.comb.SetCutoffAlpha(0.999f);  // near-open lowpass, matches the closed-form case just above.
-    chain.pureDelay.delaySamples = 0.0f;
-    chain.peak.SetFreq(0.05f);
-    chain.peak.SetHeight(dsp::kMaxResonantBumpHeight);
-    chain.peak.SetWidth(1.0f);
-
-    std::uint32_t rngState = 0xC0FFEEu;
-    const auto nextUniform01 = [&rngState]() {
-        rngState ^= rngState << 13;
-        rngState ^= rngState >> 17;
-        rngState ^= rngState << 5;
-        return static_cast<float>(rngState % 1000000u) / 1000000.0f;
-    };
-
-    constexpr int kSamples = 20000;
-    for (int i = 0; i < kSamples; ++i) {
-        const float scoopFreq = dsp::ExpMapCompute(100.0f / sampleRate, 20000.0f / sampleRate, nextUniform01());
-        const float scoopWidth = dsp::ExpMapCompute(0.4f, 10.0f, nextUniform01());
-        const float scoopDepth = dsp::ExpMapCompute(1.0f, 0.05f, nextUniform01());
-        const float scoopMix = nextUniform01();  // redrawn every sample, including near 1.0.
-        chain.scoopNotch.SetFreq(scoopFreq);
-        chain.scoopNotch.SetWidth(scoopWidth);
-        chain.scoopNotch.SetHeight(scoopDepth);
-
-        const float phase = 2.0f * static_cast<float>(M_PI) * 0.05f * static_cast<float>(i);
-        const float input = std::sin(phase);
-        const float output = chain.Process(input, /*topology=*/0.0f, /*combPeakBlend=*/0.5f, scoopMix);
-        REQUIRE_TRUE(std::isfinite(output));
-    }
-}
 
 // =========================================================================
 // Drive/Delay slots 9-13. Each mapping's
@@ -9514,10 +7710,6 @@ TEST_CASE(stereo_delay_freeze_midpoint_differs_from_both_endpoints) {
     REQUIRE_TRUE(maxAbsDiffFrom1 > 1.0e-3f);  // differs from the dfrz==1 endpoint.
 }
 
-// =========================================================================
-// Ring Mod (Audio slots 9-11), PM rate (Audio slot 12),
-// VCO balance (Audio slot 13).
-// =========================================================================
 
 TEST_CASE(ring_mod_depth_scale_zero_off_gate_and_smoothstep_uses_own_floor) {
     // Ring Mod's OWN floor/ramp -- not PM's kPmLfoFloor/
@@ -9547,9 +7739,9 @@ TEST_CASE(ring_mod_at_default_zero_is_bit_identical_to_no_ring_mod_at_all) {
         dsp::Vco zero, floor;
         const auto reference = ReferenceOversampled(.4f,.3f,sr,256);
         for (int i=0; i<256; ++i) {
-            const float y=zero.Process(.4f,.3f,0,0,0,sr);
+            const float y=zero.Process(.4f,.3f,0,0,sr);
             REQUIRE_NEAR(y,reference[i],3e-5);
-            REQUIRE_TRUE(y == floor.Process(.4f,.3f,0,0,dsp::Vco::kRingModFloor,sr));
+            REQUIRE_TRUE(y == floor.Process(.4f,.3f,0,dsp::Vco::kRingModFloor,sr));
         }
     }
 }
@@ -9560,8 +7752,8 @@ TEST_CASE(ring_mod_above_floor_actually_modulates_and_stays_finite) {
     const float sr = 48000.0f;
     bool sawDifference = false;
     for (int i = 0; i < 64; ++i) {
-        const float a = withRingMod.Process(0.3f, 0.4f, 0.0f, 0.0f, /*ringModKnob=*/1.0f, sr);
-        const float b = withoutRingMod.Process(0.3f, 0.4f, 0.0f, 0.0f, /*ringModKnob=*/0.0f, sr);
+        const float a = withRingMod.Process(0.3f, 0.4f, 0.0f, /*ringModKnob=*/1.0f, sr);
+        const float b = withoutRingMod.Process(0.3f, 0.4f, 0.0f, /*ringModKnob=*/0.0f, sr);
         REQUIRE_TRUE(std::isfinite(a));  // Causal filtering can overshoot the dry-wave bound.
         if (std::fabs(a - b) > 1e-4f) {
             sawDifference = true;
@@ -9581,15 +7773,15 @@ TEST_CASE(ring_mod_carrier_is_internal_never_reads_another_vco) {
     dsp::Vco alone;
     std::vector<float> aloneSeq;
     for (int i = 0; i < 24; ++i) {
-        aloneSeq.push_back(alone.Process(0.5f, 0.5f, 0.0f, 0.0f, /*ringModKnob=*/0.8f, sr));
+        aloneSeq.push_back(alone.Process(0.5f, 0.5f, 0.0f, /*ringModKnob=*/0.8f, sr));
     }
 
     dsp::Vco interleavedA;
     dsp::Vco interleavedB;
     std::vector<float> interleavedSeq;
     for (int i = 0; i < 24; ++i) {
-        interleavedSeq.push_back(interleavedA.Process(0.5f, 0.5f, 0.0f, 0.0f, /*ringModKnob=*/0.8f, sr));
-        interleavedB.Process(0.2f, 0.9f, 0.0f, 0.0f, /*ringModKnob=*/0.05f, sr);  // different carrier entirely.
+        interleavedSeq.push_back(interleavedA.Process(0.5f, 0.5f, 0.0f, /*ringModKnob=*/0.8f, sr));
+        interleavedB.Process(0.2f, 0.9f, 0.0f, /*ringModKnob=*/0.05f, sr);  // different carrier entirely.
     }
 
     REQUIRE_TRUE(aloneSeq.size() == interleavedSeq.size());
@@ -9598,194 +7790,35 @@ TEST_CASE(ring_mod_carrier_is_internal_never_reads_another_vco) {
     }
 }
 
-TEST_CASE(pm_rate_default_knob_sits_at_the_floor_rate) {
-    // ExpMapCompute's min*(max/min)^value shape returns `min` exactly at
-    // value=0.0f, independent of `max` -- so the shared PM-rate knob's
-    // unset (0.0f) default always maps to dsp::Vco::kPmLfoMinHz, whatever
-    // that floor is currently set to.
-    const float sr = 48000.0f;
-    dsp::Vco vco;
-    vco.StepPmLfo(/*pmRateKnob01=*/0.0f, sr);
-    REQUIRE_NEAR(vco.pmLfoPhase, dsp::Vco::kPmLfoMinHz / sr, 1e-9);
-}
-
-// Pinned literal for the PM-rate knob's midpoint (knob=0.5) -- NOT derived
-// from dsp::Vco::kPmLfoMinHz/kPmLfoMaxHz, so a change to either constant
-// cannot move this value in lockstep with the production code that reads
-// them. Recompute by hand whenever an endpoint changes intentionally:
-//   sqrt(kPmLfoMinHz * kPmLfoMaxHz) = sqrt(2 * 20) = sqrt(40)
-//                                   = 6.324555320336759... Hz
-constexpr float kPmRateMidpointHz = 6.3245553f;
-
-TEST_CASE(pm_rate_knob_midpoint_hz_is_pinned_against_silent_drift) {
-    // Guards the ACTUAL VALUE: a change to either endpoint constant --
-    // accidental or intentional -- moves the knob's real midpoint rate
-    // away from kPmRateMidpointHz above. That literal does not read
-    // dsp::Vco::kPmLfoMinHz/kPmLfoMaxHz, so it cannot follow them: any
-    // endpoint change fails here and forces a human to consciously
-    // recompute and update the literal -- the only way to tell an
-    // intentional change from an accidental one.
-    const float sr = 48000.0f;
-    dsp::Vco vco;
-    vco.StepPmLfo(/*pmRateKnob01=*/0.5f, sr);
-    REQUIRE_NEAR(vco.pmLfoPhase, kPmRateMidpointHz / sr, 1e-6);
-}
-
-TEST_CASE(pm_rate_knob_midpoint_matches_sqrt_of_floor_times_ceiling) {
-    // Guards the SHAPE, not the value: ExpMapCompute is exponential, so
-    // its midpoint (knob=0.5) is the geometric mean of the endpoints, not
-    // their arithmetic mean (10.15 Hz today). Expressed symbolically in
-    // terms of the live constants, this holds for whatever
-    // dsp::Vco::kPmLfoMinHz/kPmLfoMaxHz currently are, so it would catch
-    // the map degrading to a linear interpolation -- but it CANNOT catch
-    // either endpoint drifting, since both sides read the same two
-    // constants and move together. That guarantee belongs to
-    // pm_rate_knob_midpoint_hz_is_pinned_against_silent_drift above, which
-    // asserts against a literal instead of re-deriving one.
-    const float sr = 48000.0f;
-    dsp::Vco vco;
-    vco.StepPmLfo(/*pmRateKnob01=*/0.5f, sr);
-    const float expectedMidPhase = std::sqrt(dsp::Vco::kPmLfoMinHz * dsp::Vco::kPmLfoMaxHz) / sr;
-    REQUIRE_NEAR(vco.pmLfoPhase, expectedMidPhase, 1e-6);
-}
-
-TEST_CASE(pm_rate_is_shared_across_vcos_and_decoupled_from_each_vcos_own_depth_knob) {
-    // PM rate's binding shape: ONE rate knob feeds all three VCOs'
-    // StepPmLfo calls; each VCO's own PM knob still controls only depth.
-    const float sr = 48000.0f;
-
-    // Same shared rate knob, different depth knobs -> identical LFO phase
-    // trajectories (rate is decoupled from depth).
-    dsp::Vco lowDepth;
-    dsp::Vco highDepth;
-    const float sharedRateKnob = 0.7f;
-    for (int i = 0; i < 32; ++i) {
-        lowDepth.Process(0.3f, 0.3f, /*pmKnob=*/0.0f, sharedRateKnob, /*ringModKnob=*/0.0f, sr);
-        highDepth.Process(0.3f, 0.3f, /*pmKnob=*/1.0f, sharedRateKnob, /*ringModKnob=*/0.0f, sr);
-        REQUIRE_NEAR(lowDepth.pmLfoPhase, highDepth.pmLfoPhase, 1e-7);
-    }
-
-    // Same depth knob, different rate knobs -> phases must diverge.
-    dsp::Vco rateA;
-    dsp::Vco rateB;
-    bool sawDivergence = false;
-    for (int i = 0; i < 32; ++i) {
-        rateA.Process(0.3f, 0.3f, /*pmKnob=*/1.0f, /*pmRateKnob=*/0.1f, /*ringModKnob=*/0.0f, sr);
-        rateB.Process(0.3f, 0.3f, /*pmKnob=*/1.0f, /*pmRateKnob=*/0.9f, /*ringModKnob=*/0.0f, sr);
-        if (std::fabs(rateA.pmLfoPhase - rateB.pmLfoPhase) > 1e-4f) {
-            sawDivergence = true;
-        }
-    }
-    REQUIRE_TRUE(sawDivergence);
-}
 
 // Below this rate, one LFO cycle takes long enough that it reads as a slow
 // drift rather than felt motion. kPmLfoMinHz must clear it with room to
 // spare, so the knob's bottom end is unambiguously on the audible side.
-constexpr float kAudibleLfoRateBoundHz = 0.1f;
 
 // Cycles actually travelled by one VCO's PM LFO over `samples` steps at a
 // fixed rate knob, measured from raw per-step phase deltas (each unwrapped
 // by +1 when it goes negative, i.e. when WrapPhase folds it) rather than by
 // re-deriving the answer from ExpMapCompute -- an independent check that
 // the instrument moved at all, not a restatement of the formula under test.
-float MeasurePmLfoCycles(dsp::Vco& vco, float pmRateKnob01, float sr, int samples) {
-    float prevPhase = vco.pmLfoPhase;
-    float cyclesTravelled = 0.0f;
-    for (int i = 0; i < samples; ++i) {
-        vco.StepPmLfo(pmRateKnob01, sr);
-        float delta = vco.pmLfoPhase - prevPhase;
-        if (delta < 0.0f) {
-            delta += 1.0f;
-        }
-        cyclesTravelled += delta;
-        prevPhase = vco.pmLfoPhase;
-    }
-    return cyclesTravelled;
-}
 
-TEST_CASE(pm_rate_floor_clears_the_audible_modulation_bound) {
-    REQUIRE_TRUE(dsp::Vco::kPmLfoMinHz > kAudibleLfoRateBoundHz);
-}
-
-TEST_CASE(pm_pitch_deviation_is_the_same_at_every_rate) {
-    // The phase offset is kPmLfoDepth x StepPmLfo's return, so its slope,
-    // kPmLfoDepth x delta(return) x sampleRate, is the pitch deviation in
-    // Hz -- the quantity the ear actually hears. It is the same at the
-    // floor, the middle and the top of the rate knob:
-    // 2 pi x kPmLfoDepth x kPmLfoMaxHz.
-    const float sr = 48000.0f;
-    const float expectedHz = 6.28318530717958647692f * dsp::Vco::kPmLfoDepth * dsp::Vco::kPmLfoMaxHz;
-    const float knobs[3] = {0.0f, 0.5f, 1.0f};
-    for (const float knob : knobs) {
-        dsp::Vco vco;
-        float previous = vco.StepPmLfo(knob, sr);
-        float peakDelta = 0.0f;
-        for (int i = 0; i < static_cast<int>(sr); ++i) {
-            const float current = vco.StepPmLfo(knob, sr);
-            peakDelta = std::max(peakDelta, std::fabs(current - previous));
-            previous = current;
-        }
-        const float deviationHz = peakDelta * dsp::Vco::kPmLfoDepth * sr;
-        std::cout << "  PM pitch deviation at rate knob " << knob << ": " << deviationHz << " Hz (expected "
-                  << expectedHz << ")\n";
-        REQUIRE_NEAR(deviationHz, expectedHz, expectedHz * 0.03);
-    }
-}
-
-TEST_CASE(pm_rate_floor_positive_control_lfo_moves_and_differs_from_ceiling) {
-    // A "the rate is nonzero" assertion is worthless if the LFO could not
-    // have moved. First prove the floor rate actually completes a cycle
-    // inside the window the audible bound above implies; then prove knob=0
-    // and knob=1 travel measurably different distances over a shared
-    // window. Both are real simulated movement, not trusted formula output,
-    // and both print the measured numbers alongside the pass/fail.
-    const float sr = 48000.0f;
-    const int boundWindowSamples = static_cast<int>(sr / kAudibleLfoRateBoundHz);
-
-    dsp::Vco floorVco;
-    const float floorCycles = MeasurePmLfoCycles(floorVco, /*pmRateKnob01=*/0.0f, sr, boundWindowSamples);
-    std::cout << "  PM rate floor positive control: " << floorCycles << " cycle(s) travelled in "
-              << (boundWindowSamples / sr) << "s at knob=0 (must clear 1.0 within "
-              << (1.0f / kAudibleLfoRateBoundHz) << "s)\n";
-    // Void, not a pass, if the floor rate never even completed one cycle.
-    REQUIRE_TRUE(floorCycles >= 1.0f);
-
-    const int oneSecond = static_cast<int>(sr);
-    dsp::Vco knob0;
-    dsp::Vco knob1;
-    const float cyclesAtKnob0 = MeasurePmLfoCycles(knob0, /*pmRateKnob01=*/0.0f, sr, oneSecond);
-    const float cyclesAtKnob1 = MeasurePmLfoCycles(knob1, /*pmRateKnob01=*/1.0f, sr, oneSecond);
-    std::cout << "  PM rate floor positive control: cycles/second at knob=0 -> " << cyclesAtKnob0
-              << ", knob=1 -> " << cyclesAtKnob1 << "\n";
-    // Measurably different, not just unequal -- a wide, unmistakable gap.
-    REQUIRE_TRUE(cyclesAtKnob1 - cyclesAtKnob0 > 1.0f);
-}
 
 // BINDING INVARIANT: the WEIGHTS themselves are asserted directly (not an
 // output-level proxy, which is "strictly weaker evidence"), swept across
 // the full [0,1] knob range at fine granularity.
 TEST_CASE(vco_balance_weights_sum_to_one_and_stay_within_bounds_across_full_sweep) {
-    for (int i = 0; i <= 200; ++i) {
-        const float knob = static_cast<float>(i) / 200.0f;
-        float w1 = 0.0f;
-        float w2 = 0.0f;
-        float w3 = 0.0f;
-        dsp::ComputeVcoBalanceWeights(knob, w1, w2, w3);
-        REQUIRE_NEAR(w1 + w2 + w3, 1.0f, 1e-6);
-        REQUIRE_TRUE(w1 >= 0.10f - 1e-6f && w1 <= 0.80f + 1e-6f);
-        REQUIRE_TRUE(w2 >= 0.10f - 1e-6f && w2 <= 0.80f + 1e-6f);
-        REQUIRE_TRUE(w3 >= 0.10f - 1e-6f && w3 <= 0.80f + 1e-6f);
+    for (int ix = 0; ix <= 200; ++ix) for (int iy = 0; iy <= 200; ++iy) {
+        float a,b,c; dsp::ComputeVcoBalanceWeights(ix / 200.0f, iy / 200.0f, a,b,c);
+        REQUIRE_NEAR(a+b+c, 1.0f, 2.4e-7f);
+        REQUIRE_TRUE(a >= 0 && a <= 1 && b >= 0 && b <= 1 && c >= 0 && c <= 1);
+        if (iy == 0) REQUIRE_TRUE(c == 0);
+        if (ix == 0) REQUIRE_TRUE(b == 0);
+        if (ix == 200) REQUIRE_TRUE(a == 0);
     }
-    // Default (centre, 0.5f) reproduces the exact equal-thirds mix
-    // MixOscVoices used to hardcode.
-    float w1 = 0.0f;
-    float w2 = 0.0f;
-    float w3 = 0.0f;
-    dsp::ComputeVcoBalanceWeights(0.5f, w1, w2, w3);
-    REQUIRE_NEAR(w1, 1.0f / 3.0f, 1e-6);
-    REQUIRE_NEAR(w2, 1.0f / 3.0f, 1e-6);
-    REQUIRE_NEAR(w3, 1.0f / 3.0f, 1e-6);
+    float a,b,c; dsp::ComputeVcoBalanceWeights(.5f,.5f,a,b,c);
+    REQUIRE_NEAR(a,1.0f/3,1e-6); REQUIRE_NEAR(b,1.0f/3,1e-6); REQUIRE_NEAR(c,1.0f/3,1e-6);
+    dsp::ComputeVcoBalanceWeights(0,0,a,b,c); REQUIRE_TRUE(a==1 && b==0 && c==0);
+    dsp::ComputeVcoBalanceWeights(1,0,a,b,c); REQUIRE_TRUE(a==0 && b==1 && c==0);
+    for(float x:{0.0f,1.0f}) {dsp::ComputeVcoBalanceWeights(x,1,a,b,c); REQUIRE_TRUE(a==0 && b==0 && c==1);}
 }
 
 TEST_CASE(mix_osc_voices_default_balance_knob_reproduces_original_equal_thirds_average) {
@@ -11397,10 +9430,6 @@ TEST_CASE(reverb_density_travel_raises_the_impulse_responses_echo_density) {
 // and its state grows across the window; the direct sum has no recurrence
 // to grow. Absolute values depend on the window length, as GoertzelPower's
 // own do; the ratios taken from them below do not.
-double TonePower(const std::vector<float>& samples, double freqHz, double sampleRateHz) {
-    const auto [re, im] = ComplexGoertzel(samples, freqHz, sampleRateHz);
-    return re * re + im * im;
-}
 
 // Harmonic distortion: power summed over harmonics 2..lastHarmonic against
 // the fundamental's own power, in dB. A silent output, or a meter reading a
@@ -11415,35 +9444,12 @@ double TonePower(const std::vector<float>& samples, double freqHz, double sample
 // 30 Hz). Parameterising HarmonicBandPower by the primitive instead would
 // put a second primitive under its eight existing call sites, whose
 // figures were all measured through the recurrence.
-double HarmonicDistortionDb(const std::vector<float>& samples, double fundamentalHz, double sampleRateHz,
-                            int lastHarmonic) {
-    double harmonics = 0.0;
-    for (int n = 2; n <= lastHarmonic; ++n) {
-        harmonics += TonePower(samples, fundamentalHz * static_cast<double>(n), sampleRateHz);
-    }
-    const double fundamental = TonePower(samples, fundamentalHz, sampleRateHz);
-    return 10.0 * std::log10(std::max(harmonics / std::max(fundamental, 1.0e-30), 1.0e-20));
-}
 
 // Intermodulation: power summed over the difference, sum and third-order
 // products of a two-tone pair against the two tones' own power, in dB. No
 // member of the product list belongs to either tone's harmonic series at
 // the pair used below, so harmonic distortion does not leak into this
 // reading.
-double IntermodulationDb(const std::vector<float>& samples, double f1Hz, double f2Hz, double sampleRateHz) {
-    const double products[] = {f2Hz - f1Hz,
-                               2.0 * f1Hz - f2Hz,
-                               2.0 * f2Hz - f1Hz,
-                               f1Hz + f2Hz,
-                               3.0 * f1Hz - 2.0 * f2Hz,
-                               3.0 * f2Hz - 2.0 * f1Hz};
-    double side = 0.0;
-    for (const double f : products) {
-        side += TonePower(samples, std::fabs(f), sampleRateHz);
-    }
-    const double tones = TonePower(samples, f1Hz, sampleRateHz) + TonePower(samples, f2Hz, sampleRateHz);
-    return 10.0 * std::log10(std::max(side / std::max(tones, 1.0e-30), 1.0e-20));
-}
 
 // How far and how fast a limiter's gain-reduction signal moves. Reduction
 // is -20log10(envelope), so 0 dB is no reduction at all. The per-sample
@@ -11454,348 +9460,7 @@ double IntermodulationDb(const std::vector<float>& samples, double f1Hz, double 
 // second. A limiter holding a constant reduction reads 0.00 dB of range
 // and 0.0 dB/s; an envelope that never leaves unity reads those and a mean
 // of 0.00 dB as well.
-struct GainMovement {
-    double meanDb;
-    double blockRangeDb;
-    double maxSlopeDbPerSec;
-};
 
-GainMovement MeasureGainMovement(const std::vector<float>& envelope, double sampleRateHz, int blockSamples) {
-    GainMovement m{0.0, 0.0, 0.0};
-    if (envelope.empty() || blockSamples <= 0) {
-        return m;
-    }
-    double total = 0.0;
-    std::vector<double> blockMeans;
-    double blockTotal = 0.0;
-    int inBlock = 0;
-    for (const float gain : envelope) {
-        const double db = -20.0 * std::log10(std::max(static_cast<double>(gain), 1.0e-12));
-        total += db;
-        blockTotal += db;
-        if (++inBlock == blockSamples) {
-            blockMeans.push_back(blockTotal / static_cast<double>(inBlock));
-            blockTotal = 0.0;
-            inBlock = 0;
-        }
-    }
-    m.meanDb = total / static_cast<double>(envelope.size());
-    if (blockMeans.empty()) {
-        return m;
-    }
-    double blockLow = blockMeans[0];
-    double blockHigh = blockMeans[0];
-    for (std::size_t i = 1; i < blockMeans.size(); ++i) {
-        blockLow = std::min(blockLow, blockMeans[i]);
-        blockHigh = std::max(blockHigh, blockMeans[i]);
-        const double slope =
-            (blockMeans[i] - blockMeans[i - 1]) * sampleRateHz / static_cast<double>(blockSamples);
-        m.maxSlopeDbPerSec = std::max(m.maxSlopeDbPerSec, std::fabs(slope));
-    }
-    m.blockRangeDb = blockHigh - blockLow;
-    return m;
-}
-
-// -----------------------------------------------------------------------
-// MEASUREMENT (read-only): what the peak branch's `1/height` trim buys and
-// costs at the output, against the same chain with that scalar cancelled.
-// Both laws keep the limiter in circuit, now bounding the blended
-// composite rather than the branch alone; the only difference is the
-// scalar, switched by ProcessFilterBankPeakVariant's `applyTrim`, whose
-// shipped-law setting
-// filter_fx_chain_limits_neither_branch_ahead_of_the_blend_on_a_pinned_comb
-// already pins sample for sample against dsp::FilterFxChain::Process.
-//
-// Cancelling the trim raises what the limiter has to remove. Three
-// readings say whether that extra duty shows up in the signal:
-// harmonic distortion at a single tone, intermodulation at a two-tone
-// pair, and the movement of the gain-reduction signal itself under a
-// carrier whose amplitude swings at a syllabic rate.
-//
-// GRID. Peak gain across its whole travel at both laws, at two operating
-// points: the registered defaults with only Peak gain moved, and the
-// corner where Comb feedback and Topology are also at maximum so a pinned
-// comb drives the peak. Every excitation sits at the bump's own centre,
-// which the registered Peak freq default puts at 100 Hz -- the frequency
-// where height acts.
-//
-// TAPS. Two, side by side: the composite that dsp::FilterFxChain::Process
-// returns, and the peak branch alone immediately before the blend. The
-// composite is what a listener gets, and what the limiter now runs on;
-// the branch is the node the trim alone acts on, and at the pinned-comb
-// corner it is the only tap where the peak's own distortion is not
-// sitting under the comb saturator's.
-//
-// SPREAD. Every cell is measured over three consecutive windows of the
-// same steady state. The chain is deterministic, so this is not run to run
-// noise -- it is how much the reading moves with window placement, which
-// is the noise a reader needs to tell a difference from a coincidence.
-//
-// NULL CELL. At Peak gain 0 the height is exactly 1.0, so the trim is a
-// multiply by exactly 1.0f and the two laws are bit-identical. Every
-// metric must read exactly equal there; a rig whose flag reached something
-// else would separate them.
-// -----------------------------------------------------------------------
-TEST_CASE(filter_bank_peak_trim_removal_distortion_intermodulation_and_limiter_pumping) {
-    constexpr float sampleRate = 48000.0f;
-    constexpr double sr = 48000.0;
-    constexpr double kToneHz = 100.0;       // the bump centre at the registered Peak freq default.
-    constexpr double kSecondToneHz = 130.0; // no product of the pair lands on a harmonic of either tone.
-    constexpr int kLastHarmonic = 20;
-    constexpr int kWarmupSamples = 24000;  // 0.5 s: 50 round trips of the 480-sample comb, 5 limiter releases.
-    constexpr int kWindowSamples = 4800;   // 10 Hz bins, so every tone and product above is bin aligned.
-    constexpr int kWindows = 3;
-    constexpr int kPumpWindowSamples = 12000;  // one period of the 4 Hz amplitude swing.
-    constexpr int kPumpBlockSamples = 480;     // one period of the 100 Hz carrier.
-    constexpr double kAmHz = 4.0;
-
-    // ---- Meter calibration, in this binary, against closed forms -------
-    std::vector<float> pureTone, tonePlusSecond, clippedTone, cleanPair, squaredPair;
-    for (int n = 0; n < kWindowSamples; ++n) {
-        const double theta = 2.0 * M_PI * kToneHz * static_cast<double>(n) / sr;
-        pureTone.push_back(static_cast<float>(std::sin(theta)));
-        tonePlusSecond.push_back(static_cast<float>(std::sin(theta) + 0.1 * std::sin(2.0 * theta)));
-        clippedTone.push_back(static_cast<float>(std::max(-0.5, std::min(0.5, std::sin(theta)))));
-        const double pair = 0.5 * std::sin(2.0 * M_PI * kToneHz * static_cast<double>(n) / sr) +
-                            0.5 * std::sin(2.0 * M_PI * kSecondToneHz * static_cast<double>(n) / sr);
-        cleanPair.push_back(static_cast<float>(pair));
-        squaredPair.push_back(static_cast<float>(pair + 0.1 * pair * pair));
-    }
-    const double thdPure = HarmonicDistortionDb(pureTone, kToneHz, sr, kLastHarmonic);
-    const double thdSecond = HarmonicDistortionDb(tonePlusSecond, kToneHz, sr, kLastHarmonic);
-    const double thdClipped = HarmonicDistortionDb(clippedTone, kToneHz, sr, kLastHarmonic);
-    const double imdClean = IntermodulationDb(cleanPair, kToneHz, kSecondToneHz, sr);
-    const double imdSquared = IntermodulationDb(squaredPair, kToneHz, kSecondToneHz, sr);
-    std::cout << "  [peak trim duty] meter calibration: harmonic distortion of a pure tone = " << thdPure
-              << " dB, of a tone carrying a tenth-amplitude second harmonic = " << thdSecond
-              << " dB (closed form -20.000), of a tone hard clipped at 0.5 = " << thdClipped
-              << " dB (closed form -12.66 over every harmonic)\n";
-    std::cout << "  [peak trim duty] meter calibration: intermodulation of a clean two-tone = " << imdClean
-              << " dB, of that pair through x + 0.1x^2 = " << imdSquared << " dB (closed form -26.021)\n";
-
-    // A tenth-amplitude second harmonic is 0.01 of the fundamental's power
-    // by construction. A sine hard clipped at 0.5 has mean square
-    // (2/pi)*(integral of sin^2 to pi/6 plus 0.25 across the flat) ==
-    // 0.195487 and a fundamental of 0.609000 in amplitude, so its harmonics
-    // carry 0.010047 against the fundamental's 0.185440 -- 0.054179, or
-    // -12.66 dB, over the whole series. This meter stops at the 20th, which
-    // can only read lower.
-    REQUIRE_NEAR(thdSecond, -20.0, 1.0e-4);
-    REQUIRE_TRUE(thdClipped > -13.2 && thdClipped < -12.2);
-    REQUIRE_TRUE(thdPure < thdClipped - 40.0);
-    // x + 0.1x^2 on two equal tones of amplitude 0.5 puts 0.1*0.25 at the
-    // difference and at the sum and nothing at the third-order products, so
-    // the product power is 2*(0.025^2) against the tones' 2*(0.5^2):
-    // 0.0025, or -26.021 dB.
-    REQUIRE_NEAR(imdSquared, -26.021, 0.01);
-    REQUIRE_TRUE(imdClean < imdSquared - 40.0);
-
-    // The gain-movement meter against a 4 Hz reduction curve of known
-    // amplitude. Averaging in 10 ms blocks attenuates a 4 Hz component by
-    // sin(pi*4*0.01)/(pi*4*0.01) == 0.99974, and a sinusoid's block-to-block
-    // slope at that spacing peaks at 2*3*sin(pi*4*0.01)/0.01 == 75.20 dB/s
-    // against the continuous 2*pi*4*3 == 75.40 dB/s.
-    std::vector<float> swingingGain, steadyGain;
-    for (int n = 0; n < 2 * kPumpWindowSamples; ++n) {
-        const double db = 5.0 + 3.0 * std::sin(2.0 * M_PI * kAmHz * static_cast<double>(n) / sr);
-        swingingGain.push_back(static_cast<float>(std::pow(10.0, -db / 20.0)));
-        steadyGain.push_back(static_cast<float>(std::pow(10.0, -5.0 / 20.0)));
-    }
-    const GainMovement swingingMove = MeasureGainMovement(swingingGain, sr, kPumpBlockSamples);
-    const GainMovement steadyMove = MeasureGainMovement(steadyGain, sr, kPumpBlockSamples);
-    std::cout << "  [peak trim duty] meter calibration: a 4 Hz +/-3 dB reduction curve reads mean "
-              << swingingMove.meanDb << " dB, range " << swingingMove.blockRangeDb << " dB (closed form 6.00), slope "
-              << swingingMove.maxSlopeDbPerSec << " dB/s (closed form 75.20); a constant 5 dB reduction reads mean "
-              << steadyMove.meanDb << " dB, range " << steadyMove.blockRangeDb << " dB, slope "
-              << steadyMove.maxSlopeDbPerSec << " dB/s\n";
-    REQUIRE_NEAR(swingingMove.meanDb, 5.0, 0.02);
-    REQUIRE_NEAR(swingingMove.blockRangeDb, 6.0, 0.05);
-    REQUIRE_NEAR(swingingMove.maxSlopeDbPerSec, 75.20, 1.0);
-    REQUIRE_TRUE(steadyMove.blockRangeDb == 0.0 && steadyMove.maxSlopeDbPerSec == 0.0);
-
-    // ---- The grid -----------------------------------------------------
-    struct Stat {
-        double mean;
-        double spread;
-    };
-    const auto summarize = [](const double* values, int count) {
-        double total = 0.0;
-        double low = values[0];
-        double high = values[0];
-        for (int i = 0; i < count; ++i) {
-            total += values[i];
-            low = std::min(low, values[i]);
-            high = std::max(high, values[i]);
-        }
-        return Stat{total / static_cast<double>(count), high - low};
-    };
-
-    // Drives one chain with `inputFn` and returns the branch tap, the
-    // composite tap and `outputLimiter`'s own envelope, all three per sample,
-    // for the samples after the warmup.
-    const auto collect = [&](const FilterBankKnobs& k, bool applyTrim, int measureSamples, auto inputFn,
-                             std::vector<float>& branch, std::vector<float>& composite,
-                             std::vector<float>& envelope) {
-        dsp::FilterFxChain chain;
-        chain.Configure(sampleRate);
-        branch.clear();
-        composite.clear();
-        envelope.clear();
-        branch.reserve(static_cast<std::size_t>(measureSamples));
-        composite.reserve(static_cast<std::size_t>(measureSamples));
-        envelope.reserve(static_cast<std::size_t>(measureSamples));
-        for (int n = 0; n < kWarmupSamples + measureSamples; ++n) {
-            const PeakBranchTap tap = ProcessFilterBankPeakVariant(chain, k, sampleRate, inputFn(n), applyTrim);
-            REQUIRE_TRUE(std::isfinite(tap.composite) && std::isfinite(tap.peakBranch));
-            if (n >= kWarmupSamples) {
-                branch.push_back(tap.peakBranch);
-                composite.push_back(tap.composite);
-                envelope.push_back(chain.outputLimiter.envelope);
-            }
-        }
-    };
-
-    struct Cell {
-        Stat thdBranch, thdComposite, imdBranch, imdComposite;
-        Stat pumpMean, pumpRange, pumpSlope;
-        double fundamentalPower;
-        double staticReductionDb;
-    };
-
-    const auto runCell = [&](const FilterBankKnobs& base, float peakGain, bool applyTrim) {
-        FilterBankKnobs k = base;
-        k.peakGain = peakGain;
-
-        std::vector<float> branch, composite, envelope;
-        double thdB[kWindows], thdC[kWindows], imdB[kWindows], imdC[kWindows];
-        double pumpMean[kWindows], pumpRange[kWindows], pumpSlope[kWindows];
-
-        collect(k, applyTrim, kWindows * kWindowSamples,
-                [&](int n) {
-                    return static_cast<float>(std::sin(2.0 * M_PI * kToneHz * static_cast<double>(n) / sr));
-                },
-                branch, composite, envelope);
-        double fundamentalPower = 0.0;
-        double staticReductionDb = 0.0;
-        for (int w = 0; w < kWindows; ++w) {
-            const auto first = static_cast<std::size_t>(w * kWindowSamples);
-            const std::vector<float> b(branch.begin() + static_cast<long>(first),
-                                       branch.begin() + static_cast<long>(first + kWindowSamples));
-            const std::vector<float> c(composite.begin() + static_cast<long>(first),
-                                       composite.begin() + static_cast<long>(first + kWindowSamples));
-            thdB[w] = HarmonicDistortionDb(b, kToneHz, sr, kLastHarmonic);
-            thdC[w] = HarmonicDistortionDb(c, kToneHz, sr, kLastHarmonic);
-            fundamentalPower = std::max(fundamentalPower, TonePower(c, kToneHz, sr));
-        }
-        staticReductionDb = MeasureGainMovement(envelope, sr, kPumpBlockSamples).meanDb;
-
-        collect(k, applyTrim, kWindows * kWindowSamples,
-                [&](int n) {
-                    const double t = static_cast<double>(n) / sr;
-                    return static_cast<float>(0.5 * std::sin(2.0 * M_PI * kToneHz * t) +
-                                              0.5 * std::sin(2.0 * M_PI * kSecondToneHz * t));
-                },
-                branch, composite, envelope);
-        for (int w = 0; w < kWindows; ++w) {
-            const auto first = static_cast<std::size_t>(w * kWindowSamples);
-            const std::vector<float> b(branch.begin() + static_cast<long>(first),
-                                       branch.begin() + static_cast<long>(first + kWindowSamples));
-            const std::vector<float> c(composite.begin() + static_cast<long>(first),
-                                       composite.begin() + static_cast<long>(first + kWindowSamples));
-            imdB[w] = IntermodulationDb(b, kToneHz, kSecondToneHz, sr);
-            imdC[w] = IntermodulationDb(c, kToneHz, kSecondToneHz, sr);
-        }
-
-        collect(k, applyTrim, kWindows * kPumpWindowSamples,
-                [&](int n) {
-                    const double t = static_cast<double>(n) / sr;
-                    const double amplitude = 0.55 + 0.45 * std::sin(2.0 * M_PI * kAmHz * t);
-                    return static_cast<float>(amplitude * std::sin(2.0 * M_PI * kToneHz * t));
-                },
-                branch, composite, envelope);
-        for (int w = 0; w < kWindows; ++w) {
-            const auto first = static_cast<std::size_t>(w * kPumpWindowSamples);
-            const std::vector<float> e(envelope.begin() + static_cast<long>(first),
-                                       envelope.begin() + static_cast<long>(first + kPumpWindowSamples));
-            const GainMovement move = MeasureGainMovement(e, sr, kPumpBlockSamples);
-            pumpMean[w] = move.meanDb;
-            pumpRange[w] = move.blockRangeDb;
-            pumpSlope[w] = move.maxSlopeDbPerSec;
-        }
-
-        return Cell{summarize(thdB, kWindows),     summarize(thdC, kWindows),     summarize(imdB, kWindows),
-                    summarize(imdC, kWindows),     summarize(pumpMean, kWindows), summarize(pumpRange, kWindows),
-                    summarize(pumpSlope, kWindows), fundamentalPower,             staticReductionDb};
-    };
-
-    FilterBankKnobs defaults;  // every field at its FroggersBankLayouts() registered default.
-    FilterBankKnobs corner = defaults;
-    corner.combFeedback = 1.0f;  // GetFeedback returns +0.95, the largest magnitude this port produces.
-    corner.topology = 1.0f;      // the peak's input is the comb branch alone.
-
-    struct OperatingPoint {
-        const char* label;
-        const FilterBankKnobs* knobs;
-    };
-    const OperatingPoint points[] = {{"registered defaults, only Peak gain moved", &defaults},
-                                     {"Comb feedback and Topology at maximum    ", &corner}};
-    const float peakGainGrid[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
-    constexpr int kGridSize = 5;
-
-    std::cout << "  [peak trim duty] tone " << kToneHz << " Hz at full scale; pair " << kToneHz << " + "
-              << kSecondToneHz << " Hz at half scale each; carrier " << kToneHz << " Hz swinging at " << kAmHz
-              << " Hz between 0.1 and 1.0; " << kWarmupSamples << " warmup + " << kWindows << " windows/cell\n";
-
-    for (const OperatingPoint& point : points) {
-        std::cout << "  [peak trim duty] " << point.label << ":\n";
-        for (int g = 0; g < kGridSize; ++g) {
-            const Cell trimmed = runCell(*point.knobs, peakGainGrid[g], /*applyTrim=*/true);
-            const Cell cancelled = runCell(*point.knobs, peakGainGrid[g], /*applyTrim=*/false);
-            std::cout << "  [peak trim duty]   Peak gain=" << peakGainGrid[g] << "\n";
-            std::cout << "  [peak trim duty]     harmonic  branch trim=" << trimmed.thdBranch.mean << " (+/-"
-                      << trimmed.thdBranch.spread << ")  cancelled=" << cancelled.thdBranch.mean << " (+/-"
-                      << cancelled.thdBranch.spread << ")   composite trim=" << trimmed.thdComposite.mean << " (+/-"
-                      << trimmed.thdComposite.spread << ")  cancelled=" << cancelled.thdComposite.mean << " (+/-"
-                      << cancelled.thdComposite.spread << ")  dB\n";
-            std::cout << "  [peak trim duty]     intermod  branch trim=" << trimmed.imdBranch.mean << " (+/-"
-                      << trimmed.imdBranch.spread << ")  cancelled=" << cancelled.imdBranch.mean << " (+/-"
-                      << cancelled.imdBranch.spread << ")   composite trim=" << trimmed.imdComposite.mean << " (+/-"
-                      << trimmed.imdComposite.spread << ")  cancelled=" << cancelled.imdComposite.mean << " (+/-"
-                      << cancelled.imdComposite.spread << ")  dB\n";
-            std::cout << "  [peak trim duty]     reduction trim mean=" << trimmed.pumpMean.mean
-                      << " range=" << trimmed.pumpRange.mean << " (+/-" << trimmed.pumpRange.spread
-                      << ") slope=" << trimmed.pumpSlope.mean << " dB/s   cancelled mean=" << cancelled.pumpMean.mean
-                      << " range=" << cancelled.pumpRange.mean << " (+/-" << cancelled.pumpRange.spread
-                      << ") slope=" << cancelled.pumpSlope.mean << " dB/s\n";
-            std::cout << "  [peak trim duty]     liveness: steady-tone reduction trim=" << trimmed.staticReductionDb
-                      << " dB cancelled=" << cancelled.staticReductionDb
-                      << " dB; composite fundamental power trim=" << trimmed.fundamentalPower
-                      << " cancelled=" << cancelled.fundamentalPower << "\n";
-
-            if (peakGainGrid[g] == 0.0f) {
-                // Height is exactly 1.0 here, so the trim is a multiply by
-                // exactly 1.0f and the two laws run the same samples.
-                REQUIRE_TRUE(trimmed.thdBranch.mean == cancelled.thdBranch.mean);
-                REQUIRE_TRUE(trimmed.thdComposite.mean == cancelled.thdComposite.mean);
-                REQUIRE_TRUE(trimmed.imdBranch.mean == cancelled.imdBranch.mean);
-                REQUIRE_TRUE(trimmed.imdComposite.mean == cancelled.imdComposite.mean);
-                REQUIRE_TRUE(trimmed.pumpMean.mean == cancelled.pumpMean.mean);
-                REQUIRE_TRUE(trimmed.pumpRange.mean == cancelled.pumpRange.mean);
-                REQUIRE_TRUE(trimmed.fundamentalPower == cancelled.fundamentalPower);
-            }
-            if (peakGainGrid[g] == 1.0f) {
-                // The steady-tone duty the two laws ask of the limiter is
-                // 2.4 dB against 11.5 dB at the registered-defaults
-                // operating point, and 2.7 dB against 11.7 dB at the
-                // Comb-feedback/Topology corner; this bound sits comfortably
-                // below both gaps, so a rig whose flag reached the limiter
-                // at all clears it and one whose flag reached nothing
-                // cannot.
-                REQUIRE_TRUE(cancelled.staticReductionDb - trimmed.staticReductionDb > 4.75);
-            }
-        }
-    }
-}
 
 // Measures the actual read lag StereoDelay::Process produces for the right
 // channel by feeding a single impulse and locating where it reappears in the
@@ -12476,6 +10141,202 @@ TEST_CASE(fuego_first_bit_boundary_amplifies_an_adjacent_float_as_the_model_pred
 }
 
 }  // namespace
+
+void ConfigureResonantFilterFixture(dsp::FilterFxChain& chain, float sampleRate = 48000.0f) {
+    chain.Configure(sampleRate);
+    chain.mainInput = {0.0f, 100.0f / sampleRate, 5.5f, -1.0f};
+    chain.peakInput = {0.0f, 100.0f / sampleRate, 5.5f, 0.0f};
+    chain.peakMorph = 0.0f;
+    chain.pureDelay.SetDelaySeconds(0.001f, sampleRate);
+    chain.comb.delaySamples = sampleRate / 100.0f;
+    chain.comb.SetFeedback(0.95f);
+    chain.comb.SetCutoffAlpha(1.0f);
+    chain.comb.SetDrive(0.25f);
+}
+
+TEST_CASE(filter_fx_chain_limits_the_blended_output_so_a_resonant_comb_is_limited) {
+    dsp::FilterFxChain shipped, unlimited;
+    ConfigureResonantFilterFixture(shipped);
+    ConfigureResonantFilterFixture(unlimited);
+    unlimited.outputLimiter.Configure(48000.0f, 100.0f, 101.0f, 5.0e-6f, 0.1f);
+    dsp::OutputLimiter reference;
+    reference.Configure(48000.0f, dsp::kFilterOutputLimiterThreshold, dsp::kFilterOutputLimiterCeiling,
+        dsp::kFilterOutputLimiterAttackSeconds, dsp::kFilterOutputLimiterReleaseSeconds);
+    float rawPeak = 0.0f, outputPeak = 0.0f;
+    for (int n = 0; n < 144000; ++n) {
+        const float input = 0.2f * std::sin(2.0f * static_cast<float>(M_PI) * 100.0f * n / 48000.0f);
+        const float raw = unlimited.Process(input), actual = shipped.Process(input);
+        REQUIRE_TRUE(actual == reference.Process(raw));
+        rawPeak = std::max(rawPeak, std::fabs(raw));
+        outputPeak = std::max(outputPeak, std::fabs(actual));
+    }
+    REQUIRE_TRUE(rawPeak > 1.0f);
+    REQUIRE_TRUE(outputPeak < 1.0f);
+    REQUIRE_TRUE(shipped.outputLimiter.envelope < 1.0f);
+}
+
+TEST_CASE(filter_fx_chain_limits_neither_branch_ahead_of_the_blend_on_a_pinned_comb) {
+    // Independent sequencing control using the same DSP classes. It must
+    // distinguish an inserted limiter at EACH stage, not an any-stage OR.
+    for (int inserted = 0; inserted < 3; ++inserted) {
+        dsp::FilterFxChain shipped, replica, mutated;
+        ConfigureResonantFilterFixture(shipped);
+        ConfigureResonantFilterFixture(replica);
+        ConfigureResonantFilterFixture(mutated);
+        dsp::OutputLimiter extra;
+        extra.Configure(48000.0f, dsp::kFilterOutputLimiterThreshold, dsp::kFilterOutputLimiterCeiling,
+            dsp::kFilterOutputLimiterAttackSeconds, dsp::kFilterOutputLimiterReleaseSeconds);
+        const auto referenceStep = [](dsp::FilterFxChain& chain, float input, dsp::OutputLimiter* limiter, int stage) {
+            chain.mainInput.value = input;
+            float main = dsp::LinearFilterMix(input, chain.mainFilter.Process(chain.mainInput), chain.mainMix);
+            if (limiter && stage == 0) main = limiter->Process(main);
+            float comb = chain.comb.Process(chain.pureDelay.Process(main));
+            if (limiter && stage == 1) comb = limiter->Process(comb);
+            chain.peakInput.value = comb;
+            chain.peakFilter.Process(chain.peakInput);
+            float peak = dsp::LinearFilterMix(comb, dsp::CombinePeakNotch(chain.peakFilter, chain.peakMorph), chain.peakMix);
+            if (limiter && stage == 2) peak = limiter->Process(peak);
+            return chain.outputLimiter.Process(peak);
+        };
+        float mutationDifference = 0.0f;
+        float peaks[3]{};
+        for (int n = 0; n < 144000; ++n) {
+            const float input = 0.2f * std::sin(2.0f * static_cast<float>(M_PI) * 100.0f * n / 48000.0f);
+            const float actual = shipped.Process(input);
+            REQUIRE_TRUE(actual == referenceStep(replica, input, nullptr, inserted));
+            mutationDifference = std::max(mutationDifference,
+                std::fabs(actual - referenceStep(mutated, input, &extra, inserted)));
+            peaks[0] = std::max(peaks[0], std::fabs(shipped.outputs.main));
+            peaks[1] = std::max(peaks[1], std::fabs(shipped.outputs.comb));
+            peaks[2] = std::max(peaks[2], std::fabs(shipped.outputs.peak));
+        }
+        std::cout << "  stage " << inserted << " peak " << peaks[inserted]
+                  << " inserted-limiter delta " << mutationDifference << "\n";
+        REQUIRE_TRUE(peaks[inserted] > dsp::kFilterOutputLimiterThreshold);
+        REQUIRE_TRUE(mutationDifference > 0.0f);
+    }
+}
+
+TEST_CASE(pm_fixed_rate_preserves_default_rate_golden_samples) {
+    for (int row = 0; row < 7; ++row) {
+        dsp::Vco voice;
+        const auto& k = pm_golden::settings[row];
+        for (int n = 0; n < 256; ++n) {
+            const float actual = voice.Process(k[0], k[1], k[2], 0.0f, 48000.0f);
+            REQUIRE_TRUE(std::bit_cast<std::uint32_t>(actual) == pm_golden::samples[row][n]);
+        }
+    }
+}
+
+TEST_CASE(pm_fixed_rate_period_matches_two_hz_at_supported_test_rates) {
+    // Measured first-cycle error on these float accumulators is at most
+    // 1.335 ms. The 2 ms period tolerance also rejects a stopped LFO.
+    for (float rate : {176400.0f,192000.0f,384000.0f,768000.0f}) {
+        dsp::Vco voice; int firstWrap = 0;
+        for (int n = 1; n <= static_cast<int>(rate); ++n) {
+            const float before = voice.pmLfoPhase;
+            voice.StepPmLfo(rate);
+            if (voice.pmLfoPhase < before) {firstWrap = n; break;}
+        }
+        REQUIRE_TRUE(firstWrap > 0);
+        REQUIRE_NEAR(firstWrap / rate, 0.5f, 0.002f);
+    }
+}
+
+TEST_CASE(filter_linear_mix_has_exact_endpoints_and_linear_middle) {
+    for (float dry : {-0.8f,0.1f,0.7f}) for (float wet : {-0.6f,0.3f,0.9f}) {
+        REQUIRE_TRUE(dsp::LinearFilterMix(dry,wet,0) == dry);
+        REQUIRE_TRUE(dsp::LinearFilterMix(dry,wet,1) == wet);
+        REQUIRE_TRUE(dsp::LinearFilterMix(dry,wet,.5f) == dry+.5f*(wet-dry));
+    }
+    const auto gains=dsp::EqualPowerWetDry(.5f,0.0f);
+    REQUIRE_TRUE(dsp::LinearFilterMix(.2f,.7f,.5f) != .2f*gains.dry+.7f*gains.wet);
+}
+
+TEST_CASE(filter_peak_notch_visualizer_matches_measured_response) {
+    // An eight-frequency measurement found worst absolute gain error
+    // 0.000509 across these settings; pin 0.001 before comparing.
+    for (float q : {.5f,1.66f,5.5f}) for (float morph : {0.f,.5f,1.f}) {
+        for (float hz : {40.f,100.f,261.6f,1000.f,2093.f,4000.f,8000.f,16000.f}) {
+            dsp::RecoverableSvf filter; dsp::PeakNotchUiState ui;
+            ui.cutoff=1000.f/192000;ui.resonance=q;ui.morph=morph;
+            double inputEnergy=0,outputEnergy=0;
+            for (int n=0;n<288000;++n) {
+                const float x=.01f*std::sin(2.0*3.141592653589793*hz*n/192000);
+                filter.Process({x,1000.f/192000,q,0});
+                const float y=dsp::CombinePeakNotch(filter,morph);
+                if(n>=96000){inputEnergy+=double(x)*x;outputEnergy+=double(y)*y;}
+            }
+            REQUIRE_NEAR(std::sqrt(outputEnergy/inputEnergy),ui.FrequencyResponse(hz/192000),.001);
+        }
+    }
+    dsp::PeakNotchUiState peak,notch;
+    peak.cutoff=notch.cutoff=1000.f/192000;peak.resonance=notch.resonance=1.66f;
+    peak.morph=0;notch.morph=1;
+    REQUIRE_TRUE(peak.FrequencyResponse(1000.f/192000)>1);
+    REQUIRE_TRUE(notch.FrequencyResponse(1000.f/192000)<.001f);
+    notch.morph=.5f;
+    REQUIRE_TRUE(notch.FrequencyResponse(8000.f/192000)>.7f);
+}
+
+TEST_CASE(comb_notch_matches_reciprocal_bound_with_live_feedback_controls) {
+    for(float feedback:{0.f,.95f,-.95f}) {
+        dsp::Comb comb;comb.delaySamples=100;comb.SetFeedback(feedback);comb.SetDrive(1);comb.SetCutoffAlpha(1);
+        const float hz=feedback<0?480.f:240.f;
+        double xx=0,yy=0;
+        for(int n=0;n<96000;++n){float x=1e-4f*std::sin(2.0*3.141592653589793*hz*n/48000);float y=comb.Process(x);if(n>=48000){xx+=double(x)*x;yy+=double(y)*y;}}
+        double gain=std::sqrt(yy/xx);
+        REQUIRE_NEAR(gain,1.0/(1+std::fabs(feedback)),.001);
+        REQUIRE_TRUE(gain>.5);
+        if(feedback==0) REQUIRE_NEAR(gain,1.0,1e-6); else REQUIRE_TRUE(gain<.6);
+    }
+}
+
+TEST_CASE(filter_resonance_cost_is_pinned_at_centre_and_three_octaves_away) {
+    // M3 measured a 20.8277 dB centre increase, with only 0.2691/0.2662 dB
+    // travel three octaves away, for LP and the peak endpoint at 192 kHz.
+    for(int stage=0;stage<2;++stage){
+        double centreFirst=0,centreLast=0,lastCentre=-1000;
+        double farFirst[2]{},farLast[2]{};
+        for(int step=0;step<=10;++step){
+            const float q=dsp::ExpMapCompute(.5f,5.5f,step/10.f);
+            int index=0;
+            for(float hz:{125.f,1000.f,8000.f}){
+                dsp::RecoverableSvf filter;double xx=0,yy=0,scaledEnergy=0;
+                for(int n=0;n<288000;++n){
+                    const float x=.01f*std::sin(2.0*3.141592653589793*hz*n/192000);
+                    const float lp=filter.Process({x,1000.f/192000,q,-1});
+                    const float y=stage?dsp::CombinePeakNotch(filter,0):lp;
+                    if(n>=96000){xx+=double(x)*x;yy+=double(y)*y;const float scaled=.5f*y;scaledEnergy+=double(scaled)*scaled;}
+                }
+                const double db=10*std::log10(yy/xx);
+                REQUIRE_TRUE(std::isfinite(db));
+                REQUIRE_NEAR(10*std::log10(scaledEnergy/yy),-6.020599913,.00001);
+                if(index==1){
+                    REQUIRE_TRUE(db>lastCentre);lastCentre=db;
+                    if(step==0)centreFirst=db;if(step==10)centreLast=db;
+                }else{
+                    const int far=index==0?0:1;
+                    if(step==0)farFirst[far]=db;if(step==10)farLast[far]=db;
+                }
+                ++index;
+            }
+        }
+        REQUIRE_TRUE(centreLast-centreFirst>20.8 && centreLast-centreFirst<20.9);
+        for(int i=0;i<2;++i)REQUIRE_TRUE(std::fabs(farLast[i]-farFirst[i])<.3);
+    }
+}
+
+TEST_CASE(filter_recovery_ceiling_retains_measured_state_margin) {
+    dsp::FilterFxChain chain;ConfigureResonantFilterFixture(chain,192000);
+    for(int n=0;n<384000;++n)
+        chain.Process(std::sin(2.0*3.141592653589793*100*n/192000));
+    const auto& m=chain.metrics;
+    const float largest=std::max({m.mainState,m.combState,m.peakState});
+    REQUIRE_TRUE(m.samples==384000 && m.nonfiniteSamples==0);
+    REQUIRE_TRUE(largest>50 && largest<60);
+    REQUIRE_TRUE(dsp::kMaxUnitStateMagnitude>10*largest);
+}
 
 int main() {
     int failed = 0;

@@ -38,12 +38,14 @@
 #endif
 
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -691,6 +693,129 @@ TEST_CASE(configure_processing_timing_is_wired_at_96khz_prepare) {
         synth::ConvertOnePoleAlpha(synth::kDefaultUiDisplaySpreadAlpha, 48000.0, 96000.0), 1e-6f);
     REQUIRE_NEAR(rig.Application().EngineSampleRate(), 384000.0, 1e-3f);
     REQUIRE_NEAR(rig.Application().MatrixSampleRate(), 96000.0, 1e-3f);
+}
+
+// spm-97: retiring fixed-point Computes changes nothing audible. Three apps share
+// a launch salt, which seeds the lanes, source 6 and (through NoiseSeed()) the
+// noise source; A retires, B and C
+// run every Compute(), so B against C shows the sequence is reproducible and A
+// against B shows retirement is not audible. Every output sample and every
+// top-level parameter's cached knob value agree bit for bit after every block.
+TEST_CASE(froggers_compute_retirement_matches_full_compute) {
+    using FroggersRig = synth_rig::SynthRig<synth_froggers::FroggersApp>;
+    const FroggersRig::AudioSettings audio{.sampleRate = 48000.0, .blockSize = 256};
+    constexpr std::size_t kBlockFrames = 256;
+    struct LaunchSaltGuard {
+        ~LaunchSaltGuard() { synth_froggers::FroggersModulationSlate::SetLaunchSaltForTests(std::nullopt); }
+    } saltGuard;
+    synth_froggers::FroggersModulationSlate::SetLaunchSaltForTests(0x5EED);
+    FroggersRig a(64, UseScratchRuntimeDataPaths("retirement_a"), audio);
+    FroggersRig b(64, UseScratchRuntimeDataPaths("retirement_b"), audio);
+    FroggersRig c(64, UseScratchRuntimeDataPaths("retirement_c"), audio);
+    synth_froggers::FroggersModulationSlate::SetLaunchSaltForTests(std::nullopt);
+    b.Application().Parameters().Group().SetRetireFixedPointComputesForTests(false);
+    c.Application().Parameters().Group().SetRetireFixedPointComputesForTests(false);
+
+    std::array<FroggersRig*, 3> rigs{&a, &b, &c};
+    std::array<synth::ParameterProcessingObserver, 3> observers{};
+    for (std::size_t ix = 0; ix < rigs.size(); ++ix) {
+        rigs[ix]->Application().Parameters().Group().SetProcessingObserverForTests(&observers[ix]);
+    }
+    const auto forEachRig = [&](auto&& fn) {
+        for (FroggersRig* rig : rigs) {
+            fn(*rig);
+        }
+    };
+
+    std::size_t blockIx = 0;
+    const auto requireSame = [&](FroggersRig& x, FroggersRig& y, const char* pair) {
+        const auto& outputX = x.Output();
+        const auto& outputY = y.Output();
+        REQUIRE_TRUE(outputX.size() == outputY.size());
+        REQUIRE_TRUE(outputX.size() >= kBlockFrames);
+        for (std::size_t frame = outputX.size() - kBlockFrames; frame < outputX.size(); ++frame) {
+            REQUIRE_TRUE(outputX[frame].channels.size() == outputY[frame].channels.size());
+            for (std::size_t channel = 0; channel < outputX[frame].channels.size(); ++channel) {
+                if (std::bit_cast<std::uint32_t>(outputX[frame].channels[channel]) !=
+                    std::bit_cast<std::uint32_t>(outputY[frame].channels[channel])) {
+                    std::cerr << pair << ": output differs at block " << blockIx << ", frame " << frame
+                              << ", channel " << channel << "\n";
+                    REQUIRE_TRUE(false);
+                }
+            }
+        }
+        const auto parametersX = x.Application().Parameters().Group().TopLevelParameters();
+        const auto parametersY = y.Application().Parameters().Group().TopLevelParameters();
+        REQUIRE_TRUE(parametersX.size() == parametersY.size());
+        for (std::size_t ix = 0; ix < parametersX.size(); ++ix) {
+            if (std::bit_cast<std::uint32_t>(parametersX[ix]->CachedKnobValue(0)) !=
+                std::bit_cast<std::uint32_t>(parametersY[ix]->CachedKnobValue(0))) {
+                std::cerr << pair << ": cached knob differs at block " << blockIx << ", parameter " << ix << "\n";
+                REQUIRE_TRUE(false);
+            }
+        }
+    };
+    const auto runBlocks = [&](std::size_t count) {
+        for (std::size_t n = 0; n < count; ++n) {
+            forEachRig([](FroggersRig& rig) { rig.RunBlocks(1); });
+            ++blockIx;
+            requireSame(a, b, "A vs B");
+            requireSame(b, c, "B vs C");
+        }
+    };
+    const auto dispatch = [&](const synth::ui::Action& action) {
+        forEachRig([&](FroggersRig& rig) { rig.Application().PortableSurface().DispatchAction(action); });
+    };
+
+    forEachRig([](FroggersRig& rig) { rig.StartAt(0); });
+    runBlocks(16);  // settle
+    for (int press = 0; press < 6; ++press) {
+        dispatch(synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
+        runBlocks(40);
+    }
+    dispatch(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kEncoderDrag,
+                                          synth_froggers::FormatFroggersEncoderDrag(0, 0.1f)));
+    runBlocks(40);
+    for (int step = 1; step <= 40; ++step) {  // a scene blend sweep over 40 blocks
+        const float blend = static_cast<float>(step) / 40.0f;
+        forEachRig([&](FroggersRig& rig) { rig.SetSceneBlend(blend); });
+        runBlocks(1);
+    }
+    dispatch(synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
+    runBlocks(40);
+    dispatch(synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
+
+    const std::array<synth::ParameterProcessingObserver, 3> beforeIdle = observers;
+    runBlocks(40);  // idle
+    const auto idleWindow = [&](std::size_t ix) {
+        return observers[ix].localRecursiveComputeCalls - beforeIdle[ix].localRecursiveComputeCalls;
+    };
+    const auto idleTopLevelComputes = [&](std::size_t ix) {
+        return observers[ix].topLevelComputeCalls - beforeIdle[ix].topLevelComputeCalls;
+    };
+
+    // Positive control: A retired most of its compute visits, so agreement
+    // means the retired path ran.
+    if (!(observers[0].topLevelRetiredComputes * 2 > observers[0].topLevelProcessLiteCalls)) {
+        std::cerr << "A retired " << observers[0].topLevelRetiredComputes << " of "
+                  << observers[0].topLevelProcessLiteCalls << " compute visits\n";
+    }
+    REQUIRE_TRUE(observers[0].topLevelRetiredComputes * 2 > observers[0].topLevelProcessLiteCalls);
+    // Over the idle blocks B still computes its depth children, and A almost never does.
+    if (!(idleWindow(1) > 0 && idleWindow(0) * 10 <= idleWindow(1))) {
+        std::cerr << "idle window localRecursiveComputeCalls: A " << idleWindow(0) << ", B " << idleWindow(1)
+                  << ", C " << idleWindow(2) << "\n";
+    }
+    REQUIRE_TRUE(idleWindow(1) > 0);
+    REQUIRE_TRUE(idleWindow(0) * 10 <= idleWindow(1));
+    // Retired means not computed at the top level either, including parameters
+    // with no depth children, which localRecursiveComputeCalls cannot see.
+    if (!(idleTopLevelComputes(1) > 0 && idleTopLevelComputes(0) == 0)) {
+        std::cerr << "idle window topLevelComputeCalls: A " << idleTopLevelComputes(0) << ", B "
+                  << idleTopLevelComputes(1) << ", C " << idleTopLevelComputes(2) << "\n";
+    }
+    REQUIRE_TRUE(idleTopLevelComputes(1) > 0);
+    REQUIRE_TRUE(idleTopLevelComputes(0) == 0);
 }
 
 }  // namespace

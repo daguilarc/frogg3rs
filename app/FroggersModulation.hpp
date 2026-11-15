@@ -230,11 +230,20 @@ inline std::span<const synth::PhysicalEncoderId> FullPhysicalLayout(synth::Bank&
 // plain, non-relocated members).
 class FroggersModulationSlate {
 public:
-    // Every launch seeds the six random sources differently: one
+    // Every launch seeds the random sources differently: one
     // std::random_device draw, taken once here, is mixed into each lane's
-    // fixed seed by LaneSeed() and seeds source 6's own draw source. A test
-    // that wants a reproducible slate passes the salt itself.
-    FroggersModulationSlate() : FroggersModulationSlate(std::random_device{}()) {}
+    // fixed seed by LaneSeed() and seeds source 6's own draw source. The noise
+    // source draws its own seed from std::random_device in its constructor
+    // (NoiseSeed() below), also once per launch and independently of that
+    // salt. A test that wants a reproducible slate passes the salt itself, and
+    // SetLaunchSaltForTests() derives the noise seed from it.
+    FroggersModulationSlate() : FroggersModulationSlate(TestLaunchSalt().value_or(std::random_device{}())) {}
+
+    // Test seam for a slate this test does not construct itself, such as the
+    // one inside a FroggersApp: while set, the default constructor uses this
+    // salt instead of drawing one, and the noise source is seeded from it too
+    // (NoiseSeed()). Unset, every launch draws its own, as above.
+    static void SetLaunchSaltForTests(std::optional<std::uint32_t> salt) { TestLaunchSalt() = salt; }
 
     explicit FroggersModulationSlate(std::uint32_t launchSalt)
         : randomShLanes_{
@@ -245,7 +254,7 @@ public:
               dsp::lanes::MakeSource5(LaneSeed(4, launchSalt)),
           },
           gangedRandomLfo6_(launchSalt),
-          noiseProcessor_(/*voiceCount=*/1),
+          noiseProcessor_(/*voiceCount=*/1, NoiseSeed()),
           noiseVisualizer_(synth::Color::White),
           source6Visualizer_(gangedRandomLfo6_.UiState(), /*drawBackground=*/false),
           // The five X-style sources' own Visualizer, one per lane, each
@@ -428,20 +437,12 @@ public:
         // unshaped path.
         randomSh6Output_ = dsp::ShapeSpread(gangedRandomLfo6_.Output(0), kSource6Spread);
 
-        // VCO audio (slots 6-8): each VCO stepped from only its own knobs.
-        // This modulation-preview slate has no
-        // Ring Mod or PM-rate knob of its own (VcoDrive only carries
-        // pitch01/shape01/phaseMod01), so phaseMod01 is passed again as the
-        // rate argument -- reproducing the coupled rate-from-
-        // depth behaviour this call always had -- and Ring Mod is held at
-        // 0.0f (its own zero floor), so this source's output is unchanged.
+        // Preview VCOs use the same fixed PM rate as the audio VCOs.
         const float sr = static_cast<float>(sampleRate_);
         const auto stepVco = [this, sr](dsp::Vco& oscillator, const VcoDrive& drive) {
             return engineOversampled_
-                ? oscillator.ProcessEngineSample(drive.pitch01, drive.shape01, drive.phaseMod01,
-                    drive.phaseMod01, 0.0f, sr)
-                : oscillator.Process(drive.pitch01, drive.shape01, drive.phaseMod01,
-                    drive.phaseMod01, 0.0f, sr);
+                ? oscillator.ProcessEngineSample(drive.pitch01, drive.shape01, drive.phaseMod01, 0.0f, sr)
+                : oscillator.Process(drive.pitch01, drive.shape01, drive.phaseMod01, 0.0f, sr);
         };
         const float vco1Raw = stepVco(vco1_, vco1);
         const float vco2Raw = stepVco(vco2_, vco2);
@@ -719,6 +720,22 @@ private:
     };
     static constexpr std::uint32_t LaneSeed(std::size_t laneIx, std::uint32_t salt) {
         return kRandomShSeeds[laneIx] ^ salt;
+    }
+    // The salt SetLaunchSaltForTests() installed, read by the default
+    // constructor and by NoiseSeed().
+    static std::optional<std::uint32_t>& TestLaunchSalt() {
+        static std::optional<std::uint32_t> salt;
+        return salt;
+    }
+    // The noise source seeds itself from std::random_device independently of the
+    // launch salt, so a test that installed a salt would still hear a different
+    // noise stream per app. While TestLaunchSalt() is set, the noise source is
+    // seeded from it; unset, it keeps its own entropy seed, as before.
+    static std::uint64_t NoiseSeed() {
+        if (const std::optional<std::uint32_t>& salt = TestLaunchSalt()) {
+            return (std::uint64_t{*salt} << 32) ^ 0x9E3779B97F4A7C15ULL;
+        }
+        return synth::NoiseInitializationSeed();
     }
 
     synth::ParameterGroup* group_ = nullptr;

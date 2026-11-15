@@ -32,7 +32,9 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <functional>
+#include <fstream>
 #include <cstddef>
 #include <exception>
 #include <filesystem>
@@ -373,20 +375,11 @@ TEST_CASE(non_default_patch_produces_non_silent_finite_audio) {
     REQUIRE_TRUE(PeakAbs(output) > kEpsilon);
 }
 
-// -----------------------------------------------------------------------
-// Push the Filter bank's Comb feedback to its self-oscillating extreme
-// (knob=1.0 -> dsp::Comb::GetFeedback's +0.95 branch,
-// deliberately below the firmware's +1.1, src/core/Comb.hpp:66-76) with the
-// Comb/Peak blend turned fully toward Comb, and the Reverb bank's
-// authored Hold control pushed to its ceiling -- the exact
-// self-oscillating-comb scenario reachable by design -- and confirm the
-// output stays finite and bounded.
-// -----------------------------------------------------------------------
 TEST_CASE(self_oscillating_comb_and_near_unity_reverb_hold_stays_finite_and_bounded) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("comb_self_oscillation"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
 
-    model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95.
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 7).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95.
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 12).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 1).SceneCenter(0) = 1.0f;  // Send.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 9).SceneCenter(0) = 1.0f;  // Hold -> ceiling.
@@ -430,7 +423,7 @@ TEST_CASE(output_clamp_bounds_overdriven_patch_to_full_scale) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("output_clamp_overdriven"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
 
-    model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95.
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 7).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95.
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 12).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 1).SceneCenter(0) = 1.0f;  // Send.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 9).SceneCenter(0) = 1.0f;  // Hold -> ceiling.
@@ -634,7 +627,7 @@ TEST_CASE(overdriven_patch_stays_bounded) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("limiter_overdriven_engages"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
 
-    model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95.
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 7).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95.
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 12).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 1).SceneCenter(0) = 1.0f;  // Send.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 9).SceneCenter(0) = 1.0f;  // Hold -> ceiling.
@@ -671,7 +664,7 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
     // The SAME hostile patch `overdriven_patch_stays_bounded` uses -- measured
     // to engage the master at block 101, min envelope 0.809, so it is
     // known-hostile by measurement rather than by assumption.
-    model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 7).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 12).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 1).SceneCenter(0) = 1.0f;  // Send.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 9).SceneCenter(0) = 1.0f;  // Hold -> ceiling
@@ -763,7 +756,7 @@ TEST_CASE(master_limiter_stays_at_unity_under_live_modulation) {
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
 
     // Identical hostile patch to master_limiter_stays_at_unity_across_hostile_patch.
-    model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 7).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 12).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 1).SceneCenter(0) = 1.0f;  // Send.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 9).SceneCenter(0) = 1.0f;  // Hold -> ceiling
@@ -782,7 +775,7 @@ TEST_CASE(master_limiter_stays_at_unity_under_live_modulation) {
     phaseDepth->SceneCenter(0) = 1.0f;
 
     synth::Parameter* combFeedbackDepth =
-        model.PageParameter(synth_froggers::FroggersBankId::Filter, 5)
+        model.PageParameter(synth_froggers::FroggersBankId::Filter, 7)
              .EnsureModulationDepth(synth_froggers::kModSlotVco1Audio);
     REQUIRE_TRUE(combFeedbackDepth != nullptr);
     combFeedbackDepth->SceneCenter(0) = 1.0f;
@@ -1545,23 +1538,10 @@ TEST_CASE(release_keeps_an_armed_depth_and_takes_a_neutral_one) {
     }
 }
 
-// -----------------------------------------------------------------------
-// This IS the mechanism that fixes the operator's "audio never comes
-// back": before RecoverPoisonedUnitState()
-// existed, nothing anywhere in FroggersAppCore.hpp ever cleared a unit's
-// recursive state once poisoned (see RecoverPoisonedUnitState()'s own
-// header comment for the full trace), so it persisted across every future
-// block regardless of what the operator changed the knobs to. Injects a
-// non-finite value directly into ONE unit's state (the Filter bank's peak
-// ResonantBump -- the same kind of unit the scoopNotch self-oscillation bug
-// actually hit) via the test accessors, and asserts (a) that
-// unit recovers within a handful of blocks and (b) a DIFFERENT unit's state
-// is completely untouched -- proving recovery is per-unit, not global (this
-// class's own design decision: a global reset would cut the reverb tail and
-// delay repeats every time one unrelated unit misbehaved).
-// -----------------------------------------------------------------------
 TEST_CASE(finiteness_recovery_resets_only_the_poisoned_unit_and_audio_recovers) {
-    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("finiteness_recovery"));
+    for (bool poisonMain : {false, true}) {
+
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths(poisonMain ? "finiteness_recovery_main" : "finiteness_recovery_peak"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
     model.PageParameter(synth_froggers::FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;  // nonzero VCO level.
     model.PageParameter(synth_froggers::FroggersBankId::Drive, 1).SceneCenter(0) = 0.5f;  // nonzero Gain.
@@ -1578,12 +1558,16 @@ TEST_CASE(finiteness_recovery_resets_only_the_poisoned_unit_and_audio_recovers) 
     constexpr float kSentinel = 12345.6789f;
     constexpr std::size_t kSentinelIndex = 4000;  // << dsp::Comb::kSize (8192); far past any write cursor here.
     comb.delayLine.Write(kSentinelIndex, kSentinel);
+    // The engine-sample VCO path leaves this legacy host-rate FIR history
+    // untouched. A global reset would erase it; downstream filters may
+    // legitimately need recovery after the main filter is poisoned.
+    auto& upstreamHistory = rig.Application().TestAudioVco(0).antiAliasFilter[0].history[0];
+    constexpr float kUpstreamSentinel = 0.12345678f;
+    upstreamHistory = kUpstreamSentinel;
 
-    // Poison the peak ResonantBump's own recursive state directly.
-    dsp::ResonantBump& peak = rig.Application().TestFilterPeak();
+    auto& peak = poisonMain ? rig.Application().TestFilterMain() : rig.Application().TestFilterPeak();
     const float nan = std::numeric_limits<float>::quiet_NaN();
-    peak.biquad.y1 = nan;
-    peak.biquad.y2 = nan;
+    peak.Process({nan, 0.01f, 2.0f, 0.0f});
     REQUIRE_TRUE(!peak.StateFinite());
 
     // One block (256 samples @ 48kHz, FroggersAppCore::Config()) is enough
@@ -1594,7 +1578,8 @@ TEST_CASE(finiteness_recovery_resets_only_the_poisoned_unit_and_audio_recovers) 
     rig.RunBlocks(1);
 
     REQUIRE_TRUE(peak.StateFinite());  // recovered.
-    REQUIRE_TRUE(comb.delayLine[kSentinelIndex] == kSentinel);  // a DIFFERENT unit: untouched.
+    REQUIRE_TRUE(upstreamHistory == kUpstreamSentinel);
+    if (!poisonMain) REQUIRE_TRUE(comb.delayLine[kSentinelIndex] == kSentinel);  // a DIFFERENT unit: untouched.
 
     // And audio genuinely recovers: run further blocks and confirm real,
     // non-silent, finite output -- not permanently masked to zero the way
@@ -1607,6 +1592,7 @@ TEST_CASE(finiteness_recovery_resets_only_the_poisoned_unit_and_audio_recovers) 
     const auto& output = rig.Output();
     RequireFiniteStereo(output);
     REQUIRE_TRUE(PeakAbs(output) > 1.0e-4f);
+    }
 }
 
 // A watched buffer's counts follow exactly what it holds: a non-finite and an
@@ -1683,7 +1669,7 @@ TEST_CASE(finiteness_recovery_resets_every_watched_buffer) {
 // -----------------------------------------------------------------------
 // Tier 2, magnitude recovery -- "sustained" defined and
 // justified: a unit's state magnitude must exceed kMaxUnitStateMagnitude
-// (100.0, derived beside the constant in dsp/RecoveryTier.hpp) for at least
+// (derived beside the constant in dsp/RecoveryTier.hpp) for at least
 // kSustainedOverCeilingSeconds (0.01s == 10ms) of continuous real time,
 // checked once per block, before Tier 2 resets it -- so a single block's
 // transient excursion must NOT fire it, but two-or-more consecutive
@@ -1695,26 +1681,26 @@ TEST_CASE(magnitude_recovery_ignores_a_single_block_transient) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("magnitude_recovery_transient"));
     dsp::Comb& comb = rig.Application().TestFilterComb();
 
-    // A finite, over-ceiling (> 100.0) value far from the write cursor (see
+    // A finite, over-ceiling value far from the write cursor (see
     // the finiteness-recovery test above for why 4000 is safe) -- Tier 1
     // does not fire (it IS finite), so only Tier 2's sustained-window logic
     // is under test here.
     // Five host blocks advance 5120 engine samples at 4x. Use a
     // cell beyond that cursor travel so ordinary writes cannot erase it.
     constexpr std::size_t kIndex = dsp::Comb::kSize - 1;
-    comb.delayLine.Write(kIndex, 500.0f);
+    comb.delayLine.Write(kIndex, (5.0f * dsp::kMaxUnitStateMagnitude));
     REQUIRE_TRUE(comb.StateFinite());
-    REQUIRE_TRUE(comb.StateMagnitude() > 100.0f);
+    REQUIRE_TRUE(comb.StateMagnitude() > dsp::kMaxUnitStateMagnitude);
 
     // One over-ceiling block (~5.33ms) is strictly less than the 10ms
     // sustained window -- must NOT have fired yet.
     rig.RunBlocks(1);
-    REQUIRE_TRUE(comb.delayLine[kIndex] == 500.0f);  // untouched: not reset.
+    REQUIRE_TRUE(comb.delayLine[kIndex] == (5.0f * dsp::kMaxUnitStateMagnitude));  // untouched: not reset.
 
     // The transient subsides (as a real one-sample spike would, decaying
     // within its own block) -- drop back under the ceiling before the
     // sustained window would have elapsed.
-    comb.delayLine.Write(kIndex, 50.0f);  // finite, well under the 100.0 ceiling.
+    comb.delayLine.Write(kIndex, 50.0f);  // finite, well under the recovery ceiling.
     rig.RunBlocks(4);
     // Still exactly 50.0f: the counter reset to 0 the instant magnitude
     // dropped back under the ceiling, so no amount of further (now-normal)
@@ -1727,18 +1713,18 @@ TEST_CASE(magnitude_recovery_resets_after_sustained_over_ceiling_window) {
     dsp::Comb& comb = rig.Application().TestFilterComb();
 
     constexpr std::size_t kIndex = 4000;
-    comb.delayLine.Write(kIndex, 500.0f);
+    comb.delayLine.Write(kIndex, (5.0f * dsp::kMaxUnitStateMagnitude));
 
     // Block 1: ~5.33ms elapsed, still < 10ms -- not yet reset.
     rig.RunBlocks(1);
-    REQUIRE_TRUE(comb.delayLine[kIndex] == 500.0f);
+    REQUIRE_TRUE(comb.delayLine[kIndex] == (5.0f * dsp::kMaxUnitStateMagnitude));
 
     // Block 2: ~10.67ms elapsed total, >= 10ms -- Tier 2 fires. Reset()
     // std::fill()s the WHOLE delay line to 0.0f, so the sentinel slot goes
     // to exactly 0.0f (not merely "no longer 500").
     rig.RunBlocks(1);
     REQUIRE_TRUE(comb.delayLine[kIndex] == 0.0f);
-    REQUIRE_TRUE(comb.StateMagnitude() <= 100.0f);
+    REQUIRE_TRUE(comb.StateMagnitude() <= dsp::kMaxUnitStateMagnitude);
 }
 
 // -----------------------------------------------------------------------
@@ -2284,7 +2270,7 @@ TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
     using synth_froggers::FroggersBankId;
 
-    model.PageParameter(FroggersBankId::Filter, 7).SceneCenter(0) = 1.0f;  // Comb drive commanded MAX.
+    model.PageParameter(FroggersBankId::Filter, 9).SceneCenter(0) = 1.0f;  // Comb drive commanded MAX.
     model.PageParameter(FroggersBankId::Delay, 9).SceneCenter(0) = 1.0f;    // Feedback drive commanded MAX.
     model.PageParameter(FroggersBankId::Reverb, 10).SceneCenter(0) = 1.0f;  // Tank drive commanded MAX.
     model.PageParameter(FroggersBankId::Delay, 5).SceneCenter(0) = 1.0f;    // Freeze commanded MAX.
@@ -2320,7 +2306,7 @@ TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes
     // WITHOUT writing to the parameter model: the commanded values set
     // above are exactly what was written, not silently rewritten to the
     // override's unity/zero.
-    REQUIRE_TRUE(model.PageParameter(FroggersBankId::Filter, 7).CachedKnobValue(0) == 1.0f);
+    REQUIRE_TRUE(model.PageParameter(FroggersBankId::Filter, 9).CachedKnobValue(0) == 1.0f);
     REQUIRE_TRUE(model.PageParameter(FroggersBankId::Delay, 9).CachedKnobValue(0) == 1.0f);
     REQUIRE_TRUE(model.PageParameter(FroggersBankId::Reverb, 10).CachedKnobValue(0) == 1.0f);
     REQUIRE_TRUE(model.PageParameter(FroggersBankId::Delay, 5).CachedKnobValue(0) == 1.0f);
@@ -2379,8 +2365,8 @@ TEST_CASE(comb_lowpass_alpha_monotone_across_comb_delay_positions) {
 
         float previousAlpha = -1.0f;
         for (const float lp : kLowPassKnobs) {
-            model.PageParameter(FroggersBankId::Filter, 4).SceneCenter(0) = cmbDly;  // Comb delay.
-            model.PageParameter(FroggersBankId::Filter, 6).SceneCenter(0) = lp;      // Comb LP.
+            model.PageParameter(FroggersBankId::Filter, 6).SceneCenter(0) = cmbDly;  // Comb delay.
+            model.PageParameter(FroggersBankId::Filter, 8).SceneCenter(0) = lp;      // Comb LP.
             ApplyPatchNow(rig);
             rig.RunBlocks(4);
             REQUIRE_TRUE(!rig.SawNaN());
@@ -2392,118 +2378,6 @@ TEST_CASE(comb_lowpass_alpha_monotone_across_comb_delay_positions) {
     }
 }
 
-// =========================================================================
-// Peak Q (Filter slot 2) and Scoop width (slot 10) share the same floor
-// raise (0.1 -> 0.4), recomputed here from the production
-// ExpMapCompute(0.4, 10.0, knob) call rather than typed-in decimals, so
-// this cannot silently drift from the real mapping if that range is ever
-// retuned.
-// =========================================================================
-TEST_CASE(filter_peak_q_and_scoop_width_floors_track_production_formula) {
-    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("filter_q_floors"));
-    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
-    using synth_froggers::FroggersBankId;
-
-    for (const float knob : {0.0f, 1.0f}) {
-        model.PageParameter(FroggersBankId::Filter, 2).SceneCenter(0) = knob;   // Peak Q.
-        model.PageParameter(FroggersBankId::Filter, 10).SceneCenter(0) = knob;  // Scoop width.
-        ApplyPatchNow(rig);
-        rig.RunBlocks(4);
-        REQUIRE_TRUE(!rig.SawNaN());
-
-        const float expected = dsp::ExpMapCompute(0.4f, 10.0f, knob);
-        REQUIRE_TRUE(rig.Application().TestFilterPeak().width == expected);
-        REQUIRE_TRUE(rig.Application().TestFilterScoopNotch().width == expected);
-    }
-}
-
-// =========================================================================
-// Scoop depth (Filter slot 11) drives the notch's own height with a
-// deliberate decreasing exponential (ExpMapCompute(1.0, 0.05, knob)):
-// equal knob steps cut equal dB. Recomputes the expected height at each
-// step from the production formula (never a typed-in decimal), then
-// checks the resulting dB-per-quarter-step figure against the
-// preflight-computed -6.505 dB. Scoop (slot 8) stays at its default 0.0
-// throughout -- irrelevant to `.height`, which SetHeight sets directly
-// from slot 11 alone, but pinned here so the fixture reads unambiguously
-// as isolating this curve on its own.
-// =========================================================================
-TEST_CASE(filter_scoop_depth_curve_is_equal_db_per_quarter_with_exact_endpoints) {
-    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("filter_scoop_depth_curve"));
-    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
-    using synth_froggers::FroggersBankId;
-
-    model.PageParameter(FroggersBankId::Filter, 8).SceneCenter(0) = 0.0f;  // Scoop -- default, irrelevant here.
-
-    constexpr std::array<float, 5> kKnobs = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
-    std::array<float, 5> heights{};
-    for (std::size_t i = 0; i < kKnobs.size(); ++i) {
-        model.PageParameter(FroggersBankId::Filter, 11).SceneCenter(0) = kKnobs[i];  // Scoop depth.
-        ApplyPatchNow(rig);
-        rig.RunBlocks(4);
-        REQUIRE_TRUE(!rig.SawNaN());
-        heights[i] = rig.Application().TestFilterScoopNotch().height;
-        REQUIRE_TRUE(heights[i] == dsp::ExpMapCompute(1.0f, 0.05f, kKnobs[i]));
-    }
-
-    REQUIRE_TRUE(heights[0] == 1.0f);   // exact bypass at the floor.
-    REQUIRE_TRUE(heights[4] == 0.05f);  // exact at the ceiling.
-
-    constexpr double kExpectedDbPerQuarter = -6.505;
-    constexpr double kToleranceDb = 0.01;
-    std::cout << "  [Scoop depth curve] heights at knob {0, .25, .5, .75, 1}: " << heights[0] << ", " << heights[1]
-               << ", " << heights[2] << ", " << heights[3] << ", " << heights[4] << "\n";
-    for (std::size_t i = 0; i + 1 < heights.size(); ++i) {
-        const double stepDb =
-            20.0 * std::log10(static_cast<double>(heights[i + 1]) / static_cast<double>(heights[i]));
-        std::cout << "  [Scoop depth curve] quarter " << i << " -> " << i + 1 << ": " << stepDb << " dB\n";
-        REQUIRE_TRUE(std::fabs(stepDb - kExpectedDbPerQuarter) < kToleranceDb);
-    }
-}
-
-// =========================================================================
-// The wiring swap: Scoop (Filter slot 8) drives the notch's wet/dry blend
-// (scoopMix); Scoop depth (slot 11) drives the notch's own dip (SetHeight,
-// pinned separately by the curve test above). Confirms the precondition
-// via the same TestFilterScoopNotch().height accessor (so a partially-
-// reverted swap -- this half right, the other wrong -- cannot slip past
-// silently), then proves Scoop actually moves the output: with a real,
-// confirmed dip in place, disabling the blend (Scoop at its floor) must
-// differ audibly from applying it in full (Scoop at its ceiling). Scoop
-// freq/width stay at their own defaults (100 Hz, Q 0.4 -- about a 3-octave
-// bandwidth), reaching well into the 110 Hz fundamental this measures.
-// =========================================================================
-TEST_CASE(filter_scoop_slot_drives_wet_dry_blend_of_scoop_depths_notch) {
-    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("filter_scoop_blend_swap"));
-    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
-    using synth_froggers::FroggersBankId;
-
-    model.PageParameter(FroggersBankId::Filter, 11).SceneCenter(0) = 1.0f;  // Scoop depth ceiling -- a real dip.
-    ApplyPatchNow(rig);
-    rig.RunBlocks(4);
-    REQUIRE_TRUE(!rig.SawNaN());
-    REQUIRE_TRUE(rig.Application().TestFilterScoopNotch().height == 0.05f);  // precondition: the dip landed.
-
-    rig.StartAt(0);
-
-    model.PageParameter(FroggersBankId::Filter, 8).SceneCenter(0) = 0.0f;  // Scoop floor -- blend disabled.
-    ApplyPatchNow(rig);
-    rig.RunBlocks(8);
-    rig.ClearOutput();
-    rig.RunBlocks(4);
-    REQUIRE_TRUE(!rig.SawNaN());
-    const double powerAtFloor = GoertzelPower(ExtractChannel(rig.Output(), 0), kAudibleFundamentalsHz[0], 48000.0);
-
-    model.PageParameter(FroggersBankId::Filter, 8).SceneCenter(0) = 1.0f;  // Scoop ceiling -- blend fully applied.
-    ApplyPatchNow(rig);
-    rig.RunBlocks(8);
-    rig.ClearOutput();
-    rig.RunBlocks(4);
-    REQUIRE_TRUE(!rig.SawNaN());
-    const double powerAtCeiling = GoertzelPower(ExtractChannel(rig.Output(), 0), kAudibleFundamentalsHz[0], 48000.0);
-
-    REQUIRE_TRUE(powerAtCeiling < 0.5 * powerAtFloor);
-}
 
 // =========================================================================
 // Comb delay's tap is fractional now (Comb::Process, FilterFx.hpp): near
@@ -2522,7 +2396,7 @@ TEST_CASE(filter_comb_delay_fine_knob_steps_near_ceiling_avoid_whole_sample_pitc
     using synth_froggers::FroggersBankId;
 
     auto delaySamplesAt = [&](float cmbDly) -> float {
-        model.PageParameter(FroggersBankId::Filter, 4).SceneCenter(0) = cmbDly;  // Comb delay.
+        model.PageParameter(FroggersBankId::Filter, 6).SceneCenter(0) = cmbDly;  // Comb delay.
         ApplyPatchNow(rig);
         rig.RunBlocks(4);
         REQUIRE_TRUE(!rig.SawNaN());
@@ -4445,6 +4319,199 @@ TEST_CASE(a_fast_parameter_sweep_with_no_reset_does_not_latch_the_instrument) {
 
 
 }  // namespace
+
+TEST_CASE(filter_saved_patch_keeps_known_names_and_skips_retired_names) {
+    synth::ParameterManager previous;
+    auto& group=previous.CreateGroup({.numVoices=1,.numScenes=2,.maxParameters=8});
+    auto& offset=previous.CreateParameter(group,{.name="Filter Comb offset"});
+    auto& feedback=previous.CreateParameter(group,{.name="Filter Comb feedback"});
+    auto& retiredTune=previous.CreateParameter(group,{.name="Filter Comb delay"});
+    auto& retiredFreq=previous.CreateParameter(group,{.name="Filter Peak freq"});
+    auto& retiredQ=previous.CreateParameter(group,{.name="Filter Peak Q"});
+    offset.SceneCenter(0)=.23f;feedback.SceneCenter(0)=.77f;
+    retiredTune.SceneCenter(0)=.91f;retiredFreq.SceneCenter(0)=.18f;retiredQ.SceneCenter(0)=.92f;
+    synth::ParameterManager current;synth_froggers::FroggersParameterModel model;model.Init(current);
+    using synth_froggers::FroggersBankId;
+    const auto load=[&] {
+        synth::JsonArena arena(1<<20);auto patch=previous.ParameterValuesToJSON(arena);
+        REQUIRE_TRUE(current.LoadParameterValuesFromJSON(patch));
+        REQUIRE_TRUE(model.PageParameter(FroggersBankId::Filter,5).SceneCenter(0)==offset.SceneCenter(0));
+        REQUIRE_TRUE(model.PageParameter(FroggersBankId::Filter,7).SceneCenter(0)==.77f);
+        REQUIRE_TRUE(model.PageParameter(FroggersBankId::Filter,6).SceneCenter(0)==0);
+        REQUIRE_TRUE(model.PageParameter(FroggersBankId::Filter,10).SceneCenter(0)==1);
+        REQUIRE_TRUE(model.PageParameter(FroggersBankId::Filter,11).SceneCenter(0)==0);
+        REQUIRE_TRUE(current.FindParameterByName("Filter Comb delay")==nullptr);
+    };
+    load();retiredTune.SceneCenter(0)=.19f;load();offset.SceneCenter(0)=.63f;load();
+}
+
+TEST_CASE(filter_defaults_and_labels_match_redesign_table) {
+    using namespace synth_froggers;
+    const float expected[14]={1,0,0,.5f,1,0,0,.5f,0,.5f,1,0,1,1};
+    const auto& filter=FroggersBankLayouts()[static_cast<std::size_t>(FroggersBankId::Filter)];
+    for(std::size_t i=0;i<14;++i) REQUIRE_TRUE(filter.params[i].defaultValue==expected[i]);
+    REQUIRE_TRUE(std::string(filter.params[5].name)=="Comb offset");
+    REQUIRE_TRUE(std::string(filter.params[7].name)=="Comb feedback");
+    for(const auto& bank:FroggersBankLayouts())for(std::size_t i=0;i<14;++i) {
+        REQUIRE_TRUE(std::strlen(bank.params[i].shortName)<=6);
+        REQUIRE_TRUE(std::strlen(FroggersApprovedLabels()[static_cast<std::size_t>(bank.id)][i])<=12);
+    }
+}
+
+TEST_CASE(filter_tracking_follows_actual_current_vco_and_balance_caches) {
+    Rig rig(64,UseScratchRuntimeDataPaths("filter_tracking_actual_sources"));
+    auto& app=rig.Application();auto& model=app.Parameters();
+    using synth_froggers::FroggersBankId;
+    for(std::size_t bank=0;bank<synth_froggers::kFroggersPageCount;++bank){
+        for(std::size_t slot=0;slot<14;++slot)model.PageParameter(bank,slot).ClearModulationDepths();
+        model.Crispy(bank).ClearModulationDepths();
+    }
+    model.Crunchy().ClearModulationDepths();
+    for(std::size_t i=0;i<3;++i){model.PageParameter(FroggersBankId::Audio,i).SceneCenter(0)=.3f+i*.1f;}
+    model.PageParameter(FroggersBankId::Filter,0).SceneCenter(0)=.5f;
+    model.PageParameter(FroggersBankId::Filter,3).SceneCenter(0)=1;
+    auto& balance=model.PageParameter(FroggersBankId::Audio,13);
+    balance.SceneCenter(0)=.5f;
+    auto* depth=balance.EnsureModulationDepth(synth_froggers::kModSlotVco1Audio);
+    REQUIRE_TRUE(depth!=nullptr);depth->SceneCenter(0)=.75f;
+    ApplyPatchNow(rig);rig.StartAt(0);rig.RunBlocks(4);
+    std::size_t observations=0;float worstKeyError=0,worstCutoffError=0,worstTuneError=0;
+    float firstKey=0;bool moved=false;
+    app.TestObserveFilterSamples([&] {
+        float w[3];dsp::ComputeVcoBalanceWeights(balance.CachedKnobValue(0),
+            model.PageParameter(FroggersBankId::Audio,12).CachedKnobValue(0),w[0],w[1],w[2]);
+        float expected=0;
+        for(std::size_t i=0;i<3;++i){
+            const float k=model.PageParameter(FroggersBankId::Audio,i).CachedKnobValue(0);
+            const float hz=dsp::Vco::PitchToPhaseIncrement(k,192000)*192000;
+            expected+=w[i]*(69+12*std::log2(hz/440));
+        }
+        const auto& chain=app.TestFilterChain();
+        worstKeyError=std::max(worstKeyError,std::fabs(chain.keyTracking.semitoneOffset-(expected-60)));
+        const float offset=expected-60;
+        const float cutoff=dsp::ExpMapCompute(20.f,20000.f,model.PageParameter(FroggersBankId::Filter,0).CachedKnobValue(0))*std::exp2(offset/12);
+        worstCutoffError=std::max(worstCutoffError,std::fabs(chain.mainInput.cutoff*192000-cutoff));
+        const float tune=dsp::ExpMapCompute(100.f,10000.f,model.PageParameter(FroggersBankId::Filter,6).CachedKnobValue(0))*std::exp2(offset/12);
+        worstTuneError=std::max(worstTuneError,std::fabs(chain.comb.delaySamples-std::clamp(192000/tune,1.f,float(dsp::Comb::kSize-1))));
+        if(observations==0)firstKey=chain.keyTracking.semitoneOffset;
+        else moved=moved||chain.keyTracking.semitoneOffset!=firstKey;
+        ++observations;
+    });
+    rig.RunBlocks(64);
+    REQUIRE_TRUE(observations==64*256*4);
+    REQUIRE_TRUE(moved);REQUIRE_TRUE(worstKeyError<=1e-5f);
+    REQUIRE_TRUE(worstCutoffError<=.001f && worstTuneError<=.001f);
+    REQUIRE_TRUE(!rig.SawNaN());REQUIRE_TRUE(rig.OutputPeak()>1e-4f);
+    depth->SceneCenter(0)=.5f;ApplyPatchNow(rig);rig.RunBlocks(4);
+    observations=0;worstKeyError=worstCutoffError=worstTuneError=0;
+    const float fixed=app.TestFilterChain().keyTracking.semitoneOffset;
+    rig.RunBlocks(4);REQUIRE_TRUE(std::fabs(app.TestFilterChain().keyTracking.semitoneOffset-fixed)<=1e-5f);
+    REQUIRE_TRUE(observations==4*256*4 && worstKeyError<=1e-5f);
+    app.TestObserveFilterSamples({});
+}
+
+TEST_CASE(filter_randomize_all_heavy_drive_uses_the_real_audio_and_modulation_path) {
+    const auto evidenceBase=std::filesystem::temp_directory_path()/"filter-redesign-real-app-patches";
+    std::filesystem::create_directories(evidenceBase);
+    std::filesystem::path evidence;
+    for(std::size_t run=0;;++run){
+        auto candidate=evidenceBase/("run-"+std::to_string(run));
+        if(std::filesystem::create_directory(candidate)){evidence=std::move(candidate);break;}
+    }
+    std::cout<<"  actual patch evidence: "<<evidence<<"\n";
+    const auto dataName="filter_heavy_drive_real_path_"+evidence.filename().string();
+    Rig rig(64,UseScratchRuntimeDataPaths(dataName.c_str()));
+    auto& app=rig.Application();auto& model=app.Parameters();
+    using synth_froggers::FroggersBankId;
+    auto setEveryScene=[](synth::Parameter& parameter,float value){
+        for(std::size_t scene=0;scene<parameter.Group().Config().numScenes;++scene)parameter.SceneCenter(scene)=value;
+    };
+    rig.StartAt(0);rig.RunBlocks(8);
+    for(int press=0;press<20;++press){
+        app.PortableSurface().DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
+        rig.RunBlocks(1);
+        setEveryScene(model.PageParameter(FroggersBankId::Drive,0),1);
+        setEveryScene(model.PageParameter(FroggersBankId::Drive,1),1);
+        for(std::size_t bank=0;bank<synth_froggers::kFroggersPageCount;++bank)setEveryScene(model.Crispy(bank),1);
+        setEveryScene(model.Crunchy(),1);
+        ApplyPatchNow(rig);
+        synth::JsonArena arena(32*1024*1024);
+        char* text=app.TestParameterManager().ParameterValuesToJSON(arena).Dumps(0);
+        REQUIRE_TRUE(text!=nullptr && !arena.Failed());
+        std::ofstream patch(evidence/("press-"+std::to_string(press)+".json"));patch<<text;std::free(text);patch.close();REQUIRE_TRUE(patch.good());
+        rig.ClearOutput();app.TestFilterChain().metrics={};
+        rig.RunBlocks(188); // More than one second: includes real gate/envelope motion.
+        const auto& m=app.TestFilterChain().metrics;
+        REQUIRE_TRUE(m.samples==188*256*4);
+        RequireFiniteStereo(rig.Output());
+        REQUIRE_TRUE(!rig.SawNaN());
+        REQUIRE_TRUE(PeakAbs(rig.Output())<=1.001f);
+        std::cout<<"  actual-patch "<<press<<" filter_input_rms="<<std::sqrt(m.inputEnergy/m.samples)
+            <<" filter_output_rms="<<std::sqrt(m.outputEnergy/m.samples)
+            <<" page_limiter_mean_GR_dB="<<m.limiterReductionDb/m.samples
+            <<" state_max="<<m.mainState<<","<<m.combState<<","<<m.peakState
+            <<" nonfinite_engine_samples="<<m.nonfiniteSamples<<"\n";
+    }
+}
+
+TEST_CASE(every_filter_target_consumes_its_actual_internal_audio_rate_modulation) {
+    using synth_froggers::FroggersBankId;
+    const auto make=[&](const std::string& name,std::size_t slot,float depthAmount){
+        auto rig=std::make_unique<Rig>(64,UseScratchRuntimeDataPaths(name.c_str()));
+        auto& model=rig->Application().Parameters();
+        for(std::size_t bank=0;bank<synth_froggers::kFroggersPageCount;++bank){
+            for(std::size_t i=0;i<14;++i)model.PageParameter(bank,i).ClearModulationDepths();
+            model.Crispy(bank).ClearModulationDepths();
+        }
+        model.Crunchy().ClearModulationDepths();
+        for(std::size_t i=0;i<14;++i)
+            for(std::size_t scene=0;scene<2;++scene)model.PageParameter(FroggersBankId::Filter,i).SceneCenter(scene)=.5f;
+        for(std::size_t scene=0;scene<2;++scene){
+            model.PageParameter(FroggersBankId::Filter,7).SceneCenter(scene)=.75f;
+            model.PageParameter(FroggersBankId::Filter,4).SceneCenter(scene)=.75f;
+            model.PageParameter(FroggersBankId::Filter,13).SceneCenter(scene)=.75f;
+            model.PageParameter(FroggersBankId::Filter,12).SceneCenter(scene)=.25f;
+        }
+        auto* depth=model.PageParameter(FroggersBankId::Filter,slot).EnsureModulationDepth(synth_froggers::kModSlotVco1Audio);
+        REQUIRE_TRUE(depth!=nullptr);for(std::size_t scene=0;scene<2;++scene)depth->SceneCenter(scene)=depthAmount;
+        ApplyPatchNow(*rig);rig->StartAt(0);rig->RunBlocks(4);rig->ClearOutput();return rig;
+    };
+    const auto readConsumer=[](const dsp::FilterFxChain& c,std::size_t slot){
+        switch(slot){
+            case 0:case 3:return c.mainFilter.m_cutoff;
+            case 1:return c.mainFilter.m_resonance;
+            case 2:return c.mainFilter.m_blend;
+            case 4:return c.mainMix;
+            case 5:return c.pureDelay.delaySamples;
+            case 6:return c.comb.delaySamples;
+            case 7:return c.comb.feedback;
+            case 8:return c.comb.filter.alpha;
+            case 9:return c.comb.combDrive;
+            case 10:return c.peakFilter.m_cutoff;
+            case 11:return c.peakFilter.m_resonance;
+            case 12:return c.peakMorph;
+            default:return c.peakMix;
+        }
+    };
+    for(std::size_t slot=0;slot<14;++slot){
+        auto live=make("filter_source_live_"+std::to_string(slot),slot,.75f);
+        auto neutral=make("filter_source_neutral_"+std::to_string(slot),slot,.5f);
+        float low=std::numeric_limits<float>::infinity(),high=-low;
+        float staticLow=low,staticHigh=high;std::size_t seen=0;
+        live->Application().TestObserveFilterSamples([&]{float x=readConsumer(live->Application().TestFilterChain(),slot);low=std::min(low,x);high=std::max(high,x);++seen;});
+        neutral->Application().TestObserveFilterSamples([&]{float x=readConsumer(neutral->Application().TestFilterChain(),slot);staticLow=std::min(staticLow,x);staticHigh=std::max(staticHigh,x);});
+        live->RunBlocks(64);neutral->RunBlocks(64);
+        REQUIRE_TRUE(seen==64*256*4);REQUIRE_TRUE(high>low);REQUIRE_TRUE(staticHigh==staticLow);
+        const auto& a=live->Output();const auto& b=neutral->Output();REQUIRE_TRUE(a.size()==b.size());
+        float maxAudioDifference=0;
+        for(std::size_t n=0;n<a.size();++n)for(std::size_t ch=0;ch<2;++ch)
+            maxAudioDifference=std::max(maxAudioDifference,std::fabs(a[n].channels[ch]-b[n].channels[ch]));
+        std::cout<<"  actual VCO1 Audio -> Filter slot "<<slot<<" consumer_range="<<low<<".."<<high
+            <<" neutral_range="<<staticLow<<".."<<staticHigh<<" max_audio_delta="<<maxAudioDifference<<"\n";
+        REQUIRE_TRUE(maxAudioDifference>0);RequireFiniteStereo(a);RequireFiniteStereo(b);
+        live->Application().TestObserveFilterSamples({});neutral->Application().TestObserveFilterSamples({});
+    }
+}
 
 int main(int argc, char** argv) {
     int failed = 0;

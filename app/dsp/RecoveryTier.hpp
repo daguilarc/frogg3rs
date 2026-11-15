@@ -42,62 +42,23 @@
 // version of this file used a runtime `enum class Recovery` for exactly
 // that reason, and six of ten test binaries failed to compile as a result.
 //
-// WHY THIS FILE, NOT dsp/FilterFx.hpp: FilterFx.hpp's own header comment
-// declares it a *port* -- "a **copy** of the cited Froggers
-// formulas" -- of firmware DSP. These two tag types are a general-
-// purpose recovery-policy vocabulary shared by FilterFx.hpp's own
-// FilterFxChain, Drive.hpp's FrogBlock, and FroggersAppCore.hpp -- not a
-// ported filter formula. Same reasoning dsp/Limiter.hpp's own header
-// comment gives for why OutputLimiter is kept out of FilterFx.hpp
-// ("out of a file whose own header comment scopes it to comb/peak/scoop
-// routing"); this file follows that precedent rather than re-arguing it.
+// Recovery policy is shared by the filter, drive, VCO and app-level units;
+// keep its tags and watched storage independent of any one DSP chain.
 
 namespace synth_froggers::dsp {
 
-// The Tier 2 recovery ceiling. It is DERIVED, not measured, and re-derived here rather than
-// re-tuned by feel:
-//   - The Filter chain's own input is the Drive page's output,
-//     `dsp::DriveBlendPhase::Process` (dsp/Drive.hpp), which ends in
-//     `outputLimiter.Process(blended)`, configured to
-//     `dsp::kStageCeiling` (0.80, dsp/Limiter.hpp).
-//     `dsp::PadeSaturator::Saturate` only clamps the comb saturator's
-//     own output, inside this chain, not the Drive page's -- the Drive
-//     output limiter is what bounds the input here. Measured
-//     (`DriveBlendPhase` run standalone at 48 kHz, Wet/Dry at 1.0 -- any
-//     lower setting only trades power between the dry and wet legs,
-//     `FlooredEqualPowerBlend`'s own equal-power law, so 1.0 is the
-//     largest this stage's output can be driven -- Phase at its own
-//     registered default 0.86, dry and wet both a full-scale 220 Hz
-//     sine): max|out| 0.796730, against the 0.80 ceiling.
-//   - The comb's fed-back term is at most `|fb|/combDrive`
-//     (`Comb::Process`'s own comment, dsp/FilterFx.hpp): 0.95/0.25 ==
-//     3.8 at the bottom of Comb drive, `Comb::GetFeedback`'s own
-//     `kMaxFeedbackMagnitude` (0.95) over `RouteFilterBank`'s Comb-drive
-//     floor (0.25).
-//   - At Topology 1 (`FilterFxChain::Process`'s own comment,
-//     dsp/FilterFx.hpp) the peak's input is the trimmed comb branch, not
-//     the chain's raw input, and Peak gain redrawn every sample --
-//     `RouteFilterBank`'s own per-sample cadence for every Filter-bank
-//     knob -- drives the peak past the steady-state gain a held-fixed
-//     height would settle to.
-// One run measures what those three combine to, directly, rather than
-// composed by hand: `FilterFxChain` at 48 kHz, Comb feedback knob 1
-// (0.95), Comb drive knob 0 (0.25), Topology 1, Peak freq and Comb delay
-// at their registered defaults (100 Hz each -- Comb delay maps to 480
-// samples at 48 kHz, the same 100 Hz pitch), Peak gain at
-// `kMaxResonantBumpHeight` redrawn every sample, a full-scale sine at
-// the comb's own 100 Hz pitch, 3 s, rerun to 6 s to check for a
-// still-climbing transient: comb and peak are exactly unchanged; the
-// scoop notch drifts from 1.000034 to 1.000050, under 0.0001 over the
-// extra 3 s, negligible against the margin below and not the
-// still-climbing transient the recheck exists to catch.
-// `StateMagnitude()` maximum: comb 3.598300, peak 5.707133, scoopNotch
-// 1.000034 (scoopMix is 0 at this patch, but `scoopNotch.Process` still
-// runs unconditionally -- `RouteFilterBank`'s own comment on why). The
-// largest of the three is 5.707133, and 100.0 sits more than 10x above
-// it (10x is 57.07133).
-// DO NOT retune this constant without re-deriving it from the above.
-inline constexpr float kMaxUnitStateMagnitude = 100.0f;
+// Tier 2 retains more than ten times the largest state observed in the
+// redesign's measured stress fixtures. At 192 kHz, two seconds of a full-
+// scale 100 Hz sine through both Q=5.5 SVFs and the .95-feedback comb
+// (drive .25, 100 Hz tune) reached main 5.500752, comb 9.284996, peak 56.095894.
+// Sweeping the two cutoffs oppositely at 173/41 Hz reached peak 8.715101 /
+// 9.405576. These are isolated full-scale DSP stress measurements, not
+// claims about every possible modulation trajectory or the app's input.
+// Separate real-app heavy-Drive runs retain their per-press observations
+// in the change evidence. 1000 exceeds ten times 56.095894; the prior 100
+// ceiling's derivation belonged to the removed, trimmed Filter topology.
+// Re-derive the ceiling when the stage structure or state range changes.
+inline constexpr float kMaxUnitStateMagnitude = 1000.0f;
 
 // A unit's sample memory (a delay line, an allpass history) that keeps exact
 // counts of the non-finite samples and the samples above the ceiling it

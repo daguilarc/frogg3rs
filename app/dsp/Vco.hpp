@@ -32,7 +32,7 @@
 // surface. Sheaf's own reference
 // struct embeds this directly alongside its DSP `Process()`, in the SAME
 // file/class, rather than through a separate wrapper -- this port mirrors
-// that placement exactly (same reasoning as FilterFx.hpp's ResonantBump/Comb
+// that placement exactly (same reasoning as FilterFx.hpp's Comb
 // UIState), which is why this otherwise-pure DSP file takes on a deliberate,
 // Sheaf dependency: `synth/DspScope.hpp` (ScopeWriter/
 // ScopeWriterHolder, header-only, no link dependency) and `synth/Color.hpp`/
@@ -152,32 +152,8 @@ struct Vco
         synth::AtomicColor scopeColor;
     };
 
-    // pmRateKnob01 in [0,1] maps exponentially across [kPmLfoMinHz,
-    // kPmLfoMaxHz] (StepPmLfo below): kPmLfoMinHz is the slowest rate the
-    // knob reaches, kPmLfoMaxHz the fastest, and because the map between
-    // them is exponential rather than linear, the knob's middle position
-    // is their geometric mean -- sqrt(kPmLfoMinHz * kPmLfoMaxHz) -- not
-    // the arithmetic average, so moving either endpoint also moves where
-    // the middle of the knob's travel lands. kPmLfoMaxHz and kPmLfoDepth
-    // match the parity reference exactly (08b5fd3:src/core/FroggersEngine.hpp:136-137,
-    // x_pmLfoMaxHz/x_pmLfoDepth). kPmLfoMinHz does not: the reference's
-    // x_pmLfoMinHz (0.05f, 08b5fd3:src/core/FroggersEngine.hpp:135) is a ~20-second cycle,
-    // slow enough to double as a second off switch. That job already
-    // belongs entirely to each VCO's own PM depth knob, which gates the
-    // offset to exactly zero at/below kPmLfoFloor (PmDepthScale below) --
-    // so this floor's only purpose is to bound how slow an AUDIBLE rate
-    // is allowed to get, never to silence it. A cycle within a few
-    // seconds reads as motion; one that takes tens of seconds reads as
-    // drift.
-    // What the ear hears from phase modulation is the pitch deviation, the
-    // slope of the phase offset: 2 pi x (offset amplitude) x rate Hz, which
-    // carries no carrier term -- the same Hz of deviation on every VCO, and
-    // so more cents on a low carrier than on a high one. StepPmLfo scales
-    // the LFO by kPmLfoMaxHz / rate, which holds that slope constant: the
-    // phase swing grows as the rate falls, and the peak deviation is
-    // 2 pi x kPmLfoDepth x kPmLfoMaxHz = 18.8 Hz at full depth at every
-    // position of the rate knob. The rate knob sets only how fast the
-    // wobble runs, the depth knobs only how far it goes.
+    // Fixed 2 Hz PM motion. Keep the former 20 Hz depth reference so the
+    // existing default-rate phase swing is unchanged.
     static constexpr float kPmLfoMinHz = 2.0f;  // 0.5 s/cycle at the floor.
     static constexpr float kPmLfoMaxHz = 20.0f;
     static constexpr float kPmLfoDepth = 0.15f;  // cycles of phase swing at kPmLfoMaxHz; more below it
@@ -267,15 +243,12 @@ struct Vco
     // 08b5fd3:src/core/FroggersEngine.hpp:706-712 (StepIndependentPmLfo) -- advances this
     // VCO's own PM LFO by one sample; returns its PRE-advance sine value,
     // scaled so the pitch deviation it produces does not fall with the rate.
-    // The RATE argument is the shared PM-rate knob (Audio slot 12, one knob
-    // feeding all three VCOs' StepPmLfo calls), decoupled from the per-VCO
-    // PM depth knob that drives only PmDepthScale -- pmRateKnob01 maps
-    // exponentially to [kPmLfoMinHz, kPmLfoMaxHz].
-    float StepPmLfo(float pmRateKnob01, float sampleRate)
+    // PM depth controls the swing; its motion always runs at 2 Hz.
+    float StepPmLfo(float sampleRate)
     {
-        const float hz = ExpMapCompute(kPmLfoMinHz, kPmLfoMaxHz, pmRateKnob01);
-        // Scaled so the pitch deviation does not fall with the rate (see
-        // kPmLfoMinHz above): unity at the top of the knob, ten at the floor.
+        const float hz = kPmLfoMinHz;
+        // Preserve the former default-rate swing: the 20 Hz depth reference
+        // gives a tenfold phase swing at the fixed 2 Hz rate.
         const float lfoValue = Sine01(pmLfoPhase) * (kPmLfoMaxHz / hz);
         pmLfoPhase = WrapPhase(pmLfoPhase + hz / sampleRate);
         return lfoValue;
@@ -284,12 +257,12 @@ struct Vco
     // One complete oscillator step for callers that already run an
     // oversampled engine. The host-rate Process wrapper uses the same step.
     float ProcessEngineSample(float pitchKnob01, float morphKnob01, float pmKnob01,
-                              float pmRateKnob01, float ringModKnob01, float sampleRate)
+                              float ringModKnob01, float sampleRate)
     {
         const float phaseIncrement = PitchToPhaseIncrement(pitchKnob01, sampleRate);
         // 08b5fd3:src/core/FroggersEngine.hpp:741-743 -- the depth multiply is at the caller of
         // StepIndependentPmLfo, not inside it; ported the same way.
-        const float pmOffset = kPmLfoDepth * PmDepthScale(pmKnob01) * StepPmLfo(pmRateKnob01, sampleRate);
+        const float pmOffset = kPmLfoDepth * PmDepthScale(pmKnob01) * StepPmLfo(sampleRate);
         const float modulatedPhase = WrapPhase(carrierPhase + pmOffset);
         const float dry = EvalWaveMorph(*waveforms, modulatedPhase, morphKnob01,
                                         phaseIncrement * sampleRate, 0.5f * sampleRate);
@@ -314,21 +287,17 @@ struct Vco
         return mixed;
     }
 
-    // 08b5fd3:src/core/FroggersEngine.hpp:735-744, the m_simIndependentPm branch, plus Ring
-    // Mod and PM-rate decoupling on top. pmKnob01 drives ONLY this VCO's
-    // own PM depth (PmDepthScale); pmRateKnob01 is the shared Audio-slot-12
-    // rate knob; ringModKnob01 is this VCO's own Ring Mod knob (Audio slot
-    // 9/10/11).
-    float Process(float pitchKnob01, float morphKnob01, float pmKnob01, float pmRateKnob01, float ringModKnob01,
+    // Host-rate wrapper: four oscillator steps followed by two halfbands.
+    float Process(float pitchKnob01, float morphKnob01, float pmKnob01, float ringModKnob01,
                   float sampleRate)
     {
         const float internalSampleRate = sampleRate * kOversampleFactor;
         std::array<float, kOversampleFactor> internalOutput{};
-        // Hold all five normalized controls through four complete oscillator
+        // Hold all four normalized controls through four complete oscillator
         // steps. Decimate the complete PM/ring result through two halfbands.
         for (int substep = 0; substep < kOversampleFactor; ++substep)
             internalOutput[static_cast<std::size_t>(substep)] = ProcessEngineSample(
-                pitchKnob01, morphKnob01, pmKnob01, pmRateKnob01, ringModKnob01, internalSampleRate);
+                pitchKnob01, morphKnob01, pmKnob01, ringModKnob01, internalSampleRate);
         const float middleFirst = antiAliasFilter[0].Process(internalOutput[0], internalOutput[1]);
         const float middleSecond = antiAliasFilter[0].Process(internalOutput[2], internalOutput[3]);
         const float output = antiAliasFilter[1].Process(middleFirst, middleSecond);

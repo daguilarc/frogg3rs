@@ -86,10 +86,11 @@ Release artifacts: a macOS disk image, a Windows zip, VST3 for macOS and Windows
 - **LCH-02** `[SWEEP]` (A:LCH-02; B:S0) **Start:** LCH-01. **Action:** read every encoder in scene 1,
   then move the blend to scene 2 and read them again. **Result:** the default patch. VCO1/2/3 sit at
   110/220/330 Hz. In scene 1, Shape 1/2/3 sit at 0/0.5/1. In scene 2 they are mirrored to 1/0.5/0.
-  Drive Gain is at 20% in both scenes. Ringmod 1–3 are at 0. VCO balance is centred. Attack 1–3 are at
+  Drive Gain is at 20% in both scenes. Ringmod 1–3 are at 0. The VCO balance pair gives equal thirds. Attack 1–3 are at
   the floor. Sustain 1–3 are at 100%. R1 is at the floor, R2 at about 0.9 s and R3 at about 110 ms.
-  Curve is at the bottom and Grace at 0. Comb FB and Comb drive are centred and Topology is at the
-  bottom. Drive Phase is at 0.86, Anti-alias at the top, Feedback at 0, Fold centred, Tone at the top
+  Curve is at the bottom and Grace at 0. Comb FB and Comb drive are centred. The Filter page is open: Cutoff 1 and Cutoff 2 at the top,
+  Res 1 and Res 2 at the bottom, Morph 1 at the bottom (low-pass), Keytrk 1 centred (0%), Morph 2 at the
+  top (notch), Mix 1 and Mix 2 at the top. Balance X and Balance Y are at their centres (equal thirds). Drive Phase is at 0.86, Anti-alias at the top, Feedback at 0, Fold centred, Tone at the top
   and Symmetry centred. Delay Send is at 0, FB drive centred, FB tone at the top, Mod rate centred
   (0.25 Hz), Width bal at the top and Crush at 0. Reverb Send is at 0 with Tank drive, Tilt and Tuned
   centred. Every Crispy and Crunchy is at 0. **CODE:** neither draft gave the scene-2 mirror or the
@@ -116,12 +117,12 @@ Release artifacts: a macOS disk image, a Windows zip, VST3 for macOS and Windows
   Controllers, Sync, File and the load readout. **Caps:** P's sidebar holds only Controllers and
   File, and its transport row differs (PLG-04).
 - **SUR-02** `[SWEEP]` (A:SUR-02; B:N-01) **Start:** running, Audio page. **Action:** press Audio,
-  Envelope, Filter, Drive, Delay and Reverb in turn. **Result:** slots 0–13 hold that page's
+  Envelope, Drive, Filter, Delay and Reverb in turn. **Result:** slots 0–13 hold that page's
   parameters, slot 14 its own Crispy and slot 15 the shared Crunchy. Exactly one page button is lit.
   The page's colour applies to the grid, and Crunchy keeps one fixed colour. The sound does not
   change, because every page processes audio all the time.
 - **SUR-03** `[SWEEP]` (A:SUR-03; B:N-02) **Start:** Audio page. **Action:** press the forward arrow
-  six times. **Result:** the pages go Audio, Envelope, Filter, Drive, Delay, Reverb and wrap to Audio.
+  six times. **Result:** the pages go Audio, Envelope, Drive, Filter, Delay, Reverb and wrap to Audio.
 - **SUR-04** `[SWEEP]` (A:SUR-04; B:N-03) **Start:** Audio page. **Action:** press the back arrow
   once. **Result:** the page wraps to Reverb.
 - **SUR-05** `[SWEEP]` (A:SUR-05; B:N-06) **Start:** any page. **Action:** drag an encoder right and
@@ -131,17 +132,23 @@ Release artifacts: a macOS disk image, a Windows zip, VST3 for macOS and Windows
   keeps its knob until release.
 - **SUR-06** `[UX]` (A:SUR-06; B:N-04) **Start:** any page. **Action:** read every label on all six
   pages. **Result:** a canonical short name (such as `A1`) renders short. A truncated short name
-  renders in full (such as `Comb offset`). No label covers the ring.
+  renders in full (such as `Comb delay`). No label covers the ring.
 - **SUR-07** `[SWEEP]` (A:SUR-07; B:N-08) **Start:** running. **Action:** watch the scope band.
   **Result:** each VCO panel shows a live trace.
-- **SUR-08** `[SWEEP]` (A:SUR-08; B:N-05, FI-00, FI-04) **Start:** Filter page. **Action:** move Peak
-  freq, Peak gain, Peak Q, Comb delay and Comb FB. **Result:** a frequency-response curve is drawn
-  under each filter encoder behind a dimmed body. It follows the change and stays in frame at extreme
-  Comb FB. The parameters are grouped: Peak (slots 0–2), Comb (3–7), Scoop (8–11), then Comb/Peak and
-  Topology.
+- **SUR-08** `[SWEEP]` (A:SUR-08; B:N-05, FI-04) **Start:** Filter page. **Action:** move
+  Cutoff 1, Res 1, Morph 1, Comb tune, Comb FB, Cutoff 2, Res 2 and Morph 2. **Result:** a
+  frequency-response curve is drawn under each filter encoder behind a dimmed body. It follows the change
+  and stays in frame at extreme Comb FB. The parameters are grouped: main filter (slots 0–4), Comb (5–9),
+  peak/notch (10–13).
 - **SUR-09** `[SWEEP]` (B:N-07) **Start:** running. **Action:** open Audio I/O, Controllers, Sync and
   File in turn, and press Back on each. **Result:** each page replaces the instrument view, and Back
   restores it with its state intact.
+- **SUR-10** `[SWEEP]` (task E10) **Start:** a patch and a DAW session saved before the page-order change,
+  with the Filter page visible. **Action:** load them; then read the six page buttons left to right.
+  **Result:** the buttons read Audio, Envelope, Drive, Filter, Delay, Reverb (signal order); the loaded patch
+  has every parameter value it was saved with; the session reopens on the Filter page; a host automation lane
+  recorded on a Filter parameter still moves that Filter parameter; a controller row saved with a page-select
+  number selects the page it selected before. **CHECK** (task E10).
 
 ## 1.4 Transport, Freeze and tempo (S, B; P in 1.17)
 
@@ -256,12 +263,16 @@ Unless a step says otherwise, **Start** is the default patch, running, with the 
   `RingModDepthScale` and `RingModPhaseIncrement` (`kRingModMinHz` 20 to `kRingModMaxHz` 5000).
 - **AUD-10** `[SWEEP]` (A:AUD-10; B:AU-10) Ringmod 2, as AUD-09 on VCO2.
 - **AUD-11** `[SWEEP]` (A:AUD-11; B:AU-11) Ringmod 3, as AUD-09 on VCO3.
-- **AUD-12** `[SWEEP]` (A:AUD-12; B:AU-12) PM rate, 2 Hz to 20 Hz. **Start:** Ph.mod 1 at mid, Ph.mod 2
-  and 3 at 0. **Result:** VCO1's wobble speeds up with the same swing size (within a few percent). The
-  minimum still cycles audibly. VCO2 and VCO3 stay unmodulated. **RULED** (HR, PM floor set to 2 Hz).
-- **AUD-13** `[SWEEP]` (A:AUD-13; B:AU-13) VCO balance. **Result:** emphasis moves from VCO1 through
-  an equal three-way split at the centre (the default) to VCO3. Each VCO's weight stays between 10%
-  and 80%, and the weights sum to 1.
+- **AUD-12** `[SWEEP]` (A:AUD-13; B:AU-13, the VCO balance step this control replaces) Balance Y, 0 to 1. **Start:** Balance X at its centre.
+  **Result:** the point moves along the triangle's VCO3 axis: VCO3 silent at the bottom (VCO1 and VCO2
+  share equally), equal thirds at the centre, VCO3 alone at the top. There is no PM rate control: phase
+  modulation runs at a fixed 2 Hz, and Ph.mod 1-3 alone set and remove it. **CHECK** (task E1).
+- **AUD-13** `[SWEEP]` (A:AUD-13; B:AU-13, the VCO balance step this control replaces) Balance X, 0 to 1. **Start:** Balance Y at its centre (the
+  default). **Result:** at the centre the three VCOs are an equal three-way split; moving the knob trades
+  VCO1 against VCO2. Balance X and Y are the two coordinates of a point in a triangle whose corners are
+  the VCOs (Logic ES2 Triangle): each side of the two-knob square except the top crossfades two VCOs with
+  the third silent, each bottom corner plays one VCO alone, the top edge plays VCO3 alone, and the weights
+  sum to 1 with no floor. **CHECK** (task E1; the map is design.md "VCO Balance").
 
 ### Envelope page
 
@@ -286,36 +297,47 @@ Unless a step says otherwise, **Start** is the default patch, running, with the 
 
 ### Filter page
 
-- **FIL-00** `[SWEEP]` (A:FIL-00; B:FI-00) Peak freq, 100 Hz to 20 kHz. **Result:** the peak moves.
-- **FIL-01** `[SWEEP]` (A:FIL-01; B:FI-01) Peak gain. **Result:** flat at the bottom. At page
-  defaults, a 100 Hz tone holds within 0.0000097 dB, 1 kHz falls 5.27 dB, 5 kHz falls 5.75 dB, and a
-  broadband source loses 6.72 dB.
-- **FIL-02** `[UX]` (A:FIL-02; B:FI-02) Peak Q. **Result:** a wide bump becomes a narrow ringing
-  resonance.
-- **FIL-03** `[SWEEP]` (A:FIL-03; B:FI-03) Comb offset, 1 ms to 100 ms. **Result:** the comb's attack
+- **FIL-00** `[SWEEP]` (no draft step: control new in filter-page-redesign) Cutoff 1, 20 Hz to 20 kHz exponential, at Keytrk 1 0%.
+  **Result:** the main filter's cutoff moves; at the top (the default) with Res 1 at the bottom the
+  filter is open to within the top octaves' loss that **CHECK** (figure from task M1) states.
+- **FIL-01** `[SWEEP]` (no draft step: control new in filter-page-redesign) Res 1, Q 0.5 to 5.5 exponential. **Result:** the peak at
+  the cutoff rises. The level it costs at the output is **CHECK** (figure from task M3), stated in the manual and pinned.
+- **FIL-02** `[SWEEP]` (no draft step: control new in filter-page-redesign) Morph 1, low-pass at the bottom through band-pass at the centre to
+  high-pass at the top, continuous.
+- **FIL-03** `[SWEEP]` (no draft step: control new in filter-page-redesign) Keytrk 1, -100% to +100%, 0% at the centre. **Start:** play a
+  note and move the three VCO pitch knobs together, then one of them. **Result:** the one main filter tracks
+  the key, the mean of the three VCO pitches weighted by the VCO Balance weights (no gate involved): at +100%
+  the cutoff moves one semitone per semitone of the key from the reference note (MIDI 60), at 0% it does not
+  move, at -100% it moves the opposite way. Moving all three pitches by n semitones moves the key by n; moving
+  one VCO moves it by that VCO's weight times n, and not at all when that VCO's weight is 0. **CHECK** (task E2).
+- **FIL-04** `[SWEEP]` (no draft step: control new in filter-page-redesign) Mix 1. **Result:** at the bottom the output is the input sample for
+  sample; at the top it is the filtered signal alone. The mix is linear with no floor, so a dip in
+  between is possible. **CHECK** (figure from task M2).
+- **FIL-05** `[SWEEP]` (A:FIL-03; B:FI-03) Comb delay, 1 ms to 100 ms. **Result:** the comb's attack
   smears, and its pitch does not change.
-- **FIL-04** `[SWEEP]` (A:FIL-04; B:FI-04) Comb delay, 100 Hz to 10 kHz. **Result:** the comb's ring
-  pitch follows.
-- **FIL-05** `[SWEEP]` (A:FIL-05; B:FI-05) Comb FB, bipolar, from the centre to each end. **Result:**
+- **FIL-06** `[SWEEP]` (A:FIL-04; B:FI-04) Comb tune, 100 Hz to 10 kHz at the reference note, relative to
+  the key. **Result:** the comb rings at a pitch that follows the knob and moves with the key (the same one the
+  main filter reads) one semitone per semitone; below the comb buffer's lowest pitch (23.44 Hz at 192 kHz) the pitch stops falling (clamp).
+- **FIL-07** `[SWEEP]` (A:FIL-05; B:FI-05) Comb FB, bipolar, from the centre to each end. **Result:**
   no resonance at the centre, rising to ±0.95 at the ends. Ring time grows by equal ratios per step,
-  and the ring always decays.
-- **FIL-06** `[UX]` (A:FIL-06; B:FI-06) Comb LP, up to 20 kHz. **Result:** turning down darkens and
+  and the ring always decays. The comb's own notch is no more than 6.02 dB down.
+- **FIL-08** `[UX]` (A:FIL-06; B:FI-06) Comb LP, up to 20 kHz. **Result:** turning down darkens and
   shortens the repeats; turning up brightens and sustains them.
-- **FIL-07** `[SWEEP]` (A:FIL-07; B:FI-07) Comb drive, 0.25× to 4×, unity at the centre. **Result:**
+- **FIL-09** `[SWEEP]` (A:FIL-07; B:FI-07) Comb drive, 0.25× to 4×, unity at the centre. **Result:**
   above the centre the comb saturates harder. Below the centre it can ring louder, and the page
   limiter holds the level.
-- **FIL-08** `[SWEEP]` (A:FIL-08; B:FI-08) Scoop mix. **Result:** no notch at the bottom, rising to a
-  notched signal that fully replaces the input at the top.
-- **FIL-09** `[SWEEP]` (A:FIL-09; B:FI-09) Scoop freq, 100 Hz to 20 kHz, independent of Peak freq.
-- **FIL-10** `[UX]` (A:FIL-10; B:FI-10) Scoop width, independent of Peak Q.
-- **FIL-11** `[SWEEP]` (A:FIL-11; B:FI-11) Scoop depth, from no dip to about a 95% dip.
-- **FIL-12** `[SWEEP]` (A:FIL-12; B:FI-12) Comb/Peak, an equal-power blend. **Result:** the held-back
-  branch sits about −22 dB at each end, and each branch is at −3 dB at the centre.
-- **FIL-13** `[SWEEP]` (A:FIL-13; B:FI-13) Topology. **Result:** parallel at the bottom, series at the
-  top, and continuous in between.
-- **FIL-14** `[SWEEP]` (B:FI-15) **Start:** Comb/Peak at the comb end, Comb FB at max, Comb drive at
-  the bottom. **Action:** play a tone at the comb pitch. **Result:** the one limiter after the blend
-  holds the level.
+- **FIL-10** `[SWEEP]` (successor to Peak freq; changed range and filter law) Cutoff 2, 20 Hz to 20 kHz exponential. **Result:** the peak or
+  notch moves.
+- **FIL-11** `[UX]` (successor to Peak Q; changed range and damping law) Res 2, Q 0.5 to 5.5. **Result:** a wide peak or notch becomes a
+  narrow one, and the peak rings.
+- **FIL-12** `[SWEEP]` (no draft step: control new in filter-page-redesign) Morph 2, peak at the bottom, notch at the top. **Result:**
+  the stage moves continuously from a resonant peak to a notch at its frequency; mid-travel is not a
+  low-pass (**CHECK** (figure from task M2)), and the stage level moves between about -3 dB away from the centre at the
+  peak end and 0 dB at the notch end. **CHECK** (task E4).
+- **FIL-13** `[SWEEP]` (no draft step: control new in filter-page-redesign) Mix 2. **Result:** as FIL-04 for the peak/notch stage.
+- **FIL-14** `[SWEEP]` (B:FI-15) **Start:** Comb FB at max, Comb drive at the bottom, all three stages
+  live. **Action:** play a tone at the comb pitch. **Result:** the one limiter after the last stage holds
+  the level, and no stage is limited ahead of it.
 
 ### Drive page
 
@@ -1116,7 +1138,7 @@ f. **Revert.** (A:FILE-12 and its note; B:F-12, F-13, BR-REVERT; decides FILE-01
 g. **WRLD.Bldr.** (A header; B counts.) MR 2026-09-23, OP and SR: "removed entirely", with no branch or
    step. Main still offers it (D-01).
 
-Also applied inside steps, although no draft raised them as questions: HR's PM floor (AUD-12), HR's
+Also applied inside steps, although no draft raised them as questions: HR's PM floor (draft step AUD-12, PM rate, whose control filter-page-redesign removes; PM now runs at a fixed 2 Hz, approved by Diego 2026-11-14), HR's
 cross-bank automation (PLG-09), HR's "Reset All is global" at the grid (RST-01), MR's Shift-and-Crispy
 tempo rule (TWI-08), MR's APC40 Ableton hardware check (APA-01, APA-03), MR's mapping targets (CTL-20),
 and OP's 30-minute cap (REC-07).

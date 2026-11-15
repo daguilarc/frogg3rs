@@ -3,14 +3,14 @@
 Terse parameter glossary for the current **Frogg3rs — Sheaf app** (`app/`). Full guide → [`MANUAL.md`](MANUAL.md).
 Daisy Field hardware firmware (frozen, different parameter model entirely) → [`DAISY_MANUAL.md`](DAISY_MANUAL.md).
 
-Six pages — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 14 page parameters (slots
+Six pages — Audio, Envelope, Drive, Filter, Delay, Reverb — 16 slots each: 14 page parameters (slots
 0–13) in the order below, a page-local Crispy (slot 14), and one shared global Crunchy (slot 15).
 
 ## Global
 
 - **Crispy** (slot 14, per page) — Fuego (bit-scramble) applied to that page's own 14 parameters only; no-op at 0.
 - **Crunchy** (slot 15, shared across all six pages) — Same fuego scramble applied to every parameter in every page, and to every page's own Crispy; no-op at 0.
-- **Page select** — Six buttons (Audio/Envelope/Filter/Drive/Delay/Reverb) choose which page's slots are on screen; all six keep processing regardless.
+- **Page select** — Six buttons (Audio/Envelope/Drive/Filter/Delay/Reverb) choose which page's slots are on screen; all six keep processing regardless.
 - **Play / Stop** — Transport. No manual note-on: while running, the shared envelope gate auto-pulses open for the first half of every quarter note (at the BPM control's tempo) and closed for the second half. Stop forces a fast ~50 ms fade on all three voices and clears Delay/Reverb tails. Play's plate shows held colours while the transport runs.
 - **Freeze / Record** — Freeze is a latch: engaging it stops the transport but holds the envelope gate open and keeps the delay recirculating, so the instrument drones while frozen. Releasing Freeze resumes the transport if it was running when Freeze engaged, the same as pressing Play; if the transport was already stopped, releasing just silences the drone. Record arms on one press and stops on the next (refusing to arm while the transport is stopped), offering the capture as `YYYY-MM-DD.wav`, up to 30 minutes.
 - **Modulation assign** — Click a parameter's encoder (or a page's own Crispy) to open its 15-source depth view; each source has an independent signed depth (0 = off) and multiple non-zero sources sum. Sources: Random S&H 1–6, VCO1–3 Audio, VCO1–3 EF, Noise, External Audio, External Audio EF (the last two carry real signal only once an external input is connected — see MANUAL.md's Audio configuration section; until then they hold silent defaults, 0.5 and 0.0).
@@ -19,10 +19,10 @@ Six pages — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 
 - **VCO1 / VCO2 / VCO3** (slots 0–2) — Pitch, continuous 27.5 Hz–1.76 kHz (A0–A6) exponential; defaults 110/220/330 Hz.
 - **Shape 1 / Shape 2 / Shape 3** (slots 3–5) — Per-VCO waveform morph, sine → saw → square.
-- **Ph.mod 1 / Ph.mod 2 / Ph.mod 3** (slots 6–8) — Per-VCO phase-mod depth from that VCO's own internal LFO; no cross-VCO coupling.
+- **Ph.mod 1 / Ph.mod 2 / Ph.mod 3** (slots 6–8) — Per-VCO phase-mod depth from that VCO's own fixed 2 Hz LFO; no cross-VCO coupling.
 - **Ringmod 1 / Ringmod 2 / Ringmod 3** (slots 9–11) — Per-VCO ring mod against its own internal carrier (20 Hz–5 kHz); true zero at the floor.
-- **PM rate** (slot 12) — One shared rate (2–20 Hz) for all three VCOs' phase-mod LFOs.
-- **VCO balance** (slot 13) — Tilts mix emphasis VCO1 → VCO2 → VCO3; every VCO always keeps 10–80% of the mix.
+- **Balance Y** (slot 12) — VCO3 share of the triangle mix; both Balance centres give equal thirds.
+- **Balance X** (slot 13) — VCO1/VCO2 crossfade within the remaining mix; corners can solo and there is no floor.
 
 ## Envelope
 
@@ -32,23 +32,6 @@ Six pages — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 - **Release VCO1 / Release VCO2 / Release VCO3** (`R1`/`R2`/`R3`, slots 3/7/11) — Time to fall to silence on gate-close, exponential, 5 ms–2.5 s.
 - **Curve** (slot 12) — Reshapes all three voices' Attack/Decay/Release ramps from a straight line (default) toward the analog shape: fast start, flattening into the target.
 - **Grace** (slot 13) — Minimum-hold before a gate-close is honored (0–1 s); no-op at default 0.
-
-## Filter
-
-- **Peak freq** (slot 0) — Resonant peaking-EQ center frequency, 100 Hz–20 kHz.
-- **Peak gain** (slot 1) — Raises the peak above its surroundings by attenuating them; level at the peak's own center frequency stays essentially unchanged across the travel. With the page at its defaults, which put the peak at 100 Hz, 1 kHz falls about 5 dB, 5 kHz falls about 6 dB, and broadband level falls about 7 dB.
-- **Peak Q** (slot 2) — Peak width/resonance.
-- **Comb offset** (slot 3) — Short pure delay ahead of the comb, 1–100 ms.
-- **Comb delay** (slot 4) — Comb filter pitch, 100 Hz–10 kHz.
-- **Comb feedback** (`Comb FB`, slot 5) — Comb resonance, neutral at center, up to ±0.95 (always decays).
-- **Comb LP** (slot 6) — Low-pass inside the comb feedback loop; darker when lower.
-- **Comb drive** (slot 7) — Pre-gain into the comb's saturator, 0.25×–4×, unity at default.
-- **Scoop mix** (slot 8) — Blends a resonant notch into the shared input feeding both the comb and peak paths; 0 = notch absent.
-- **Scoop freq** (slot 9) — Notch's own center frequency, independent of Peak freq, 100 Hz–20 kHz.
-- **Scoop width** (slot 10) — Notch's own Q, independent of Peak Q.
-- **Scoop depth** (slot 11) — How deep the notch dips (0 = none, ~95% at max); independent of Scoop mix.
-- **Comb/Peak** (slot 12) — Blend between peak and comb paths.
-- **Topology** (slot 13) — Continuous morph, parallel (default) to series routing of comb into peak.
 
 ## Drive
 
@@ -66,6 +49,26 @@ Six pages — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 1
 - **Fold** (slot 11) — Sine-fold divisor, 16× down to 1× as the knob rises, so fold density rises with it; every position folds. At Fuzz's maximum the folder sits about 22 dB under the saturator, so Fold is quieter there: every position above the bottom still changes the sound.
 - **Tone** (slot 12) — Low-pass at the end of the chain, ~800 Hz to bypass; bypass at default.
 - **Symmetry** (slot 13) — Bipolar phase offset into the folder, centred at default (middle of travel = no offset, the two halves skew opposite sides of the wave); loudest with Fuzz low, and about 25 dB less effect at Fuzz's top. On a held or picked note this creates a DC offset, small at the page's default settings and up to about three-quarters of full scale at some other Gain/Shape/Fold combinations.
+
+## Filter
+
+Filter 1 → comb → Filter 2 → output limiter. The shared tracking reference is the Balance-weighted
+mean of the three VCO pitch controls in semitones, relative to middle C (261.6 Hz, note 60).
+
+- **Cutoff 1** (slot 0) — Main cutoff, 20 Hz–20 kHz exponential before tracking; default 20 kHz.
+- **Res 1** (slot 1) — Main resonance, Q 0.5–5.5; higher values emphasize and ring at the cutoff.
+- **Morph 1** (slot 2) — Continuous low-pass → band-pass → high-pass; default low-pass.
+- **Keytrk 1** (slot 3) — Cutoff tracking, −100% to +100%; centre default is 0%.
+- **Mix 1** (slot 4) — Linear dry → Filter 1, reaching fully filtered at 1; default 1.
+- **Comb delay** (slot 5) — Pure delay ahead of the comb, 1–100 ms, bounded by buffer capacity.
+- **Comb tune** (slot 6) — 100 Hz–10 kHz at middle C, tracking the shared reference one octave per octave; bounded by the delay buffer.
+- **Comb FB** (slot 7) — Comb feedback, zero at centre, up to ±0.95; farther from centre rings longer.
+- **Comb LP** (slot 8) — Loop low-pass, from four times tracked tune up to 20 kHz, with the lower end bounded at 20 kHz.
+- **Comb drive** (slot 9) — Saturator gain, 0.25×–4×; unity at centre. Below unity the comb can ring louder.
+- **Cutoff 2** (slot 10) — Peak/notch frequency, 20 Hz–20 kHz exponential; default 20 kHz.
+- **Res 2** (slot 11) — Peak/notch resonance, Q 0.5–5.5; raises peak gain and ringing without compensation.
+- **Morph 2** (slot 12) — Peak → notch, retaining low and high passbands in the middle; away-from-centre gain rises from about −3 dB to 0 dB. Default notch.
+- **Mix 2** (slot 13) — Linear comb output → Filter 2, fully filtered at 1; default 1. Intermediate mixes can lose level through phase differences.
 
 ## Delay
 

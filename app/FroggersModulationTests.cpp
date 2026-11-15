@@ -3027,7 +3027,7 @@ TEST_CASE(app_commands_apply_every_press_in_bus_order_within_one_tick) {
     press(FroggersActions::kPageNext);
     press(FroggersActions::kPageNext);
     rig.RunBlocks(4);
-    REQUIRE_TRUE(app.ActivePageIndex() == (startPage + 2) % kFroggersPageCount);
+    REQUIRE_TRUE(app.ActivePageIndex() == FroggersBankAtDisplayPosition((FroggersDisplayPosition(startPage) + 2) % kFroggersPageCount));
 
     // RND-01/RST-01: a Randomize All and a Reset All dispatched in the same
     // tick apply in the order they were pushed, not grouped by kind. Run at

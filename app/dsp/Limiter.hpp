@@ -12,8 +12,7 @@
 // move DOWN into dsp/. A small dedicated header (rather than folding it
 // into FilterFx.hpp beside PadeSaturator) keeps a general-purpose dynamics
 // processor -- attack/release envelope follower, not a filter/saturator --
-// out of a file whose own header comment scopes it to "comb/peak/scoop
-// routing". `FilterFx.hpp` includes this header below; `FroggersAppCore.hpp`
+// out of a file whose own header comment scopes it to "Filter-page DSP". `FilterFx.hpp` includes this header below; `FroggersAppCore.hpp`
 // uses `dsp::OutputLimiter` transitively through that include (and directly,
 // for its own `outputLimiter_` member).
 //

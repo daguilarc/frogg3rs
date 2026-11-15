@@ -12,10 +12,7 @@
 //   - src/core/SDDSine.hpp              (Sine01, below)
 //   - src/core/PhaseUtils.hpp:49-52,87-90 (ExpMapCompute, ZeroedExpCompute)
 //   - src/core/OPLowPassFilter.hpp      (OnePoleLowPass)
-//   - src/core/BiquadSection.hpp:30-38  (BiquadDf1::Process only; the port
-//     needs no highpass path, so SetCoefficients's isHighPass branch is not
-//     carried -- ResonantBump only ever uses the peaking-EQ coefficient math
-//     in FilterFx.hpp, computed there directly)
+//   - src/core/BiquadSection.hpp:30-38 (BiquadDf1, used by Drive)
 
 #include <algorithm>
 #include <cassert>

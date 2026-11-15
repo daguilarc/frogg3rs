@@ -80,6 +80,20 @@ inline constexpr std::size_t kFroggersSlotsPerBank = 16;  // bank slots 0-15
 inline constexpr std::size_t kFroggersCrispySlot = 14;
 inline constexpr std::size_t kFroggersCrunchySlot = 15;
 
+// Display position is independent of the stored bank identity.
+inline constexpr std::array<FroggersBankId, kFroggersPageCount> kFroggersDisplayOrder{{
+    FroggersBankId::Audio, FroggersBankId::Envelope, FroggersBankId::Drive,
+    FroggersBankId::Filter, FroggersBankId::Delay, FroggersBankId::Reverb}};
+
+inline std::size_t FroggersBankAtDisplayPosition(std::size_t position) {
+    return static_cast<std::size_t>(kFroggersDisplayOrder[position]);
+}
+inline std::size_t FroggersDisplayPosition(std::size_t bankId) {
+    return static_cast<std::size_t>(std::find(kFroggersDisplayOrder.begin(), kFroggersDisplayOrder.end(),
+        static_cast<FroggersBankId>(bankId)) - kFroggersDisplayOrder.begin());
+}
+
+
 struct FroggersParamSpec {
     const char* name;
     const char* shortName;
@@ -127,22 +141,9 @@ struct FroggersBankLayout {
 // kEnvelopeRowLabels (:81-86, 10 entries: rows 0-8 used, row 9 is Envelope's
 // dead local Crispy).
 //
-// Result, independently confirmed:
-// Bank ORDER follows the signal path -- it
-// deliberately does not match the v2 source material's own listed order.
-// The parameter CONTENT of each bank matches that source material.
-//   Audio    -- VCO1, VCO2, VCO3, Shape 1/2/3, Phase mod 1/2/3
-//   Envelope -- Attack/Sustain/Release x VCO1, VCO2, VCO3
-//   Filter   -- Peak freq, Peak gain, Peak Q, Comb offset, Comb delay,
-//               Comb feedback, Comb LP, Comb drive, Scoop mix, Scoop freq,
-//               Scoop width, Scoop depth, Comb/Peak, Topology (grouped by
-//               stage; the v2 source's own order predates the grouping)
-//   Drive    -- Wet/Dry, Gain, Shape, SRR 1, SRR 2, XOR, Bit depth, Fuzz,
-//               Phase
-//   Delay    -- Wet/dry, Send, Delay time, Feedback, Stereo width, Freeze,
-//               Mod depth, Reverse blend, Diffusion
-//   Reverb   -- Wet/dry, Send, Room size, Decay, Pre-delay, Damping,
-//               Stereo width, Density, Mod, Hold
+// Stored bank identities remain Audio, Envelope, Filter, Drive, Delay, Reverb.
+// The separate display-order table follows the audible signal path.
+// Each bank has fourteen page controls before Crispy and Crunchy.
 inline const std::array<FroggersBankLayout, kFroggersPageCount>& FroggersBankLayouts() {
     static const std::array<FroggersBankLayout, kFroggersPageCount> layouts{{
         {FroggersBankId::Audio, "Audio", synth::Color::Red, {{
@@ -169,19 +170,7 @@ inline const std::array<FroggersBankLayout, kFroggersPageCount>& FroggersBankLay
             // "Ph.mod N" above. Long `name` only; `shortName`/slot/default
             // unchanged.
             {"Ringmod 1", "RM1"}, {"Ringmod 2", "RM2"}, {"Ringmod 3", "RM3"},
-            // Unset (0.0f) default sits at this knob's exponential-map
-            // minimum -- dsp::Vco::kPmLfoMinHz, the slowest rate the PM LFO
-            // can run. It plays no part in silencing PM: that job belongs
-            // entirely to the per-VCO PM depth knobs above, whose own
-            // 0.0f default gates the offset to exactly zero regardless of
-            // this rate.
-            {"PM rate", "PMrt"},
-            // 0.5f is this mapping's own centre (dsp::
-            // ComputeVcoBalanceWeights, VoiceEnvelope.hpp), which gives
-            // exactly equal weights (1/3, 1/3, 1/3) by construction --
-            // matching a simple hardcoded equal-thirds average
-            // exactly, so a fresh launch sounds balanced across all three VCOs.
-            {"VCO balance", "VBal", 0.5f},
+            {"Balance Y", "BalY", 0.5f}, {"Balance X", "BalX", 0.5f},
         }}},
         {FroggersBankId::Envelope, "Envelope", synth::Color::Green, {{
             {"Attack VCO1", "A1"}, {"Decay VCO1", "D1"}, {"Sustain VCO1", "S1", 1.0f}, {"Release VCO1", "R1"},
@@ -193,33 +182,12 @@ inline const std::array<FroggersBankLayout, kFroggersPageCount>& FroggersBankLay
             {"Curve", "Curv"}, {"Grace", "Grac"},
         }}},
         {FroggersBankId::Filter, "Filter", synth::Color::Blue, {{
-            {"Peak freq", "PkFreq"}, {"Peak gain", "PkGain"}, {"Peak Q", "PkQ"},
-            {"Comb offset", "CmbOff"}, {"Comb delay", "CmbDly"},
-            // 0.5f is this bipolar knob's centre: GetFeedback maps it to
-            // exactly zero feedback (dsp/FilterFx.hpp), so a fresh
-            // launch's comb passes signal through without ringing -- the
-            // same centred-default treatment VCO balance has above.
-            {"Comb feedback", "CmbFb", 0.5f},
-            {"Comb LP", "CmbLP"},
-            // Comb drive default 0.5f -> ExpMapCompute(0.25f, 4.0f, 0.5f)
-            // == 0.25f * sqrt(16.0f) == 1.0f, unity gain (see
-            // RouteAudioSample's own Filter slot 7 wiring) -- a fresh
-            // launch matches the always-parallel, unscooped signal path.
-            {"Comb drive", "CDrv", 0.5f}, {"Scoop mix", "ScMix"},
-            // Scoop freq/width/depth defaults, chosen so a fresh launch
-            // matches the always-parallel, unscooped signal path:
-            //   Scoop freq/width 0.0f -> ExpMapCompute(min,max,0)==min,
-            //     the SAME min the Peak freq/width knobs (slots 0/2) reach
-            //     at their own current 0.0f defaults -- reproduces exactly
-            //     what bumpFreq/bumpWidth give scoopNotch.
-            //   Scoop depth 0.0f -> same default the existing Scoop
-            //     parameter (slot 8, above) already carries.
-            {"Scoop freq", "ScFq", 0.0f}, {"Scoop width", "ScWd", 0.0f}, {"Scoop depth", "ScDp", 0.0f},
-            {"Comb/Peak", "Cmb/Pk"},
-            // Topology default 0.0f -> FilterFxChain::Process's
-            // topology==0, bit-identical to the always-parallel behaviour
-            // a fresh launch matches.
-            {"Topology", "Topo", 0.0f},
+            {"Cutoff 1", "Cut1", 1.0f}, {"Res 1", "Res1"}, {"Morph 1", "Mrph1"},
+            {"Keytrk 1", "Key1", 0.5f}, {"Mix 1", "Mix1", 1.0f},
+            // Stored identities preserve offset/feedback values in old patches.
+            {"Comb offset", "CmbDly"}, {"Comb tune", "CmbTun"}, {"Comb feedback", "CmbFb", 0.5f},
+            {"Comb LP", "CmbLP"}, {"Comb drive", "CmbDrv", 0.5f},
+            {"Cutoff 2", "Cut2", 1.0f}, {"Res 2", "Res2"}, {"Morph 2", "Mrph2", 1.0f}, {"Mix 2", "Mix2", 1.0f},
         }}},
         {FroggersBankId::Drive, "Drive", synth::Color::Orange, {{
             {"Wet/Dry", "Wet"}, {"Gain", "Gain"}, {"Shape", "Shape"}, {"SRR 1", "SRR1"},
@@ -395,7 +363,7 @@ public:
     // constructed before FroggersApp::Init() calls this method, and simply
     // passed in here rather than owned by this class.
     void Init(synth::ParameterManager& manager, synth::ui::Visualizer* peakVisualizer = nullptr,
-              synth::ui::Visualizer* combVisualizer = nullptr) {
+              synth::ui::Visualizer* combVisualizer = nullptr, synth::ui::Visualizer* mainVisualizer = nullptr) {
         manager_ = &manager;
         // Must precede CreateGroup: SetGestureCount refuses once the manager
         // owns a group, and this is the only group Froggers creates.
@@ -481,22 +449,9 @@ public:
             for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
                 const FroggersParamSpec& spec = layout.params[paramIx];
                 const std::string qualifiedName = std::string(layout.name) + " " + spec.name;
-                // Filter bank paramIx 0-2 are "Peak freq/Peak
-                // gain/Peak Q" (this bank's ResonantBump) and paramIx 4-6
-                // are "Comb delay/Comb feedback/Comb LP" (this bank's Comb)
-                // -- see FroggersBankLayouts()'s own Filter row above. Comb
-                // offset (3, the PureDelay ahead of the comb -- a timing
-                // control, not part of either curve's own shape),
-                // Comb/Peak (12, a blend) and Scoop (8, a second
-                // ResonantBump instance) deliberately
-                // get no transfer-function underlay here.
                 synth::ui::Visualizer* visualizer = nullptr;
                 if (layout.id == FroggersBankId::Filter) {
-                    if (paramIx <= 2) {
-                        visualizer = peakVisualizer;
-                    } else if (paramIx >= 4 && paramIx <= 6) {
-                        visualizer = combVisualizer;
-                    }
+                    visualizer = paramIx <= 4 ? mainVisualizer : paramIx <= 9 ? combVisualizer : peakVisualizer;
                 }
                 const synth::ParameterId id = manager.RegisterParameter(*group_, synth::ParameterConfig{
                     .name = qualifiedName,

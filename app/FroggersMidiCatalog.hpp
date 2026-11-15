@@ -194,7 +194,7 @@ inline synth::MidiControllerProfileConfig Apc40BaseConfig() {
             synth::MidiControlAddress{.channel = static_cast<std::uint8_t>(ix),
                                       .cc = 52,
                                       .type = synth::MidiControlType::Note},
-            FroggersActions::kPageSelect, std::to_string(ix)));
+            FroggersActions::kPageSelect, std::to_string(FroggersBankAtDisplayPosition(ix))));
     }
 
     synth::MidiControllerProfileConfig config;
@@ -260,7 +260,7 @@ inline std::vector<synth::MidiControllerSystemMessageAssociation> LaunchpadPadMa
     };
     for (std::size_t ix = 0; ix < kFroggersPageCount; ++ix) {
         associations.push_back(LaunchpadPadButton(controller, 8, static_cast<int>(ix), FroggersActions::kPageSelect,
-                                                    std::to_string(ix)));
+                                                    std::to_string(FroggersBankAtDisplayPosition(ix))));
     }
     return associations;
 }
@@ -348,7 +348,7 @@ inline synth::MidiAppCatalog FroggersMidiCatalog() {
     };
     for (std::size_t ix = 0; ix < kFroggersPageCount; ++ix) {
         catalog.actions.push_back(
-            {FroggersActions::kPageSelect, std::to_string(ix), "Page " + std::to_string(ix + 1), std::nullopt});
+            {FroggersActions::kPageSelect, std::to_string(FroggersBankAtDisplayPosition(ix)), "Page " + std::to_string(ix + 1), std::nullopt});
     }
     catalog.actions.push_back({FroggersActions::kSceneSelect, "0", "Scene 1", std::nullopt});
     catalog.actions.push_back({FroggersActions::kSceneSelect, "1", "Scene 2", std::nullopt});

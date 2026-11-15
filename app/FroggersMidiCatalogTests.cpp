@@ -579,7 +579,7 @@ TEST_CASE(device_defaults_are_valid_and_address_exactly_the_documented_controls)
     expectedSystemMessages.insert({0, 81, kNote, synth_froggers::FroggersActions::kFreeze, ""});
     for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersPageCount; ++bankIx) {
         expectedSystemMessages.insert(
-            {static_cast<int>(bankIx), 52, kNote, synth_froggers::FroggersActions::kPageSelect, std::to_string(bankIx)});
+            {static_cast<int>(bankIx), 52, kNote, synth_froggers::FroggersActions::kPageSelect, std::to_string(synth_froggers::FroggersBankAtDisplayPosition(bankIx))});
     }
 
     for (const synth::MidiAppDeviceDefault* device : {&generic, &ableton}) {
@@ -971,7 +971,7 @@ TEST_CASE(launchpad_defaults_page_column_covers_every_page) {
             REQUIRE_TRUE(assoc.launchpadPosition.has_value());
             REQUIRE_TRUE(assoc.launchpadPosition->x == 8);
             REQUIRE_TRUE(assoc.launchpadPosition->y == static_cast<int>(pagePadCount));
-            REQUIRE_TRUE(assoc.appActionValue == std::to_string(pagePadCount));
+            REQUIRE_TRUE(assoc.appActionValue == std::to_string(synth_froggers::FroggersBankAtDisplayPosition(pagePadCount)));
             ++pagePadCount;
         }
         REQUIRE_TRUE(pagePadCount == synth_froggers::kFroggersPageCount);

@@ -2,7 +2,6 @@
 
 ## Purpose
 The portable Froggers surface (dual VCO scope band + global chrome, sixteen-slot encoder grid, in-place modulation-detail swap) ported from the v2 layout design, built entirely with Sheaf's portable UI builder so the same description drives both the desktop and browser hosts.
-
 ## Requirements
 ### Requirement: Portable surface built with Sheaf UI
 The Froggers surface SHALL be constructed entirely with Sheaf's portable UI builder. No JUCE component from the legacy desktop trees SHALL be reused.
@@ -147,27 +146,53 @@ the knob, not on the surface, and is deliberately visible.
 ### Requirement: The Filter page groups its controls by stage
 
 The Filter page SHALL present its controls grouped by the stage they
-belong to, whatever slot indices carry them: the Peak stage's frequency,
-gain, and Q together; the Comb stage's offset, delay, feedback, lowpass,
-and drive together; the Scoop stage's blend, frequency, width, and depth
-together; and the two routing controls — Comb/Peak and Topology — at the
-end of the page's own controls, before the page's own Crispy and the global
-Crunchy, which keep their fixed positions. Whether grouping is achieved by
-re-slotting or by a display-order mapping is the implementation's decision,
-made only after the patch persistence format's addressing is read; saved
-patches SHALL keep meaning what they meant.
+belong to, whatever slot indices carry them: the main filter's cutoff,
+resonance, blend, key tracking and mix together; the Comb stage's offset,
+tune, feedback, lowpass, and drive together; and the resonant peak/notch
+stage's frequency, resonance, blend and mix together, all before the page's
+own Crispy and the global Crunchy, which keep their fixed positions. Whether
+grouping is achieved by re-slotting or by a display-order mapping is the
+implementation's decision, made only after the patch persistence format's
+addressing is read; saved values for retained, unchanged-meaning parameters SHALL still apply to those controls. Removed controls and changed-meaning controls with new stored names intentionally do not restore old values (proposal D-NAMES). The
+order of the three groups on the page is main filter, comb, peak/notch (proposal D-ORDER, approved by Diego 2026-11-14).
+
+<!-- RESTATES-EXCEPT
+every Peak control is adjacent to the other Peak controls
+  keeps: every Comb control adjacent to the other Comb controls
+Comb/Peak and Topology sit at the end of the page's own
+  keeps: with Crispy and Crunchy unmoved after them
+every parameter carries the value it was saved with
+  keeps: the value it was saved with
+-->
 
 #### Scenario: Stages read as clusters
 
 - **WHEN** the operator opens the Filter page
-- **THEN** every Peak control is adjacent to the other Peak controls, every
-  Comb control adjacent to the other Comb controls, and every Scoop
-  control adjacent to the other Scoop controls
-- **THEN** Comb/Peak and Topology sit at the end of the page's own
+- **THEN** every main-filter control is adjacent to the other main-filter controls, every
+  Comb control adjacent to the other Comb controls, and every peak/notch
+  control adjacent to the other peak/notch controls
+- **THEN** the three groups sit at the start of the page's own
   controls, with Crispy and Crunchy unmoved after them
 
 #### Scenario: Saved patches survive the regrouping
 
 - **WHEN** a patch saved before the regrouping is loaded after it
-- **THEN** every parameter carries the value it was saved with, applied to
-  the control it was saved from
+- **THEN** every retained parameter whose meaning and stored identity are unchanged carries the value it was saved with, applied to the control it was saved from
+- **AND** values for removed or changed-meaning controls do not set a new control merely because a slot or display label was reused; the replacement controls keep their registered defaults
+
+### Requirement: The pages appear in signal order
+
+The page selector, the back and forward arrows and every list of pages the surface offers SHALL present the pages left to right in signal order: Audio, Envelope, Drive, Filter, Delay, Reverb. The back arrow SHALL step to the previous page in that order and the forward arrow to the next, wrapping at both ends. Reordering the display SHALL NOT change which page any stored identity names: a host automation id, a saved session's visible page and a saved patch's parameter values SHALL each address the same page they addressed before.
+
+#### Scenario: Drive comes before Filter
+
+- **WHEN** the operator presses the forward arrow six times from the Audio page
+- **THEN** the pages visited are Envelope, Drive, Filter, Delay, Reverb and Audio, in that order, and the page buttons read left to right in the same order
+- Check: not yet delivered; execution task E10.
+
+#### Scenario: Stored page identities keep their meaning
+
+- **WHEN** a host parameter id `bank2.slot0` is read and a session saved with visible page 2 is restored, after this change
+- **THEN** the first addresses the Filter page's slot 0 and the second shows the Filter page, exactly as before
+- **AND** a build that renumbered the page identifiers instead fails this scenario, which is the liveness control
+- Check: not yet delivered; execution task E10.

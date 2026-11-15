@@ -108,25 +108,6 @@ The running transport's quarter-note pulse SHALL be the sole trigger for sound: 
 - **WHEN** the transport is not running and Freeze is latched
 - **THEN** the amplitude envelope stays open and the instrument keeps sounding
 
-### Requirement: The PM rate control's minimum is a moving rate, not a second off switch
-THE shared phase-modulation rate control SHALL map its minimum position to a slow but plainly audible modulation rate, above zero — a cycle completing within a few seconds, not a near-static drift. The size of the pitch swing the modulation produces SHALL be set by the per-VCO depth controls alone and SHALL be the same at every position of the rate control, so that the rate control changes only how fast the swing runs. Turning phase modulation off SHALL be exclusively the per-VCO depth controls' job, which already provide a true zero; no position of the rate control SHALL silence or effectively freeze the modulation while any depth is nonzero.
-
-#### Scenario: Minimum rate still audibly cycles
-- **WHEN** the PM rate control is at its minimum and any VCO's PM depth is nonzero
-- **THEN** that VCO's phase modulation audibly cycles, completing a full period within a few seconds
-
-#### Scenario: The pitch deviation is the same at every rate
-- **WHEN** the peak pitch deviation of a VCO's phase modulation is measured with the rate control at its minimum, its middle and its maximum, at one depth setting
-- **THEN** the three measurements are equal within a few percent
-
-#### Scenario: Off lives on the depth controls alone
-- **WHEN** every VCO's PM depth control is at minimum
-- **THEN** no phase modulation is applied, at any position of the rate control
-
-#### Scenario: The floor is a real rate, not zero
-- **WHEN** the rate control moves from its minimum toward maximum
-- **THEN** the modulation rate rises monotonically from the nonzero floor to the maximum rate, with no dead zone at the bottom
-
 ### Requirement: Envelope times map exponentially
 THE attack, decay and release controls SHALL map their position to time
 exponentially, matching every other time and frequency control in the
@@ -162,15 +143,19 @@ EVERY control's bounds SHALL sit where the control still does something
 audible. A control at either extreme SHALL produce a usable setting rather
 than a silent or inert one, so that randomizing a control explores its
 character instead of disabling it. Controls whose zero position is a real
-setting — phase-modulation depth, ring-modulation depth, peak gain,
-scoop depth and Grace — SHALL keep reaching true zero; turning an effect off
-belongs to those controls alone. Fold has no such position: its travel maps
-exponentially between two nonzero divisors, so it always folds by some
-nonzero amount and cannot be turned off.
+setting — phase-modulation depth, ring-modulation depth, the Filter page's
+dry-to-filtered mixes and Grace — SHALL keep reaching true zero; turning an
+effect off belongs to those controls alone. Fold has no such position: its
+travel maps exponentially between two nonzero divisors, so it always folds by
+some nonzero amount and cannot be turned off. (Peak gain and Scoop depth are
+removed by this change; the Filter mixes' bottom is the dry signal, proposal
+D-MIX, approved by Diego 2026-11-14.)
 
 <!-- RESTATES-EXCEPT
-peak gain, fold or scoop depth is at its minimum
+**WHEN** phase-modulation depth, ring-modulation depth, peak gain or scoop depth is at its minimum
   keeps: phase-modulation depth, ring-modulation depth
+**WHEN** the resonant peak, the scoop or the comb has its frequency randomized
+  keeps: has its frequency
 -->
 
 #### Scenario: A randomized patch stays audible
@@ -179,13 +164,28 @@ peak gain, fold or scoop depth is at its minimum
   or an envelope so slow that notes disappear
 
 #### Scenario: A randomized effect is audibly present
-- **WHEN** the resonant peak, the scoop or the comb has its frequency
+- **WHEN** a main filter, the peak/notch filter or the comb has its frequency
   randomized
 - **THEN** that effect lands within the audible range and is heard working,
   rather than sitting below hearing where it does nothing
 
 #### Scenario: Off is still reachable where off is meaningful
-- **WHEN** phase-modulation depth, ring-modulation depth, peak gain or
-  scoop depth is at its minimum
+- **WHEN** phase-modulation depth, ring-modulation depth or a Filter page
+  mix is at its minimum
 - **THEN** that effect contributes nothing at all
+
+### Requirement: Phase modulation has no rate control
+
+Phase modulation SHALL run at one fixed rate of 2 Hz (proposal D-PM, approved by Diego 2026-11-14), shared across all three VCOs. The per-VCO depth controls alone SHALL set the size of the swing and SHALL be the only way to turn phase modulation off. No Audio-page control SHALL change the rate.
+
+#### Scenario: Off lives on the depth controls alone
+
+- **WHEN** every VCO's PM depth control is at minimum
+- **THEN** no phase modulation is applied
+
+#### Scenario: The fixed rate is 2 Hz
+
+- **WHEN** a VCO's PM depth is nonzero and the modulation's period is measured
+- **THEN** the period is that of 2 Hz, within the tolerance task M5 sets from the measurement
+- Check: not yet delivered; execution task E1. The rate today is a 2 Hz minimum to 20 Hz maximum range (`openspec/story.md` AUD-12 records "PM floor set to 2 Hz"); the fixed rate is the 2 Hz minimum with the depth scaling that rate already carries, and the modulation-preview slate's own VCOs in `app/FroggersModulation.hpp` pass the same fixed rate.
 

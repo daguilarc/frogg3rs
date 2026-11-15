@@ -916,13 +916,12 @@ inline const std::array<std::array<const char*, kFroggersParamsPerBank>, kFrogge
 FroggersApprovedLabels() {
     static const std::array<std::array<const char*, kFroggersParamsPerBank>, kFroggersPageCount> labels{{
         {{"VCO1", "VCO2", "VCO3", "Shape 1", "Shape 2", "Shape 3", "Ph.mod 1", "Ph.mod 2", "Ph.mod 3",
-          "Ringmod 1", "Ringmod 2", "Ringmod 3", "PM rate", "VCO balance"}},
+          "Ringmod 1", "Ringmod 2", "Ringmod 3", "Balance Y", "Balance X"}},
         // Envelope -- canonical short forms, not a truncation: the short
         // form IS the name here.
         {{"A1", "D1", "S1", "R1", "A2", "D2", "S2", "R2", "A3", "D3", "S3", "R3", "Curve", "Grace"}},
         // Filter -- slot 5 shortened ("Comb feedback" -> "Comb FB").
-        {{"Peak freq", "Peak gain", "Peak Q", "Comb offset", "Comb delay", "Comb FB", "Comb LP",
-          "Comb drive", "Scoop mix", "Scoop freq", "Scoop width", "Scoop depth", "Comb/Peak", "Topology"}},
+        {{"Cutoff 1", "Res 1", "Morph 1", "Keytrk 1", "Mix 1", "Comb delay", "Comb tune", "Comb FB", "Comb LP", "Comb drive", "Cutoff 2", "Res 2", "Morph 2", "Mix 2"}},
         // Drive -- slot 9 shortened ("Anti-alias brightness" -> "Anti-alias").
         // Slots 10 and 13 render their full registered names ("Feedback",
         // "Symmetry") verbatim, same as every other unshortened slot on
@@ -1775,7 +1774,8 @@ private:
         rowLayout.gap = FroggersPageLayout::kGap;
         const auto& layouts = FroggersBankLayouts();
         builder.Row(FroggersNodeIds::kPageTabsRow, rowLayout, [this, &layouts](synth::ui::Builder& b) {
-            for (std::size_t bankIx = 0; bankIx < kFroggersPageCount; ++bankIx) {
+            for (std::size_t position = 0; position < kFroggersPageCount; ++position) {
+                const auto bankIx = FroggersBankAtDisplayPosition(position);
                 synth::ui::ControlStyle style{};
                 style.selected = PageSelected(bankIx);
                 style.layout.main = synth::ui::Extent::Weight(1.0f);

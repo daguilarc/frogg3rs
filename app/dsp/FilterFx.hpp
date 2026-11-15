@@ -1,51 +1,13 @@
 #pragma once
 
-// synth_froggers::dsp::{PadeSaturator, ResonantBump, Comb, PureDelay,
-// FilterFxChain} -- a **copy** of the cited Froggers formulas.
-//
-// Ported from:
-//   - 08b5fd3:src/core/ResonantBump.hpp:44-71   RBJ peaking-biquad coefficients
-//   - src/core/Comb.hpp:54              out = in + fb*sat(lp(delay[i-N]))
-//   - src/core/Comb.hpp:63              N = 1/freq (GetDelaySamples)
-//   - src/core/Comb.hpp:66-76           asymmetric +-1.1 feedback (GetFeedback --
-//     THIS PORT DELIBERATELY DIVERGES to +-0.95; see GetFeedback's own comment
-//     below)
-//   - src/core/Comb.hpp:79-109          PureDelay (fractional interp :98-108;
-//     the firmware file has no trailing newline after its closing `};`, so
-//     `wc -l` reports 108 while the struct's real content runs through
-//     line 109 -- confirmed by reading the file's raw bytes, not a citation
-//     error)
-//   - 08b5fd3:src/core/TanhSaturator.hpp:25-30  Pade rational approximation
-//     x(27+x^2)/(27+9x^2), NOT std::tanh (formula :28, clamp :29)
-//   - 08b5fd3:src/core/FroggersEngine.hpp:822-848 (ApplyOutputFx) -- specifically
-//     the parallel branch :824-833 and serial branch :834-839. The reverb
-//     stage and m_simFxInsert hook that follow (:840-847) are not part of
-//     this port.
-//
-// ============================================================================
-// ResonantBump and Comb each gain a
-// `struct UIState : synth::TransferFunction` (the interface TYPE; `TransferFunction`,
-// with its `FrequencyResponse`/`TransferFunctionValue` methods, is declared in
-// External/Sheaf/projects/synth/include/synth/DspTransferFunction.hpp), mirroring the exact
-// in-struct placement Sheaf's own filters use (`OnePoleLowPass::UIState`,
-// `OnePoleHighPass::UIState` and `ClassicStateVariableFilter::UIState`, all in
-// External/Sheaf/projects/synth/include/synth/DspFilters.hpp) rather than a separate
-// wrapper. As with app/dsp/Vco.hpp's own scope UIState, this is a
-// deliberate, minimal widening of this file's "no Sheaf dependency"
-// convention: `synth/DspTransferFunction.hpp` is a two-method abstract
-// interface with no further transitive Sheaf includes beyond `<complex>`,
-// header-only, no link dependency. `app/Makefile`'s DSP_TEST_BIN rule
-// gains Sheaf's -I include path accordingly.
-//
-// The comb's saturator is the Pade rational approximation (PadeSaturator
-// above), not tanh -- its small-signal gain (the derivative at x=0) is
-// exactly 1.0 (d/dx [x(27+x^2)/(27+9x^2)] at x=0 = 27/27 = 1), so the
-// linearised comb response below treats the saturator as an identity and
-// reduces Comb::Process's feedback loop to an ordinary linear
-// delay-plus-lowpass-in-feedback comb filter.
+// Design inspired by Vital (Matt Tytel) for the filter-module controls.
+// DSP uses the shared Sheaf SVF and the app's existing comb and limiter.
 
 #include "DspMath.hpp"
 #include "Limiter.hpp"
+#include "Vco.hpp"
+#include "VoiceEnvelope.hpp"
+#include "synth/DspFilters.hpp"
 #include "RecoveryTier.hpp"  // dsp::FiniteOnly/dsp::Magnitude, this struct's own ForEachStatefulUnit below.
 
 #include "synth/DspTransferFunction.hpp"
@@ -116,255 +78,13 @@ struct PadeSaturator
     }
 };
 
-// 08b5fd3:src/core/ResonantBump.hpp:7-78. RBJ peaking EQ; coefficients at :44-71.
-// The app's maximum peak-resonance gain, as a SHARED constant rather than a
-// literal at each use. It lives here, beside the unit it bounds,
-// because two places need to agree on it: FroggersAppCore's
-// `peak.SetHeight(ExpMapCompute(1.0f, kMaxResonantBumpHeight, knob))` and the
-// parity test that pins the resulting gain.
-//
-// It is a shared constant because the test that was supposed to pin this
-// ceiling did not: it computed `ExpMapCompute(1.0f, 4.0f, 1.0f)` with its own
-// hardcoded 4.0f and asserted the answer was 4.0f -- self-referential, and it
-// passed unchanged when the app's real ceiling moved 4.0 -> 2.0. Anything
-// asserting this value must read it from here, never retype it.
-//
-// Value history: 10.0 (firmware parity) -> 4.0 (gross overload) ->
-// 2.0 (still too harsh when modulated, very close to blowout territory) ->
-// 3.0 (2026-09-01: the pinned-comb launch state behind the 2.0 cap no
-// longer exists, and the candidate measurement showed the limiter holds
-// the worst case within 0.03 dB of the 2.0 ceiling's; ear-gated on the
-// deployed site).
-// See FroggersAppCore's own comment at the SetHeight
-// call for why modulation is the case that governs this number.
-inline constexpr float kMaxResonantBumpHeight = 3.0f;
+// Page limiter configuration is retained; it runs after all three stages.
+inline constexpr float kFilterOutputLimiterThreshold = 0.7f;
+inline constexpr float kFilterOutputLimiterCeiling = kStageCeiling;
+inline constexpr float kFilterOutputLimiterAttackSeconds = 5.0e-6f;
+inline constexpr float kFilterOutputLimiterReleaseSeconds = 0.1f;
+static_assert(kFilterOutputLimiterThreshold < kFilterOutputLimiterCeiling);
 
-// Tuning for
-// `FilterFxChain::outputLimiter` below, a SECOND, independently-configured
-// `dsp::OutputLimiter` instance (dsp/Limiter.hpp) applied to the Filter
-// page's output, after the Comb/Peak blend. The peak branch's own `1/height`
-// scalar trim alone was measured to not
-// close the gap under per-sample-random height modulation --
-// the peak is a stateful 2-pole biquad whose stored energy survives a
-// height DROP, and no per-sample SCALAR can retroactively scale away energy
-// already in a filter's state; something with its own release can. These
-// four constants are the ones that something needs, chosen BY MEASUREMENT
-// (a scratch harness reproducing this file's own ResonantBump + trim-
-// smoother math plus a candidate `dsp::OutputLimiter`, run over the exact
-// adversarial pattern that measured a worst-case 1.669: per-sample-random
-// `height` in [1, kMaxResonantBumpHeight], full-scale sine at the bump's
-// resonant frequency, 500,000 trials across 10 fixed xorshift32 seeds,
-// 50,000 samples/seed -- matching FroggersDspParityTests.cpp's own Pattern
-// 2 idiom exactly, not a fresh methodology), never by analogy to the master
-// limiter's own tuning (the comb-trim smoother's own constant was picked
-// by analogy once and measured 80% wrong later).
-//
-//   - kFilterOutputLimiterThreshold (0.7): BELOW the master output limiter's 0.9
-//     (this stage must catch the peak's residual
-//     BEFORE the master ever sees it) with comfortable margin, not just
-//     barely under it; the sweep found overshoot fell smoothly as
-//     threshold dropped from 0.9 toward 0.5, and 0.7 sits in the flat part
-//     of that curve (0.65 -> 0.982783, 0.70 -> 0.990022, 0.75 -> 0.995622
-//     worst-case, all at the attack below) -- low enough to leave real
-//     headroom under the computed bound A, not so low it engages on every
-//     ordinary moderate-height passage for no measured benefit.
-//   - kFilterOutputLimiterAttackSeconds (5 microseconds): the delicate number, and
-//     NOT chosen by analogy to the master's 1ms. Per-sample-random height
-//     modulation makes the worst-case transient a SINGLE-SAMPLE event (the
-//     biquad's residual right after a height drop, still carrying energy
-//     from the prior, higher height) -- a 1ms attack (a ~48-sample time
-//     constant at 48kHz) cannot react within one sample, and measured
-//     worst-case overshoot barely moved across the ENTIRE 1ms-500ms release
-//     sweep at a 1ms attack (stuck at ~1.44-1.53, nowhere near bound A).
-//     Sweeping attack alone (release fixed at 100ms, threshold fixed at
-//     0.7) found the worst case crosses under 1.0 between 0.01ms
-//     (1.028044) and 0.006ms (0.991957); 5 microseconds (0.990022 measured,
-//     10 seeds x 50,000 samples) sits just past that crossing with a
-//     working margin, and going faster still (2 microseconds: 0.988134)
-//     buys almost nothing further -- the curve is flattening, not still
-//     falling, so 5us is the measured knee, not an arbitrary small number.
-//   - kFilterOutputLimiterReleaseSeconds (100ms, matches the master): release
-//     barely moves the worst-case-overshoot measurement at all once attack
-//     is fast enough (0.005ms/thr=0.7: 0.991766 at 10ms release vs 0.989732
-//     at 500ms release -- a 0.002 spread across 50x the release time), so
-//     it cannot be chosen FROM that metric; it has to be chosen from the
-//     risk that actually matters instead -- reintroducing pumping on a
-//     slow-decaying residual. Measured that residual directly: a step
-//     excitation at max Q (10) and max height (2.0) at this file's own
-//     `freq = 0.05` (matches the existing peak-branch bound tests) decays
-//     to -60dB in 566 samples (11.79ms at 48kHz) once the input stops.
-//     100ms is ~8.5x that decay time -- comfortably slower than the
-//     residual it is meant to ride OVER rather than chase sample-by-sample
-//     (a release near or under 11.79ms would let the gain snap back up
-//     mid-ring, audible as pumping on exactly the signal this stage exists
-//     to tame), and it reuses a value this codebase has already accepted for
-//     this exact "gain reduction that does not pump" job (the master's own
-//     `kDefaultReleaseSeconds`, dsp/Limiter.hpp) rather than inventing a
-//     second number where the measurement gave no reason to.
-inline constexpr float kFilterOutputLimiterThreshold = 0.7f;  // unchanged -- MEASURED (above), already strictly below kStageCeiling.
-inline constexpr float kFilterOutputLimiterCeiling = kStageCeiling;  // retargeted from kSharedCeiling.
-// See dsp::OutputLimiter::kDefaultThreshold's own static_assert
-// (dsp/Limiter.hpp) for why a negative headroom is catastrophic AND silent.
-static_assert(kFilterOutputLimiterThreshold < kFilterOutputLimiterCeiling,
-              "threshold must stay strictly below ceiling; a negative headroom turns "
-              "DesiredMagnitude into an exponential amplifier -- see dsp/Limiter.hpp");
-inline constexpr float kFilterOutputLimiterAttackSeconds = 5.0e-6f;   // 5 microseconds -- see comment above.
-inline constexpr float kFilterOutputLimiterReleaseSeconds = kSharedReleaseSeconds;  // shared; see Limiter.hpp.
-
-struct ResonantBump
-{
-    // b0/b1/b2/a1/a2 (a0 already normalized to 1 by
-    // UpdateCoefficients() below) are exactly what BiquadDf1::Process's
-    // difference equation needs to reproduce the closed-form response --
-    // capturing them directly (rather than freq/height/width) means
-    // FrequencyResponse() reflects precisely the coefficients actually
-    // driving Process(), with no risk of re-deriving them differently.
-    struct UIState : synth::TransferFunction
-    {
-        std::atomic<float> b0{1.0f};
-        std::atomic<float> b1{0.0f};
-        std::atomic<float> b2{0.0f};
-        std::atomic<float> a1{0.0f};
-        std::atomic<float> a2{0.0f};
-
-        float FrequencyResponse(float normalizedFrequency) const override
-        {
-            return std::abs(TransferFunctionValue(normalizedFrequency));
-        }
-
-        std::complex<float> TransferFunctionValue(float normalizedFrequency) const override
-        {
-            return ResonantBump::ComputeTransferFunctionValue(
-                b0.load(), b1.load(), b2.load(), a1.load(), a2.load(), normalizedFrequency);
-        }
-    };
-
-    BiquadDf1 biquad;
-
-    float freq = 1000.0f;
-    float height = 1.0f;
-    float width = 1.0f;
-
-    // Tier 2's per-unit
-    // sustained-over-ceiling counter, owned here rather than in
-    // FroggersAppCore -- see dsp::Vco::overCeilingSeconds's own comment
-    // (app/dsp/Vco.hpp) for the full rationale. This struct has two
-    // independent instances (FilterFxChain's peak/scoopNotch), each with
-    // its own counter, same as any other member.
-    float overCeilingSeconds = 0.0f;
-
-    ResonantBump() { UpdateCoefficients(); }
-
-    void SetFreq(float f)
-    {
-        freq = f;
-        UpdateCoefficients();
-    }
-
-    void SetHeight(float h)
-    {
-        height = h;
-        UpdateCoefficients();
-    }
-
-    void SetWidth(float w)
-    {
-        width = w;
-        UpdateCoefficients();
-    }
-
-    // 08b5fd3:src/core/ResonantBump.hpp:44-71, verbatim formula.
-    void UpdateCoefficients()
-    {
-        const float omega = 2.0f * static_cast<float>(M_PI) * freq;
-        const float cosw = std::cos(omega);
-        const float sinw = std::sin(omega);
-
-        const float a = std::sqrt(height);
-        const float q = width;
-        const float alpha = sinw / (2.0f * q);
-
-        const float a0 = 1.0f + alpha / a;
-        const float a1 = -2.0f * cosw;
-        const float a2 = 1.0f - alpha / a;
-        const float b0 = 1.0f + alpha * a;
-        const float b1 = -2.0f * cosw;
-        const float b2 = 1.0f - alpha * a;
-
-        biquad.b0 = b0 / a0;
-        biquad.b1 = b1 / a0;
-        biquad.b2 = b2 / a0;
-        biquad.a1 = a1 / a0;
-        biquad.a2 = a2 / a0;
-    }
-
-    float Process(float input) { return biquad.Process(input); }
-
-    // BiquadDf1's own difference equation --
-    // y[n] = b0 x[n] + b1 x[n-1] + b2 x[n-2] - a1 y[n-1] - a2 y[n-2]
-    // (DspMath.hpp's BiquadDf1::Process) -- gives the standard direct-form-1
-    // closed form H(z) = (b0 + b1 z^-1 + b2 z^-2) / (1 + a1 z^-1 + a2 z^-2),
-    // evaluated at z = e^{j*2*pi*normalizedFrequency} (normalizedFrequency in
-    // cycles/sample, matching this struct's own `freq` convention).
-    static std::complex<float> ComputeTransferFunctionValue(
-        float b0Value, float b1Value, float b2Value, float a1Value, float a2Value, float normalizedFrequency)
-    {
-        const float omega = 2.0f * static_cast<float>(M_PI) * normalizedFrequency;
-        const std::complex<float> zInv(std::cos(omega), -std::sin(omega));
-        const std::complex<float> zInv2 = zInv * zInv;
-        const std::complex<float> numerator = b0Value + b1Value * zInv + b2Value * zInv2;
-        const std::complex<float> denominator = std::complex<float>(1.0f, 0.0f) + a1Value * zInv + a2Value * zInv2;
-        return numerator / transfer_function_detail::SafeDenominator(denominator);
-    }
-
-    void PopulateUIState(UIState& state) const
-    {
-        state.b0.store(biquad.b0);
-        state.b1.store(biquad.b1);
-        state.b2.store(biquad.b2);
-        state.a1.store(biquad.a1);
-        state.a2.store(biquad.a2);
-    }
-
-    // (Per-unit recovery, app/FroggersAppCore.hpp): zeros only
-    // biquad's recursive x1/x2/y1/y2 history -- NOT b0/b1/b2/a1/a2 (those
-    // are coefficients, recomputed from freq/height/width by
-    // UpdateCoefficients() on the very next SetFreq/SetHeight/SetWidth call,
-    // not signal state) and NOT freq/height/width themselves (tuning, set by
-    // the caller every block regardless). This is exactly the recovery
-    // scoopNotch's own self-oscillation bug (see FroggersAppCore.hpp's
-    // RouteAudioSample comment) needed: the biquad's y1/y2 can diverge to
-    // non-finite from a bad coefficient set and then stay non-finite forever
-    // afterward even once freq/height/width return to sane values, because
-    // the difference equation (DspMath.hpp's BiquadDf1::Process) keeps
-    // feeding y1/y2 back into every future output.
-    void Reset()
-    {
-        biquad.x1 = 0.0f;
-        biquad.x2 = 0.0f;
-        biquad.y1 = 0.0f;
-        biquad.y2 = 0.0f;
-        overCeilingSeconds = 0.0f;
-    }
-
-    // (Tier 1/Tier 2 recovery): checks recursive state only
-    // (x1/x2/y1/y2), not the coefficients -- a coefficient set computed from
-    // a momentarily extreme freq/height/width is not itself "poisoned",
-    // only a diverged y1/y2 that keeps propagating regardless of the
-    // coefficients is.
-    bool StateFinite() const
-    {
-        return std::isfinite(biquad.x1) && std::isfinite(biquad.x2) && std::isfinite(biquad.y1) &&
-               std::isfinite(biquad.y2);
-    }
-
-    float StateMagnitude() const
-    {
-        return std::max({std::fabs(biquad.x1), std::fabs(biquad.x2), std::fabs(biquad.y1), std::fabs(biquad.y2)});
-    }
-};
-
-// src/core/Comb.hpp:9-77.
 struct Comb
 {
     static constexpr size_t kSize = 8192;
@@ -641,265 +361,151 @@ struct PureDelay
 // 08b5fd3:src/core/FroggersEngine.hpp:822-848 (ApplyOutputFx), the parallel (:824-833) and
 // serial (:834-839) comb/peak/scoop routing only -- the reverb blend and
 // m_simFxInsert hook that follow in the firmware function are out of scope.
+// Both filters use the shared Sheaf integrator. Only the app recovery timer
+// is added here; filter state and its reset contract remain owned by Sheaf.
+struct RecoverableSvf : synth::ClassicStateVariableFilter
+{
+    float overCeilingSeconds = 0.0f;
+    void Reset() { synth::ClassicStateVariableFilter::Reset(); overCeilingSeconds = 0.0f; }
+};
+
+struct FilterKeyTracking
+{
+    float semitoneOffset = 0.0f;
+
+    void Update(const std::array<float, 3>& pitchKnobs, float balanceX, float balanceY, float sampleRate)
+    {
+        float weights[3];
+        ComputeVcoBalanceWeights(balanceX, balanceY, weights[0], weights[1], weights[2]);
+        float key = 0.0f;
+        for (std::size_t i = 0; i < pitchKnobs.size(); ++i)
+        {
+            const float hz = Vco::PitchToPhaseIncrement(pitchKnobs[i], sampleRate) * sampleRate;
+            key += weights[i] * (69.0f + 12.0f * std::log2(hz / 440.0f));
+        }
+        semitoneOffset = key - 60.0f;
+    }
+
+    float Track(float referenceHz, float amount = 1.0f) const
+    {
+        return referenceHz * std::exp2(amount * semitoneOffset / 12.0f);
+    }
+};
+
+inline float LinearFilterMix(float dry, float wet, float mix)
+{
+    if (mix == 0.0f) return dry;
+    if (mix == 1.0f) return wet;
+    return dry + mix * (wet - dry);
+}
+
+struct PeakNotchWeights { float pass; float band; };
+inline PeakNotchWeights ComputePeakNotchWeights(float morph)
+{
+    const float pass = std::sqrt(0.5f * morph * morph + 0.5f);
+    return {pass, 2.0f * pass * (1.0f - morph)};
+}
+
+inline float CombinePeakNotch(const synth::ClassicStateVariableFilter& filter, float morph)
+{
+    const auto weights = ComputePeakNotchWeights(morph);
+    return weights.pass * (filter.LowPass() + filter.HighPass()) + weights.band * filter.BandPass();
+}
+
+struct PeakNotchUiState : synth::TransferFunction
+{
+    std::atomic<float> cutoff{0.0f};
+    std::atomic<float> resonance{0.5f};
+    std::atomic<float> morph{1.0f};
+
+    std::complex<float> TransferFunctionValue(float frequency) const override
+    {
+        const float c = cutoff.load(), q = resonance.load();
+        const auto weights = ComputePeakNotchWeights(morph.load());
+        using Svf = synth::ClassicStateVariableFilter;
+        return weights.pass * (Svf::TransferFunctionValue(c, q, -1.0f, frequency)
+                              + Svf::TransferFunctionValue(c, q, 1.0f, frequency))
+            + weights.band * Svf::TransferFunctionValue(c, q, 0.0f, frequency);
+    }
+
+    float FrequencyResponse(float frequency) const override
+    {
+        return std::abs(TransferFunctionValue(frequency));
+    }
+};
+
 struct FilterFxChain
 {
-    ResonantBump peak;
-    ResonantBump scoopNotch;
+    RecoverableSvf mainFilter;
+    RecoverableSvf peakFilter;
     Comb comb;
     PureDelay pureDelay;
-
-    // Smooths the comb branch's exact output trim computed in
-    // Process() below. `fb` (Comb::feedback) is set from
-    // `Comb::SetFeedback`, called from `RouteAudioSample()` once per SAMPLE.
-    // Smoothing the TRIM value here (never `fb` itself, which would change
-    // the filter's behaviour, not just its level) erases the step every
-    // `SetFeedback` call would otherwise put directly into the output level,
-    // including the abrupt jumps a Crispy/randomize scramble produces.
-    OnePoleLowPass combTrimSmoother;
-
-    // Mirrors combTrimSmoother exactly, but smooths the
-    // PEAK branch's exact output trim `1/height` computed in Process()
-    // below, so `A * height / height == A` (the peak's own bound is
-    // `|peak| <= A * height`). `height` (ResonantBump::height,
-    // set via `SetHeight`) is refreshed from `RouteAudioSample()` once per
-    // SAMPLE the same way `fb` is (audio-rate modulation reaches this
-    // parameter's maximum continuously, not just as an edge case) -- so
-    // this needs the exact
-    // same glide as the comb trim for the exact same reason, not a separate
-    // constant chosen by fresh analogy. Smooths the TRIM, never `height`
-    // itself (that would change the filter, not just its level).
-    OnePoleLowPass peakTrimSmoother;
-
-    // The Filter page's own limiter, applied to the Comb/Peak blend below
-    // (`Process`'s `return`), not to either branch alone. The peak
-    // branch's `1/height` scalar trim above does not bound it under
-    // per-sample-random height modulation (worst-case 1.669 trimmed vs
-    // 1.819 untrimmed, against an ideal of 1.0, 500k trials/10 seeds),
-    // because the peak is a stateful 2-pole biquad -- its stored energy
-    // survives a height DROP, and a same-instant scalar cannot
-    // retroactively remove energy already in the filter's state. A
-    // limiter can, because it has its own release and therefore its own
-    // memory. The comb branch's own trim is not a bound either: the
-    // comb-trim comment below derives `|comb| <= A + |fb|` and that bound
-    // holds only at Comb drive 1 and above -- below it the fed-back term
-    // exceeds the clamp (measured directly on `dsp::Comb`, 100-sample
-    // delay, feedback 0.95, full-scale sine at the comb's own pitch: Comb
-    // drive 0.25 reaches 3.9222 against the bound's 1.9500).
-    // With neither branch bounded on its own, the limiter runs once, on
-    // the blend, so it catches whichever branch is carrying the level.
-    // Tuned via the four `kFilterOutputLimiter*` constants above this struct (by
-    // measurement, not by analogy -- see their own comment).
+    FilterKeyTracking keyTracking;
+    synth::ClassicStateVariableFilter::Input mainInput, peakInput;
+    float mainMix = 1.0f;
+    float peakMix = 1.0f;
+    float peakMorph = 1.0f;
     OutputLimiter outputLimiter;
 
-    // This struct's own contribution to the "every stateful unit in
-    // the audio path" enumeration -- lists ONLY the members declared above
-    // (not pureDelay/combTrimSmoother/peakTrimSmoother, which
-    // RecoverPoisonedUnitState never watched either -- see
-    // app/FroggersAppCore.hpp's own RecoverPoisonedUnitState comment for
-    // which units that was and why). Composed, not re-listed, by
-    // FroggersAppCore::ForEachStatefulUnit below.
+    // Audio-thread taps for production-path measurements and headless tests.
+    struct StageOutputs { float mainWet = 0, main = 0, comb = 0, peakWet = 0, peak = 0; } outputs;
+
+#ifdef FROGGERS_DSP_CHECKS
+    // Test builds measure the production path without injecting an audio
+    // source or changing its controls. Shipping builds carry no counters.
+    struct Metrics {
+        std::size_t samples = 0, nonfiniteSamples = 0;
+        double inputEnergy = 0, outputEnergy = 0, limiterReductionDb = 0;
+        float mainState = 0, combState = 0, peakState = 0;
+    } metrics;
+#endif
+
+    FilterFxChain() { Configure(48000.0f); }
+
+    void Configure(float sampleRate)
+    {
+        outputLimiter.Configure(sampleRate, kFilterOutputLimiterThreshold, kFilterOutputLimiterCeiling,
+            kFilterOutputLimiterAttackSeconds, kFilterOutputLimiterReleaseSeconds);
+    }
+
     template <typename Visitor>
     void ForEachStatefulUnit(Visitor&& visit)
     {
+        visit(mainFilter, Magnitude{});
         visit(comb, Magnitude{});
-        visit(peak, Magnitude{});
-        visit(scoopNotch, Magnitude{});
+        visit(peakFilter, Magnitude{});
         visit(outputLimiter, FiniteOnly{});
     }
 
-    FilterFxChain()
+    float Process(float input)
     {
-        // Sample-rate-independent knob-glide idiom this codebase already
-        // uses when a DSP unit has no sample-rate handle to convert a real
-        // Hz cutoff into alpha (RandomShLane.hpp's SetAlphaFromNatFreq
-        // call and its slew constants) -- FilterFxChain
-        // has no SetSampleRate() of its own, so a fixed cycles/sample cutoff
-        // is the only option without threading a new parameter down from
-        // FroggersAppCore.
-        //
-        // This was 0.01 cycles/sample --
-        // chosen by analogy to RandomShLane's own glide constants, under the
-        // (wrong, see combTrimSmoother's own comment above) assumption that
-        // `fb` only steps once per BLOCK. It actually steps once per SAMPLE,
-        // so under fast audio-rate modulation of this parameter (a 100%-
-        // depth Noise source being the worst realistic case) the trim can
-        // lag far enough behind a fast upward swing that the comb branch
-        // goes measurably UNDER-trimmed during the lag -- pinned by
-        // FroggersDspParityTests.cpp's TEST_CASE
-        // "comb_branch_output_stays_at_or_below_computed_bound_under_audio_
-        // rate_feedback_modulation" (name split across lines here only for
-        // width; it is one identifier), which failed outright at 0.01 (measured
-        // worst-case overshoot over the intended bound: ~0.80 for a hard
-        // step from rest to max feedback, ~0.53 for a continuous full-range
-        // audio-rate sweep, both against the single-sample-delay comb
-        // configuration that test and the static-feedback bound test above
-        // it both use to isolate loop gain). A scratch sweep of the constant
-        // found overshoot reaches exactly 0.0 (to measurement precision,
-        // tens of thousands of trials across multiple seeds) at glide >=
-        // ~0.33 cycles/sample; 0.45 below sits comfortably above that
-        // crossover while staying under `OnePoleLowPass::kMaxCutoff` (0.499,
-        // the hard clamp) -- fast enough that this is barely still
-        // "smoothing" in the RandomShLane-glide sense (its own kFastCutoff
-        // is 0.45, "near-instant"), which is the honest consequence of the
-        // premise correction above, not a separate design choice: once `fb`
-        // is known to step every sample rather than every block, matching
-        // its own update rate is what the safety bound requires.
-        // Shared by peakTrimSmoother below rather than a second literal
-        // -- both trims are refreshed at the same per-sample cadence
-        // (`fb`/`height` are both set from `RouteAudioSample()` once per
-        // sample) so this fix applies identically to both.
-        constexpr float kTrimGlideCyclesPerSample = 0.45f;
-        combTrimSmoother.SetAlphaFromNatFreq(kTrimGlideCyclesPerSample);
-        combTrimSmoother.output = 1.0f;  // unity at fb=0 -- matches the untrimmed branch (no initial fade-in).
-        peakTrimSmoother.SetAlphaFromNatFreq(kTrimGlideCyclesPerSample);
-        peakTrimSmoother.output = 1.0f;  // unity at height=1 (the minimum) -- matches the untrimmed branch.
-
-        // `outputLimiter`'s attack/release coefficients ARE sample-rate-
-        // dependent (unlike the two smoothers above), so unlike them it
-        // cannot be fully configured here without a sample rate this
-        // constructor never receives. Configure() below (called from
-        // FroggersAppCore::PrepareToPlay(), mirroring
-        // outputLimiter_.Configure(sampleRate_) there) supplies the real
-        // one; this assumed-48kHz call just gives a direct
-        // `FilterFxChain chain;` instantiation (e.g. a test that never
-        // calls Configure()) the intended threshold/attack/release rather
-        // than dsp::OutputLimiter's own generic master-limiter defaults
-        // (0.9/1ms/100ms), which would silently under-tune the page's
-        // output.
-        // 48kHz matches FroggersAppCore's own `sampleRate_` field default.
-        constexpr float kDefaultAssumedSampleRate = 48000.0f;
-        outputLimiter.Configure(kDefaultAssumedSampleRate, kFilterOutputLimiterThreshold, kFilterOutputLimiterCeiling,
-                               kFilterOutputLimiterAttackSeconds, kFilterOutputLimiterReleaseSeconds);
+        mainInput.value = input;
+        outputs.mainWet = mainFilter.Process(mainInput);
+        outputs.main = LinearFilterMix(input, outputs.mainWet, mainMix);
+        outputs.comb = comb.Process(pureDelay.Process(outputs.main));
+        peakInput.value = outputs.comb;
+        peakFilter.Process(peakInput);
+        outputs.peakWet = CombinePeakNotch(peakFilter, peakMorph);
+        outputs.peak = LinearFilterMix(outputs.comb, outputs.peakWet, peakMix);
+        const float output = outputLimiter.Process(outputs.peak);
+#ifdef FROGGERS_DSP_CHECKS
+        ++metrics.samples;
+        metrics.nonfiniteSamples += !std::isfinite(output);
+        metrics.inputEnergy += static_cast<double>(input) * input;
+        metrics.outputEnergy += static_cast<double>(output) * output;
+        metrics.limiterReductionDb += -20.0 * std::log10(static_cast<double>(outputLimiter.envelope));
+        metrics.mainState = std::max(metrics.mainState, mainFilter.StateMagnitude());
+        metrics.combState = std::max(metrics.combState, std::max(std::fabs(outputs.comb), std::fabs(comb.filter.output)));
+        metrics.peakState = std::max(metrics.peakState, peakFilter.StateMagnitude());
+#endif
+        return output;
     }
 
-    // Sample-rate-dependent configuration for `outputLimiter`, separate
-    // from the constructor above because the real sample rate is only known
-    // once FroggersAppCore::PrepareToPlay() runs. Mirrors
-    // `outputLimiter_.Configure(sampleRate_)`'s own call site there.
-    void Configure(float sampleRate)
+    void PopulatePeakUiState(PeakNotchUiState& state) const
     {
-        outputLimiter.Configure(sampleRate, kFilterOutputLimiterThreshold, kFilterOutputLimiterCeiling, kFilterOutputLimiterAttackSeconds,
-                               kFilterOutputLimiterReleaseSeconds);
-    }
-
-    // combPeakBlend/scoopMix are precomputed 0..1 control values (the
-    // firmware engine derives them from smoothed knob reads via RuntimeParam,
-    // which is parameter-smoothing infrastructure, not a DSP unit in scope
-    // here -- callers pass the already-smoothed 0..1 value).
-    //
-    // `scoopMix` (Filter slot 8, "Scoop mix") shapes the chain's shared INPUT,
-    // not its output: `scoopedIn` below feeds BOTH the comb and peak
-    // branches, so the peak's resonance lives ON TOP of whatever material
-    // the scoop leaves behind and survives any Scoop setting. This used to
-    // be a second ResonantBump (`scoopNotch`) wired as a post-blend series
-    // dip over the whole mixed signal, so at overlapping centers dialing
-    // Scoop up subtracted exactly what dialing Peak up had just added --
-    // "more knob, less filter." Moving the scoop upstream of both branches
-    // removes that cancellation. Depth/Freq/Width (Filter slots 9-11) keep
-    // their own independent maps, unchanged; scoopNotch has no visualizer
-    // wiring either way (only peak/comb UIStates populate).
-    //
-    // `topology` (Filter slot 13, "Topology"/"Topo") replaces the old
-    // `bool useParallel`. The old `useParallel == false` branch
-    // (`pureDelay -> comb -> peak` with no trims/limiter/blend, ignoring
-    // combPeakBlend and scoopMix entirely) was DEAD CODE -- the only
-    // production call site always passed `true` -- and has been deleted
-    // rather than kept beside a morph. The
-    // surviving path is the former `useParallel == true` branch, continuous
-    // morphed by `topology` in [0,1] on ONLY the peak stage's input:
-    //   peakIn = scoopedIn * (1 - topology) + combPath * topology
-    // Every other computation (combTrim, peakTrim, the Comb/Peak blend, and
-    // outputLimiter running on that blend) stays exactly as it was and stays
-    // in force at every topology value. At `topology == 0`,
-    // `peakIn == scoopedIn * 1.0f + combPath * 0.0f == scoopedIn`
-    // bit-for-bit (IEEE multiply-by-1 and multiply-by-0/add-0 are exact for
-    // finite operands), reproducing the old `useParallel == true` branch's
-    // `peak.Process(scoopedIn)` call exactly -- so this is a strict
-    // superset, not a behaviour change, at the default topology (and, at
-    // the also-default scoopMix == 0, `scoopedIn == input` bit-for-bit too,
-    // by the same IEEE argument -- so launch, where both default to 0, is
-    // unaffected all the way through). Every stateful unit (comb, peak,
-    // pureDelay, scoopNotch, combTrimSmoother, peakTrimSmoother,
-    // outputLimiter) is still processed exactly once per sample; outputLimiter
-    // now runs last, on the Comb/Peak blend below, rather than on the peak
-    // branch alone ahead of it. The Comb/Peak
-    // blend below is equal-power across a floored `combPeakBlend` range of
-    // 0.05..0.95: at either extreme the held-back branch is still present
-    // at `sin(0.025*pi)` gain (~0.0785, about -22 dB), so neither branch is
-    // ever fully absent.
-    float Process(float input, float topology, float combPeakBlend, float scoopMix)
-    {
-        // Scoop shapes the chain's shared input, feeding both branches
-        // below (see this method's own header comment for why). PLAIN
-        // LINEAR blend, same IEEE argument as the topology morph a few
-        // lines down: at scoopMix == 0 this is exactly `input` bit-for-bit.
-        const float scoopedIn = input * (1.0f - scoopMix) + scoopNotch.Process(input) * scoopMix;
-        const float combRaw = comb.Process(pureDelay.Process(scoopedIn));
-        // Exact output trim `1/(1+|fb|)` on the comb branch
-        // ONLY, before the blend with peakPath below. `|comb| <= A +
-        // |fb|` (PadeSaturator bounds the fed-back term to +-1,
-        // Comb::Process above) holds at Comb drive 1 and above; below
-        // drive 1 it does not (measured directly on `dsp::Comb`, 100-sample
-        // delay, feedback 0.95: drive 0.25 reaches 3.9222 against the
-        // bound's 1.9500 at A=1.00 -- GetFeedback's own comment, above, has
-        // the mechanism).
-        // Where it holds, this normalizes the worst case at full-scale
-        // input (A=1.0, not A=0: A=0 trims to 0.95/1.95 = 0.487) to exactly
-        // 1.0 at |fb| == kMaxFeedbackMagnitude (0.95), while leaving +3.5 dB
-        // of bloom across the rest of the feedback travel. Below Comb
-        // drive 1 this trim does not bound the branch; the Filter page's
-        // own limiter, applied after the Comb/Peak blend below, is what
-        // holds the level then. A scalar on a branch output moves level,
-        // not frequency response -- the comb's peaks/notches/ring/decay
-        // are unchanged. `fb` is read as a MAGNITUDE (GetFeedback is
-        // asymmetric +-0.95) directly from Comb's own state, not
-        // threaded as a new parameter.
-        const float rawCombTrim = 1.0f / (1.0f + std::fabs(comb.feedback));
-        const float combTrim = combTrimSmoother.Process(rawCombTrim);
-        const float combPath = combRaw * combTrim;
-        // Topology morph: at topology==0 this is exactly `scoopedIn` (see
-        // this method's own header comment for the bit-identity argument).
-        const float peakIn = scoopedIn * (1.0f - topology) + combPath * topology;
-        // Exact output trim `1/height` on the peak branch, the path
-        // the comb trim above deliberately left uncompensated ("one
-        // variable at a
-        // time"). `|peakRaw| <= A * height` (RBJ peaking biquad, centre
-        // gain == height), so this normalizes the worst
-        // case (input at the bump's own resonant frequency) to exactly
-        // A, matching the comb trim's treatment of its own worst case.
-        // `height >= 1.0` always (`ExpMapCompute(1, kMaxResonantBumpHeight,
-        // knob)`), so the divisor can never be zero -- no guard needed
-        // for an unreachable case.
-        const float peakRaw = peak.Process(peakIn);
-        const float rawPeakTrim = 1.0f / peak.height;
-        const float peakTrim = peakTrimSmoother.Process(rawPeakTrim);
-        const float peakTrimmed = peakRaw * peakTrim;
-        // The scalar trim above does not fully bound the peak branch on
-        // its own (see outputLimiter's declaration comment above and the
-        // kFilterOutputLimiter* tuning comment near this file's top): the biquad's
-        // stored energy survives a height DROP, and a same-instant scalar
-        // cannot retroactively remove energy already in its state. The
-        // peak branch reaches the blend below unlimited -- see the comment
-        // above `return` for where the level is bounded.
-        const float peakPath = peakTrimmed;
-        // Floored equal-power blend, single-sourced with FrogBlock's own
-        // Fold/Fuzz blend (dsp/Drive.hpp) rather than a second copy of the
-        // same floor/span/angle law -- see dsp::FlooredEqualPowerBlend's own
-        // comment (dsp/Limiter.hpp).
-        const FloorBlendGains blendGains = FlooredEqualPowerBlend(combPeakBlend);
-        const float mixed = peakPath * blendGains.legA + combPath * blendGains.legB;
-        // `outputLimiter` runs here, on the blended output, because neither
-        // branch is bounded on its own: the peak branch's scalar trim
-        // above does not bound a stateful biquad's stored energy through a
-        // height drop (this method's comment above `peakPath`), and the
-        // comb branch's trim assumes `|comb| <= A + |fb|`, a bound that
-        // holds only at Comb drive 1 and above and fails below it
-        // (measured directly on `dsp::Comb`, 100-sample delay, feedback
-        // 0.95, full-scale sine at the comb's own pitch: Comb drive 0.25
-        // reaches 3.9222 against the bound's 1.9500). Applying the limiter
-        // once, after the blend, catches whichever branch is carrying the
-        // level, unconditionally.
-        return outputLimiter.Process(mixed);
+        state.cutoff.store(peakFilter.m_cutoff);
+        state.resonance.store(peakFilter.m_resonance);
+        state.morph.store(peakMorph);
     }
 };
 

@@ -181,15 +181,20 @@ def parse_entries(section_text, doc_name, bank_name, errors):
 
 def validate(doc_name, bank_name, triples, table):
     errors = []
-    by_name = {e["name"]: e for e in table[bank_name]}
     seen = set()
 
     for name, doc_label, doc_slot in triples:
-        entry = by_name.get(name)
-        if entry is None:
-            errors.append(f"{doc_name}: {bank_name}: '{name}' is not a registered parameter name")
+        # A manual can name the control exactly as the player sees it.
+        # Resolve it to one stored entry; ambiguous aliases must fail.
+        matches = [e for e in table[bank_name] if name in (e["name"], e["label"])]
+        if len(matches) != 1:
+            errors.append(f"{doc_name}: {bank_name}: '{name}' does not uniquely identify a parameter or rendered label")
             continue
-        seen.add(name)
+        entry = matches[0]
+        if entry["name"] in seen:
+            errors.append(f"{doc_name}: {bank_name}: '{name}' documents the same parameter more than once")
+            continue
+        seen.add(entry["name"])
 
         if entry["slot"] != doc_slot:
             errors.append(

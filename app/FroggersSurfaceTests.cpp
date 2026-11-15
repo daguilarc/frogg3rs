@@ -1116,6 +1116,10 @@ TEST_CASE(page_carousel_next_arrow_action_steps_the_active_page_with_wrap_and_hi
 
     auto checkAllPagesAndReturnSelectedIx = [&]() -> std::size_t {
         const synth::ui::NodeTree tree = surface.BuildTree();
+        const auto* tabs=FindNodeById(tree,synth_froggers::FroggersNodeIds::kPageTabsRow);
+        REQUIRE_TRUE(tabs!=nullptr && tabs->children.size()==synth_froggers::kFroggersPageCount);
+        for(std::size_t position=0;position<synth_froggers::kFroggersPageCount;++position)
+            REQUIRE_TRUE(tabs->children[position].value==synth_froggers::FroggersNodeIds::PageButton(synth_froggers::FroggersBankAtDisplayPosition(position)));
         std::size_t selectedCount = 0;
         std::size_t selectedIx = synth_froggers::kFroggersPageCount;
         for (std::size_t pageIx = 0; pageIx < synth_froggers::kFroggersPageCount; ++pageIx) {
@@ -1140,7 +1144,7 @@ TEST_CASE(page_carousel_next_arrow_action_steps_the_active_page_with_wrap_and_hi
         surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPageNext));
         rig.RunBlocks(4);
         rig.UIState();
-        REQUIRE_TRUE(checkAllPagesAndReturnSelectedIx() == expectedIx);
+        REQUIRE_TRUE(checkAllPagesAndReturnSelectedIx() == synth_froggers::FroggersBankAtDisplayPosition(expectedIx));
     }
 
     // One more click from the LAST page (5) wraps to the first (0).
@@ -1738,12 +1742,12 @@ bool TrailingCommandsMatch(const std::vector<synth::ui::DrawCommand>& actual,
 }
 
 // Envelope-bank cells emit exactly the single-row short-name
-// block; a truncation-class cell (Filter slot 3, "Comb offset") emits its
+// block; a truncation-class cell (Filter slot 5, "Comb delay") emits its
 // approved long label in full -- both checked by command count/geometry
 // (dpDotCount, and a full trailing-command match against
 // `ExpectedEncoderLabelBandCommands`) against the approved list, never by
 // inspecting pixels.
-TEST_CASE(envelope_short_forms_and_filter_slot3_long_label_render_single_row_verbatim) {
+TEST_CASE(envelope_short_forms_and_filter_delay_label_render_single_row_verbatim) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
         /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("label_row_content"));
     rig.RunBlocks(4);
@@ -1782,10 +1786,8 @@ TEST_CASE(envelope_short_forms_and_filter_slot3_long_label_render_single_row_ver
     // Envelope (bank 1) slot 0 -- canonical short form "A1" (operator
     // ruling: the short form IS the name here).
     checkCell(1, 0, "A1");
-    // Filter (bank 2) slot 3 -- the truncation-class long name "Comb
-    // offset" (the exact site the predecessor's rejected work clipped to
-    // "CMBO"), now required to render in full.
-    checkCell(2, 3, "Comb offset");
+    // Filter (bank 2) slot 5 renders the approved delay label in full.
+    checkCell(2, 5, "Comb delay");
 }
 
 // No label draw command's bounds intersect the ring's drawn arc,
@@ -1936,10 +1938,9 @@ TEST_CASE(every_rendered_label_matches_the_approved_list_verbatim) {
                             synth_froggers::kFroggersPageCount>
         kExpectedApprovedLabels{{
             {{"VCO1", "VCO2", "VCO3", "Shape 1", "Shape 2", "Shape 3", "Ph.mod 1", "Ph.mod 2", "Ph.mod 3",
-              "Ringmod 1", "Ringmod 2", "Ringmod 3", "PM rate", "VCO balance"}},
+              "Ringmod 1", "Ringmod 2", "Ringmod 3", "Balance Y", "Balance X"}},
             {{"A1", "D1", "S1", "R1", "A2", "D2", "S2", "R2", "A3", "D3", "S3", "R3", "Curve", "Grace"}},
-            {{"Peak freq", "Peak gain", "Peak Q", "Comb offset", "Comb delay", "Comb FB", "Comb LP",
-              "Comb drive", "Scoop mix", "Scoop freq", "Scoop width", "Scoop depth", "Comb/Peak", "Topology"}},
+            {{"Cutoff 1", "Res 1", "Morph 1", "Keytrk 1", "Mix 1", "Comb delay", "Comb tune", "Comb FB", "Comb LP", "Comb drive", "Cutoff 2", "Res 2", "Morph 2", "Mix 2"}},
             {{"Wet/Dry", "Gain", "Shape", "SRR 1", "SRR 2", "XOR", "Bit depth", "Fuzz", "Phase", "Anti-alias",
               "Feedback", "Fold", "Tone", "Symmetry"}},
             {{"Wet/dry", "Send", "Delay time", "Feedback", "Stereo width", "Freeze", "Mod depth", "Reverse",

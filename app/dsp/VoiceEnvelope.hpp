@@ -354,10 +354,7 @@ struct VcoAdsrState
     // they must read that from this one function rather than re-deriving the
     // formula themselves. A test that retypes the formula is a second
     // definition site of it, and would go on passing against the old shape if
-    // this map were ever changed. dsp::kMaxResonantBumpHeight's own comment
-    // records this project already shipping exactly that bug: a test that
-    // computed its expectation with its own hardcoded copy of the constant and
-    // therefore passed unchanged when the real value moved.
+    // this map were ever changed.
     static float MapSustain(float knob)
     {
         const float clamped = std::min(std::max(knob, 0.0f), 1.0f);
@@ -690,46 +687,14 @@ struct GatedVoices
     float v3 = 0.0f;
 };
 
-// (VCO balance, Audio slot 13): a normalized 3-point crossfade that
-// tilts emphasis VCO1 -> VCO2 -> VCO3 as knob01 sweeps 0 -> 1, replacing
-// MixOscVoices's old hardcoded equal-thirds average. BINDING INVARIANT:
-// the three weights sum to exactly 1 and each stays
-// within [0.10, 0.80] at EVERY knob01 -- guaranteed BY CONSTRUCTION, not
-// checked after the fact:
-//   - Below knob01 0.5, the result is a convex combination ((1-u), u for
-//     u in [0,1]) of two anchor triples: (0.80, 0.10, 0.10) at knob01==0
-//     and (1/3, 1/3, 1/3) at knob01==0.5.
-//   - Above knob01 0.5, it is a convex combination of (1/3, 1/3, 1/3) at
-//     knob01==0.5 and (0.10, 0.10, 0.80) at knob01==1.
-// Both anchor triples in each half sum to exactly 1, and a convex
-// combination of two vectors that each sum to 1 always sums to 1 (the
-// weights (1-u)+u==1 factor straight through the sum). Both anchor triples
-// in each half also lie within [0.10, 0.80] component-wise, and a convex
-// combination of two points inside an interval never leaves that interval
-// -- so every weight is bounded the same way, for the same reason,
-// regardless of knob01. At knob01==0.5 (centre default) every weight is
-// exactly kThird, i.e. exactly the equal-thirds mix this replaces (same
-// constant MixOscVoices's old `(v1+v2+v3)*(1.0f/3.0f)` used).
-inline void ComputeVcoBalanceWeights(float knob01, float& w1, float& w2, float& w3)
+// Square-to-triangle Balance map. The top edge selects VCO3; the bottom
+// edge crossfades VCO1/VCO2. The centre gives equal thirds without a floor.
+inline void ComputeVcoBalanceWeights(float x, float y, float& w1, float& w2, float& w3)
 {
-    constexpr float kFloor = 0.10f;
-    constexpr float kCap = 0.80f;
-    constexpr float kThird = 1.0f / 3.0f;
-    const float knob = std::min(std::max(knob01, 0.0f), 1.0f);
-    if (knob <= 0.5f)
-    {
-        const float u = knob / 0.5f;  // 0 at knob01==0, 1 at knob01==0.5.
-        w1 = kCap * (1.0f - u) + kThird * u;
-        w2 = kFloor * (1.0f - u) + kThird * u;
-        w3 = kFloor * (1.0f - u) + kThird * u;
-    }
-    else
-    {
-        const float v = (knob - 0.5f) / 0.5f;  // 0 at knob01==0.5, 1 at knob01==1.
-        w1 = kThird * (1.0f - v) + kFloor * v;
-        w2 = kThird * (1.0f - v) + kFloor * v;
-        w3 = kThird * (1.0f - v) + kCap * v;
-    }
+    constexpr float exponent = 1.5849625007211563f; // log2(3)
+    w3 = std::pow(y, exponent);
+    w1 = (1.0f - w3) * (1.0f - x);
+    w2 = (1.0f - w3) * x;
 }
 
 // 08b5fd3:src/core/FroggersEngine.hpp:772-809 (MixOscVoices), the m_vcoAdsr && m_adsrParams
@@ -739,11 +704,8 @@ inline void ComputeVcoBalanceWeights(float knob01, float& w1, float& w2, float& 
 // adsr[v] rows are (attack, sustain, release) per voice, matching
 // the retired simulator's per-VCO ADSR page triplet row order.
 //
-// `balanceKnob01` (Audio slot 13): drives ComputeVcoBalanceWeights
-// above, replacing the old hardcoded equal-thirds average. Defaults to 0.5f
-// (this mapping's own centre, which reproduces the exact 1/3-each weights
-// the old average used) so callers that pass neither this nor `outGated`
-// keep their prior mixed-average behaviour unchanged.
+// Balance X (Audio slot 13) and Balance Y (slot 12) use the shared triangle
+// weights. Both default to 0.5, giving equal thirds.
 //
 // `outGated`: optional out-parameter carrying the three post-gate voice values, added
 // so FroggersAppCore::RouteAudioSample() (this function's single
@@ -783,6 +745,7 @@ inline float MixOscVoices(VcoAdsrState& adsr,
                            float curveKnob = 0.0f,
                            float graceKnob = 0.0f,
                            float balanceKnob01 = 0.5f,
+                           float balanceY = 0.5f,
                            GatedVoices* outGated = nullptr)
 {
     v1 = adsr.apply(0, v1, attack1, decay1, sustain1, release1, curveKnob, graceKnob);
@@ -797,7 +760,7 @@ inline float MixOscVoices(VcoAdsrState& adsr,
     float w1 = 0.0f;
     float w2 = 0.0f;
     float w3 = 0.0f;
-    ComputeVcoBalanceWeights(balanceKnob01, w1, w2, w3);
+    ComputeVcoBalanceWeights(balanceKnob01, balanceY, w1, w2, w3);
     return w1 * v1 + w2 * v2 + w3 * v3;
 }
 

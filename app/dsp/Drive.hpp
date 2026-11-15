@@ -438,78 +438,6 @@ struct SampleRateReducer
     float StateMagnitude() const { return std::max(std::fabs(phase), std::fabs(output)); }
 };
 
-// src/core/PolynomialDrive.hpp:125-163 (DigitalReorganizer). NOTE: :138's
-// `std::round(inputUp)` assigned to a uint8_t is float-to-integer
-// narrowing that is well-defined only while `inputUp` (== (input+1)*128)
-// stays within [0,255] -- i.e. input in roughly [-1, 0.9921875]. At
-// input==1.0 exactly, inputUp==256 and the cast is undefined behavior in
-// the firmware source too (confirmed by reading src/core/PolynomialDrive.hpp:135-151
-// directly).
-//
-// FIX, NOT A REPRODUCTION: unlike
-// the fuegoize UB (the retired simulator's Fuegoize.hpp), which is carried forward
-// because the firmware tree also contains a *correct* reference (the
-// firmware's 08b5fd3:src/core/Parameter.hpp:142) to port instead, there is no such correct
-// reference here -- both src/core/PolynomialDrive.hpp:138 in the `src/core/`
-// tree and this port hit the same undefined cast at input==1.0. This is
-// newly written code this app owns, and reproducing UB has no parity
-// value, so this port clamps the rounded value to the uint8_t-representable
-// range [0,255] *before* the narrowing cast, then computes `inputRemainder`
-// against that same clamped value (not the raw `inputUp`). Two
-// consequences: (1) everywhere the original expression was well-defined
-// (`inputUp` in [0,255], i.e. input in [-1, 0.9921875]) the clamp is a
-// no-op, so `round(inputUp)` is already in range and behavior is bit-for-
-// bit unchanged; (2) at the boundary and beyond (input >= ~0.9921875, or
-// input < -1 -- reachable in practice, since PolynomialDrive's output
-// upstream of this stage is not amplitude-bounded to [-1,1]) the clamp
-// saturates the integer part while the remainder still carries the
-// leftover delta, so with flip==0 and hashBits==0 (the pass-through
-// configuration) `Process(1.0f)` still reconstructs to exactly `1.0f`
-// rather than invoking UB -- see the regression test at input==1.0 in
-// FroggersDspParityTests.cpp.
-//
-// DELIBERATE PARITY DIVERGENCE #2 (same class of divergence as
-// dsp::Comb::GetFeedback's +-1.1 -> +-0.95 above (FilterFx.hpp) and the
-// resonant-peak ceiling reduced from the firmware original to
-// `dsp::kMaxResonantBumpHeight` (FilterFx.hpp), each carrying its own in-code
-// note. Name the constant rather than its value here: this ladder has been
-// retyped stale twice, and a number in a comment does not move when the
-// constant does):
-//
-// `Process(0.0f)` -- digital silence -- is NOT silent. At input==0,
-// `inputUp` is exactly 128 and `inputRemainder` is exactly 0, but the XOR by
-// `flip` and the mask-gated bit scramble below still run, so the result is
-// nonzero for any `flip != 0` (exactly -1.0 at flip==128) and also nonzero
-// at flip==0 when hashBits==8. This stage sits upstream of three recursive
-// loops (dsp::Comb, dsp::StereoDelay, dsp::Reverb -- the last with no
-// in-loop saturator), which amplify that seed without bound -- "Stop
-// doesn't stop," measured and traced end-to-end.
-//
-// PLAINLY: the firmware (src/core/PolynomialDrive.hpp:125-163) has
-// this exact same f(0) != 0 behaviour -- it is a property of the original
-// bit-scramble math, not a porting error -- and no DC blocker or highpass
-// exists anywhere in this signal chain (src/core/ and app/ both
-// checked). On real hardware, an analog output stage AC-couples a DC offset
-// away for free, so this was inaudible on the original instrument; this
-// port has no such output stage, so without a fix nothing downstream ever
-// removes it.
-//
-// FIX: the scramble is factored into `Mangle()` below (identical math, no
-// behaviour change by itself), and `Process` returns
-// `Mangle(input, flip, hashBits) - Mangle(0.0f, flip, hashBits)` -- a DC
-// block anchored to this stage's own silent-input response, computed fresh
-// on every call rather than cached (`flip`/`hashBits` are public fields
-// that can be assigned directly, bypassing SetFlip()/SetHash(), so a
-// correction cached only inside those setters would go stale the moment
-// they were bypassed). At the pass-through configuration (flip==0,
-// hashBits==0), `Mangle(0.0f, 0, 0) == 0.0f` exactly, so the correction
-// term is exactly zero there and this fix is a no-op: `Process(1.0f) ==
-// 1.0f` (the input-clamp fix's own regression test, above) and every parity
-// case at default flip/hash are unaffected. `FroggersDspParityTests.cpp`'s
-// digital_reorganizer_process_matches_bit_scramble_formula pins `Process()`
-// against a hand-transcribed replica of this formula at nonzero flip/hash;
-// it is re-asserted against this corrected behaviour (see that test's own
-// comment), never deleted.
 struct DigitalReorganizer
 {
     uint8_t flip = 0;
@@ -764,28 +692,8 @@ struct FrogBlock
     // multiplies out to zero regardless of its history.
     void SetFeedback(float feedbackKnob01) { feedbackCoefficient = kMaxFeedbackCoefficient * feedbackKnob01; }
 
-    // src/core/PolynomialDrive.hpp:187-202 (FrogBlock::Process), same order
-    // as before, with three changes: the polynomial no longer sees a
-    // biased input (Symmetry moved downstream, see SetSymmetry above);
-    // `sinIn` gains the Symmetry offset and the folder's own one-sample-
-    // delayed feedback; and the Fold/Fuzz blend is now a floored
-    // equal-power crossfade (`dsp::FlooredEqualPowerBlend`, the same law
-    // `FilterFxChain::Process` uses for its own Comb/Peak blend,
-    // dsp/Limiter.hpp) rather than a linear one that could reach a hard zero
-    // on the folder's leg -- see this struct's own class-level notes above
-    // for why. `foldDivisor` still replaces
-    // the old literal divisor, and the tone stage is still appended after
-    // the ported chain.
     float Process(float input)
     {
-        // The same floored equal-power law FilterFxChain::Process uses for
-        // its own Comb/Peak blend, single-sourced as
-        // `dsp::FlooredEqualPowerBlend` (dsp/Limiter.hpp) rather than a
-        // second copy: neither leg of a blend built this way is ever fully
-        // silent -- at either extreme the held-back leg still sits at
-        // `sin(0.05*halfPi)` gain (about -22 dB), so Fold can no longer be
-        // multiplied by exactly zero the way the old linear blend let Fuzz
-        // do at its own maximum.
         const FloorBlendGains fuzzBlendGains = FlooredEqualPowerBlend(fuzz);
         const float folderGain = fuzzBlendGains.legA;
         const float saturatorGain = fuzzBlendGains.legB;

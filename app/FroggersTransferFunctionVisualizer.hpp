@@ -3,10 +3,8 @@
 // synth_froggers::TransferFunctionVisualizer -- one
 // Visualizer sampling any synth::TransferFunction's FrequencyResponse()
 // into a `DrawCommand::Polyline` (External/Sheaf/projects/synth/include/synth/PortableUI.hpp), log-frequency
-// axis. Generic over EITHER ResonantBump::UIState or Comb::UIState
-// (app/dsp/FilterFx.hpp) -- both derive from synth::TransferFunction,
-// so one Visualizer implementation covers both the bump's peak/notch and
-// the comb's periodic response.
+// axis. It accepts the main SVF, peak/notch combination or comb's shared
+// transfer-function interface.
 //
 // A self-oscillating comb's feedback can drive the displayed magnitude
 // arbitrarily high, so it must stay bounded rather than drawn out of frame:
@@ -33,7 +31,7 @@ namespace synth_froggers {
 class TransferFunctionVisualizer final : public synth::ui::Visualizer {
 public:
     // minFreqNormalized/maxFreqNormalized are in cycles/sample (the same
-    // convention ResonantBump::freq / Comb's delay-derived frequency
+    // convention the SVF cutoff and Comb's delay-derived frequency
     // already use elsewhere in this app, e.g. FroggersApp::RouteAudioSample's
     // ExpMapCompute(20/sr, 20000/sr, ...) calls). Defaults span from a
     // generic near-DC anchor to Nyquist so this class needs no sample-rate
