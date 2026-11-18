@@ -682,11 +682,15 @@ TEST_CASE(configure_processing_timing_is_wired_at_96khz_prepare) {
         64, UseScratchRuntimeDataPaths("configure_processing_timing_96khz"),
         {.sampleRate = 96000.0, .blockSize = 256});
     const auto& config = rig.Application().Parameters().Group().Config();
-    REQUIRE_TRUE(config.targetComputeIntervalSamples == 1);
+    // Sheaf's default target-Compute cadence (16 samples at 48 kHz), scaled
+    // to the host rate; target smoothing runs at that same 3 kHz cadence.
+    REQUIRE_TRUE(config.targetComputeIntervalSamples ==
+                 synth::ConvertSampleInterval(synth::kDefaultTargetComputeIntervalSamples, 48000.0, 96000.0));
+    REQUIRE_TRUE(config.targetComputeIntervalSamples == 32);
     REQUIRE_NEAR(config.processLiteAlpha,
         synth::ConvertOnePoleAlpha(synth::kDefaultProcessLiteAlpha, 48000.0, 96000.0), 1e-6f);
     REQUIRE_NEAR(config.targetCenterAlpha,
-        synth::ConvertOnePoleAlpha(synth::kDefaultTargetCenterAlpha, 3000.0, 96000.0), 1e-6f);
+        synth::ConvertOnePoleAlpha(synth::kDefaultTargetCenterAlpha, 3000.0, 3000.0), 1e-6f);
     REQUIRE_NEAR(config.uiDisplayCenterAlpha,
         synth::ConvertOnePoleAlpha(synth::kDefaultUiDisplayCenterAlpha, 48000.0, 96000.0), 1e-6f);
     REQUIRE_NEAR(config.uiDisplaySpreadAlpha,
@@ -795,12 +799,15 @@ TEST_CASE(froggers_compute_retirement_matches_full_compute) {
     };
 
     // Positive control: A retired most of its compute visits, so agreement
-    // means the retired path ran.
-    if (!(observers[0].topLevelRetiredComputes * 2 > observers[0].topLevelProcessLiteCalls)) {
+    // means the retired path ran. A compute visit is one top-level visit on a
+    // compute sample: every targetComputeIntervalSamples-th lite call.
+    const std::size_t computeVisits = observers[0].topLevelProcessLiteCalls /
+        a.Application().Parameters().Group().Config().targetComputeIntervalSamples;
+    if (!(observers[0].topLevelRetiredComputes * 2 > computeVisits)) {
         std::cerr << "A retired " << observers[0].topLevelRetiredComputes << " of "
-                  << observers[0].topLevelProcessLiteCalls << " compute visits\n";
+                  << computeVisits << " compute visits\n";
     }
-    REQUIRE_TRUE(observers[0].topLevelRetiredComputes * 2 > observers[0].topLevelProcessLiteCalls);
+    REQUIRE_TRUE(observers[0].topLevelRetiredComputes * 2 > computeVisits);
     // Over the idle blocks B still computes its depth children, and A almost never does.
     if (!(idleWindow(1) > 0 && idleWindow(0) * 10 <= idleWindow(1))) {
         std::cerr << "idle window localRecursiveComputeCalls: A " << idleWindow(0) << ", B " << idleWindow(1)

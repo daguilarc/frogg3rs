@@ -518,18 +518,25 @@ public:
         sampleRate_ = static_cast<float>(sampleRate * kEngineFactor);
         audioAdsr_.init(sampleRate_);
 
-        // The matrix and its UI/Fuego phases run once per host frame. Retune
-        // target smoothing from its former 48k/16 cadence to the host rate.
+        // The matrix and its UI/Fuego phases run once per host frame. Target
+        // Computes keep Sheaf's default cadence (16 samples at 48 kHz, scaled
+        // to the host rate): modulation is applied in every lite step, so a
+        // Compute per frame only re-walks every parameter and depth. Measured
+        // 2026-11-17: a block after Randomize All cost 3.10 ms at interval 1
+        // against 2.25 ms at the default.
+        const std::size_t targetComputeInterval = synth::ConvertSampleInterval(
+            synth::kDefaultTargetComputeIntervalSamples, 48000.0, sampleRate);
         parameters_.Group().ConfigureProcessingTiming(synth::ParameterProcessingTiming{
             .processLiteAlpha =
                 synth::ConvertOnePoleAlpha(synth::kDefaultProcessLiteAlpha, 48000.0, sampleRate),
-            .targetComputeIntervalSamples = 1,
+            .targetComputeIntervalSamples = targetComputeInterval,
             .uiDisplayCenterAlpha =
                 synth::ConvertOnePoleAlpha(synth::kDefaultUiDisplayCenterAlpha, 48000.0, sampleRate),
             .uiDisplaySpreadAlpha =
                 synth::ConvertOnePoleAlpha(synth::kDefaultUiDisplaySpreadAlpha, 48000.0, sampleRate),
             .targetCenterAlpha = synth::ConvertOnePoleAlpha(synth::kDefaultTargetCenterAlpha,
-                48000.0 / synth::kDefaultTargetComputeIntervalSamples, sampleRate),
+                48000.0 / synth::kDefaultTargetComputeIntervalSamples,
+                sampleRate / static_cast<double>(targetComputeInterval)),
         });
         parameters_.ConfigureEngineRate();
         // The ASR gate is not forced permanently on -- it is driven per-sample in
