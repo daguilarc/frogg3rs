@@ -755,7 +755,7 @@ harmonics, so Fuzz barely changes the tone. With Gain raised, the folder at the 
 turns nearly all of the energy into harmonics, while the saturator at the top keeps more of the
 fundamental and fewer high harmonics, so the top of the knob reads cleaner than the bottom.
 
-The blend is floored the same way Comb/Peak's is: the held-back path sits about −22 dB at either
+The blend is floored: the held-back path sits about −22 dB at either
 extreme, and the two meet at −3 dB (a 50/50 blend) at the center of travel. At the default the
 saturator is the held-back path.
 
